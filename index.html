@@ -425,6 +425,69 @@
         background: rgba(125, 211, 252, 0.55);
       }
 
+      .floating-corner {
+        position: fixed;
+        right: 14px;
+        bottom: 14px;
+        z-index: 20;
+      }
+
+      .dict-panel {
+        display: grid;
+        grid-template-columns: 1fr 1.2fr;
+        gap: 14px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+      .dict-list {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: auto;
+        max-height: 240px;
+      }
+      .dict-item {
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 0;
+        padding: 10px 10px;
+        background: transparent;
+        font-size: 14px;
+      }
+      .dict-item:last-child {
+        border-bottom: 0;
+      }
+      .dict-item[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .dict-definition {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        min-height: 120px;
+        color: rgba(255, 255, 255, 0.92);
+      }
+
+      .dict-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(12px);
+        z-index: 30;
+        display: none;
+        padding: 18px 12px;
+      }
+      .dict-overlay[aria-hidden="false"] {
+        display: block;
+      }
+      .dict-overlay .card {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
       /* Make room for fixed progress bar during study */
       body.study-active main {
         padding-top: 64px;
@@ -441,6 +504,17 @@
       title="New study session"
     >
       +
+    </button>
+
+    <button
+      type="button"
+      id="dictionaryBtn"
+      class="floating-corner"
+      aria-label="Dictionary"
+      title="Dictionary"
+      hidden
+    >
+      Dictionary
     </button>
 
     <div
@@ -629,6 +703,22 @@
             <p class="subtle" id="betweenBlocksMeta"></p>
 
             <div class="divider"></div>
+
+            <div id="betweenBlocksDictionaryWrap" hidden>
+              <div class="rowline" style="justify-content: space-between">
+                <span style="font-weight: 600">Dictionary</span>
+                <button type="button" id="betweenBlocksDictionaryOpenBtn">
+                  Open overlay
+                </button>
+              </div>
+              <div class="dict-panel" style="margin-top: 10px">
+                <div class="dict-list" id="betweenBlocksDictList"></div>
+                <div class="dict-definition" id="betweenBlocksDictDef">
+                  Select a term to see its definition.
+                </div>
+              </div>
+              <div class="divider"></div>
+            </div>
 
             <label for="betweenBlocksInput">
               Any questions or comments before the next block? (optional)
@@ -876,6 +966,27 @@
     </main>
 
     <div
+      id="dictionaryOverlay"
+      class="dict-overlay"
+      aria-hidden="true"
+      aria-label="Dictionary overlay"
+    >
+      <div class="card">
+        <div class="rowline" style="justify-content: space-between">
+          <span style="font-weight: 600">Dictionary</span>
+          <button type="button" id="dictionaryCloseBtn">Close</button>
+        </div>
+        <div class="divider"></div>
+        <div class="dict-panel">
+          <div class="dict-list" id="dictionaryOverlayList"></div>
+          <div class="dict-definition" id="dictionaryOverlayDef">
+            Select a term to see its definition.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
       id="rsvpOverlay"
       class="rsvp-overlay"
       aria-hidden="true"
@@ -923,6 +1034,7 @@
         const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
         const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
         const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
+        const LS_SESSION_CONCEPTS_KEY = "session_concepts";
         const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
         const DS_CHAT_COMPLETIONS_URL =
           "https://api.deepseek.com/v1/chat/completions";
@@ -936,6 +1048,7 @@
 
         const changeKeyLink = document.getElementById("changeKeyLink");
         const newSessionBtn = document.getElementById("newSessionBtn");
+        const dictionaryBtn = document.getElementById("dictionaryBtn");
         const screenApiSetup = document.getElementById("screenApiSetup");
         const screenPlaceholder = document.getElementById("screenPlaceholder");
         const apiKeyForm = document.getElementById("apiKeyForm");
@@ -962,6 +1075,20 @@
         const saveSessionInlineBtn = document.getElementById("saveSessionInlineBtn");
         const saveSessionBtn = document.getElementById("saveSessionBtn");
         const reviewSessionBtn = document.getElementById("reviewSessionBtn");
+
+        const betweenBlocksDictionaryWrap = document.getElementById(
+          "betweenBlocksDictionaryWrap",
+        );
+        const betweenBlocksDictionaryOpenBtn = document.getElementById(
+          "betweenBlocksDictionaryOpenBtn",
+        );
+        const betweenBlocksDictList = document.getElementById("betweenBlocksDictList");
+        const betweenBlocksDictDef = document.getElementById("betweenBlocksDictDef");
+
+        const dictionaryOverlay = document.getElementById("dictionaryOverlay");
+        const dictionaryCloseBtn = document.getElementById("dictionaryCloseBtn");
+        const dictionaryOverlayList = document.getElementById("dictionaryOverlayList");
+        const dictionaryOverlayDef = document.getElementById("dictionaryOverlayDef");
 
         const reviewTypeTestBtn = document.getElementById("reviewTypeTestBtn");
         const reviewTypeSocraticBtn = document.getElementById(
@@ -1132,6 +1259,154 @@
           return Math.min(max, Math.max(min, x));
         }
 
+        function loadSessionConcepts() {
+          try {
+            const raw = localStorage.getItem(LS_SESSION_CONCEPTS_KEY);
+            if (!raw || !raw.trim()) return [];
+            const arr = JSON.parse(raw);
+            return Array.isArray(arr) ? arr : [];
+          } catch {
+            return [];
+          }
+        }
+
+        function saveSessionConcepts(concepts) {
+          try {
+            localStorage.setItem(
+              LS_SESSION_CONCEPTS_KEY,
+              JSON.stringify(Array.isArray(concepts) ? concepts : []),
+            );
+          } catch {
+            // ignore
+          }
+        }
+
+        function normalizeConceptEntry(c) {
+          const obj = c && typeof c === "object" ? c : {};
+          const term = String(obj.term || "").trim();
+          const definition = String(obj.definition || "").trim();
+          if (!term) return null;
+          return { term, definition };
+        }
+
+        function mergeConceptsIntoStorage(newConcepts) {
+          const existing = loadSessionConcepts()
+            .map(normalizeConceptEntry)
+            .filter(Boolean);
+          const incoming = Array.isArray(newConcepts)
+            ? newConcepts.map(normalizeConceptEntry).filter(Boolean)
+            : [];
+
+          const map = new Map();
+          for (const c of existing) {
+            map.set(c.term.toLowerCase(), c);
+          }
+          for (const c of incoming) {
+            const key = c.term.toLowerCase();
+            if (!map.has(key)) {
+              map.set(key, c);
+            } else {
+              const prev = map.get(key);
+              if (prev && !prev.definition && c.definition) {
+                map.set(key, c);
+              }
+            }
+          }
+
+          const merged = Array.from(map.values()).sort((a, b) =>
+            a.term.localeCompare(b.term, undefined, { sensitivity: "base" }),
+          );
+          saveSessionConcepts(merged);
+          return merged;
+        }
+
+        function commitSessionConceptsForBlock(blockIndex) {
+          const blocks = getBlocksSafe();
+          const b = blocks[blockIndex];
+          if (!b || typeof b !== "object") return;
+          const concepts = Array.isArray(b.concepts) ? b.concepts : [];
+          if (!concepts.length) return;
+          mergeConceptsIntoStorage(concepts);
+        }
+
+        function getSortedSessionConcepts() {
+          return loadSessionConcepts()
+            .map(normalizeConceptEntry)
+            .filter(Boolean)
+            .sort((a, b) => a.term.localeCompare(b.term, undefined, { sensitivity: "base" }));
+        }
+
+        function renderConceptDictionaryInto({ listEl, defEl, concepts }) {
+          if (!listEl || !defEl) return;
+          listEl.innerHTML = "";
+          defEl.textContent = "Select a term to see its definition.";
+
+          const arr = Array.isArray(concepts) ? concepts : [];
+          if (!arr.length) {
+            const empty = document.createElement("div");
+            empty.className = "hint";
+            empty.style.padding = "10px";
+            empty.textContent = "No concepts yet.";
+            listEl.appendChild(empty);
+            return;
+          }
+
+          let selectedKey = null;
+          const setSelected = (key) => {
+            selectedKey = key;
+            const buttons = Array.from(listEl.querySelectorAll("button"));
+            for (const b of buttons) {
+              b.setAttribute("aria-pressed", String(b.dataset.key === selectedKey));
+            }
+            const c = arr.find((x) => x.term.toLowerCase() === selectedKey);
+            defEl.textContent = c ? String(c.definition || "") : "";
+            typesetMath(defEl);
+          };
+
+          for (const c of arr) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "dict-item";
+            btn.textContent = c.term;
+            const key = c.term.toLowerCase();
+            btn.dataset.key = key;
+            btn.setAttribute("aria-pressed", "false");
+            btn.addEventListener("click", () => setSelected(key));
+            listEl.appendChild(btn);
+            if (!selectedKey) selectedKey = key;
+          }
+
+          if (selectedKey) setSelected(selectedKey);
+        }
+
+        function setDictionaryOverlayOpen(isOpen) {
+          dictionaryOverlay.setAttribute("aria-hidden", String(!isOpen));
+        }
+
+        function updateDictionaryButtonVisibility() {
+          if (!dictionaryBtn) return;
+          const concepts = getSortedSessionConcepts();
+          const any = concepts.length > 0;
+          const inSession =
+            screenSocratic.getAttribute("aria-hidden") === "false" ||
+            screenTest.getAttribute("aria-hidden") === "false" ||
+            screenBetweenBlocks.getAttribute("aria-hidden") === "false";
+          const okBlock = activeBlockIndex >= 1;
+          dictionaryBtn.hidden = !(any && inSession && okBlock);
+        }
+
+        function renderBetweenBlocksDictionary({ nextBlockIndex }) {
+          const concepts = getSortedSessionConcepts();
+          const shouldShow = Number(nextBlockIndex) >= 1 && concepts.length > 0;
+          betweenBlocksDictionaryWrap.hidden = !shouldShow;
+          if (!shouldShow) return;
+          renderConceptDictionaryInto({
+            listEl: betweenBlocksDictList,
+            defEl: betweenBlocksDictDef,
+            concepts,
+          });
+        }
+
         function loadRsvpDefaultsFromStorage() {
           const storedWpm = localStorage.getItem(LS_RSVP_DEFAULT_WPM_KEY);
           const storedWpf = localStorage.getItem(LS_RSVP_DEFAULT_WPF_KEY);
@@ -1266,6 +1541,12 @@
             betweenBlocksError.textContent = "";
             betweenBlocksInput.value = "";
             setTimeout(() => betweenBlocksInput.focus(), 0);
+          }
+
+          try {
+            updateDictionaryButtonVisibility();
+          } catch {
+            // ignore
           }
 
           if (showSocratic) {
@@ -1425,6 +1706,11 @@
         }
 
         function showSessionComplete() {
+          try {
+            commitSessionConceptsForBlock(activeBlockIndex);
+          } catch {
+            // ignore concept commit errors
+          }
           showScreen("complete");
         }
 
@@ -1439,6 +1725,12 @@
           const nextTitle = getBlockTitleSafe(nextIndex);
           betweenBlocksHeader.textContent = "Before the next block";
           betweenBlocksMeta.textContent = `Next: Block ${nextIndex + 1} of ${total}: ${nextTitle}`;
+          try {
+            commitSessionConceptsForBlock(activeBlockIndex);
+          } catch {
+            // ignore concept commit errors
+          }
+          renderBetweenBlocksDictionary({ nextBlockIndex: nextIndex });
           showScreen("between");
         }
 
@@ -1592,6 +1884,37 @@
 
             lines.push("---");
             lines.push("");
+          }
+
+          try {
+            const raw = localStorage.getItem(LS_SESSION_CONCEPTS_KEY);
+            const arr = raw ? JSON.parse(raw) : null;
+            const concepts = Array.isArray(arr) ? arr : [];
+            const cleaned = concepts
+              .map((c) => (c && typeof c === "object" ? c : null))
+              .filter(Boolean)
+              .map((c) => ({
+                term: String(c.term || "").trim(),
+                definition: String(c.definition || "").trim(),
+              }))
+              .filter((c) => c.term);
+
+            if (cleaned.length) {
+              cleaned.sort((a, b) =>
+                a.term.localeCompare(b.term, undefined, { sensitivity: "base" }),
+              );
+              lines.push("## Concept Dictionary");
+              lines.push("| Term | Definition |");
+              lines.push("|------|------------|");
+              for (const c of cleaned) {
+                const t = c.term.replace(/\|/g, "\\|");
+                const d = (c.definition || "").replace(/\|/g, "\\|");
+                lines.push(`| ${t} | ${d} |`);
+              }
+              lines.push("");
+            }
+          } catch {
+            // ignore dictionary export errors
           }
 
           return lines.join("\n").trim() + "\n";
@@ -1995,6 +2318,11 @@
         }
 
         function startRsvpForText(explanationText, onDone) {
+          try {
+            setDictionaryOverlayOpen(false);
+          } catch {
+            // ignore
+          }
           const words = tokenizeWords(explanationText);
           rsvpState.words = words;
           rsvpState.chunks = chunkWords(words, rsvpState.wordsPerFlash);
@@ -2103,6 +2431,7 @@
           if (!cleaned.title) cleaned.title = blockTitle;
           if (!cleaned.explanation) cleaned.explanation = "";
           if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
+          if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
 
           if (!Array.isArray(activeSession.blocks)) activeSession.blocks = [];
           activeSession.blocks[blockIndex] = cleaned;
@@ -2709,12 +3038,18 @@ Return a single JSON object with this schema:
     options?: { A, B, C, D },
     answer?: string,
     feedback?: string
-  }]
+  }],
+  concepts: [
+    { term: string, definition: string }
+  ]
 }
 Respond entirely in {language}.
 Mode is {mode}. For test: 3-4 questions, 4 options (A/B/C/D), correct answer, brief feedback.
 For socratic: 2-3 open questions requiring reasoning or synthesis.
 Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.
+Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
+For each: the term exactly as used in the material, and a definition of max 15 words.
+Only include terms that are non-obvious or domain-specific. No common words.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
             .replace("{mode}", mode);
           const finalSystemPrompt = systemPrompt.replace(
@@ -3758,6 +4093,30 @@ Be concise and sharp, not encouraging.`;
 
         reviewSummaryNewBtn.addEventListener("click", () => {
           showReviewConfig();
+        });
+
+        dictionaryBtn.addEventListener("click", () => {
+          const concepts = getSortedSessionConcepts();
+          renderConceptDictionaryInto({
+            listEl: dictionaryOverlayList,
+            defEl: dictionaryOverlayDef,
+            concepts,
+          });
+          setDictionaryOverlayOpen(true);
+        });
+
+        dictionaryCloseBtn.addEventListener("click", () => {
+          setDictionaryOverlayOpen(false);
+        });
+
+        betweenBlocksDictionaryOpenBtn.addEventListener("click", () => {
+          const concepts = getSortedSessionConcepts();
+          renderConceptDictionaryInto({
+            listEl: dictionaryOverlayList,
+            defEl: dictionaryOverlayDef,
+            concepts,
+          });
+          setDictionaryOverlayOpen(true);
         });
 
         saveSessionBtn.addEventListener("click", () => {
