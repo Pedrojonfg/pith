@@ -723,6 +723,7 @@
               <div class="test-options" id="testOptions"></div>
               <div id="testFeedback" class="response-box" hidden></div>
               <div class="row">
+                <button type="button" id="testRestartBlockBtn">Restart block</button>
                 <button type="button" id="testNextBtn" hidden></button>
               </div>
             </div>
@@ -793,6 +794,8 @@
         const LS_ACTIVE_SESSION_KEY = "active_session";
         const LS_STUDY_LANG_KEY = "study_lang";
         const LS_BLOCK_INDEX_KEY = "block_index";
+        const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
+        const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
         const DS_CHAT_COMPLETIONS_URL =
           "https://api.deepseek.com/v1/chat/completions";
 
@@ -899,6 +902,7 @@
         const testQuestionText = document.getElementById("testQuestionText");
         const testOptions = document.getElementById("testOptions");
         const testFeedback = document.getElementById("testFeedback");
+        const testRestartBlockBtn = document.getElementById("testRestartBlockBtn");
         const testNextBtn = document.getElementById("testNextBtn");
         const testError = document.getElementById("testError");
 
@@ -928,6 +932,36 @@
           onDone: null,
           countdownActive: false,
         };
+
+        function clampInt(n, min, max, fallback) {
+          const x = Math.round(Number(n));
+          if (!Number.isFinite(x)) return fallback;
+          return Math.min(max, Math.max(min, x));
+        }
+
+        function loadRsvpDefaultsFromStorage() {
+          const storedWpm = localStorage.getItem(LS_RSVP_DEFAULT_WPM_KEY);
+          const storedWpf = localStorage.getItem(LS_RSVP_DEFAULT_WPF_KEY);
+          const wpm = clampInt(storedWpm, 100, 1000, 500);
+          const wpf = clampInt(storedWpf, 1, 3, 3);
+          rsvpState.wpm = wpm;
+          rsvpState.wordsPerFlash = wpf;
+          rsvpWpm.value = String(wpm);
+          rsvpWpmLabel.textContent = String(wpm);
+          setWpfUi(wpf);
+        }
+
+        function persistRsvpDefaults() {
+          try {
+            localStorage.setItem(LS_RSVP_DEFAULT_WPM_KEY, String(rsvpState.wpm));
+            localStorage.setItem(
+              LS_RSVP_DEFAULT_WPF_KEY,
+              String(rsvpState.wordsPerFlash),
+            );
+          } catch {
+            // ignore storage errors
+          }
+        }
 
         function initLanguageUi() {
           if (!languageSelect) return;
@@ -1659,6 +1693,7 @@
             if (rsvpState.idx < rsvpState.chunks.length) showCurrentRsvpChunk();
             if (rsvpState.playing) scheduleRsvpNext({ immediate: false });
           }
+          persistRsvpDefaults();
         }
 
         function showCurrentRsvpChunk() {
@@ -2503,6 +2538,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         modeTestBtn.addEventListener("click", () => setMode("test"));
         modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
         setMode("test");
+        loadRsvpDefaultsFromStorage();
 
         fileInput.addEventListener("change", async () => {
           if (!fileExtractHint) return;
@@ -2882,6 +2918,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           if (rsvpOverlay.getAttribute("aria-hidden") === "false" && rsvpState.playing) {
             scheduleRsvpNext({ immediate: false });
           }
+          persistRsvpDefaults();
         });
 
         rsvpWpf1.addEventListener("click", () => setWordsPerFlash(1));
@@ -2903,6 +2940,20 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           }
           showTestQuestions();
           renderTestQuestion();
+        });
+
+        testRestartBlockBtn.addEventListener("click", () => {
+          clearTestError();
+          testFeedback.hidden = true;
+          testFeedback.textContent = "";
+          beginRsvpForCurrentBlock({
+            onDone: () => {
+              showScreen("test");
+              updateStudyProgressUi();
+              showTestQuestions();
+              renderTestQuestion();
+            },
+          });
         });
 
         const hasStoredSession =
