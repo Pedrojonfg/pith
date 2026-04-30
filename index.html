@@ -580,8 +580,8 @@
           <div class="card">
             <h1>Blocks (edit if needed)</h1>
             <p>
-              This is the plain-text block list returned by DeepSeek. Next we’ll
-              use it to generate each block as you study.
+              This is the blocks JSON returned by DeepSeek (titles + summaries only
+              shown here). Next we’ll use it to generate each block as you study.
             </p>
             <textarea
               id="blocksListOutput"
@@ -792,6 +792,7 @@
         const LS_KEY = "ds_api_key";
         const LS_ACTIVE_SESSION_KEY = "active_session";
         const LS_STUDY_LANG_KEY = "study_lang";
+        const LS_BLOCK_INDEX_KEY = "block_index";
         const DS_CHAT_COMPLETIONS_URL =
           "https://api.deepseek.com/v1/chat/completions";
 
@@ -908,6 +909,7 @@
         let lastUploadedFileNames = [];
         let lastCleanedMaterialText = "";
         let lastCleanedMaterialWordCount = 0;
+        let lastBlockIndex = null;
         let activeSession = null;
         let activeBlockIndex = 0;
         let activeQuestionIndex = 0;
@@ -1045,6 +1047,36 @@
           return Array.isArray(activeSession?.blocks) ? activeSession.blocks : [];
         }
 
+        function loadBlockIndex() {
+          const raw = localStorage.getItem(LS_BLOCK_INDEX_KEY);
+          if (raw && raw.trim()) {
+            try {
+              const obj = JSON.parse(raw);
+              if (Array.isArray(obj)) return obj;
+            } catch {
+              // ignore
+            }
+          }
+          return null;
+        }
+
+        function getBlockIndexEntry(blockIndex) {
+          const id = Number(blockIndex) + 1;
+          const arr = loadBlockIndex();
+          if (!Array.isArray(arr)) return null;
+          return (
+            arr.find((b) => b && typeof b === "object" && Number(b.id) === id) ||
+            null
+          );
+        }
+
+        function getBlockChunkFromIndex(blockIndex) {
+          const entry = getBlockIndexEntry(blockIndex);
+          const chunk =
+            entry && typeof entry === "object" ? String(entry.chunk || "").trim() : "";
+          return chunk;
+        }
+
         function getTotalBlocksSafe() {
           const blocks = getBlocksSafe();
           const n = Number(activeSession?.n_blocks);
@@ -1069,6 +1101,62 @@
             map[String(idx)] = title;
           }
           return map;
+        }
+
+        function safeParseJson(text) {
+          const raw = String(text || "").trim();
+          if (!raw) return null;
+          try {
+            return JSON.parse(raw);
+          } catch {
+            return null;
+          }
+        }
+
+        function normalizeBlockIndexArray(arr) {
+          if (!Array.isArray(arr)) return null;
+          const out = [];
+          for (const item of arr) {
+            if (!item || typeof item !== "object") return null;
+            const id = Number(item.id);
+            const title = String(item.title || "").trim();
+            const summary = String(item.summary || "").trim();
+            const chunk = String(item.chunk || "").trim();
+            if (!Number.isFinite(id) || id <= 0) return null;
+            if (!title) return null;
+            if (!summary) return null;
+            if (!chunk) return null;
+            out.push({ id, title, summary, chunk });
+          }
+          out.sort((a, b) => a.id - b.id);
+          return out;
+        }
+
+        function formatBlockIndexForConfirmation(arr) {
+          const safe = Array.isArray(arr) ? arr : [];
+          const view = safe
+            .slice()
+            .sort((a, b) => Number(a.id) - Number(b.id))
+            .map((b) => ({
+              id: Number(b.id),
+              title: String(b.title || ""),
+              summary: String(b.summary || ""),
+            }));
+          return JSON.stringify(view, null, 2);
+        }
+
+        function blocksListTextFromBlockIndex(arr) {
+          const safe = Array.isArray(arr) ? arr : [];
+          const lines = safe
+            .slice()
+            .sort((a, b) => Number(a.id) - Number(b.id))
+            .map((b) => {
+              const id = Number(b.id);
+              const title = String(b.title || "").trim();
+              const summary = String(b.summary || "").trim();
+              return `${id}. ${title}${summary ? ` — ${summary}` : ""}`;
+            });
+          return lines.join("\n").trim();
         }
 
         function getBlockTitleFromList(blockIndex) {
@@ -1330,6 +1418,14 @@
           }
         }
 
+        function clearBlockIndexStorage() {
+          try {
+            localStorage.removeItem(LS_BLOCK_INDEX_KEY);
+          } catch {
+            // ignore
+          }
+        }
+
         function resetToNewSession() {
           stopTestRsvp();
           cancelRsvpTimer();
@@ -1340,6 +1436,7 @@
           studyMode = null;
           originalMaterialText = "";
           lastNBlocks = 0;
+          lastBlockIndex = null;
           activeSession = null;
           activeBlockIndex = 0;
           activeQuestionIndex = 0;
@@ -1355,6 +1452,7 @@
           clearTestError();
 
           clearActiveSessionStorage();
+          clearBlockIndexStorage();
           showScreen(getStoredKey() ? "create" : "setup");
         }
 
@@ -1668,11 +1766,7 @@
 
           const apiKey = getStoredKey();
           if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
-          if (!originalMaterialText.trim()) {
-            throw new Error(
-              "Missing original material for this session. Please re-upload and regenerate blocks.",
-            );
-          }
+          // Note: block generation uses per-block chunks from `block_index` now.
 
           const blocksListText = String(activeSession?.blocks_list_text || "").trim();
           if (!blocksListText) throw new Error("Missing confirmed blocks list.");
@@ -1685,12 +1779,16 @@
           const blockTitle = getBlockTitleFromList(blockIndex);
           const prevComment = String(activeSession?._pending_comment_for_next_block || "")
             .trim();
+          const materialChunk = getBlockChunkFromIndex(blockIndex);
+          if (!materialChunk) {
+            throw new Error("Missing block chunk for this session. Please regenerate blocks.");
+          }
 
           const obj = await deepSeekGenerateBlockJson({
             apiKey,
             mode,
             blocksListText,
-            materialText: originalMaterialText,
+            materialText: materialChunk,
             blockIndex,
             blockTitle,
             previousComment: prevComment,
@@ -2230,13 +2328,21 @@ Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
           nBlocks,
           materialText,
         }) {
-          const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a 
-university student. Return ONLY a numbered plain text list. Each item: block number, 
-a short title, and 2-3 sentences on what it covers. No JSON, no markdown headers. 
-Just the list.
+          const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a university student.
+Return ONLY valid JSON: an array of objects with this exact schema:
+[
+  { "id": 1, "title": "...", "summary": "2-3 sentence description", "chunk": "verbatim extracted text from the source material for this block" }
+]
+Rules:
+- The array length MUST equal {N}.
+- "id" MUST be 1..{N} in order.
+- "chunk" must be verbatim excerpts from the input material (no paraphrasing).
+- Do not include any extra keys.
+- Return ONLY JSON. No preamble, no backticks, no markdown fences.
 
 Respond entirely in {language}.`
-            .replace("{N}", String(nBlocks))
+            .split("{N}")
+            .join(String(nBlocks))
             .replace("{language}", getStudyLanguage());
 
           const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
@@ -2317,7 +2423,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
 
           const userContent = `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${
             Number(blockIndex) + 1
-          }. ${blockTitle}\n\nOriginal material:\n${materialText}${commentLine}`;
+          }. ${blockTitle}\n\nSource material (verbatim chunk for this block only):\n${materialText}${commentLine}`;
 
           const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
             method: "POST",
@@ -2424,6 +2530,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           lastUploadedFileNames = [];
           lastCleanedMaterialText = "";
           lastCleanedMaterialWordCount = 0;
+          lastBlockIndex = null;
 
           const apiKey = getStoredKey();
           if (!apiKey) {
@@ -2468,7 +2575,15 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
               materialText: cleanedText,
             });
 
-            blocksListOutput.value = blocksList;
+            const parsed = safeParseJson(blocksList);
+            const normalized = normalizeBlockIndexArray(parsed);
+            if (!normalized || normalized.length !== nBlocks) {
+              throw new Error(
+                "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
+              );
+            }
+            lastBlockIndex = normalized;
+            blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
             showScreen("blocks");
           } catch (err) {
             setGenerateError(err?.message ? String(err.message) : String(err));
@@ -2486,12 +2601,6 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           if (!apiKey) {
             setConfirmError("Missing API key. Click “Change API key” to set it.");
             showScreen("setup");
-            return;
-          }
-
-          const confirmedBlocksListText = (blocksListOutput.value || "").trim();
-          if (!confirmedBlocksListText) {
-            setConfirmError("Blocks list is empty.");
             return;
           }
 
@@ -2514,6 +2623,64 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           confirmBlocksStatus.textContent = "Saving blocks list…";
 
           try {
+            if (!lastBlockIndex || !Array.isArray(lastBlockIndex)) {
+              throw new Error("Missing generated blocks. Please regenerate blocks.");
+            }
+
+            const edited = safeParseJson(blocksListOutput.value || "");
+            if (!Array.isArray(edited)) {
+              throw new Error(
+                "Blocks must be valid JSON (array of {id,title,summary}). Please fix and try again.",
+              );
+            }
+
+            const editedMap = new Map();
+            for (const item of edited) {
+              if (!item || typeof item !== "object") {
+                throw new Error("Each block must be an object with {id,title,summary}.");
+              }
+              const id = Number(item.id);
+              const title = String(item.title || "").trim();
+              const summary = String(item.summary || "").trim();
+              if (!Number.isFinite(id) || id <= 0) {
+                throw new Error("Each block must have a numeric id.");
+              }
+              if (!title) throw new Error(`Block ${id} is missing a title.`);
+              if (!summary) throw new Error(`Block ${id} is missing a summary.`);
+              editedMap.set(id, { id, title, summary });
+            }
+
+            const merged = [];
+            for (const b of lastBlockIndex) {
+              const id = Number(b.id);
+              const e = editedMap.get(id);
+              if (!e) {
+                throw new Error(
+                  `Missing block id ${id} in the edited list. Keep all ids 1..${nBlocks}.`,
+                );
+              }
+              merged.push({
+                id,
+                title: e.title,
+                summary: e.summary,
+                chunk: String(b.chunk || ""),
+              });
+            }
+            merged.sort((a, b) => a.id - b.id);
+            if (merged.length !== nBlocks) {
+              throw new Error(
+                `Expected ${nBlocks} blocks, but found ${merged.length}.`,
+              );
+            }
+            for (let i = 0; i < merged.length; i += 1) {
+              if (merged[i].id !== i + 1) {
+                throw new Error(`Block ids must be 1..${nBlocks} in order.`);
+              }
+            }
+
+            localStorage.setItem(LS_BLOCK_INDEX_KEY, JSON.stringify(merged));
+            const confirmedBlocksListText = blocksListTextFromBlockIndex(merged);
+
             const sessionObj = initActiveSessionFromBlocksList({
               mode: sessionMode,
               nBlocks,
