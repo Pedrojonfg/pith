@@ -453,6 +453,7 @@
         <div class="rowline">
           <span id="studyProgressLabel">Block 1 of 1</span>
           <span id="studyProgressTitle"></span>
+          <button type="button" id="saveSessionInlineBtn">Save session</button>
         </div>
         <div class="bar" aria-hidden="true">
           <div id="studyProgressFill" class="fill"></div>
@@ -796,6 +797,7 @@
         const LS_BLOCK_INDEX_KEY = "block_index";
         const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
         const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
+        const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
         const DS_CHAT_COMPLETIONS_URL =
           "https://api.deepseek.com/v1/chat/completions";
 
@@ -825,6 +827,7 @@
         const studyProgressLabel = document.getElementById("studyProgressLabel");
         const studyProgressTitle = document.getElementById("studyProgressTitle");
         const studyProgressFill = document.getElementById("studyProgressFill");
+        const saveSessionInlineBtn = document.getElementById("saveSessionInlineBtn");
         const saveSessionBtn = document.getElementById("saveSessionBtn");
 
         const generateBlocksForm = document.getElementById("generateBlocksForm");
@@ -1244,7 +1247,7 @@
             activeBlockIndex = nextIndex;
             activeQuestionIndex = 0;
             activeSession.current_block_index = activeBlockIndex;
-            storeActiveSession(activeSession);
+            storeActiveSession(activeSession, { bumpRev: true });
             updateStudyProgressUi();
             if (studyMode === "socratic") {
               showScreen("socratic");
@@ -1266,6 +1269,15 @@
           if (!activeSession || typeof activeSession !== "object") return;
           if (!activeSession._meta || typeof activeSession._meta !== "object") {
             activeSession._meta = {};
+          }
+          if (!activeSession._meta.session_id) {
+            activeSession._meta.session_id =
+              typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                ? crypto.randomUUID()
+                : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+          }
+          if (activeSession._meta.rev == null) {
+            activeSession._meta.rev = 0;
           }
           if (!activeSession._meta.started_at) {
             activeSession._meta.started_at = new Date().toISOString();
@@ -1312,7 +1324,7 @@
             correct_answer: correctAnswer,
             answered_at: new Date().toISOString(),
           };
-          storeActiveSession(activeSession);
+          storeActiveSession(activeSession, { bumpRev: true });
         }
 
         function buildMarkdown(session) {
@@ -1432,9 +1444,42 @@
           return "study-session";
         }
 
+        function getLastExportState() {
+          const raw = localStorage.getItem(LS_LAST_EXPORT_STATE_KEY);
+          if (!raw || !raw.trim()) return null;
+          try {
+            const obj = JSON.parse(raw);
+            if (!obj || typeof obj !== "object") return null;
+            const sessionId = String(obj.session_id || "").trim();
+            const rev = Number(obj.rev);
+            if (!sessionId) return null;
+            if (!Number.isFinite(rev) || rev < 0) return null;
+            return { sessionId, rev };
+          } catch {
+            return null;
+          }
+        }
+
+        function setLastExportState({ sessionId, rev }) {
+          try {
+            localStorage.setItem(
+              LS_LAST_EXPORT_STATE_KEY,
+              JSON.stringify({ session_id: sessionId, rev }),
+            );
+          } catch {
+            // ignore
+          }
+        }
+
         function exportSessionMarkdown() {
           if (!activeSession) return;
           ensureSessionResponseState();
+          const sessionId = String(activeSession?._meta?.session_id || "");
+          const rev = Number(activeSession?._meta?.rev || 0);
+          const last = getLastExportState();
+          if (last && last.sessionId === sessionId && last.rev === rev) {
+            return;
+          }
           const md = buildMarkdown(activeSession);
           const ts = formatExportTimestamp(new Date());
           const stem = getExportFilenameStem();
@@ -1442,6 +1487,9 @@
             filename: `${stem}_${ts}.md`,
             text: md,
           });
+          if (sessionId && Number.isFinite(rev)) {
+            setLastExportState({ sessionId, rev });
+          }
         }
 
         function clearActiveSessionStorage() {
@@ -1516,7 +1564,20 @@
           localStorage.setItem(LS_KEY, key);
         }
 
-        function storeActiveSession(sessionObj) {
+        function storeActiveSession(sessionObj, { bumpRev } = {}) {
+          if (bumpRev && sessionObj && typeof sessionObj === "object") {
+            if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
+              sessionObj._meta = {};
+            }
+            if (!sessionObj._meta.session_id) {
+              sessionObj._meta.session_id =
+                typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+                  ? crypto.randomUUID()
+                  : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            }
+            const prev = Number(sessionObj._meta.rev || 0);
+            sessionObj._meta.rev = Number.isFinite(prev) && prev >= 0 ? prev + 1 : 1;
+          }
           localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(sessionObj));
         }
 
@@ -1843,7 +1904,7 @@
           activeSession.blocks[blockIndex] = cleaned;
           activeSession.current_block_index = blockIndex;
           activeSession._pending_comment_for_next_block = "";
-          storeActiveSession(activeSession);
+          storeActiveSession(activeSession, { bumpRev: true });
           return cleaned;
         }
 
@@ -2897,6 +2958,12 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         saveSessionBtn.addEventListener("click", () => {
           exportSessionMarkdown();
         });
+
+        if (saveSessionInlineBtn) {
+          saveSessionInlineBtn.addEventListener("click", () => {
+            exportSessionMarkdown();
+          });
+        }
 
         window.addEventListener("beforeunload", () => {
           exportSessionMarkdown();
