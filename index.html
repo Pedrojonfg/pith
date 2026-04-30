@@ -1,0 +1,2140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Study App</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f0f0f;
+        --fg: #ffffff;
+        --muted: rgba(255, 255, 255, 0.72);
+        --border: rgba(255, 255, 255, 0.14);
+        --panel: rgba(255, 255, 255, 0.04);
+        --focus: rgba(255, 255, 255, 0.24);
+        --accent: #7dd3fc;
+        --good: rgba(34, 197, 94, 0.9);
+        --bad: rgba(248, 113, 113, 0.95);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
+          Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        line-height: 1.5;
+        overflow-x: hidden;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+      a:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+
+      .corner-link {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        background: rgba(15, 15, 15, 0.6);
+        backdrop-filter: blur(10px);
+        border-radius: 10px;
+        font-size: 14px;
+      }
+
+      main {
+        min-height: 100%;
+        display: grid;
+        place-items: center;
+        padding: 24px 16px;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      .card {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        border-radius: 16px;
+        padding: 20px;
+      }
+
+      h1 {
+        margin: 0 0 8px 0;
+        font-size: 22px;
+        letter-spacing: -0.01em;
+      }
+
+      p {
+        margin: 0 0 16px 0;
+        color: var(--muted);
+      }
+
+      label {
+        display: block;
+        font-size: 14px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      input[type="password"],
+      input[type="text"] {
+        width: 100%;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--fg);
+        font-size: 16px;
+        outline: none;
+      }
+
+      input[type="password"]:focus,
+      input[type="text"]:focus {
+        border-color: var(--focus);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+      }
+
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-top: 12px;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--fg);
+        padding: 11px 14px;
+        border-radius: 12px;
+        font-size: 15px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      button:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: 2px;
+      }
+
+      .hint {
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .error {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(248, 113, 113, 0.35);
+        background: rgba(248, 113, 113, 0.08);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 14px;
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--border);
+        margin: 16px 0;
+      }
+
+      .toggle {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      .toggle button {
+        border: 0;
+        border-radius: 0;
+        padding: 10px 12px;
+        background: transparent;
+      }
+
+      .toggle button[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 260px;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--fg);
+        font-size: 14px;
+        line-height: 1.5;
+        resize: vertical;
+        outline: none;
+      }
+
+      textarea:focus {
+        border-color: var(--focus);
+        box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+      }
+
+      .screen {
+        display: none;
+      }
+      .screen[aria-hidden="false"] {
+        display: block;
+      }
+
+      /* RSVP reader overlay */
+      .rsvp-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1000;
+        display: none;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      .rsvp-overlay[aria-hidden="false"] {
+        display: flex;
+        flex-direction: column;
+      }
+      .rsvp-stage {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        padding: 24px 18px;
+        text-align: center;
+      }
+      .rsvp-chunk {
+        font-size: 3rem;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        max-width: 980px;
+        word-break: break-word;
+      }
+      .rsvp-controls {
+        border-top: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(12px);
+        padding: 12px 14px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+      }
+      .rsvp-controls .group {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .rsvp-controls .label {
+        font-size: 13px;
+        color: var(--muted);
+        margin-right: 4px;
+      }
+      input[type="range"] {
+        accent-color: var(--accent);
+      }
+      .rsvp-wpm {
+        min-width: 120px;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      body.rsvp-active {
+        overflow: hidden;
+      }
+
+      .question-title {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+
+      .question-text {
+        font-size: 15px;
+        color: rgba(255, 255, 255, 0.92);
+        margin: 0 0 12px 0;
+        white-space: pre-wrap;
+      }
+
+      .answer-textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      .response-box {
+        margin-top: 12px;
+        padding: 12px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(125, 211, 252, 0.35);
+        background: rgba(125, 211, 252, 0.08);
+        color: rgba(255, 255, 255, 0.92);
+        font-size: 14px;
+        white-space: pre-wrap;
+      }
+
+      .subtle {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .test-rsvp-stage {
+        display: grid;
+        place-items: center;
+        min-height: 260px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.12);
+        padding: 16px;
+      }
+
+      .test-rsvp-word {
+        font-size: clamp(36px, 5vw, 64px);
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        text-align: center;
+        line-height: 1.05;
+        padding: 8px 12px;
+      }
+
+      .test-question {
+        font-size: clamp(20px, 2.4vw, 30px);
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        text-align: center;
+        margin: 8px 0 0 0;
+      }
+
+      .test-options {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      @media (min-width: 560px) {
+        .test-options {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      .test-options button {
+        text-align: left;
+        padding: 12px 14px;
+        border-radius: 14px;
+        min-height: 54px;
+      }
+
+      .test-options button[disabled] {
+        cursor: default;
+        opacity: 0.92;
+      }
+
+      .test-options button.is-correct {
+        border-color: rgba(34, 197, 94, 0.6);
+        background: rgba(34, 197, 94, 0.16);
+      }
+
+      .test-options button.is-wrong {
+        border-color: rgba(248, 113, 113, 0.6);
+        background: rgba(248, 113, 113, 0.14);
+      }
+
+      /* Study progress bar (visible during study only) */
+      .study-progress {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 20;
+        padding: 10px 14px 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(15, 15, 15, 0.72);
+        backdrop-filter: blur(10px);
+        display: none;
+      }
+      .study-progress[aria-hidden="false"] {
+        display: block;
+      }
+      .study-progress .rowline {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .study-progress .bar {
+        margin-top: 8px;
+        height: 8px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        overflow: hidden;
+      }
+      .study-progress .fill {
+        height: 100%;
+        width: 0%;
+        background: rgba(125, 211, 252, 0.55);
+      }
+
+      /* Make room for fixed progress bar during study */
+      body.study-active main {
+        padding-top: 64px;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="#" id="changeKeyLink" class="corner-link">Change API key</a>
+
+    <div
+      id="studyProgress"
+      class="study-progress"
+      aria-hidden="true"
+      aria-label="Study progress"
+    >
+      <div class="container" style="max-width: 720px">
+        <div class="rowline">
+          <span id="studyProgressLabel">Block 1 of 1</span>
+          <span id="studyProgressTitle"></span>
+        </div>
+        <div class="bar" aria-hidden="true">
+          <div id="studyProgressFill" class="fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <main>
+      <div class="container">
+        <section
+          id="screenApiSetup"
+          class="screen"
+          aria-hidden="true"
+          aria-label="API Setup"
+        >
+          <div class="card">
+            <h1>DeepSeek API key</h1>
+            <p>
+              Paste your DeepSeek API key to continue. It will be stored locally
+              in this browser.
+            </p>
+
+            <form id="apiKeyForm" autocomplete="off">
+              <label for="apiKeyInput">API key</label>
+              <input
+                id="apiKeyInput"
+                name="apiKey"
+                type="password"
+                inputmode="text"
+                spellcheck="false"
+                autocapitalize="none"
+                autocomplete="off"
+                placeholder="sk-…"
+                required
+              />
+              <div class="row">
+                <button type="submit">Save</button>
+                <span class="hint" id="apiKeyStatus" role="status"></span>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section
+          id="screenPlaceholder"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Placeholder"
+        >
+          <div class="card">
+            <h1>Create a study session</h1>
+            <p>Upload your material, choose a mode, and generate blocks.</p>
+
+            <form id="generateBlocksForm">
+              <label for="fileInput">File</label>
+              <input
+                id="fileInput"
+                name="file"
+                type="file"
+                accept=".pdf,.html,.txt"
+                required
+              />
+
+              <div class="divider"></div>
+
+              <label for="blocksInput">Blocks</label>
+              <input
+                id="blocksInput"
+                name="blocks"
+                type="number"
+                min="5"
+                max="60"
+                step="1"
+                value="20"
+                required
+              />
+
+              <div class="divider"></div>
+
+              <label>Mode</label>
+              <div class="row" style="margin-top: 0">
+                <div class="toggle" role="group" aria-label="Mode selector">
+                  <button
+                    type="button"
+                    id="modeTestBtn"
+                    aria-pressed="true"
+                  >
+                    Test
+                  </button>
+                  <button
+                    type="button"
+                    id="modeSocraticBtn"
+                    aria-pressed="false"
+                  >
+                    Socratic
+                  </button>
+                </div>
+                <span class="hint" id="modeHint"></span>
+              </div>
+
+              <div class="row">
+                <button type="submit" id="generateBlocksBtn">
+                  Generate blocks
+                </button>
+                <span class="hint" id="generateBlocksStatus" role="status"></span>
+              </div>
+
+              <div id="generateBlocksError" class="error" hidden></div>
+            </form>
+          </div>
+        </section>
+
+        <section
+          id="screenBlocksList"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Blocks list"
+        >
+          <div class="card">
+            <h1>Blocks (edit if needed)</h1>
+            <p>
+              This is the plain-text block list returned by DeepSeek. Next we’ll
+              use it to generate the full session JSON.
+            </p>
+            <textarea
+              id="blocksListOutput"
+              spellcheck="false"
+              autocapitalize="none"
+            ></textarea>
+
+            <div class="row">
+              <button type="button" id="confirmBlocksBtn">
+                Looks good, generate session
+              </button>
+              <span class="hint" id="confirmBlocksStatus" role="status"></span>
+            </div>
+
+            <div id="confirmBlocksError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenSessionReady"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Session ready"
+        >
+          <div class="card">
+            <h1>Session ready</h1>
+            <p id="sessionReadyMeta">Session ready.</p>
+            <div class="row">
+              <button type="button" id="startStudyingBtn">Start studying</button>
+              <span class="hint" id="startStudyingStatus" role="status"></span>
+            </div>
+            <div id="startStudyingError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenSocratic"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Socratic questions"
+        >
+          <div class="card">
+            <h1 id="socraticHeader">Socratic</h1>
+            <p class="subtle" id="socraticMeta"></p>
+
+            <div class="divider"></div>
+
+            <div>
+              <div class="question-title" id="socraticQuestionTitle"></div>
+              <div class="question-text" id="socraticQuestionText"></div>
+
+              <label for="socraticAnswer">Your answer</label>
+              <textarea
+                id="socraticAnswer"
+                class="answer-textarea"
+                spellcheck="true"
+              ></textarea>
+
+              <div class="row">
+                <button type="button" id="socraticSubmitBtn">Submit</button>
+                <button type="button" id="socraticNextQuestionBtn" hidden>
+                  Next question
+                </button>
+                <button type="button" id="socraticNextBlockBtn" hidden>
+                  Next block
+                </button>
+                <span class="hint" id="socraticStatus" role="status"></span>
+              </div>
+
+              <div id="socraticResponseBox" class="response-box" hidden></div>
+              <div id="socraticError" class="error" hidden></div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenTest"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Test questions"
+        >
+          <div class="card">
+            <h1 id="testHeader">Test</h1>
+            <p class="subtle" id="testMeta"></p>
+
+            <div class="divider"></div>
+
+            <div id="testRsvpView">
+              <div class="test-rsvp-stage" aria-label="RSVP reader">
+                <div
+                  class="test-rsvp-word"
+                  id="testRsvpWord"
+                  aria-live="polite"
+                ></div>
+              </div>
+              <div class="row">
+                <button type="button" id="testRsvpStartBtn">Start RSVP</button>
+                <button type="button" id="testRsvpSkipBtn">
+                  Skip to questions
+                </button>
+                <span class="hint" id="testRsvpStatus" role="status"></span>
+              </div>
+            </div>
+
+            <div id="testQaView" hidden>
+              <div class="test-question" id="testQuestionText"></div>
+              <div class="test-options" id="testOptions"></div>
+              <div id="testFeedback" class="response-box" hidden></div>
+              <div class="row">
+                <button type="button" id="testNextBtn" hidden></button>
+              </div>
+            </div>
+
+            <div id="testError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenComplete"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Session complete"
+        >
+          <div class="card" style="text-align: center; padding: 44px 20px">
+            <h1>Session complete</h1>
+            <p>You’re done. Save your session when you’re ready.</p>
+            <div class="row" style="justify-content: center">
+              <button type="button" id="saveSessionBtn">Save session</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <div
+      id="rsvpOverlay"
+      class="rsvp-overlay"
+      aria-hidden="true"
+      aria-label="RSVP reader"
+    >
+      <div class="rsvp-stage" role="application" aria-label="RSVP stage">
+        <div id="rsvpChunk" class="rsvp-chunk"></div>
+      </div>
+      <div class="rsvp-controls">
+        <div class="group">
+          <span class="label">WPM</span>
+          <input
+            id="rsvpWpm"
+            type="range"
+            min="100"
+            max="1000"
+            step="10"
+            value="500"
+            aria-label="Words per minute"
+          />
+          <span id="rsvpWpmLabel" class="rsvp-wpm">500</span>
+        </div>
+        <div class="group">
+          <span class="label">Words/flash</span>
+          <div class="toggle" role="group" aria-label="Words per flash">
+            <button type="button" id="rsvpWpf1" aria-pressed="false">1</button>
+            <button type="button" id="rsvpWpf2" aria-pressed="false">2</button>
+            <button type="button" id="rsvpWpf3" aria-pressed="true">3</button>
+          </div>
+        </div>
+        <div class="group">
+          <button type="button" id="rsvpPlayPauseBtn">Pause</button>
+          <button type="button" id="rsvpSkipBtn">Skip to questions</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        const LS_KEY = "ds_api_key";
+        const LS_ACTIVE_SESSION_KEY = "active_session";
+        const DS_CHAT_COMPLETIONS_URL =
+          "https://api.deepseek.com/v1/chat/completions";
+
+        const changeKeyLink = document.getElementById("changeKeyLink");
+        const screenApiSetup = document.getElementById("screenApiSetup");
+        const screenPlaceholder = document.getElementById("screenPlaceholder");
+        const apiKeyForm = document.getElementById("apiKeyForm");
+        const apiKeyInput = document.getElementById("apiKeyInput");
+        const apiKeyStatus = document.getElementById("apiKeyStatus");
+        const screenBlocksList = document.getElementById("screenBlocksList");
+        const screenSessionReady = document.getElementById("screenSessionReady");
+        const screenSocratic = document.getElementById("screenSocratic");
+        const screenTest = document.getElementById("screenTest");
+        const screenComplete = document.getElementById("screenComplete");
+
+        const studyProgress = document.getElementById("studyProgress");
+        const studyProgressLabel = document.getElementById("studyProgressLabel");
+        const studyProgressTitle = document.getElementById("studyProgressTitle");
+        const studyProgressFill = document.getElementById("studyProgressFill");
+        const saveSessionBtn = document.getElementById("saveSessionBtn");
+
+        const generateBlocksForm = document.getElementById("generateBlocksForm");
+        const fileInput = document.getElementById("fileInput");
+        const blocksInput = document.getElementById("blocksInput");
+        const modeTestBtn = document.getElementById("modeTestBtn");
+        const modeSocraticBtn = document.getElementById("modeSocraticBtn");
+        const modeHint = document.getElementById("modeHint");
+        const generateBlocksBtn = document.getElementById("generateBlocksBtn");
+        const generateBlocksStatus = document.getElementById(
+          "generateBlocksStatus",
+        );
+        const generateBlocksError =
+          document.getElementById("generateBlocksError");
+        const blocksListOutput = document.getElementById("blocksListOutput");
+        const confirmBlocksBtn = document.getElementById("confirmBlocksBtn");
+        const confirmBlocksStatus = document.getElementById(
+          "confirmBlocksStatus",
+        );
+        const confirmBlocksError = document.getElementById("confirmBlocksError");
+        const sessionReadyMeta = document.getElementById("sessionReadyMeta");
+        const startStudyingBtn = document.getElementById("startStudyingBtn");
+        const startStudyingStatus =
+          document.getElementById("startStudyingStatus");
+        const startStudyingError = document.getElementById("startStudyingError");
+
+        const socraticHeader = document.getElementById("socraticHeader");
+        const socraticMeta = document.getElementById("socraticMeta");
+        const socraticQuestionTitle = document.getElementById(
+          "socraticQuestionTitle",
+        );
+        const socraticQuestionText =
+          document.getElementById("socraticQuestionText");
+        const socraticAnswer = document.getElementById("socraticAnswer");
+        const socraticSubmitBtn = document.getElementById("socraticSubmitBtn");
+        const socraticNextQuestionBtn = document.getElementById(
+          "socraticNextQuestionBtn",
+        );
+        const socraticNextBlockBtn =
+          document.getElementById("socraticNextBlockBtn");
+        const socraticStatus = document.getElementById("socraticStatus");
+        const socraticResponseBox =
+          document.getElementById("socraticResponseBox");
+        const socraticError = document.getElementById("socraticError");
+
+        const rsvpOverlay = document.getElementById("rsvpOverlay");
+        const rsvpChunk = document.getElementById("rsvpChunk");
+        const rsvpWpm = document.getElementById("rsvpWpm");
+        const rsvpWpmLabel = document.getElementById("rsvpWpmLabel");
+        const rsvpWpf1 = document.getElementById("rsvpWpf1");
+        const rsvpWpf2 = document.getElementById("rsvpWpf2");
+        const rsvpWpf3 = document.getElementById("rsvpWpf3");
+        const rsvpPlayPauseBtn = document.getElementById("rsvpPlayPauseBtn");
+        const rsvpSkipBtn = document.getElementById("rsvpSkipBtn");
+
+        const testHeader = document.getElementById("testHeader");
+        const testMeta = document.getElementById("testMeta");
+        const testRsvpView = document.getElementById("testRsvpView");
+        const testRsvpWord = document.getElementById("testRsvpWord");
+        const testRsvpStartBtn = document.getElementById("testRsvpStartBtn");
+        const testRsvpSkipBtn = document.getElementById("testRsvpSkipBtn");
+        const testRsvpStatus = document.getElementById("testRsvpStatus");
+        const testQaView = document.getElementById("testQaView");
+        const testQuestionText = document.getElementById("testQuestionText");
+        const testOptions = document.getElementById("testOptions");
+        const testFeedback = document.getElementById("testFeedback");
+        const testNextBtn = document.getElementById("testNextBtn");
+        const testError = document.getElementById("testError");
+
+        let sessionMode = "test";
+        let studyMode = null;
+        let originalMaterialText = "";
+        let lastNBlocks = 0;
+        let activeSession = null;
+        let activeBlockIndex = 0;
+        let activeQuestionIndex = 0;
+        let testRsvpTimer = null;
+        let testRsvpWords = [];
+        let testRsvpWordIndex = 0;
+
+        const rsvpState = {
+          words: [],
+          chunks: [],
+          idx: 0,
+          playing: true,
+          wpm: 500,
+          wordsPerFlash: 3,
+          timerId: null,
+          onDone: null,
+        };
+
+        function showScreen(which) {
+          const showSetup = which === "setup";
+          const showCreate = which === "create";
+          const showBlocks = which === "blocks";
+          const showReady = which === "ready";
+          const showSocratic = which === "socratic";
+          const showTest = which === "test";
+          const showComplete = which === "complete";
+          const showStudyProgress = showSocratic || showTest;
+
+          screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
+          screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
+          screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
+          screenSessionReady.setAttribute("aria-hidden", String(!showReady));
+          screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
+          screenTest.setAttribute("aria-hidden", String(!showTest));
+          screenComplete.setAttribute("aria-hidden", String(!showComplete));
+
+          studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
+          document.body.classList.toggle("study-active", showStudyProgress);
+
+          if (showSetup) {
+            apiKeyInput.value = "";
+            apiKeyStatus.textContent = "";
+            setTimeout(() => apiKeyInput.focus(), 0);
+          }
+
+          if (showCreate) {
+            clearGenerateError();
+            generateBlocksStatus.textContent = "";
+            setTimeout(() => fileInput.focus(), 0);
+          }
+
+          if (showBlocks) {
+            clearConfirmError();
+            confirmBlocksStatus.textContent = "";
+            setTimeout(() => blocksListOutput.focus(), 0);
+          }
+
+          if (showReady) {
+            startStudyingStatus.textContent = "";
+            startStudyingError.hidden = true;
+            startStudyingError.textContent = "";
+          }
+
+          if (showSocratic) {
+            socraticStatus.textContent = "";
+            clearSocraticError();
+          }
+
+          if (showTest) {
+            testRsvpStatus.textContent = "";
+            testError.hidden = true;
+            testError.textContent = "";
+            testFeedback.hidden = true;
+            testFeedback.textContent = "";
+            testNextBtn.hidden = true;
+            testNextBtn.textContent = "";
+          }
+        }
+
+        function getBlocksSafe() {
+          return Array.isArray(activeSession?.blocks) ? activeSession.blocks : [];
+        }
+
+        function updateStudyProgressUi() {
+          const blocks = getBlocksSafe();
+          const total = Math.max(1, blocks.length);
+          const idx = Math.min(Math.max(0, activeBlockIndex), total - 1);
+          const block = blocks[idx];
+          const title = String(block?.title || "");
+          studyProgressLabel.textContent = `Block ${idx + 1} of ${total}`;
+          studyProgressTitle.textContent = title;
+          const pct = ((idx + 1) / total) * 100;
+          studyProgressFill.style.width = `${pct}%`;
+        }
+
+        function showSessionComplete() {
+          showScreen("complete");
+        }
+
+        function ensureSessionResponseState() {
+          if (!activeSession || typeof activeSession !== "object") return;
+          if (!activeSession._meta || typeof activeSession._meta !== "object") {
+            activeSession._meta = {};
+          }
+          if (!activeSession._meta.started_at) {
+            activeSession._meta.started_at = new Date().toISOString();
+          }
+          if (
+            !activeSession._responses ||
+            typeof activeSession._responses !== "object"
+          ) {
+            activeSession._responses = { blocks: {} };
+          }
+          if (
+            !activeSession._responses.blocks ||
+            typeof activeSession._responses.blocks !== "object"
+          ) {
+            activeSession._responses.blocks = {};
+          }
+        }
+
+        function recordResponse({
+          blockIndex,
+          questionIndex,
+          questionType,
+          questionText,
+          userAnswer,
+          feedback,
+          correctAnswer,
+        }) {
+          ensureSessionResponseState();
+          const blocks = activeSession?._responses?.blocks;
+          if (!blocks || typeof blocks !== "object") return;
+          const bKey = String(blockIndex);
+          const qKey = String(questionIndex);
+          if (!blocks[bKey] || typeof blocks[bKey] !== "object") {
+            blocks[bKey] = { questions: {} };
+          }
+          if (!blocks[bKey].questions || typeof blocks[bKey].questions !== "object") {
+            blocks[bKey].questions = {};
+          }
+          blocks[bKey].questions[qKey] = {
+            type: questionType,
+            question: questionText,
+            user_answer: userAnswer,
+            feedback: feedback,
+            correct_answer: correctAnswer,
+            answered_at: new Date().toISOString(),
+          };
+          storeActiveSession(activeSession);
+        }
+
+        function buildMarkdown(session) {
+          const safe = session && typeof session === "object" ? session : {};
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const mode = String(safe.session_mode || "");
+          const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+          const respBlocks =
+            safe._responses?.blocks && typeof safe._responses.blocks === "object"
+              ? safe._responses.blocks
+              : {};
+
+          const lines = [];
+          lines.push(`# Study Session — ${dateStr}`);
+          lines.push(`Mode: ${mode}`);
+          lines.push("");
+
+          for (let bi = 0; bi < blocks.length; bi += 1) {
+            const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : {};
+            const title = String(b.title || `Block ${bi + 1}`);
+            const explanation = String(b.explanation || "").trim();
+            lines.push(`## Block ${bi + 1}: ${title}`);
+            lines.push(explanation || "");
+            lines.push("");
+            lines.push("### Questions & Answers");
+
+            const qs = Array.isArray(b.questions) ? b.questions : [];
+            const qResp =
+              respBlocks[String(bi)]?.questions &&
+              typeof respBlocks[String(bi)].questions === "object"
+                ? respBlocks[String(bi)].questions
+                : {};
+
+            for (let qi = 0; qi < qs.length; qi += 1) {
+              const q = qs[qi] && typeof qs[qi] === "object" ? qs[qi] : {};
+              const qText = String(q.question || "").trim();
+              const r = qResp[String(qi)] || {};
+              const userAns =
+                r.user_answer != null ? String(r.user_answer).trim() : "";
+              const fb = r.feedback != null ? String(r.feedback).trim() : "";
+              const correct =
+                r.correct_answer != null ? String(r.correct_answer).trim() : "";
+
+              lines.push(`**Q:** ${qText}`);
+              lines.push(`**A (user):** ${userAns || ""}`);
+
+              const fbLine = fb
+                ? correct
+                  ? `${fb} (Correct: ${correct})`
+                  : fb
+                : correct
+                  ? correct
+                  : "";
+              lines.push(`**Feedback:** ${fbLine}`);
+              lines.push("");
+            }
+
+            lines.push("---");
+            lines.push("");
+          }
+
+          return lines.join("\n").trim() + "\n";
+        }
+
+        function downloadTextFile({ filename, text }) {
+          const blob = new Blob([String(text || "")], { type: "text/markdown" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 0);
+        }
+
+        function exportSessionMarkdown() {
+          if (!activeSession) return;
+          ensureSessionResponseState();
+          const md = buildMarkdown(activeSession);
+          const ts = Date.now();
+          downloadTextFile({
+            filename: `study-session-${ts}.md`,
+            text: md,
+          });
+        }
+
+        function getStoredKey() {
+          const v = localStorage.getItem(LS_KEY);
+          if (!v) return null;
+          const trimmed = v.trim();
+          return trimmed.length ? trimmed : null;
+        }
+
+        function saveKey(key) {
+          localStorage.setItem(LS_KEY, key);
+        }
+
+        function storeActiveSession(sessionObj) {
+          localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(sessionObj));
+        }
+
+        function getMockSessionSocratic() {
+          const words = [];
+          for (let i = 1; i <= 200; i += 1) words.push(`word${i}`);
+          return {
+            session_mode: "socratic",
+            blocks: [
+              {
+                id: 1,
+                title: "Mock block: Active recall basics",
+                explanation:
+                  "This is standalone mock data to test the RSVP reader without the full flow. " +
+                  words.join(" "),
+                questions: [
+                  {
+                    type: "socratic",
+                    question:
+                      "Explain why recognition (re-reading) can feel effective but often fails to build durable memory. What would you do instead?",
+                  },
+                  {
+                    type: "socratic",
+                    question:
+                      "Design a 10-minute study loop using retrieval practice for a topic you learned today. Be specific about steps and timing.",
+                  },
+                ],
+              },
+            ],
+          };
+        }
+
+        function getMockSessionTest() {
+          const words = [];
+          for (let i = 1; i <= 200; i += 1) words.push(`word${i}`);
+          return {
+            session_mode: "test",
+            blocks: [
+              {
+                id: 1,
+                title: "Mock block: Active recall basics",
+                explanation:
+                  "This is standalone mock data to test the RSVP reader without the full flow. " +
+                  words.join(" "),
+                questions: [
+                  {
+                    type: "test",
+                    question: "What is active recall primarily about?",
+                    options: {
+                      A: "Highlighting key phrases repeatedly",
+                      B: "Retrieving information from memory",
+                      C: "Copying notes word-for-word",
+                      D: "Rewatching lectures at 2× speed",
+                    },
+                    answer: "B",
+                    feedback:
+                      "Active recall is the act of pulling information out of memory, which strengthens retrieval pathways.",
+                  },
+                  {
+                    type: "test",
+                    question: "Why does immediate feedback help learning?",
+                    options: {
+                      A: "It prevents forming incorrect associations",
+                      B: "It makes you feel confident regardless of accuracy",
+                      C: "It replaces the need for practice",
+                      D: "It reduces the need to understand concepts",
+                    },
+                    answer: "A",
+                    feedback:
+                      "Feedback quickly corrects errors so you don’t rehearse the wrong idea and can update your mental model.",
+                  },
+                  {
+                    type: "test",
+                    question:
+                      "Which approach best matches effective study over time?",
+                    options: {
+                      A: "One long cram session the night before",
+                      B: "Spaced practice with repeated retrieval",
+                      C: "Only rereading the textbook",
+                      D: "Studying only when it feels easy",
+                    },
+                    answer: "B",
+                    feedback:
+                      "Spaced retrieval practice produces more durable learning than cramming or passive review.",
+                  },
+                ],
+              },
+            ],
+          };
+        }
+
+        function loadActiveSessionOrMock() {
+          const raw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
+          if (raw && raw.trim()) {
+            try {
+              const obj = JSON.parse(raw);
+              if (obj && typeof obj === "object") return obj;
+            } catch {
+              // ignore
+            }
+          }
+          const mock = getMockSessionTest();
+          storeActiveSession(mock);
+          return mock;
+        }
+
+        function setRsvpOverlayActive(isActive) {
+          rsvpOverlay.setAttribute("aria-hidden", String(!isActive));
+          document.body.classList.toggle("rsvp-active", isActive);
+        }
+
+        function cancelRsvpTimer() {
+          if (rsvpState.timerId) clearTimeout(rsvpState.timerId);
+          rsvpState.timerId = null;
+        }
+
+        function durationMsForChunk() {
+          const wpm = Math.max(1, Number(rsvpState.wpm) || 500);
+          const wpf = Math.max(1, Number(rsvpState.wordsPerFlash) || 1);
+          return Math.max(20, Math.round((60000 * wpf) / wpm));
+        }
+
+        function tokenizeWords(text) {
+          const raw = String(text || "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!raw) return [];
+          return raw.split(" ").filter(Boolean);
+        }
+
+        function chunkWords(words, wordsPerFlash) {
+          const wpf = Math.max(1, Number(wordsPerFlash) || 1);
+          const out = [];
+          for (let i = 0; i < words.length; i += wpf) {
+            out.push(words.slice(i, i + wpf).join(" "));
+          }
+          return out;
+        }
+
+        function setWpfUi(wpf) {
+          const v = Number(wpf);
+          rsvpWpf1.setAttribute("aria-pressed", String(v === 1));
+          rsvpWpf2.setAttribute("aria-pressed", String(v === 2));
+          rsvpWpf3.setAttribute("aria-pressed", String(v === 3));
+        }
+
+        function setWordsPerFlash(nextWpf) {
+          const prev = Math.max(1, Number(rsvpState.wordsPerFlash) || 1);
+          const next = Math.max(1, Number(nextWpf) || 1);
+          if (prev === next) return;
+
+          const currentWordPos = rsvpState.idx * prev;
+          rsvpState.wordsPerFlash = next;
+          setWpfUi(next);
+          rsvpState.chunks = chunkWords(rsvpState.words || [], next);
+          rsvpState.idx = Math.min(
+            rsvpState.chunks.length,
+            Math.floor(currentWordPos / next),
+          );
+          if (rsvpState.idx < rsvpState.chunks.length) showCurrentRsvpChunk();
+          if (rsvpState.playing) scheduleRsvpNext({ immediate: false });
+        }
+
+        function showCurrentRsvpChunk() {
+          rsvpChunk.textContent = rsvpState.chunks[rsvpState.idx] || "";
+        }
+
+        function finishRsvp() {
+          cancelRsvpTimer();
+          setRsvpOverlayActive(false);
+          if (typeof rsvpState.onDone === "function") rsvpState.onDone();
+        }
+
+        function scheduleRsvpNext({ immediate }) {
+          cancelRsvpTimer();
+          if (!rsvpState.playing) return;
+          if (rsvpState.idx >= rsvpState.chunks.length) {
+            finishRsvp();
+            return;
+          }
+          const ms = immediate ? 0 : durationMsForChunk();
+          rsvpState.timerId = setTimeout(() => {
+            showCurrentRsvpChunk();
+            rsvpState.idx += 1;
+            scheduleRsvpNext({ immediate: false });
+          }, ms);
+        }
+
+        function setRsvpPlayState(nextPlaying) {
+          rsvpState.playing = nextPlaying;
+          rsvpPlayPauseBtn.textContent = rsvpState.playing ? "Pause" : "Play";
+          if (rsvpState.playing) scheduleRsvpNext({ immediate: false });
+          else cancelRsvpTimer();
+        }
+
+        function startRsvpForText(explanationText, onDone) {
+          const words = tokenizeWords(explanationText);
+          rsvpState.words = words;
+          rsvpState.chunks = chunkWords(words, rsvpState.wordsPerFlash);
+          rsvpState.idx = 0;
+          rsvpState.playing = true;
+          rsvpState.onDone = onDone;
+
+          setRsvpOverlayActive(true);
+          rsvpWpm.value = String(rsvpState.wpm);
+          rsvpWpmLabel.textContent = String(rsvpState.wpm);
+          setWpfUi(rsvpState.wordsPerFlash);
+          rsvpChunk.textContent = "";
+          rsvpPlayPauseBtn.textContent = "Pause";
+
+          scheduleRsvpNext({ immediate: true });
+        }
+
+        function beginRsvpForCurrentBlock({ onDone }) {
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          if (!block) {
+            const msg = "Missing block.";
+            setSocraticError(msg);
+            testError.hidden = false;
+            testError.textContent = msg;
+            return;
+          }
+          startRsvpForText(block.explanation || "", onDone);
+        }
+
+        function clearSocraticError() {
+          socraticError.hidden = true;
+          socraticError.textContent = "";
+        }
+
+        function setSocraticError(message) {
+          socraticError.hidden = false;
+          socraticError.textContent = message;
+        }
+
+        function setSocraticLoading(isLoading) {
+          socraticSubmitBtn.disabled = isLoading;
+          socraticSubmitBtn.textContent = isLoading ? "Submitting…" : "Submit";
+          socraticNextQuestionBtn.disabled = isLoading;
+          socraticNextBlockBtn.disabled = isLoading;
+          socraticAnswer.disabled = isLoading;
+        }
+
+        function clearTestError() {
+          testError.hidden = true;
+          testError.textContent = "";
+        }
+
+        function setTestError(message) {
+          testError.hidden = false;
+          testError.textContent = message;
+        }
+
+        function stopTestRsvp() {
+          if (testRsvpTimer) {
+            clearInterval(testRsvpTimer);
+            testRsvpTimer = null;
+          }
+        }
+
+        function normalizeTextToWords(text) {
+          const raw = String(text || "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!raw) return [];
+          return raw.split(" ");
+        }
+
+        function getBlockTestQuestions(block) {
+          const qs = Array.isArray(block?.questions) ? block.questions : [];
+          return qs.filter((q) => q && typeof q === "object" && q.type === "test");
+        }
+
+        function setTestMeta() {
+          const blocks = getBlocksSafe();
+          const total = Math.max(1, blocks.length);
+          const block = blocks[activeBlockIndex];
+          const title = String(block?.title || `Block ${activeBlockIndex + 1}`);
+          testHeader.textContent = title;
+          testMeta.textContent = `Block ${activeBlockIndex + 1} of ${total}`;
+        }
+
+        function showTestRsvp() {
+          testRsvpView.hidden = false;
+          testQaView.hidden = true;
+        }
+
+        function showTestQuestions() {
+          testRsvpView.hidden = true;
+          testQaView.hidden = false;
+        }
+
+        function startTestBlock() {
+          clearTestError();
+          stopTestRsvp();
+          activeQuestionIndex = 0;
+          setTestMeta();
+          updateStudyProgressUi();
+
+          testFeedback.hidden = true;
+          testFeedback.textContent = "";
+          testNextBtn.hidden = true;
+          testNextBtn.textContent = "";
+          testOptions.innerHTML = "";
+          testQuestionText.textContent = "";
+          testRsvpStatus.textContent = "";
+          testRsvpView.hidden = true;
+          testQaView.hidden = true;
+
+          beginRsvpForCurrentBlock({
+            onDone: () => {
+              showScreen("test");
+              updateStudyProgressUi();
+              showTestQuestions();
+              renderTestQuestion();
+            },
+          });
+        }
+
+        function finishTestRsvp() {
+          stopTestRsvp();
+          showTestQuestions();
+          renderTestQuestion();
+        }
+
+        function runTestRsvpPlayback() {
+          stopTestRsvp();
+          const wpm = 500;
+          const msPerWord = Math.max(60, Math.round(60000 / wpm));
+          testRsvpStartBtn.disabled = true;
+          testRsvpSkipBtn.disabled = true;
+          testRsvpStatus.textContent = "Reading…";
+
+          testRsvpTimer = setInterval(() => {
+            testRsvpWordIndex += 1;
+            if (testRsvpWordIndex >= testRsvpWords.length) {
+              testRsvpStartBtn.disabled = false;
+              testRsvpSkipBtn.disabled = false;
+              testRsvpStatus.textContent = "";
+              finishTestRsvp();
+              return;
+            }
+            testRsvpWord.textContent = testRsvpWords[testRsvpWordIndex] || "";
+          }, msPerWord);
+        }
+
+        function renderTestQuestion() {
+          clearTestError();
+          testFeedback.hidden = true;
+          testFeedback.textContent = "";
+          testNextBtn.hidden = true;
+          testNextBtn.textContent = "";
+
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          if (!block) {
+            setTestError("Missing block.");
+            return;
+          }
+
+          const qs = getBlockTestQuestions(block);
+          const q = qs[activeQuestionIndex];
+          if (!q || !q.question) {
+            setTestError("Missing question.");
+            return;
+          }
+
+          testQuestionText.textContent = String(q.question);
+          testOptions.innerHTML = "";
+
+          const letters = ["A", "B", "C", "D"];
+          for (const letter of letters) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.dataset.letter = letter;
+            const optText =
+              q?.options && q.options[letter] != null ? String(q.options[letter]) : "";
+            btn.textContent = `${letter}. ${optText}`;
+            btn.addEventListener("click", () => {
+              handleTestAnswer({
+                chosen: letter,
+                correct: String(q.answer || ""),
+                feedback: String(q.feedback || ""),
+              });
+            });
+            testOptions.appendChild(btn);
+          }
+        }
+
+        function handleTestAnswer({ chosen, correct, feedback }) {
+          const btns = Array.from(testOptions.querySelectorAll("button"));
+          for (const b of btns) b.disabled = true;
+
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          const qs = getBlockTestQuestions(block);
+          const q = qs[activeQuestionIndex];
+          const optText =
+            q?.options && q.options[chosen] != null ? String(q.options[chosen]) : "";
+          const userAnswer = optText ? `${chosen}. ${optText}` : String(chosen || "");
+          recordResponse({
+            blockIndex: activeBlockIndex,
+            questionIndex: activeQuestionIndex,
+            questionType: "test",
+            questionText: q?.question != null ? String(q.question) : "",
+            userAnswer,
+            feedback: String(feedback || ""),
+            correctAnswer: String(correct || ""),
+          });
+
+          const chosenBtn = btns.find((b) => b.dataset.letter === chosen);
+          if (chosenBtn) {
+            chosenBtn.classList.add(chosen === correct ? "is-correct" : "is-wrong");
+          }
+
+          testFeedback.hidden = false;
+          testFeedback.textContent = feedback || "";
+
+          const isLastQuestion = activeQuestionIndex >= qs.length - 1;
+          const isLastBlock = activeBlockIndex >= blocks.length - 1;
+
+          testNextBtn.hidden = false;
+          testNextBtn.textContent = isLastQuestion
+            ? isLastBlock
+              ? "Finish"
+              : "Next block"
+            : "Next question";
+
+          testNextBtn.onclick = () => {
+            if (!isLastQuestion) {
+              activeQuestionIndex += 1;
+              renderTestQuestion();
+              return;
+            }
+            if (!isLastBlock) {
+              activeBlockIndex += 1;
+              startTestBlock();
+              return;
+            }
+            showSessionComplete();
+          };
+        }
+
+        function getBlockSocraticQuestions(block) {
+          const qs = Array.isArray(block?.questions) ? block.questions : [];
+          return qs.filter(
+            (q) => q && typeof q === "object" && q.type === "socratic",
+          );
+        }
+
+        function renderSocraticQuestion() {
+          clearSocraticError();
+          socraticStatus.textContent = "";
+          socraticResponseBox.hidden = true;
+          socraticResponseBox.textContent = "";
+          socraticAnswer.value = "";
+          socraticNextQuestionBtn.hidden = true;
+          socraticNextBlockBtn.hidden = true;
+
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          if (!block) {
+            setSocraticError("No blocks found in session.");
+            return;
+          }
+
+          const socQs = getBlockSocraticQuestions(block);
+          const q = socQs[activeQuestionIndex];
+          if (!q || !q.question) {
+            setSocraticError("No Socratic questions found for this block.");
+            return;
+          }
+
+          const blockTitle = String(block.title || `Block ${activeBlockIndex + 1}`);
+          socraticHeader.textContent = "Socratic";
+          socraticMeta.textContent = `Block ${activeBlockIndex + 1} of ${
+            blocks.length
+          }: ${blockTitle}`;
+          socraticQuestionTitle.textContent = `Question ${
+            activeQuestionIndex + 1
+          } of ${socrQs.length}`;
+          socraticQuestionText.textContent = String(q.question);
+
+          setTimeout(() => socraticAnswer.focus(), 0);
+        }
+
+        async function deepSeekSocraticTutor({
+          apiKey,
+          blockTitle,
+          question,
+          studentAnswer,
+        }) {
+          const systemPrompt = `You are a Socratic tutor. The student just studied this block: 
+{block.title}. Evaluate their answer, point out gaps, push their reasoning further. 
+Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
+
+          const userPrompt = `Question: ${question}\nStudent answer: ${studentAnswer}`;
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+          return content.trim();
+        }
+
+        function setMode(nextMode) {
+          sessionMode = nextMode;
+          const isTest = sessionMode === "test";
+          modeTestBtn.setAttribute("aria-pressed", String(isTest));
+          modeSocraticBtn.setAttribute("aria-pressed", String(!isTest));
+          modeHint.textContent = isTest
+            ? "Multiple-choice questions (A/B/C/D)"
+            : "Open-ended reasoning questions";
+        }
+
+        function setGenerateLoading(isLoading) {
+          generateBlocksBtn.disabled = isLoading;
+          generateBlocksBtn.textContent = isLoading
+            ? "Generating…"
+            : "Generate blocks";
+        }
+
+        function setGenerateError(message) {
+          generateBlocksError.hidden = false;
+          generateBlocksError.textContent = message;
+        }
+
+        function clearGenerateError() {
+          generateBlocksError.hidden = true;
+          generateBlocksError.textContent = "";
+        }
+
+        function setConfirmLoading(isLoading) {
+          confirmBlocksBtn.disabled = isLoading;
+          confirmBlocksBtn.textContent = isLoading
+            ? "Generating…"
+            : "Looks good, generate session";
+        }
+
+        function setConfirmError(message) {
+          confirmBlocksError.hidden = false;
+          confirmBlocksError.textContent = message;
+        }
+
+        function clearConfirmError() {
+          confirmBlocksError.hidden = true;
+          confirmBlocksError.textContent = "";
+        }
+
+        function readFileAsText(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("Failed to read file."));
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.readAsText(file);
+          });
+        }
+
+        async function deepSeekSplitIntoBlocks({
+          apiKey,
+          nBlocks,
+          materialText,
+        }) {
+          const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a 
+university student. Return ONLY a numbered plain text list. Each item: block number, 
+a short title, and 2-3 sentences on what it covers. No JSON, no markdown headers. 
+Just the list.`.replace("{N}", String(nBlocks));
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: materialText },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+          return content.trim();
+        }
+
+        async function deepSeekGenerateSessionJson({
+          apiKey,
+          nBlocks,
+          mode,
+          confirmedBlocksListText,
+          materialText,
+        }) {
+          const systemPrompt = `Given this confirmed list of {N} blocks and the original material below, return a 
+single JSON object. Schema:
+{
+  session_mode: "test" | "socratic",
+  blocks: [{
+    id: number,
+    title: string,
+    explanation: string (markdown),
+    questions: [{
+      type: "test" | "socratic",
+      question: string,
+      options?: { A, B, C, D },
+      answer?: string,
+      feedback?: string
+    }]
+  }]
+}
+Mode is {mode}. Test: 3-4 questions per block, 4 options, correct answer, brief feedback. 
+Socratic: 2-3 open questions requiring reasoning or synthesis.
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
+            .replace("{N}", String(nBlocks))
+            .replace("{mode}", mode);
+
+          const userContent = `Confirmed blocks list:\n${confirmedBlocksListText}\n\nOriginal material:\n${materialText}`;
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userContent },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+
+          const raw = content.trim();
+          try {
+            const clean = raw.replace(/```json|```/g, "").trim();
+            const session = JSON.parse(clean);
+            return session;
+          } catch (e) {
+            throw new Error(
+              "Model did not return valid JSON. Please try again (you can also tweak the blocks list).",
+            );
+          }
+        }
+
+        changeKeyLink.addEventListener("click", (e) => {
+          e.preventDefault();
+          showScreen("setup");
+        });
+
+        apiKeyForm.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const raw = apiKeyInput.value || "";
+          const trimmed = raw.trim();
+          if (!trimmed) {
+            apiKeyStatus.textContent = "Please enter a key.";
+            return;
+          }
+
+          saveKey(trimmed);
+          apiKeyStatus.textContent = "Saved.";
+          showScreen("create");
+        });
+
+        modeTestBtn.addEventListener("click", () => setMode("test"));
+        modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
+        setMode("test");
+
+        generateBlocksForm.addEventListener("submit", async (e) => {
+          e.preventDefault();
+          clearGenerateError();
+          generateBlocksStatus.textContent = "";
+          originalMaterialText = "";
+          lastNBlocks = 0;
+
+          const apiKey = getStoredKey();
+          if (!apiKey) {
+            setGenerateError("Missing API key. Click “Change API key” to set it.");
+            showScreen("setup");
+            return;
+          }
+
+          const file = fileInput.files && fileInput.files[0];
+          if (!file) {
+            setGenerateError("Please choose a file (.pdf, .html, or .txt).");
+            return;
+          }
+
+          const nBlocks = Number(blocksInput.value);
+          if (!Number.isFinite(nBlocks) || nBlocks < 5 || nBlocks > 60) {
+            setGenerateError("Blocks must be a number between 5 and 60.");
+            return;
+          }
+
+          setGenerateLoading(true);
+          generateBlocksStatus.textContent = "Calling DeepSeek…";
+
+          try {
+            const materialText = await readFileAsText(file);
+            if (!materialText.trim()) {
+              throw new Error("File appears to be empty.");
+            }
+            originalMaterialText = materialText;
+            lastNBlocks = nBlocks;
+
+            const blocksList = await deepSeekSplitIntoBlocks({
+              apiKey,
+              nBlocks,
+              materialText,
+            });
+
+            blocksListOutput.value = blocksList;
+            showScreen("blocks");
+          } catch (err) {
+            setGenerateError(err?.message ? String(err.message) : String(err));
+          } finally {
+            setGenerateLoading(false);
+            generateBlocksStatus.textContent = "";
+          }
+        });
+
+        confirmBlocksBtn.addEventListener("click", async () => {
+          clearConfirmError();
+          confirmBlocksStatus.textContent = "";
+
+          const apiKey = getStoredKey();
+          if (!apiKey) {
+            setConfirmError("Missing API key. Click “Change API key” to set it.");
+            showScreen("setup");
+            return;
+          }
+
+          const confirmedBlocksListText = (blocksListOutput.value || "").trim();
+          if (!confirmedBlocksListText) {
+            setConfirmError("Blocks list is empty.");
+            return;
+          }
+
+          const nBlocks = Number(lastNBlocks);
+          if (!Number.isFinite(nBlocks) || nBlocks <= 0) {
+            setConfirmError("Missing blocks count from previous step. Regenerate blocks.");
+            showScreen("create");
+            return;
+          }
+
+          if (!originalMaterialText.trim()) {
+            setConfirmError(
+              "Missing original material from previous step. Please re-upload and regenerate blocks.",
+            );
+            showScreen("create");
+            return;
+          }
+
+          setConfirmLoading(true);
+          confirmBlocksStatus.textContent = "Generating session JSON…";
+
+          try {
+            const sessionObj = await deepSeekGenerateSessionJson({
+              apiKey,
+              nBlocks,
+              mode: sessionMode,
+              confirmedBlocksListText,
+              materialText: originalMaterialText,
+            });
+
+            storeActiveSession(sessionObj);
+            const n = Array.isArray(sessionObj?.blocks)
+              ? sessionObj.blocks.length
+              : nBlocks;
+            sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+            showScreen("ready");
+          } catch (err) {
+            setConfirmError(err?.message ? String(err.message) : String(err));
+          } finally {
+            setConfirmLoading(false);
+            confirmBlocksStatus.textContent = "";
+          }
+        });
+
+        startStudyingBtn.addEventListener("click", () => {
+          startStudyingError.hidden = true;
+          startStudyingError.textContent = "";
+          startStudyingStatus.textContent = "";
+
+          activeSession = loadActiveSessionOrMock();
+          const mode = String(activeSession?.session_mode || "");
+          studyMode = mode === "test" || mode === "socratic" ? mode : null;
+          ensureSessionResponseState();
+          activeBlockIndex = 0;
+          activeQuestionIndex = 0;
+          updateStudyProgressUi();
+          if (studyMode === "socratic") {
+            beginRsvpForCurrentBlock({
+              onDone: () => {
+                showScreen("socratic");
+                updateStudyProgressUi();
+                renderSocraticQuestion();
+              },
+            });
+            return;
+          }
+
+          if (studyMode === "test") {
+            startTestBlock();
+            return;
+          }
+
+          startStudyingError.hidden = false;
+          startStudyingError.textContent =
+            'Unsupported "session_mode". Use "test" or "socratic".';
+        });
+
+        socraticSubmitBtn.addEventListener("click", async () => {
+          clearSocraticError();
+          socraticStatus.textContent = "";
+          socraticResponseBox.hidden = true;
+          socraticResponseBox.textContent = "";
+
+          const apiKey = getStoredKey();
+          if (!apiKey) {
+            setSocraticError("Missing API key. Click “Change API key” to set it.");
+            showScreen("setup");
+            return;
+          }
+
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          if (!block) {
+            setSocraticError("Missing block.");
+            return;
+          }
+
+          const socQs = getBlockSocraticQuestions(block);
+          const q = socQs[activeQuestionIndex];
+          if (!q || !q.question) {
+            setSocraticError("Missing question.");
+            return;
+          }
+
+          const answer = String(socraticAnswer.value || "").trim();
+          if (!answer) {
+            setSocraticError("Please write an answer before submitting.");
+            return;
+          }
+
+          recordResponse({
+            blockIndex: activeBlockIndex,
+            questionIndex: activeQuestionIndex,
+            questionType: "socratic",
+            questionText: String(q.question || ""),
+            userAnswer: answer,
+            feedback: "",
+            correctAnswer: "",
+          });
+
+          setSocraticLoading(true);
+          socraticStatus.textContent = "Calling DeepSeek…";
+
+          try {
+            const resp = await deepSeekSocraticTutor({
+              apiKey,
+              blockTitle: String(block.title || `Block ${activeBlockIndex + 1}`),
+              question: String(q.question),
+              studentAnswer: answer,
+            });
+
+            socraticResponseBox.hidden = false;
+            socraticResponseBox.textContent = resp;
+
+            recordResponse({
+              blockIndex: activeBlockIndex,
+              questionIndex: activeQuestionIndex,
+              questionType: "socratic",
+              questionText: String(q.question || ""),
+              userAnswer: answer,
+              feedback: resp,
+              correctAnswer: "",
+            });
+
+            const isLastQuestion = activeQuestionIndex >= socQs.length - 1;
+            const isLastBlock = activeBlockIndex >= blocks.length - 1;
+            if (!isLastQuestion) {
+              socraticNextQuestionBtn.hidden = false;
+            } else if (!isLastBlock) {
+              socraticNextBlockBtn.hidden = false;
+            } else {
+              socraticNextBlockBtn.hidden = false;
+              socraticNextBlockBtn.textContent = "Finish";
+            }
+          } catch (err) {
+            setSocraticError(err?.message ? String(err.message) : String(err));
+          } finally {
+            setSocraticLoading(false);
+            socraticStatus.textContent = "";
+          }
+        });
+
+        socraticNextQuestionBtn.addEventListener("click", () => {
+          const blocks = getBlocksSafe();
+          const block = blocks[activeBlockIndex];
+          if (!block) return;
+          const socQs = getBlockSocraticQuestions(block);
+          if (activeQuestionIndex < socQs.length - 1) {
+            activeQuestionIndex += 1;
+          }
+          renderSocraticQuestion();
+        });
+
+        socraticNextBlockBtn.addEventListener("click", () => {
+          const blocks = getBlocksSafe();
+          if (activeBlockIndex < blocks.length - 1) {
+            activeBlockIndex += 1;
+            activeQuestionIndex = 0;
+            socraticNextBlockBtn.textContent = "Next block";
+            updateStudyProgressUi();
+            beginRsvpForCurrentBlock({
+              onDone: () => {
+                showScreen("socratic");
+                updateStudyProgressUi();
+                renderSocraticQuestion();
+              },
+            });
+            return;
+          }
+          showSessionComplete();
+        });
+
+        saveSessionBtn.addEventListener("click", () => {
+          exportSessionMarkdown();
+        });
+
+        window.addEventListener("beforeunload", () => {
+          exportSessionMarkdown();
+        });
+
+        rsvpPlayPauseBtn.addEventListener("click", () => {
+          setRsvpPlayState(!rsvpState.playing);
+        });
+
+        rsvpSkipBtn.addEventListener("click", () => {
+          finishRsvp();
+        });
+
+        rsvpWpm.addEventListener("input", () => {
+          const v = Number(rsvpWpm.value);
+          rsvpState.wpm = Number.isFinite(v) ? v : 500;
+          rsvpWpmLabel.textContent = String(rsvpState.wpm);
+          if (rsvpOverlay.getAttribute("aria-hidden") === "false" && rsvpState.playing) {
+            scheduleRsvpNext({ immediate: false });
+          }
+        });
+
+        rsvpWpf1.addEventListener("click", () => setWordsPerFlash(1));
+        rsvpWpf2.addEventListener("click", () => setWordsPerFlash(2));
+        rsvpWpf3.addEventListener("click", () => setWordsPerFlash(3));
+
+        document.addEventListener("keydown", (e) => {
+          if (e.code !== "Space") return;
+          if (rsvpOverlay.getAttribute("aria-hidden") !== "false") return;
+          e.preventDefault();
+          setRsvpPlayState(!rsvpState.playing);
+        });
+
+        // Keep old test RSVP buttons, but route them to the new overlay.
+        testRsvpStartBtn.addEventListener("click", () => {
+          clearTestError();
+          beginRsvpForCurrentBlock({
+            onDone: () => {
+              showScreen("test");
+              showTestQuestions();
+              renderTestQuestion();
+            },
+          });
+        });
+
+        testRsvpSkipBtn.addEventListener("click", () => {
+          clearTestError();
+          if (rsvpOverlay.getAttribute("aria-hidden") === "false") finishRsvp();
+          else finishTestRsvp();
+        });
+
+        const hasStoredSession =
+          !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
+        if (hasStoredSession) {
+          activeSession = loadActiveSessionOrMock();
+          startStudyingBtn.click();
+        } else if (getStoredKey()) {
+          showScreen("create");
+        } else {
+          showScreen("setup");
+        }
+      })();
+    </script>
+  </body>
+</html>
+
