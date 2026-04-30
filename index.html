@@ -515,6 +515,7 @@
                 accept=".pdf,.html,.txt"
                 required
               />
+              <div class="hint" id="fileExtractHint" aria-live="polite"></div>
 
               <div class="divider"></div>
 
@@ -824,6 +825,7 @@
 
         const generateBlocksForm = document.getElementById("generateBlocksForm");
         const fileInput = document.getElementById("fileInput");
+        const fileExtractHint = document.getElementById("fileExtractHint");
         const blocksInput = document.getElementById("blocksInput");
         const languageSelect = document.getElementById("languageSelect");
         const modeTestBtn = document.getElementById("modeTestBtn");
@@ -904,6 +906,8 @@
         let originalMaterialText = "";
         let lastNBlocks = 0;
         let lastUploadedFileNames = [];
+        let lastCleanedMaterialText = "";
+        let lastCleanedMaterialWordCount = 0;
         let activeSession = null;
         let activeBlockIndex = 0;
         let activeQuestionIndex = 0;
@@ -2090,6 +2094,137 @@ Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
           });
         }
 
+        function countWords(text) {
+          const raw = String(text || "")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!raw) return 0;
+          return raw.split(" ").filter(Boolean).length;
+        }
+
+        function stripDataUriAttributes(html) {
+          // Replace any attr="data:..." with attr=""
+          return String(html || "").replace(
+            /\b([a-zA-Z0-9:_-]+)\s*=\s*(["'])\s*data:[\s\S]*?\2/gi,
+            '$1=""',
+          );
+        }
+
+        function stripScriptAndStyleBlocks(html) {
+          const raw = String(html || "");
+          const noScript = raw.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+          return noScript.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+        }
+
+        function stripAllAttributesExceptHrefAlt(doc) {
+          const els = doc.querySelectorAll("*");
+          for (const el of els) {
+            const attrs = Array.from(el.attributes || []);
+            for (const a of attrs) {
+              const n = String(a.name || "").toLowerCase();
+              if (n === "href" || n === "alt") continue;
+              try {
+                el.removeAttribute(a.name);
+              } catch {
+                // ignore
+              }
+            }
+          }
+        }
+
+        function extractCleanTextFromHtml(html) {
+          const pre = stripScriptAndStyleBlocks(stripDataUriAttributes(html));
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(pre, "text/html");
+
+          for (const node of Array.from(doc.querySelectorAll("script,style"))) {
+            node.remove();
+          }
+
+          stripAllAttributesExceptHrefAlt(doc);
+
+          const out = [];
+          const pushText = (t) => {
+            const s = String(t || "").replace(/\s+/g, " ").trim();
+            if (s) out.push(s);
+          };
+
+          const walk = (node) => {
+            if (!node) return;
+            const type = node.nodeType;
+            if (type === Node.TEXT_NODE) {
+              pushText(node.nodeValue || "");
+              return;
+            }
+            if (type !== Node.ELEMENT_NODE) return;
+
+            const tag = String(node.tagName || "").toLowerCase();
+            if (tag === "script" || tag === "style") return;
+
+            if (tag === "img") {
+              const alt = node.getAttribute("alt");
+              if (alt) pushText(alt);
+              return;
+            }
+
+            if (tag === "a") {
+              const href = node.getAttribute("href");
+              for (const child of Array.from(node.childNodes || [])) walk(child);
+              if (href) pushText(`(${href})`);
+              return;
+            }
+
+            for (const child of Array.from(node.childNodes || [])) walk(child);
+
+            if (
+              [
+                "p",
+                "div",
+                "section",
+                "article",
+                "br",
+                "li",
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+              ].includes(tag)
+            ) {
+              out.push("\n");
+            }
+          };
+
+          walk(doc.body || doc.documentElement);
+
+          return out
+            .join(" ")
+            .replace(/[ \t]+\n/g, "\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .replace(/[ \t]{2,}/g, " ")
+            .trim();
+        }
+
+        function cleanMaterialText(rawText) {
+          const raw = String(rawText || "");
+          const looksLikeHtml = /<[a-z][\s\S]*>/i.test(raw);
+          if (!looksLikeHtml) {
+            const stripped = stripScriptAndStyleBlocks(stripDataUriAttributes(raw));
+            return stripped.trim();
+          }
+          return extractCleanTextFromHtml(raw);
+        }
+
+        async function readAndCleanMaterialText(file) {
+          const raw = await readFileAsText(file);
+          const cleanedText = cleanMaterialText(raw);
+          return {
+            cleanedText,
+            wordCount: countWords(cleanedText),
+          };
+        }
+
         async function deepSeekSplitIntoBlocks({
           apiKey,
           nBlocks,
@@ -2263,6 +2398,23 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
         setMode("test");
 
+        fileInput.addEventListener("change", async () => {
+          if (!fileExtractHint) return;
+          try {
+            fileExtractHint.textContent = "";
+            const fileList = fileInput.files ? Array.from(fileInput.files) : [];
+            const file = fileList[0];
+            if (!file) return;
+            fileExtractHint.textContent = "Extracting…";
+            const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
+            lastCleanedMaterialText = cleanedText;
+            lastCleanedMaterialWordCount = wordCount;
+            fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+          } catch {
+            fileExtractHint.textContent = "";
+          }
+        });
+
         generateBlocksForm.addEventListener("submit", async (e) => {
           e.preventDefault();
           clearGenerateError();
@@ -2270,6 +2422,8 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           originalMaterialText = "";
           lastNBlocks = 0;
           lastUploadedFileNames = [];
+          lastCleanedMaterialText = "";
+          lastCleanedMaterialWordCount = 0;
 
           const apiKey = getStoredKey();
           if (!apiKey) {
@@ -2296,17 +2450,22 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           generateBlocksStatus.textContent = "Calling DeepSeek…";
 
           try {
-            const materialText = await readFileAsText(file);
-            if (!materialText.trim()) {
+            const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
+            lastCleanedMaterialText = cleanedText;
+            lastCleanedMaterialWordCount = wordCount;
+            if (fileExtractHint) {
+              fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+            }
+            if (!cleanedText.trim()) {
               throw new Error("File appears to be empty.");
             }
-            originalMaterialText = materialText;
+            originalMaterialText = cleanedText;
             lastNBlocks = nBlocks;
 
             const blocksList = await deepSeekSplitIntoBlocks({
               apiKey,
               nBlocks,
-              materialText,
+              materialText: cleanedText,
             });
 
             blocksListOutput.value = blocksList;
