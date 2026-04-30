@@ -2436,6 +2436,11 @@ Rules:
 - Do not include any extra keys.
 - Return ONLY JSON. No preamble, no backticks, no markdown fences.
 
+You MUST cover the ENTIRE document from start to finish. 
+Distribute blocks proportionally across all sections. 
+The last block must correspond to the last section of the document. 
+Do not over-represent early sections at the expense of later ones.
+
 Respond entirely in {language}.`
             .split("{N}")
             .join(String(nBlocks))
