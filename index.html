@@ -903,6 +903,7 @@
         let studyMode = null;
         let originalMaterialText = "";
         let lastNBlocks = 0;
+        let lastUploadedFileNames = [];
         let activeSession = null;
         let activeBlockIndex = 0;
         let activeQuestionIndex = 0;
@@ -1266,13 +1267,53 @@
           setTimeout(() => URL.revokeObjectURL(url), 0);
         }
 
+        function sanitizeFilenameStem(name) {
+          const raw = String(name || "").trim();
+          if (!raw) return "study-session";
+          const lower = raw.toLowerCase();
+          const cleaned = lower.replace(/[^a-z0-9_-]+/g, "");
+          return cleaned || "study-session";
+        }
+
+        function stripExtension(filename) {
+          const raw = String(filename || "").trim();
+          const dot = raw.lastIndexOf(".");
+          if (dot <= 0) return raw;
+          return raw.slice(0, dot);
+        }
+
+        function formatExportTimestamp(d) {
+          const pad2 = (n) => String(n).padStart(2, "0");
+          const day = pad2(d.getDate());
+          const month = pad2(d.getMonth() + 1);
+          const year = String(d.getFullYear());
+          const hours = pad2(d.getHours());
+          const minutes = pad2(d.getMinutes());
+          const seconds = pad2(d.getSeconds());
+          return `${day}${month}${year}_${hours}${minutes}${seconds}`;
+        }
+
+        function getExportFilenameStem() {
+          const metaFiles = activeSession?._meta?.source_files;
+          if (Array.isArray(metaFiles) && metaFiles.length) {
+            const first = metaFiles[0];
+            const name = first && typeof first === "object" ? String(first.name || "") : "";
+            return sanitizeFilenameStem(stripExtension(name));
+          }
+          if (Array.isArray(lastUploadedFileNames) && lastUploadedFileNames.length) {
+            return sanitizeFilenameStem(stripExtension(lastUploadedFileNames[0]));
+          }
+          return "study-session";
+        }
+
         function exportSessionMarkdown() {
           if (!activeSession) return;
           ensureSessionResponseState();
           const md = buildMarkdown(activeSession);
-          const ts = Date.now();
+          const ts = formatExportTimestamp(new Date());
+          const stem = getExportFilenameStem();
           downloadTextFile({
-            filename: `study-session-${ts}.md`,
+            filename: `${stem}_${ts}.md`,
             text: md,
           });
         }
@@ -2228,6 +2269,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           generateBlocksStatus.textContent = "";
           originalMaterialText = "";
           lastNBlocks = 0;
+          lastUploadedFileNames = [];
 
           const apiKey = getStoredKey();
           if (!apiKey) {
@@ -2236,7 +2278,9 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
             return;
           }
 
-          const file = fileInput.files && fileInput.files[0];
+          const fileList = fileInput.files ? Array.from(fileInput.files) : [];
+          lastUploadedFileNames = fileList.map((f) => String(f?.name || "")).filter(Boolean);
+          const file = fileList[0];
           if (!file) {
             setGenerateError("Please choose a file (.pdf, .html, or .txt).");
             return;
@@ -2316,6 +2360,14 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
               nBlocks,
               blocksListText: confirmedBlocksListText,
             });
+            if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
+              sessionObj._meta = {};
+            }
+            if (Array.isArray(lastUploadedFileNames) && lastUploadedFileNames.length) {
+              sessionObj._meta.source_files = lastUploadedFileNames.map((name) => ({
+                name: String(name || ""),
+              }));
+            }
             storeActiveSession(sessionObj);
             sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
             showScreen("ready");
