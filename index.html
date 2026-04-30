@@ -63,6 +63,21 @@
         font-size: 14px;
       }
 
+      .corner-plus {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-size: 20px;
+        line-height: 1;
+      }
+
       main {
         min-height: 100%;
         display: grid;
@@ -418,6 +433,15 @@
   </head>
   <body>
     <a href="#" id="changeKeyLink" class="corner-link">Change API key</a>
+    <button
+      type="button"
+      id="newSessionBtn"
+      class="corner-plus"
+      aria-label="New study session"
+      title="New study session"
+    >
+      +
+    </button>
 
     <div
       id="studyProgress"
@@ -778,6 +802,7 @@
         ];
 
         const changeKeyLink = document.getElementById("changeKeyLink");
+        const newSessionBtn = document.getElementById("newSessionBtn");
         const screenApiSetup = document.getElementById("screenApiSetup");
         const screenPlaceholder = document.getElementById("screenPlaceholder");
         const apiKeyForm = document.getElementById("apiKeyForm");
@@ -1250,6 +1275,57 @@
             filename: `study-session-${ts}.md`,
             text: md,
           });
+        }
+
+        function clearActiveSessionStorage() {
+          try {
+            localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
+          } catch {
+            // ignore
+          }
+        }
+
+        function resetToNewSession() {
+          stopTestRsvp();
+          cancelRsvpTimer();
+          setRsvpOverlayActive(false);
+
+          sessionMode = "test";
+          setMode("test");
+          studyMode = null;
+          originalMaterialText = "";
+          lastNBlocks = 0;
+          activeSession = null;
+          activeBlockIndex = 0;
+          activeQuestionIndex = 0;
+          testRsvpWords = [];
+          testRsvpWordIndex = 0;
+
+          if (fileInput) fileInput.value = "";
+          if (blocksListOutput) blocksListOutput.value = "";
+          clearGenerateError();
+          clearConfirmError();
+          clearBetweenBlocksError();
+          clearSocraticError();
+          clearTestError();
+
+          clearActiveSessionStorage();
+          showScreen(getStoredKey() ? "create" : "setup");
+        }
+
+        function startNewSessionFlow() {
+          const stored = loadActiveSession();
+          if (stored && typeof stored === "object") {
+            activeSession = stored;
+          }
+          if (activeSession) {
+            try {
+              exportSessionMarkdown();
+            } catch {
+              // ignore export errors; still reset
+            }
+          }
+          resetToNewSession();
         }
 
         function getStoredKey() {
@@ -2120,6 +2196,10 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         changeKeyLink.addEventListener("click", (e) => {
           e.preventDefault();
           showScreen("setup");
+        });
+
+        newSessionBtn.addEventListener("click", () => {
+          startNewSessionFlow();
         });
 
         apiKeyForm.addEventListener("submit", (e) => {
