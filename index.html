@@ -527,7 +527,10 @@
         <div class="rowline">
           <span id="studyProgressLabel">Block 1 of 1</span>
           <span id="studyProgressTitle"></span>
-          <button type="button" id="saveSessionInlineBtn">Save session</button>
+          <span style="display: inline-flex; gap: 8px; align-items: baseline">
+            <button type="button" id="saveSessionInlineBtn">Save session</button>
+            <button type="button" id="summarySoFarBtn">Summary so far</button>
+          </span>
         </div>
         <div class="bar" aria-hidden="true">
           <div id="studyProgressFill" class="fill"></div>
@@ -987,6 +990,26 @@
     </div>
 
     <div
+      id="summaryOverlay"
+      class="dict-overlay"
+      aria-hidden="true"
+      aria-label="Summary overlay"
+    >
+      <div class="card">
+        <div class="rowline" style="justify-content: space-between; gap: 10px">
+          <span id="summaryOverlayTitle" style="font-weight: 600"></span>
+          <span style="display: inline-flex; gap: 8px">
+            <button type="button" id="summaryOverlayCopyBtn">Copy</button>
+            <button type="button" id="summaryOverlayCloseBtn">Close</button>
+          </span>
+        </div>
+        <div class="divider"></div>
+        <div id="summaryOverlayBody" class="response-box"></div>
+        <div id="summaryOverlayError" class="error" hidden></div>
+      </div>
+    </div>
+
+    <div
       id="rsvpOverlay"
       class="rsvp-overlay"
       aria-hidden="true"
@@ -1073,6 +1096,7 @@
         const studyProgressTitle = document.getElementById("studyProgressTitle");
         const studyProgressFill = document.getElementById("studyProgressFill");
         const saveSessionInlineBtn = document.getElementById("saveSessionInlineBtn");
+        const summarySoFarBtn = document.getElementById("summarySoFarBtn");
         const saveSessionBtn = document.getElementById("saveSessionBtn");
         const reviewSessionBtn = document.getElementById("reviewSessionBtn");
 
@@ -1089,6 +1113,15 @@
         const dictionaryCloseBtn = document.getElementById("dictionaryCloseBtn");
         const dictionaryOverlayList = document.getElementById("dictionaryOverlayList");
         const dictionaryOverlayDef = document.getElementById("dictionaryOverlayDef");
+
+        const summaryOverlay = document.getElementById("summaryOverlay");
+        const summaryOverlayTitle = document.getElementById("summaryOverlayTitle");
+        const summaryOverlayBody = document.getElementById("summaryOverlayBody");
+        const summaryOverlayError = document.getElementById("summaryOverlayError");
+        const summaryOverlayCopyBtn = document.getElementById("summaryOverlayCopyBtn");
+        const summaryOverlayCloseBtn = document.getElementById(
+          "summaryOverlayCloseBtn",
+        );
 
         const reviewTypeTestBtn = document.getElementById("reviewTypeTestBtn");
         const reviewTypeSocraticBtn = document.getElementById(
@@ -1381,6 +1414,47 @@
 
         function setDictionaryOverlayOpen(isOpen) {
           dictionaryOverlay.setAttribute("aria-hidden", String(!isOpen));
+        }
+
+        function setSummaryOverlayOpen(isOpen) {
+          if (!summaryOverlay) return;
+          summaryOverlay.setAttribute("aria-hidden", String(!isOpen));
+        }
+
+        function setSummaryOverlayError(message) {
+          if (!summaryOverlayError) return;
+          const m = String(message || "").trim();
+          summaryOverlayError.hidden = !m;
+          summaryOverlayError.textContent = m;
+        }
+
+        async function copyPlainTextToClipboard(text) {
+          const t = String(text || "");
+          if (!t.trim()) return;
+          try {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+              await navigator.clipboard.writeText(t);
+              return;
+            }
+          } catch {
+            // fall back below
+          }
+
+          const ta = document.createElement("textarea");
+          ta.value = t;
+          ta.setAttribute("readonly", "true");
+          ta.style.position = "fixed";
+          ta.style.left = "-9999px";
+          ta.style.top = "0";
+          document.body.appendChild(ta);
+          ta.select();
+          try {
+            document.execCommand("copy");
+          } catch {
+            // ignore
+          } finally {
+            ta.remove();
+          }
         }
 
         function updateDictionaryButtonVisibility() {
@@ -2729,6 +2803,52 @@
 Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
 
           const userPrompt = `Question: ${question}\nStudent answer: ${studentAnswer}`;
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+          return content.trim();
+        }
+
+        async function deepSeekSummarySoFar({ apiKey, language, userPrompt }) {
+          const systemPrompt = `You are a study assistant. Summarize the key concepts, arguments, 
+and facts covered so far in this study session. Structure it as:
+- One short paragraph of overall context
+- A bullet list of the most important points (max 15 bullets)
+- A bullet list of key terms introduced
+Be concise. Respond in {language}.`.replace("{language}", language);
 
           const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
             method: "POST",
@@ -4126,6 +4246,74 @@ Be concise and sharp, not encouraging.`;
         if (saveSessionInlineBtn) {
           saveSessionInlineBtn.addEventListener("click", () => {
             exportSessionMarkdown();
+          });
+        }
+
+        if (summaryOverlayCloseBtn) {
+          summaryOverlayCloseBtn.addEventListener("click", () => {
+            setSummaryOverlayOpen(false);
+          });
+        }
+
+        if (summaryOverlayCopyBtn) {
+          summaryOverlayCopyBtn.addEventListener("click", async () => {
+            const t = String(summaryOverlayBody?.textContent || "");
+            await copyPlainTextToClipboard(t);
+          });
+        }
+
+        if (summarySoFarBtn) {
+          summarySoFarBtn.addEventListener("click", async () => {
+            const explanations = activeSession?.blocks
+              ?.filter((b) => b != null)
+              .map((b) => b.explanation);
+
+            const n = Array.isArray(explanations) ? explanations.length : 0;
+            if (!n) {
+              if (summaryOverlayTitle) {
+                summaryOverlayTitle.textContent = "Summary so far";
+              }
+              if (summaryOverlayBody) {
+                summaryOverlayBody.textContent = "";
+              }
+              setSummaryOverlayError("No blocks studied yet.");
+              setSummaryOverlayOpen(true);
+              return;
+            }
+
+            const prevText = summarySoFarBtn.textContent;
+            summarySoFarBtn.disabled = true;
+            summarySoFarBtn.textContent = "Summarising…";
+
+            if (summaryOverlayTitle) {
+              summaryOverlayTitle.textContent = `Summary so far (blocks 1–${n})`;
+            }
+            if (summaryOverlayBody) {
+              summaryOverlayBody.textContent = "Summarising…";
+            }
+            setSummaryOverlayError("");
+            setSummaryOverlayOpen(true);
+
+            try {
+              const apiKey = getStoredKey();
+              if (!apiKey) throw new Error("Missing API key.");
+
+              const language = getStudyLanguage();
+              const userPrompt = explanations.join("\n\n");
+              const out = await deepSeekSummarySoFar({
+                apiKey,
+                language,
+                userPrompt,
+              });
+              if (summaryOverlayBody) summaryOverlayBody.textContent = out;
+              setSummaryOverlayError("");
+            } catch (err) {
+              if (summaryOverlayBody) summaryOverlayBody.textContent = "";
+              setSummaryOverlayError(err?.message || "Failed to generate summary.");
+            } finally {
+              summarySoFarBtn.disabled = false;
+              summarySoFarBtn.textContent = prevText || "Summary so far";
+            }
           });
         }
 
