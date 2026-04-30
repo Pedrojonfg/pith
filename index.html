@@ -551,7 +551,7 @@
             <h1>Blocks (edit if needed)</h1>
             <p>
               This is the plain-text block list returned by DeepSeek. Next we’ll
-              use it to generate the full session JSON.
+              use it to generate each block as you study.
             </p>
             <textarea
               id="blocksListOutput"
@@ -561,7 +561,7 @@
 
             <div class="row">
               <button type="button" id="confirmBlocksBtn">
-                Looks good, generate session
+                Looks good, start session
               </button>
               <span class="hint" id="confirmBlocksStatus" role="status"></span>
             </div>
@@ -584,6 +584,39 @@
               <span class="hint" id="startStudyingStatus" role="status"></span>
             </div>
             <div id="startStudyingError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenBetweenBlocks"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Before next block"
+        >
+          <div class="card">
+            <h1 id="betweenBlocksHeader">Before the next block</h1>
+            <p class="subtle" id="betweenBlocksMeta"></p>
+
+            <div class="divider"></div>
+
+            <label for="betweenBlocksInput">
+              Any questions or comments before the next block? (optional)
+            </label>
+            <textarea
+              id="betweenBlocksInput"
+              class="answer-textarea"
+              spellcheck="true"
+            ></textarea>
+
+            <div class="row">
+              <button type="button" id="betweenBlocksSkipBtn">Skip</button>
+              <button type="button" id="betweenBlocksSendBtn">
+                Send & continue
+              </button>
+              <span class="hint" id="betweenBlocksStatus" role="status"></span>
+            </div>
+
+            <div id="betweenBlocksError" class="error" hidden></div>
           </div>
         </section>
 
@@ -739,6 +772,8 @@
         const apiKeyStatus = document.getElementById("apiKeyStatus");
         const screenBlocksList = document.getElementById("screenBlocksList");
         const screenSessionReady = document.getElementById("screenSessionReady");
+        const screenBetweenBlocks =
+          document.getElementById("screenBetweenBlocks");
         const screenSocratic = document.getElementById("screenSocratic");
         const screenTest = document.getElementById("screenTest");
         const screenComplete = document.getElementById("screenComplete");
@@ -772,6 +807,16 @@
         const startStudyingStatus =
           document.getElementById("startStudyingStatus");
         const startStudyingError = document.getElementById("startStudyingError");
+
+        const betweenBlocksHeader = document.getElementById("betweenBlocksHeader");
+        const betweenBlocksMeta = document.getElementById("betweenBlocksMeta");
+        const betweenBlocksInput = document.getElementById("betweenBlocksInput");
+        const betweenBlocksSkipBtn =
+          document.getElementById("betweenBlocksSkipBtn");
+        const betweenBlocksSendBtn =
+          document.getElementById("betweenBlocksSendBtn");
+        const betweenBlocksStatus = document.getElementById("betweenBlocksStatus");
+        const betweenBlocksError = document.getElementById("betweenBlocksError");
 
         const socraticHeader = document.getElementById("socraticHeader");
         const socraticMeta = document.getElementById("socraticMeta");
@@ -843,15 +888,17 @@
           const showCreate = which === "create";
           const showBlocks = which === "blocks";
           const showReady = which === "ready";
+          const showBetween = which === "between";
           const showSocratic = which === "socratic";
           const showTest = which === "test";
           const showComplete = which === "complete";
-          const showStudyProgress = showSocratic || showTest;
+          const showStudyProgress = showSocratic || showTest || showBetween;
 
           screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
           screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
           screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
           screenSessionReady.setAttribute("aria-hidden", String(!showReady));
+          screenBetweenBlocks.setAttribute("aria-hidden", String(!showBetween));
           screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
           screenTest.setAttribute("aria-hidden", String(!showTest));
           screenComplete.setAttribute("aria-hidden", String(!showComplete));
@@ -883,6 +930,14 @@
             startStudyingError.textContent = "";
           }
 
+          if (showBetween) {
+            betweenBlocksStatus.textContent = "";
+            betweenBlocksError.hidden = true;
+            betweenBlocksError.textContent = "";
+            betweenBlocksInput.value = "";
+            setTimeout(() => betweenBlocksInput.focus(), 0);
+          }
+
           if (showSocratic) {
             socraticStatus.textContent = "";
             clearSocraticError();
@@ -903,12 +958,50 @@
           return Array.isArray(activeSession?.blocks) ? activeSession.blocks : [];
         }
 
-        function updateStudyProgressUi() {
+        function getTotalBlocksSafe() {
           const blocks = getBlocksSafe();
-          const total = Math.max(1, blocks.length);
+          const n = Number(activeSession?.n_blocks);
+          if (Number.isFinite(n) && n > 0) return n;
+          return blocks.length;
+        }
+
+        function parseBlockTitlesFromList(text) {
+          const raw = String(text || "");
+          const lines = raw.split("\n");
+          const map = {};
+          for (const line of lines) {
+            const m = line.match(/^\s*(\d+)\s*[\.\)\-:]\s*(.+?)\s*$/);
+            if (!m) continue;
+            const idx = Number(m[1]);
+            if (!Number.isFinite(idx) || idx <= 0) continue;
+            let rest = String(m[2] || "").trim();
+            if (!rest) continue;
+            const split = rest.split(/\s+(?:—|–|-)\s+/);
+            const title = String(split[0] || rest).trim();
+            if (!title) continue;
+            map[String(idx)] = title;
+          }
+          return map;
+        }
+
+        function getBlockTitleFromList(blockIndex) {
+          const titles = parseBlockTitlesFromList(activeSession?.blocks_list_text);
+          const key = String(blockIndex + 1);
+          const t = titles[key];
+          return t ? String(t) : `Block ${blockIndex + 1}`;
+        }
+
+        function getBlockTitleSafe(blockIndex) {
+          const blocks = getBlocksSafe();
+          const b = blocks[blockIndex];
+          const t = b && typeof b === "object" ? String(b.title || "").trim() : "";
+          return t || getBlockTitleFromList(blockIndex);
+        }
+
+        function updateStudyProgressUi() {
+          const total = Math.max(1, getTotalBlocksSafe());
           const idx = Math.min(Math.max(0, activeBlockIndex), total - 1);
-          const block = blocks[idx];
-          const title = String(block?.title || "");
+          const title = getBlockTitleSafe(idx);
           studyProgressLabel.textContent = `Block ${idx + 1} of ${total}`;
           studyProgressTitle.textContent = title;
           const pct = ((idx + 1) / total) * 100;
@@ -917,6 +1010,47 @@
 
         function showSessionComplete() {
           showScreen("complete");
+        }
+
+        function showBetweenBlocksPrompt() {
+          const total = Math.max(1, getTotalBlocksSafe());
+          const isLastBlock = activeBlockIndex >= total - 1;
+          if (isLastBlock) {
+            showSessionComplete();
+            return;
+          }
+          const nextIndex = activeBlockIndex + 1;
+          const nextTitle = getBlockTitleSafe(nextIndex);
+          betweenBlocksHeader.textContent = "Before the next block";
+          betweenBlocksMeta.textContent = `Next: Block ${nextIndex + 1} of ${total}: ${nextTitle}`;
+          showScreen("between");
+        }
+
+        async function continueToNextBlock({ commentText }) {
+          clearBetweenBlocksError();
+          try {
+            setBetweenBlocksLoading(true);
+            const nextIndex = activeBlockIndex + 1;
+            activeSession._pending_comment_for_next_block = String(commentText || "").trim();
+            activeBlockIndex = nextIndex;
+            activeQuestionIndex = 0;
+            activeSession.current_block_index = activeBlockIndex;
+            storeActiveSession(activeSession);
+            updateStudyProgressUi();
+            if (studyMode === "socratic") {
+              showScreen("socratic");
+              await startSocraticBlock();
+            } else if (studyMode === "test") {
+              showScreen("test");
+              await startTestBlock();
+            } else {
+              throw new Error("Missing study mode.");
+            }
+          } catch (err) {
+            setBetweenBlocksError(err?.message ? String(err.message) : String(err));
+          } finally {
+            setBetweenBlocksLoading(false);
+          }
         }
 
         function ensureSessionResponseState() {
@@ -977,6 +1111,7 @@
           const dateStr = new Date().toISOString().slice(0, 10);
           const mode = String(safe.session_mode || "");
           const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+          const titleMap = parseBlockTitlesFromList(safe.blocks_list_text);
           const respBlocks =
             safe._responses?.blocks && typeof safe._responses.blocks === "object"
               ? safe._responses.blocks
@@ -989,7 +1124,10 @@
 
           for (let bi = 0; bi < blocks.length; bi += 1) {
             const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : {};
-            const title = String(b.title || `Block ${bi + 1}`);
+            const fallbackTitle = titleMap[String(bi + 1)]
+              ? String(titleMap[String(bi + 1)])
+              : `Block ${bi + 1}`;
+            const title = String(b.title || fallbackTitle);
             const explanation = String(b.explanation || "").trim();
             lines.push(`## Block ${bi + 1}: ${title}`);
             lines.push(explanation || "");
@@ -1070,6 +1208,34 @@
 
         function storeActiveSession(sessionObj) {
           localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(sessionObj));
+        }
+
+        function loadActiveSession() {
+          const raw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
+          if (raw && raw.trim()) {
+            try {
+              const obj = JSON.parse(raw);
+              if (obj && typeof obj === "object") return obj;
+            } catch {
+              // ignore
+            }
+          }
+          return null;
+        }
+
+        function initActiveSessionFromBlocksList({
+          mode,
+          nBlocks,
+          blocksListText,
+        }) {
+          const n = Math.max(1, Number(nBlocks) || 1);
+          return {
+            session_mode: mode,
+            n_blocks: n,
+            blocks_list_text: String(blocksListText || ""),
+            current_block_index: 0,
+            blocks: Array.from({ length: n }, () => null),
+          };
         }
 
         function getMockSessionSocratic() {
@@ -1158,21 +1324,6 @@
               },
             ],
           };
-        }
-
-        function loadActiveSessionOrMock() {
-          const raw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
-          if (raw && raw.trim()) {
-            try {
-              const obj = JSON.parse(raw);
-              if (obj && typeof obj === "object") return obj;
-            } catch {
-              // ignore
-            }
-          }
-          const mock = getMockSessionTest();
-          storeActiveSession(mock);
-          return mock;
         }
 
         function setRsvpOverlayActive(isActive) {
@@ -1295,6 +1446,76 @@
           startRsvpForText(block.explanation || "", onDone);
         }
 
+        function setBetweenBlocksError(message) {
+          betweenBlocksError.hidden = false;
+          betweenBlocksError.textContent = message;
+        }
+
+        function clearBetweenBlocksError() {
+          betweenBlocksError.hidden = true;
+          betweenBlocksError.textContent = "";
+        }
+
+        function setBetweenBlocksLoading(isLoading) {
+          betweenBlocksSkipBtn.disabled = isLoading;
+          betweenBlocksSendBtn.disabled = isLoading;
+          betweenBlocksInput.disabled = isLoading;
+          betweenBlocksStatus.textContent = isLoading ? "Continuing…" : "";
+        }
+
+        async function ensureBlockGenerated(blockIndex) {
+          const blocks = getBlocksSafe();
+          const existing = blocks[blockIndex];
+          if (existing && typeof existing === "object") return existing;
+
+          const apiKey = getStoredKey();
+          if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
+          if (!originalMaterialText.trim()) {
+            throw new Error(
+              "Missing original material for this session. Please re-upload and regenerate blocks.",
+            );
+          }
+
+          const blocksListText = String(activeSession?.blocks_list_text || "").trim();
+          if (!blocksListText) throw new Error("Missing confirmed blocks list.");
+
+          const mode = String(activeSession?.session_mode || "");
+          if (mode !== "test" && mode !== "socratic") {
+            throw new Error('Unsupported "session_mode". Use "test" or "socratic".');
+          }
+
+          const blockTitle = getBlockTitleFromList(blockIndex);
+          const prevComment = String(activeSession?._pending_comment_for_next_block || "")
+            .trim();
+
+          const obj = await deepSeekGenerateBlockJson({
+            apiKey,
+            mode,
+            blocksListText,
+            materialText: originalMaterialText,
+            blockIndex,
+            blockTitle,
+            previousComment: prevComment,
+          });
+
+          const cleaned =
+            obj && typeof obj === "object"
+              ? obj
+              : { id: blockIndex + 1, title: blockTitle, explanation: "", questions: [] };
+
+          if (cleaned.id == null) cleaned.id = blockIndex + 1;
+          if (!cleaned.title) cleaned.title = blockTitle;
+          if (!cleaned.explanation) cleaned.explanation = "";
+          if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
+
+          if (!Array.isArray(activeSession.blocks)) activeSession.blocks = [];
+          activeSession.blocks[blockIndex] = cleaned;
+          activeSession.current_block_index = blockIndex;
+          activeSession._pending_comment_for_next_block = "";
+          storeActiveSession(activeSession);
+          return cleaned;
+        }
+
         function clearSocraticError() {
           socraticError.hidden = true;
           socraticError.textContent = "";
@@ -1344,10 +1565,8 @@
         }
 
         function setTestMeta() {
-          const blocks = getBlocksSafe();
-          const total = Math.max(1, blocks.length);
-          const block = blocks[activeBlockIndex];
-          const title = String(block?.title || `Block ${activeBlockIndex + 1}`);
+          const total = Math.max(1, getTotalBlocksSafe());
+          const title = getBlockTitleSafe(activeBlockIndex);
           testHeader.textContent = title;
           testMeta.textContent = `Block ${activeBlockIndex + 1} of ${total}`;
         }
@@ -1362,7 +1581,7 @@
           testQaView.hidden = false;
         }
 
-        function startTestBlock() {
+        async function startTestBlock() {
           clearTestError();
           stopTestRsvp();
           activeQuestionIndex = 0;
@@ -1379,12 +1598,58 @@
           testRsvpView.hidden = true;
           testQaView.hidden = true;
 
+          try {
+            testRsvpStartBtn.disabled = true;
+            testRsvpSkipBtn.disabled = true;
+            testRsvpStatus.textContent = "Generating block…";
+            await ensureBlockGenerated(activeBlockIndex);
+          } catch (err) {
+            setTestError(err?.message ? String(err.message) : String(err));
+            testRsvpStatus.textContent = "";
+            testRsvpStartBtn.disabled = false;
+            testRsvpSkipBtn.disabled = false;
+            return;
+          } finally {
+            testRsvpStatus.textContent = "";
+            testRsvpStartBtn.disabled = false;
+            testRsvpSkipBtn.disabled = false;
+          }
+
           beginRsvpForCurrentBlock({
             onDone: () => {
               showScreen("test");
               updateStudyProgressUi();
               showTestQuestions();
               renderTestQuestion();
+            },
+          });
+        }
+
+        async function startSocraticBlock() {
+          clearSocraticError();
+          socraticStatus.textContent = "";
+          socraticResponseBox.hidden = true;
+          socraticResponseBox.textContent = "";
+          socraticNextQuestionBtn.hidden = true;
+          socraticNextBlockBtn.hidden = true;
+
+          try {
+            setSocraticLoading(true);
+            socraticStatus.textContent = "Generating block…";
+            await ensureBlockGenerated(activeBlockIndex);
+          } catch (err) {
+            setSocraticError(err?.message ? String(err.message) : String(err));
+            return;
+          } finally {
+            setSocraticLoading(false);
+            socraticStatus.textContent = "";
+          }
+
+          beginRsvpForCurrentBlock({
+            onDone: () => {
+              showScreen("socratic");
+              updateStudyProgressUi();
+              renderSocraticQuestion();
             },
           });
         }
@@ -1505,8 +1770,7 @@
               return;
             }
             if (!isLastBlock) {
-              activeBlockIndex += 1;
-              startTestBlock();
+              showBetweenBlocksPrompt();
               return;
             }
             showSessionComplete();
@@ -1543,11 +1807,10 @@
             return;
           }
 
-          const blockTitle = String(block.title || `Block ${activeBlockIndex + 1}`);
+          const total = Math.max(1, getTotalBlocksSafe());
+          const blockTitle = getBlockTitleSafe(activeBlockIndex);
           socraticHeader.textContent = "Socratic";
-          socraticMeta.textContent = `Block ${activeBlockIndex + 1} of ${
-            blocks.length
-          }: ${blockTitle}`;
+          socraticMeta.textContent = `Block ${activeBlockIndex + 1} of ${total}: ${blockTitle}`;
           socraticQuestionTitle.textContent = `Question ${
             activeQuestionIndex + 1
           } of ${socrQs.length}`;
@@ -1636,8 +1899,8 @@ Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
         function setConfirmLoading(isLoading) {
           confirmBlocksBtn.disabled = isLoading;
           confirmBlocksBtn.textContent = isLoading
-            ? "Generating…"
-            : "Looks good, generate session";
+            ? "Saving…"
+            : "Looks good, start session";
         }
 
         function setConfirmError(message) {
@@ -1707,37 +1970,41 @@ Just the list.`.replace("{N}", String(nBlocks));
           return content.trim();
         }
 
-        async function deepSeekGenerateSessionJson({
+        async function deepSeekGenerateBlockJson({
           apiKey,
-          nBlocks,
           mode,
-          confirmedBlocksListText,
+          blocksListText,
           materialText,
+          blockIndex,
+          blockTitle,
+          previousComment,
         }) {
-          const systemPrompt = `Given this confirmed list of {N} blocks and the original material below, return a 
-single JSON object. Schema:
+          const systemPrompt = `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
+Return a single JSON object with this schema:
 {
-  session_mode: "test" | "socratic",
-  blocks: [{
-    id: number,
-    title: string,
-    explanation: string (markdown),
-    questions: [{
-      type: "test" | "socratic",
-      question: string,
-      options?: { A, B, C, D },
-      answer?: string,
-      feedback?: string
-    }]
+  id: number,
+  title: string,
+  explanation: string (markdown),
+  questions: [{
+    type: "test" | "socratic",
+    question: string,
+    options?: { A, B, C, D },
+    answer?: string,
+    feedback?: string
   }]
 }
-Mode is {mode}. Test: 3-4 questions per block, 4 options, correct answer, brief feedback. 
-Socratic: 2-3 open questions requiring reasoning or synthesis.
+Mode is {mode}. For test: 3-4 questions, 4 options (A/B/C/D), correct answer, brief feedback.
+For socratic: 2-3 open questions requiring reasoning or synthesis.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
-            .replace("{N}", String(nBlocks))
             .replace("{mode}", mode);
 
-          const userContent = `Confirmed blocks list:\n${confirmedBlocksListText}\n\nOriginal material:\n${materialText}`;
+          const commentLine = previousComment
+            ? `\n\nThe student had this comment after the previous block:\n${previousComment}\nTake it into account for the explanation and questions.`
+            : "";
+
+          const userContent = `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${
+            Number(blockIndex) + 1
+          }. ${blockTitle}\n\nOriginal material:\n${materialText}${commentLine}`;
 
           const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
             method: "POST",
@@ -1776,13 +2043,15 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           }
 
           const raw = content.trim();
+          const responseText = raw;
           try {
             const clean = raw.replace(/```json|```/g, "").trim();
-            const session = JSON.parse(clean);
-            return session;
+            console.log("RAW RESPONSE:", responseText);
+            const blockObj = JSON.parse(clean);
+            return blockObj;
           } catch (e) {
             throw new Error(
-              "Model did not return valid JSON. Please try again (you can also tweak the blocks list).",
+              "Model did not return valid JSON for the block. Please try again.",
             );
           }
         }
@@ -1896,22 +2165,16 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           }
 
           setConfirmLoading(true);
-          confirmBlocksStatus.textContent = "Generating session JSON…";
+          confirmBlocksStatus.textContent = "Saving blocks list…";
 
           try {
-            const sessionObj = await deepSeekGenerateSessionJson({
-              apiKey,
-              nBlocks,
+            const sessionObj = initActiveSessionFromBlocksList({
               mode: sessionMode,
-              confirmedBlocksListText,
-              materialText: originalMaterialText,
+              nBlocks,
+              blocksListText: confirmedBlocksListText,
             });
-
             storeActiveSession(sessionObj);
-            const n = Array.isArray(sessionObj?.blocks)
-              ? sessionObj.blocks.length
-              : nBlocks;
-            sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+            sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
             showScreen("ready");
           } catch (err) {
             setConfirmError(err?.message ? String(err.message) : String(err));
@@ -1921,37 +2184,51 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
           }
         });
 
-        startStudyingBtn.addEventListener("click", () => {
+        startStudyingBtn.addEventListener("click", async () => {
           startStudyingError.hidden = true;
           startStudyingError.textContent = "";
           startStudyingStatus.textContent = "";
 
-          activeSession = loadActiveSessionOrMock();
+          activeSession = loadActiveSession();
+          if (!activeSession) {
+            startStudyingError.hidden = false;
+            startStudyingError.textContent = "No saved session found. Generate blocks first.";
+            showScreen("create");
+            return;
+          }
           const mode = String(activeSession?.session_mode || "");
           studyMode = mode === "test" || mode === "socratic" ? mode : null;
           ensureSessionResponseState();
-          activeBlockIndex = 0;
+          activeBlockIndex = Math.max(
+            0,
+            Number(activeSession?.current_block_index) || 0,
+          );
           activeQuestionIndex = 0;
           updateStudyProgressUi();
           if (studyMode === "socratic") {
-            beginRsvpForCurrentBlock({
-              onDone: () => {
-                showScreen("socratic");
-                updateStudyProgressUi();
-                renderSocraticQuestion();
-              },
-            });
+            showScreen("socratic");
+            await startSocraticBlock();
             return;
           }
 
           if (studyMode === "test") {
-            startTestBlock();
+            showScreen("test");
+            await startTestBlock();
             return;
           }
 
           startStudyingError.hidden = false;
           startStudyingError.textContent =
             'Unsupported "session_mode". Use "test" or "socratic".';
+        });
+
+        betweenBlocksSkipBtn.addEventListener("click", async () => {
+          await continueToNextBlock({ commentText: "" });
+        });
+
+        betweenBlocksSendBtn.addEventListener("click", async () => {
+          const msg = String(betweenBlocksInput.value || "").trim();
+          await continueToNextBlock({ commentText: msg });
         });
 
         socraticSubmitBtn.addEventListener("click", async () => {
@@ -2053,17 +2330,7 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         socraticNextBlockBtn.addEventListener("click", () => {
           const blocks = getBlocksSafe();
           if (activeBlockIndex < blocks.length - 1) {
-            activeBlockIndex += 1;
-            activeQuestionIndex = 0;
-            socraticNextBlockBtn.textContent = "Next block";
-            updateStudyProgressUi();
-            beginRsvpForCurrentBlock({
-              onDone: () => {
-                showScreen("socratic");
-                updateStudyProgressUi();
-                renderSocraticQuestion();
-              },
-            });
+            showBetweenBlocksPrompt();
             return;
           }
           showSessionComplete();
@@ -2106,8 +2373,21 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         });
 
         // Keep old test RSVP buttons, but route them to the new overlay.
-        testRsvpStartBtn.addEventListener("click", () => {
+        testRsvpStartBtn.addEventListener("click", async () => {
           clearTestError();
+          try {
+            testRsvpStartBtn.disabled = true;
+            testRsvpSkipBtn.disabled = true;
+            testRsvpStatus.textContent = "Generating block…";
+            await ensureBlockGenerated(activeBlockIndex);
+          } catch (err) {
+            setTestError(err?.message ? String(err.message) : String(err));
+            return;
+          } finally {
+            testRsvpStatus.textContent = "";
+            testRsvpStartBtn.disabled = false;
+            testRsvpSkipBtn.disabled = false;
+          }
           beginRsvpForCurrentBlock({
             onDone: () => {
               showScreen("test");
@@ -2126,8 +2406,16 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
         const hasStoredSession =
           !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
         if (hasStoredSession) {
-          activeSession = loadActiveSessionOrMock();
-          startStudyingBtn.click();
+          activeSession = loadActiveSession();
+          if (activeSession) {
+            const n = Math.max(1, getTotalBlocksSafe());
+            sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+            showScreen("ready");
+          } else if (getStoredKey()) {
+            showScreen("create");
+          } else {
+            showScreen("setup");
+          }
         } else if (getStoredKey()) {
           showScreen("create");
         } else {
