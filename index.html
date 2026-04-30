@@ -744,6 +744,131 @@
             <p>You’re done. Save your session when you’re ready.</p>
             <div class="row" style="justify-content: center">
               <button type="button" id="saveSessionBtn">Save session</button>
+              <button type="button" id="reviewSessionBtn">Review session</button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenReviewConfig"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Review session configuration"
+        >
+          <div class="card">
+            <h1>Review session</h1>
+            <p>Generate a new set of questions covering the full session.</p>
+
+            <div class="divider"></div>
+
+            <label>Question type</label>
+            <div class="toggle" role="group" aria-label="Question type">
+              <button type="button" id="reviewTypeTestBtn" aria-pressed="false">
+                Test
+              </button>
+              <button type="button" id="reviewTypeSocraticBtn" aria-pressed="false">
+                Socratic
+              </button>
+              <button type="button" id="reviewTypeBothBtn" aria-pressed="true">
+                Both
+              </button>
+            </div>
+
+            <div style="height: 14px"></div>
+
+            <label for="reviewNQuestionsInput">Number of questions</label>
+            <input
+              id="reviewNQuestionsInput"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              value="20"
+            />
+
+            <div class="row">
+              <button type="button" id="reviewStartBtn">Start review</button>
+              <button type="button" id="reviewCancelBtn">Cancel</button>
+              <span class="hint" id="reviewConfigStatus" role="status"></span>
+            </div>
+            <div id="reviewConfigError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenReviewGenerating"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Generating review questions"
+        >
+          <div class="card">
+            <h1>Generating questions…</h1>
+            <p class="subtle" id="reviewGeneratingLabel">Generating questions…</p>
+            <div class="bar" aria-hidden="true">
+              <div id="reviewGeneratingFill" class="fill"></div>
+            </div>
+            <div class="row">
+              <button type="button" id="reviewGeneratingCancelBtn">Cancel</button>
+            </div>
+            <div id="reviewGeneratingError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenReview"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Review questions"
+        >
+          <div class="card">
+            <div class="rowline" style="justify-content: space-between">
+              <span id="reviewMeta">Question 1 of 1</span>
+              <span id="reviewScore" class="hint"></span>
+              <button type="button" id="reviewQuitBtn">Quit</button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="test-question" id="reviewQuestionText"></div>
+
+            <div id="reviewTestView" hidden>
+              <div class="test-options" id="reviewTestOptions"></div>
+              <div id="reviewTestFeedback" class="response-box" hidden></div>
+              <div class="row">
+                <button type="button" id="reviewNextBtn" hidden>Next</button>
+              </div>
+            </div>
+
+            <div id="reviewSocraticView" hidden>
+              <label for="reviewSocraticAnswer">Your answer</label>
+              <textarea id="reviewSocraticAnswer" spellcheck="true"></textarea>
+              <div class="row">
+                <button type="button" id="reviewSocraticSendBtn">Send</button>
+                <button type="button" id="reviewSocraticNextBtn" hidden>Next</button>
+                <span class="hint" id="reviewSocraticStatus" role="status"></span>
+              </div>
+              <div id="reviewSocraticResponseBox" class="response-box" hidden></div>
+            </div>
+
+            <div id="reviewError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenReviewSummary"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Review summary"
+        >
+          <div class="card">
+            <h1>Review complete</h1>
+            <p class="subtle" id="reviewSummaryMeta"></p>
+
+            <div id="reviewWrongList" class="response-box" hidden></div>
+
+            <div class="row">
+              <button type="button" id="reviewSummaryBackBtn">Back</button>
+              <button type="button" id="reviewSummaryNewBtn">Review again</button>
             </div>
           </div>
         </section>
@@ -798,6 +923,7 @@
         const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
         const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
         const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
+        const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
         const DS_CHAT_COMPLETIONS_URL =
           "https://api.deepseek.com/v1/chat/completions";
 
@@ -822,6 +948,12 @@
         const screenSocratic = document.getElementById("screenSocratic");
         const screenTest = document.getElementById("screenTest");
         const screenComplete = document.getElementById("screenComplete");
+        const screenReviewConfig = document.getElementById("screenReviewConfig");
+        const screenReviewGenerating = document.getElementById(
+          "screenReviewGenerating",
+        );
+        const screenReview = document.getElementById("screenReview");
+        const screenReviewSummary = document.getElementById("screenReviewSummary");
 
         const studyProgress = document.getElementById("studyProgress");
         const studyProgressLabel = document.getElementById("studyProgressLabel");
@@ -829,6 +961,64 @@
         const studyProgressFill = document.getElementById("studyProgressFill");
         const saveSessionInlineBtn = document.getElementById("saveSessionInlineBtn");
         const saveSessionBtn = document.getElementById("saveSessionBtn");
+        const reviewSessionBtn = document.getElementById("reviewSessionBtn");
+
+        const reviewTypeTestBtn = document.getElementById("reviewTypeTestBtn");
+        const reviewTypeSocraticBtn = document.getElementById(
+          "reviewTypeSocraticBtn",
+        );
+        const reviewTypeBothBtn = document.getElementById("reviewTypeBothBtn");
+        const reviewNQuestionsInput = document.getElementById(
+          "reviewNQuestionsInput",
+        );
+        const reviewStartBtn = document.getElementById("reviewStartBtn");
+        const reviewCancelBtn = document.getElementById("reviewCancelBtn");
+        const reviewConfigStatus = document.getElementById("reviewConfigStatus");
+        const reviewConfigError = document.getElementById("reviewConfigError");
+
+        const reviewGeneratingLabel = document.getElementById(
+          "reviewGeneratingLabel",
+        );
+        const reviewGeneratingFill = document.getElementById(
+          "reviewGeneratingFill",
+        );
+        const reviewGeneratingCancelBtn = document.getElementById(
+          "reviewGeneratingCancelBtn",
+        );
+        const reviewGeneratingError = document.getElementById(
+          "reviewGeneratingError",
+        );
+
+        const reviewMeta = document.getElementById("reviewMeta");
+        const reviewScore = document.getElementById("reviewScore");
+        const reviewQuitBtn = document.getElementById("reviewQuitBtn");
+        const reviewQuestionText = document.getElementById("reviewQuestionText");
+        const reviewTestView = document.getElementById("reviewTestView");
+        const reviewTestOptions = document.getElementById("reviewTestOptions");
+        const reviewTestFeedback = document.getElementById("reviewTestFeedback");
+        const reviewNextBtn = document.getElementById("reviewNextBtn");
+        const reviewSocraticView = document.getElementById("reviewSocraticView");
+        const reviewSocraticAnswer = document.getElementById(
+          "reviewSocraticAnswer",
+        );
+        const reviewSocraticSendBtn = document.getElementById(
+          "reviewSocraticSendBtn",
+        );
+        const reviewSocraticNextBtn = document.getElementById(
+          "reviewSocraticNextBtn",
+        );
+        const reviewSocraticStatus = document.getElementById(
+          "reviewSocraticStatus",
+        );
+        const reviewSocraticResponseBox = document.getElementById(
+          "reviewSocraticResponseBox",
+        );
+        const reviewError = document.getElementById("reviewError");
+
+        const reviewSummaryMeta = document.getElementById("reviewSummaryMeta");
+        const reviewWrongList = document.getElementById("reviewWrongList");
+        const reviewSummaryBackBtn = document.getElementById("reviewSummaryBackBtn");
+        const reviewSummaryNewBtn = document.getElementById("reviewSummaryNewBtn");
 
         const generateBlocksForm = document.getElementById("generateBlocksForm");
         const fileInput = document.getElementById("fileInput");
@@ -1018,6 +1208,10 @@
           const showSocratic = which === "socratic";
           const showTest = which === "test";
           const showComplete = which === "complete";
+          const showReviewConfig = which === "reviewConfig";
+          const showReviewGenerating = which === "reviewGenerating";
+          const showReview = which === "review";
+          const showReviewSummary = which === "reviewSummary";
           const showStudyProgress = showSocratic || showTest || showBetween;
 
           screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
@@ -1028,6 +1222,16 @@
           screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
           screenTest.setAttribute("aria-hidden", String(!showTest));
           screenComplete.setAttribute("aria-hidden", String(!showComplete));
+          screenReviewConfig.setAttribute("aria-hidden", String(!showReviewConfig));
+          screenReviewGenerating.setAttribute(
+            "aria-hidden",
+            String(!showReviewGenerating),
+          );
+          screenReview.setAttribute("aria-hidden", String(!showReview));
+          screenReviewSummary.setAttribute(
+            "aria-hidden",
+            String(!showReviewSummary),
+          );
 
           studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
           document.body.classList.toggle("study-active", showStudyProgress);
@@ -2958,6 +3162,602 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
             return;
           }
           showSessionComplete();
+        });
+
+        // ----------------------------
+        // Review mode (additive)
+        // ----------------------------
+        let reviewType = "both"; // "test" | "socratic" | "both"
+        let reviewQuestions = [];
+        let reviewIndex = 0;
+        let reviewCorrect = 0;
+        let reviewTestTotal = 0;
+        let reviewAnswers = [];
+        let reviewGenCancelToken = { cancelled: false };
+        let reviewSessionContent = "";
+
+        function setReviewConfigError(msg) {
+          reviewConfigError.hidden = false;
+          reviewConfigError.textContent = String(msg || "");
+        }
+        function clearReviewConfigError() {
+          reviewConfigError.hidden = true;
+          reviewConfigError.textContent = "";
+        }
+        function setReviewGeneratingError(msg) {
+          reviewGeneratingError.hidden = false;
+          reviewGeneratingError.textContent = String(msg || "");
+        }
+        function clearReviewGeneratingError() {
+          reviewGeneratingError.hidden = true;
+          reviewGeneratingError.textContent = "";
+        }
+        function setReviewError(msg) {
+          reviewError.hidden = false;
+          reviewError.textContent = String(msg || "");
+        }
+        function clearReviewError() {
+          reviewError.hidden = true;
+          reviewError.textContent = "";
+        }
+
+        function setReviewType(nextType) {
+          reviewType = nextType;
+          const isTest = reviewType === "test";
+          const isSocratic = reviewType === "socratic";
+          const isBoth = reviewType === "both";
+          reviewTypeTestBtn.setAttribute("aria-pressed", String(isTest));
+          reviewTypeSocraticBtn.setAttribute("aria-pressed", String(isSocratic));
+          reviewTypeBothBtn.setAttribute("aria-pressed", String(isBoth));
+        }
+
+        function getReviewQuestionCount() {
+          return clampInt(reviewNQuestionsInput.value, 1, 100, 20);
+        }
+
+        function getSessionMarkdownForReview() {
+          const stored = localStorage.getItem(LS_REVIEW_SESSION_MD_KEY);
+          if (stored && stored.trim()) return stored;
+          if (!activeSession) return "";
+          const md = buildMarkdown(activeSession);
+          try {
+            localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
+          } catch {
+            // ignore
+          }
+          return md;
+        }
+
+        function extractSessionContentFromMarkdown(md) {
+          const text = String(md || "");
+          if (!text.trim()) return "";
+          const parts = [];
+          const re =
+            /^##\s+Block\s+\d+:\s+.*\n([\s\S]*?)\n###\s+Questions(?:\s*&\s*Answers)?\s*$/gim;
+
+          let m = null;
+          while ((m = re.exec(text))) {
+            const expl = String(m[1] || "").trim();
+            if (expl) parts.push(expl);
+          }
+          return parts.join("\n\n").trim();
+        }
+
+        function buildSessionContentForReview() {
+          const md = getSessionMarkdownForReview();
+          const parsed = extractSessionContentFromMarkdown(md);
+          if (parsed) return parsed;
+
+          const blocks = Array.isArray(activeSession?.blocks) ? activeSession.blocks : [];
+          const fallback = blocks
+            .map((b) => (b && typeof b === "object" ? String(b.explanation || "").trim() : ""))
+            .filter(Boolean)
+            .join("\n\n")
+            .trim();
+          return fallback;
+        }
+
+        function parseJsonArrayFromModel(content) {
+          const raw = String(content || "").trim();
+          if (!raw) throw new Error("Empty model response.");
+          try {
+            const arr = JSON.parse(raw);
+            if (!Array.isArray(arr)) throw new Error("Response is not a JSON array.");
+            return arr;
+          } catch {
+            const start = raw.indexOf("[");
+            const end = raw.lastIndexOf("]");
+            if (start >= 0 && end > start) {
+              const slice = raw.slice(start, end + 1);
+              const arr = JSON.parse(slice);
+              if (!Array.isArray(arr)) throw new Error("Response is not a JSON array.");
+              return arr;
+            }
+            throw new Error("Failed to parse JSON array from model response.");
+          }
+        }
+
+        async function deepSeekGenerateReviewBatch({
+          apiKey,
+          sessionContent,
+          type,
+          batchSize,
+        }) {
+          const typeWord =
+            type === "both" ? "mixed (test and socratic)" : type === "test" ? "test" : "socratic";
+
+          const systemPrompt = `You are a review examiner. Based on this study session content, generate exactly {batch_size} {type} questions that test retention across the ENTIRE session, not just one block. Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
+Return ONLY valid JSON array:
+[{type, question, options?, answer?, feedback?}]
+No preamble, no backticks.`
+            .split("{batch_size}")
+            .join(String(batchSize))
+            .split("{type}")
+            .join(String(typeWord));
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: String(sessionContent || "") },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+
+          const arr = parseJsonArrayFromModel(content);
+          if (arr.length !== batchSize) {
+            throw new Error(
+              `Model returned ${arr.length} items, expected ${batchSize}.`,
+            );
+          }
+          return arr;
+        }
+
+        async function deepSeekReviewSocraticTutor({
+          apiKey,
+          sessionContent,
+          question,
+          studentAnswer,
+        }) {
+          const systemPrompt = `You are a Socratic tutor. The student is reviewing a study session. Evaluate their answer, point out gaps, and push their reasoning further.
+Be concise and sharp, not encouraging.`;
+          const userPrompt = `Session context:\n${sessionContent}\n\nQuestion: ${question}\nStudent answer: ${studentAnswer}`;
+
+          const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          let data = null;
+          try {
+            data = await res.json();
+          } catch {
+            // ignore JSON parse error; handled below
+          }
+
+          if (!res.ok) {
+            const apiMsg =
+              data?.error?.message ||
+              data?.message ||
+              `Request failed with status ${res.status}.`;
+            throw new Error(apiMsg);
+          }
+
+          const content = data?.choices?.[0]?.message?.content;
+          if (!content || typeof content !== "string") {
+            throw new Error("Unexpected API response (missing message content).");
+          }
+          return content.trim();
+        }
+
+        function resetReviewRun() {
+          reviewQuestions = [];
+          reviewIndex = 0;
+          reviewCorrect = 0;
+          reviewTestTotal = 0;
+          reviewAnswers = [];
+          reviewSessionContent = "";
+          clearReviewConfigError();
+          clearReviewGeneratingError();
+          clearReviewError();
+          reviewGeneratingLabel.textContent = "Generating questions…";
+          reviewGeneratingFill.style.width = "0%";
+          reviewTestFeedback.hidden = true;
+          reviewTestFeedback.textContent = "";
+          reviewSocraticResponseBox.hidden = true;
+          reviewSocraticResponseBox.textContent = "";
+          reviewSocraticStatus.textContent = "";
+          reviewNextBtn.hidden = true;
+          reviewSocraticNextBtn.hidden = true;
+        }
+
+        function showReviewConfig() {
+          resetReviewRun();
+          reviewConfigStatus.textContent = "";
+          reviewNQuestionsInput.value = String(getReviewQuestionCount());
+          setReviewType(reviewType);
+          showScreen("reviewConfig");
+        }
+
+        function updateReviewScoreUi() {
+          if (reviewTestTotal <= 0) {
+            reviewScore.textContent = "";
+            return;
+          }
+          reviewScore.textContent = `${reviewCorrect} / ${reviewTestTotal} correct`;
+        }
+
+        function normalizeReviewQuestion(q) {
+          const obj = q && typeof q === "object" ? q : {};
+          const type = String(obj.type || "").trim().toLowerCase();
+          const question = String(obj.question || "").trim();
+          const options = obj.options && typeof obj.options === "object" ? obj.options : null;
+          const answer = obj.answer != null ? String(obj.answer).trim() : "";
+          const feedback = obj.feedback != null ? String(obj.feedback).trim() : "";
+          if (!question) return null;
+          const safeType =
+            type === "test" || type === "socratic"
+              ? type
+              : reviewType === "socratic"
+                ? "socratic"
+                : "test";
+          return { type: safeType, question, options, answer, feedback };
+        }
+
+        function renderReviewQuestion() {
+          clearReviewError();
+          const total = reviewQuestions.length;
+          const q = reviewQuestions[reviewIndex];
+          if (!q) {
+            setReviewError("No questions loaded.");
+            return;
+          }
+
+          reviewMeta.textContent = `Question ${reviewIndex + 1} of ${total}`;
+          updateReviewScoreUi();
+
+          reviewQuestionText.textContent = String(q.question || "");
+          typesetMath(reviewQuestionText);
+
+          reviewTestView.hidden = true;
+          reviewSocraticView.hidden = true;
+          reviewTestOptions.innerHTML = "";
+          reviewTestFeedback.hidden = true;
+          reviewTestFeedback.textContent = "";
+          reviewNextBtn.hidden = true;
+
+          reviewSocraticAnswer.value = "";
+          reviewSocraticResponseBox.hidden = true;
+          reviewSocraticResponseBox.textContent = "";
+          reviewSocraticStatus.textContent = "";
+          reviewSocraticNextBtn.hidden = true;
+
+          if (q.type === "test") {
+            reviewTestView.hidden = false;
+            const opts = q.options && typeof q.options === "object" ? q.options : {};
+            const letters = ["A", "B", "C", "D"];
+            for (const letter of letters) {
+              const label = opts[letter] != null ? String(opts[letter]).trim() : "";
+              const btn = document.createElement("button");
+              btn.type = "button";
+              btn.textContent = `${letter}. ${label || ""}`.trim();
+              btn.addEventListener("click", () => {
+                const correct = String(q.answer || "").trim();
+                const isCorrect = correct && letter === correct;
+                reviewAnswers[reviewIndex] = {
+                  type: "test",
+                  user_answer: letter,
+                  correct_answer: correct,
+                  correct: !!isCorrect,
+                };
+                if (isCorrect) reviewCorrect += 1;
+
+                const all = Array.from(reviewTestOptions.querySelectorAll("button"));
+                for (const b of all) b.disabled = true;
+                for (const b of all) {
+                  const t = String(b.textContent || "");
+                  const l = t.slice(0, 1);
+                  if (correct && l === correct) b.classList.add("is-correct");
+                  if (l === letter && !isCorrect) b.classList.add("is-wrong");
+                }
+
+                updateReviewScoreUi();
+
+                const fb =
+                  q.feedback ||
+                  (correct ? `Correct answer: ${correct}` : "") ||
+                  (isCorrect ? "Correct." : "Incorrect.");
+                reviewTestFeedback.hidden = false;
+                reviewTestFeedback.textContent = fb;
+                typesetMath(reviewTestFeedback);
+
+                const isLast = reviewIndex >= total - 1;
+                reviewNextBtn.hidden = false;
+                reviewNextBtn.textContent = isLast ? "Finish" : "Next";
+              });
+              reviewTestOptions.appendChild(btn);
+            }
+
+            return;
+          }
+
+          reviewSocraticView.hidden = false;
+          setTimeout(() => reviewSocraticAnswer.focus(), 0);
+        }
+
+        function showReviewSummary() {
+          const total = reviewQuestions.length;
+          const hasAnyTest = reviewQuestions.some((q) => q && q.type === "test");
+
+          if (!hasAnyTest) {
+            reviewSummaryMeta.textContent = `Completed ${total} Socratic questions.`;
+            reviewWrongList.hidden = true;
+            reviewWrongList.textContent = "";
+          } else {
+            const scoredTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
+            const pct = scoredTotal ? Math.round((reviewCorrect / scoredTotal) * 100) : 0;
+            reviewSummaryMeta.textContent = `${reviewCorrect} / ${scoredTotal} correct (${pct}%)`;
+
+            const wrong = [];
+            for (let i = 0; i < reviewQuestions.length; i += 1) {
+              const q = reviewQuestions[i];
+              if (!q || q.type !== "test") continue;
+              const a = reviewAnswers[i];
+              if (!a || a.correct) continue;
+              wrong.push({
+                question: String(q.question || ""),
+                user: String(a.user_answer || ""),
+                correct: String(a.correct_answer || ""),
+              });
+            }
+
+            if (wrong.length) {
+              const lines = [];
+              lines.push("Wrong answers:");
+              lines.push("");
+              for (const w of wrong) {
+                lines.push(`- Q: ${w.question}`);
+                lines.push(`  - Your answer: ${w.user || "(blank)"}`);
+                lines.push(`  - Correct: ${w.correct || "(unknown)"}`);
+              }
+              reviewWrongList.hidden = false;
+              reviewWrongList.textContent = lines.join("\n");
+            } else {
+              reviewWrongList.hidden = true;
+              reviewWrongList.textContent = "";
+            }
+          }
+
+          showScreen("reviewSummary");
+        }
+
+        async function startReviewGeneration() {
+          clearReviewConfigError();
+          clearReviewGeneratingError();
+
+          const apiKey = getStoredKey();
+          if (!apiKey) {
+            setReviewConfigError("Missing API key.");
+            return;
+          }
+
+          const nQuestions = getReviewQuestionCount();
+          if (!activeSession) {
+            setReviewConfigError("No active session found to review.");
+            return;
+          }
+
+          const sessionContent = buildSessionContentForReview();
+          if (!sessionContent) {
+            setReviewConfigError("Could not extract session content for review.");
+            return;
+          }
+
+          reviewSessionContent = sessionContent;
+          reviewGenCancelToken = { cancelled: false };
+          showScreen("reviewGenerating");
+
+          const total = nQuestions;
+          let done = 0;
+          const batches = [];
+          for (let i = 0; i < total; i += 20) {
+            batches.push(Math.min(20, total - i));
+          }
+
+          const all = [];
+          for (const batchSize of batches) {
+            if (reviewGenCancelToken.cancelled) return;
+            reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
+            reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
+
+            const arr = await deepSeekGenerateReviewBatch({
+              apiKey,
+              sessionContent,
+              type: reviewType,
+              batchSize,
+            });
+
+            for (const item of arr) {
+              const norm = normalizeReviewQuestion(item);
+              if (norm) all.push(norm);
+            }
+
+            done += batchSize;
+            reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
+            reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
+          }
+
+          if (reviewGenCancelToken.cancelled) return;
+
+          if (all.length !== total) {
+            throw new Error(
+              `Generated ${all.length} usable questions, expected ${total}.`,
+            );
+          }
+
+          reviewQuestions = all;
+          reviewIndex = 0;
+          reviewCorrect = 0;
+          reviewTestTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
+          reviewAnswers = new Array(reviewQuestions.length).fill(null);
+
+          showScreen("review");
+          renderReviewQuestion();
+        }
+
+        if (reviewSessionBtn) {
+          reviewSessionBtn.addEventListener("click", () => {
+            showReviewConfig();
+          });
+        }
+
+        reviewTypeTestBtn.addEventListener("click", () => setReviewType("test"));
+        reviewTypeSocraticBtn.addEventListener("click", () => setReviewType("socratic"));
+        reviewTypeBothBtn.addEventListener("click", () => setReviewType("both"));
+
+        reviewCancelBtn.addEventListener("click", () => {
+          showScreen("complete");
+        });
+
+        reviewStartBtn.addEventListener("click", async () => {
+          reviewConfigStatus.textContent = "";
+          reviewConfigStatus.textContent = "Preparing…";
+          try {
+            await startReviewGeneration();
+          } catch (err) {
+            setReviewGeneratingError(err?.message ? String(err.message) : String(err));
+          } finally {
+            reviewConfigStatus.textContent = "";
+          }
+        });
+
+        reviewGeneratingCancelBtn.addEventListener("click", () => {
+          reviewGenCancelToken.cancelled = true;
+          showScreen("complete");
+        });
+
+        reviewQuitBtn.addEventListener("click", () => {
+          showScreen("complete");
+        });
+
+        reviewNextBtn.addEventListener("click", () => {
+          const isLast = reviewIndex >= reviewQuestions.length - 1;
+          if (isLast) {
+            showReviewSummary();
+            return;
+          }
+          reviewIndex += 1;
+          renderReviewQuestion();
+        });
+
+        reviewSocraticSendBtn.addEventListener("click", async () => {
+          clearReviewError();
+          reviewSocraticResponseBox.hidden = true;
+          reviewSocraticResponseBox.textContent = "";
+          reviewSocraticNextBtn.hidden = true;
+
+          const q = reviewQuestions[reviewIndex];
+          if (!q || q.type !== "socratic") {
+            setReviewError("Missing Socratic question.");
+            return;
+          }
+
+          const apiKey = getStoredKey();
+          if (!apiKey) {
+            setReviewError("Missing API key.");
+            return;
+          }
+
+          const answer = String(reviewSocraticAnswer.value || "").trim();
+          if (!answer) {
+            setReviewError("Please write an answer before submitting.");
+            return;
+          }
+
+          reviewSocraticStatus.textContent = "Calling DeepSeek…";
+          reviewSocraticSendBtn.disabled = true;
+          try {
+            const resp = await deepSeekReviewSocraticTutor({
+              apiKey,
+              sessionContent: reviewSessionContent,
+              question: String(q.question || ""),
+              studentAnswer: answer,
+            });
+            reviewSocraticResponseBox.hidden = false;
+            reviewSocraticResponseBox.textContent = resp;
+            typesetMath(reviewSocraticResponseBox);
+
+            reviewAnswers[reviewIndex] = {
+              type: "socratic",
+              user_answer: answer,
+              feedback: resp,
+            };
+
+            const isLast = reviewIndex >= reviewQuestions.length - 1;
+            reviewSocraticNextBtn.hidden = false;
+            reviewSocraticNextBtn.textContent = isLast ? "Finish" : "Next";
+          } catch (err) {
+            setReviewError(err?.message ? String(err.message) : String(err));
+          } finally {
+            reviewSocraticSendBtn.disabled = false;
+            reviewSocraticStatus.textContent = "";
+          }
+        });
+
+        reviewSocraticNextBtn.addEventListener("click", () => {
+          const isLast = reviewIndex >= reviewQuestions.length - 1;
+          if (isLast) {
+            showReviewSummary();
+            return;
+          }
+          reviewIndex += 1;
+          renderReviewQuestion();
+        });
+
+        reviewSummaryBackBtn.addEventListener("click", () => {
+          showScreen("complete");
+        });
+
+        reviewSummaryNewBtn.addEventListener("click", () => {
+          showReviewConfig();
         });
 
         saveSessionBtn.addEventListener("click", () => {
