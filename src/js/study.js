@@ -21,6 +21,7 @@ import {
   ensureSessionResponseState,
 } from "./session.js";
 import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js";
+import { LS_STUDY_NOTES_KEY } from "./config.js";
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;
@@ -637,6 +638,21 @@ export function wireStudyHandlers() {
   setMode("test");
   loadRsvpDefaultsFromStorage();
 
+  if (els.studyNotesInput) {
+    const stored = String(localStorage.getItem(LS_STUDY_NOTES_KEY) || "");
+    els.studyNotesInput.value = stored;
+    state.studyNotes = stored;
+    els.studyNotesInput.addEventListener("input", () => {
+      const v = String(els.studyNotesInput.value || "");
+      state.studyNotes = v;
+      try {
+        localStorage.setItem(LS_STUDY_NOTES_KEY, v);
+      } catch {
+        // ignore
+      }
+    });
+  }
+
   els.fileInput.addEventListener("change", async () => {
     if (!els.fileExtractHint) return;
     try {
@@ -659,6 +675,7 @@ export function wireStudyHandlers() {
     clearGenerateError();
     els.generateBlocksStatus.textContent = "";
     state.originalMaterialText = "";
+    state.studyNotes = els.studyNotesInput ? String(els.studyNotesInput.value || "") : "";
     state.lastNBlocks = 0;
     state.lastUploadedFileNames = [];
     state.lastCleanedMaterialText = "";
@@ -706,6 +723,7 @@ export function wireStudyHandlers() {
         apiKey,
         nBlocks,
         materialText: cleanedText,
+        studyNotes: String(state.studyNotes || ""),
         language: getStudyLanguage(),
       });
 
@@ -820,6 +838,10 @@ export function wireStudyHandlers() {
       });
       if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
         sessionObj._meta = {};
+      }
+      const notes = String(state.studyNotes || "").trim();
+      if (notes) {
+        sessionObj._meta.study_notes = notes;
       }
       if (Array.isArray(state.lastUploadedFileNames) && state.lastUploadedFileNames.length) {
         sessionObj._meta.source_files = state.lastUploadedFileNames.map((name) => ({

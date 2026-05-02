@@ -8,6 +8,7 @@ export const state = {
   sessionMode: "test",
   studyMode: null,
   originalMaterialText: "",
+  studyNotes: "",
   lastNBlocks: 0,
   lastUploadedFileNames: [],
   lastCleanedMaterialText: "",

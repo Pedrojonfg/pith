@@ -96,6 +96,7 @@ export async function deepSeekSplitIntoBlocks({
   apiKey,
   nBlocks,
   materialText,
+  studyNotes,
   language,
 }) {
   const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a university student.
@@ -114,11 +115,22 @@ You MUST cover the ENTIRE document from start to finish.
 Distribute blocks proportionally across all sections. 
 The last block must correspond to the last section of the document. 
 Do not over-represent early sections at the expense of later ones.
+If the student provides study comments/focus, use them to choose titles and allocate MORE detail/blocks to the relevant parts, while still covering the full document.
 
 Respond entirely in {language}.`
     .split("{N}")
     .join(String(nBlocks))
     .replace("{language}", language);
+
+  const messages = [{ role: "system", content: systemPrompt }];
+  const notes = String(studyNotes || "").trim();
+  if (notes) {
+    messages.push({
+      role: "user",
+      content: `Student comments / study focus (follow these preferences when splitting):\n${notes}`,
+    });
+  }
+  messages.push({ role: "user", content: materialText });
 
   const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
     method: "POST",
@@ -128,10 +140,7 @@ Respond entirely in {language}.`
     },
     body: JSON.stringify({
       model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: materialText },
-      ],
+      messages,
       temperature: 0.2,
     }),
   });

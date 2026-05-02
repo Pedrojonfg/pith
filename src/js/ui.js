@@ -93,6 +93,7 @@ export const els = {
   fileExtractHint: document.getElementById("fileExtractHint"),
   blocksInput: document.getElementById("blocksInput"),
   languageSelect: document.getElementById("languageSelect"),
+  studyNotesInput: document.getElementById("studyNotesInput"),
   modeTestBtn: document.getElementById("modeTestBtn"),
   modeSocraticBtn: document.getElementById("modeSocraticBtn"),
   modeHint: document.getElementById("modeHint"),
