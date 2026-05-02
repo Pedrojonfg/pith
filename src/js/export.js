@@ -74,6 +74,7 @@ export function buildMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   const dateStr = new Date().toISOString().slice(0, 10);
   const mode = String(safe.session_mode || "");
+  const studyNotes = String(safe?._meta?.study_notes || "").trim();
   const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
   const titleMap = parseBlockTitlesFromList(safe.blocks_list_text);
   const respBlocks =
@@ -84,6 +85,11 @@ export function buildMarkdown(session) {
   const lines = [];
   lines.push(`# Study Session — ${dateStr}`);
   lines.push(`Mode: ${mode}`);
+  if (studyNotes) {
+    lines.push("");
+    lines.push("## Study focus / comments");
+    lines.push(studyNotes);
+  }
   lines.push("");
 
   for (let bi = 0; bi < blocks.length; bi += 1) {
