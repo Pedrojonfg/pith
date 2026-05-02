@@ -2,8 +2,9 @@ import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js";
 import { updateDictionaryButtonVisibility } from "./dictionary.js";
 import { exportSessionMarkdown } from "./export.js";
 import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js";
+import { initGuideChat, sendGuideMessage } from "./guide-chat.js";
 import { getStoredKey, loadActiveSession, state } from "./session.js";
-import { initLanguageUi, els, showScreen } from "./ui.js";
+import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js";
 import { wireReviewHandlers } from "./review.js";
 import { wireStudyHandlers } from "./study.js";
 
@@ -72,6 +73,38 @@ function bootstrap() {
   initLanguageUi();
   wireStudyHandlers();
   wireReviewHandlers();
+  initGuideChat();
+
+  const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+  const sidebarCloseBtn = document.getElementById("sidebar-close-btn");
+  const sidebar = document.getElementById("guide-sidebar");
+
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener("click", toggleSidebar);
+  }
+  if (sidebarCloseBtn && sidebar) {
+    sidebarCloseBtn.addEventListener("click", () => {
+      sidebar.classList.add("collapsed");
+    });
+  }
+
+  const guideSendBtn = document.getElementById("guide-send-btn");
+  const guideInput = document.getElementById("guide-input");
+  const sendGuide = () => {
+    sendGuideMessage(String(guideInput?.value || ""), state.activeBlockIndex);
+  };
+  if (guideSendBtn) {
+    guideSendBtn.addEventListener("click", sendGuide);
+  }
+  if (guideInput) {
+    guideInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        sendGuide();
+      }
+    });
+  }
 
   els.changeKeyLink.addEventListener("click", (e) => {
     e.preventDefault();

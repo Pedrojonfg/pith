@@ -1,6 +1,6 @@
 import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js";
 import { clampInt } from "./session.js";
-import { els } from "./ui.js";
+import { els, hideSidebar, showSidebar } from "./ui.js";
 
 export const rsvpState = {
   words: [],
@@ -83,6 +83,7 @@ export function finishRsvp() {
   cancelRsvpTimer();
   rsvpState.countdownActive = false;
   setRsvpOverlayActive(false);
+  showSidebar();
   if (typeof rsvpState.onDone === "function") rsvpState.onDone();
 }
 
@@ -134,6 +135,7 @@ export function startRsvpForText(explanationText, onDone) {
   rsvpState.onDone = onDone;
   rsvpState.countdownActive = true;
 
+  hideSidebar();
   setRsvpOverlayActive(true);
   els.rsvpWpm.value = String(rsvpState.wpm);
   els.rsvpWpmLabel.textContent = String(rsvpState.wpm);

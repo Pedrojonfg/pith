@@ -164,6 +164,41 @@ export function typesetMath(containerEl) {
   }
 }
 
+export function toggleSidebar() {
+  const sidebar = document.getElementById("guide-sidebar");
+  if (!sidebar) return;
+  if (sidebar.classList.contains("disabled")) return;
+  sidebar.classList.toggle("collapsed");
+}
+
+export function hideSidebar() {
+  const sidebar = document.getElementById("guide-sidebar");
+  const toggleBtn = document.getElementById("sidebar-toggle-btn");
+  if (sidebar) {
+    sidebar.classList.add("disabled");
+    sidebar.style.opacity = "0.5";
+  }
+  if (toggleBtn) {
+    toggleBtn.disabled = true;
+    toggleBtn.setAttribute("aria-disabled", "true");
+    toggleBtn.style.opacity = "0.5";
+  }
+}
+
+export function showSidebar() {
+  const sidebar = document.getElementById("guide-sidebar");
+  const toggleBtn = document.getElementById("sidebar-toggle-btn");
+  if (sidebar) {
+    sidebar.classList.remove("disabled");
+    sidebar.style.opacity = "";
+  }
+  if (toggleBtn) {
+    toggleBtn.disabled = false;
+    toggleBtn.setAttribute("aria-disabled", "false");
+    toggleBtn.style.opacity = "";
+  }
+}
+
 export function initLanguageUi() {
   if (!els.languageSelect) return;
   els.languageSelect.innerHTML = "";

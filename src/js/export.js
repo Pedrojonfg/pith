@@ -159,6 +159,57 @@ export function buildMarkdown(session) {
     // ignore dictionary export errors
   }
 
+  const formatHHMM = (ts) => {
+    let d = null;
+    if (typeof ts === "number" && Number.isFinite(ts)) d = new Date(ts);
+    else {
+      const raw = String(ts || "").trim();
+      if (!raw) return "";
+      const asNum = Number(raw);
+      if (Number.isFinite(asNum) && asNum > 0) d = new Date(asNum);
+      else {
+        const parsed = new Date(raw);
+        if (!Number.isNaN(parsed.getTime())) d = parsed;
+      }
+    }
+    if (!d || Number.isNaN(d.getTime())) return "";
+    const pad2 = (n) => String(n).padStart(2, "0");
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
+  lines.push("## Study Guide Chat");
+  lines.push("");
+
+  const guideHistory = Array.isArray(window?.guideHistory) ? window.guideHistory : [];
+  if (!guideHistory.length) {
+    lines.push("(No guide interactions recorded.)");
+    lines.push("");
+  } else {
+    for (const m of guideHistory) {
+      const msg = m && typeof m === "object" ? m : {};
+      const role = String(msg.role || "").trim().toLowerCase();
+      const content = String(msg.content || "");
+      const hhmm = formatHHMM(msg.timestamp);
+      if (role === "user") {
+        lines.push(`**User**${hhmm ? ` (${hhmm})` : ""}: ${content}`);
+      } else if (role === "assistant") {
+        lines.push(`**Assistant**: ${content}`);
+      } else {
+        lines.push(`**${role || "Message"}**: ${content}`);
+      }
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+    }
+
+    const startTime = formatHHMM(guideHistory[0]?.timestamp);
+    const endTime = formatHHMM(guideHistory[guideHistory.length - 1]?.timestamp);
+    lines.push(
+      `Total messages: ${guideHistory.length} | Duration: ${startTime || "?"} → ${endTime || "?"}`,
+    );
+    lines.push("");
+  }
+
   return lines.join("\n").trim() + "\n";
 }
 

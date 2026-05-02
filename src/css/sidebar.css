@@ -1,0 +1,146 @@
+.guide-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 320px;
+  height: 100vh;
+  z-index: 900;
+  background: #1a1a1a;
+  border-left: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(0);
+  transition: transform 180ms ease;
+}
+
+.guide-sidebar.collapsed {
+  transform: translateX(100%);
+}
+
+.sidebar-header {
+  padding: 1rem;
+  border-bottom: 1px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+
+.sidebar-close {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sidebar-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+#chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  gap: 1rem;
+}
+
+.chat-message {
+  padding: 0.75rem;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+.message-user {
+  background: #7dd3fc;
+  color: #000;
+  margin-left: 2rem;
+}
+
+.message-assistant {
+  background: #2d2d2d;
+  color: #fff;
+  margin-right: 2rem;
+}
+
+.chat-input-wrapper {
+  padding: 1rem;
+  border-top: 1px solid #333;
+}
+
+#guide-input {
+  width: 100%;
+  background: #0f0f0f;
+  color: #fff;
+  border: 1px solid #444;
+  padding: 0.5rem;
+  resize: vertical;
+  border-radius: 12px;
+  outline: none;
+  min-height: 80px;
+  font: inherit;
+}
+
+#guide-input:focus {
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+#guide-send-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  background: #7dd3fc;
+  color: #000;
+  cursor: pointer;
+  padding: 0.5rem;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+#guide-send-btn:hover {
+  filter: brightness(0.96);
+}
+
+.sidebar-toggle {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  z-index: 800;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #7dd3fc;
+  color: #000;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-toggle:hover {
+  filter: brightness(0.96);
+}
+
+.sidebar-toggle:focus-visible,
+.sidebar-close:focus-visible,
+#guide-send-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.24);
+  outline-offset: 2px;
+}
+
