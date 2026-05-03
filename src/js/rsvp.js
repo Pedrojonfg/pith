@@ -45,8 +45,7 @@ function durationMsBaseTextChunk() {
 function durationMsVisibleForChunk(meta) {
   const base = durationMsBaseTextChunk();
   if (!meta || meta.type !== "math") return base;
-  const len = meta.content?.length ?? 0;
-  return Math.max(Math.round(base * 2), Math.min(14000, base + len * 25));
+  return Math.round(base * 3);
 }
 
 function finalPauseMs() {
@@ -201,6 +200,10 @@ function clearRsvpChunkEl() {
 
 /** @param {RsvpChunk} meta */
 function applyChunkToDom(meta) {
+  const mj = window.MathJax;
+  if (mj && typeof mj.typesetClear === "function") {
+    mj.typesetClear([els.rsvpChunk]);
+  }
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
   if (meta.type === "text") {
