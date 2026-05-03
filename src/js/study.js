@@ -730,6 +730,59 @@ export function wireStudyHandlers() {
       const parsed = safeParseJson(blocksList);
       const normalized = normalizeBlockIndexArray(parsed);
       if (!normalized || normalized.length !== nBlocks) {
+        // #region agent log
+        const raw = String(blocksList || "");
+        let rowDiag = null;
+        if (Array.isArray(parsed)) {
+          for (let i = 0; i < parsed.length; i++) {
+            const item = parsed[i];
+            if (!item || typeof item !== "object") {
+              rowDiag = { i, issue: "not_object" };
+              break;
+            }
+            const id = Number(item.id);
+            const title = String(item.title || "").trim();
+            const summary = String(item.summary || "").trim();
+            const chunk = String(item.chunk || "").trim();
+            if (!Number.isFinite(id) || id <= 0) rowDiag = { i, issue: "bad_id", rawId: item.id };
+            else if (!title) rowDiag = { i, issue: "empty_title" };
+            else if (!summary) rowDiag = { i, issue: "empty_summary" };
+            else if (!chunk) rowDiag = { i, issue: "empty_chunk" };
+            if (rowDiag) break;
+          }
+        }
+        fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Debug-Session-Id": "79a3e4",
+          },
+          body: JSON.stringify({
+            sessionId: "79a3e4",
+            runId: "pre-fix",
+            hypothesisId: "H-split-json",
+            location: "study.js:generateBlocksForm",
+            message: "blocks split validation failed",
+            data: {
+              nBlocks,
+              contentLen: raw.length,
+              head400: raw.slice(0, 400),
+              tail120: raw.slice(-120),
+              parsedNull: parsed === null,
+              parsedIsArray: Array.isArray(parsed),
+              topLevelKeys:
+                parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                  ? Object.keys(parsed).slice(0, 12)
+                  : [],
+              arrayLen: Array.isArray(parsed) ? parsed.length : null,
+              normalizedLen: normalized ? normalized.length : null,
+              rowDiag,
+              hasMarkdownFence: /```/.test(raw),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
         throw new Error(
           "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
         );
