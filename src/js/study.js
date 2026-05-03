@@ -1,4 +1,4 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_3";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_6";
 import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_3";
 import { exportSessionMarkdown } from "./export.js?v=20260503_3";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_3";
@@ -23,61 +23,6 @@ import {
 } from "./session.js?v=20260503_3";
 import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_3";
 import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_3";
-
-const AGENT_DEBUG_BUILD = "20260503_4";
-
-// #region agent log
-function agentDebugLog(runId, hypothesisId, message, data = {}) {
-  fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Debug-Session-Id": "79a3e4",
-    },
-    body: JSON.stringify({
-      sessionId: "79a3e4",
-      runId,
-      hypothesisId,
-      location: "study.js",
-      message,
-      data: {
-        build: AGENT_DEBUG_BUILD,
-        ...data,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-}
-// #endregion
-
-function describeJsonParseFailure(text) {
-  const raw = String(text || "").trim();
-  const withoutFence = raw
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-  const candidates = withoutFence && withoutFence !== raw
-    ? [
-        { name: "raw", value: raw },
-        { name: "withoutFence", value: withoutFence },
-      ]
-    : [{ name: "raw", value: raw }];
-  return candidates.map(({ name, value }) => {
-    try {
-      JSON.parse(value);
-      return { name, ok: true, len: value.length };
-    } catch (err) {
-      const message = err?.message ? String(err.message) : String(err);
-      const match = message.match(/position\s+(\d+)/i);
-      const pos = match ? Number(match[1]) : null;
-      const around =
-        Number.isFinite(pos) && pos >= 0
-          ? value.slice(Math.max(0, pos - 80), Math.min(value.length, pos + 80))
-          : "";
-      return { name, ok: false, len: value.length, message, pos, around };
-    }
-  });
-}
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;
@@ -311,15 +256,6 @@ async function ensureBlockGenerated(blockIndex) {
   const existing = blocks[blockIndex];
   if (existing && typeof existing === "object") return existing;
 
-  // #region agent log
-  agentDebugLog("block-flow", "H-block-generation", "ensure block generation started", {
-    blockIndex,
-    activeBlocksLen: blocks.length,
-    totalBlocks: getTotalBlocksSafe(),
-    hasBlockIndexEntry: Boolean(getBlockChunkFromIndex(blockIndex)),
-  });
-  // #endregion
-
   const apiKey = getStoredKey();
   if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
 
@@ -338,7 +274,7 @@ async function ensureBlockGenerated(blockIndex) {
     throw new Error("Missing block chunk for this session. Please regenerate blocks.");
   }
 
-  const obj = await deepSeekGenerateBlockJson({
+  const blockRequest = {
     apiKey,
     mode,
     blocksListText,
@@ -347,16 +283,16 @@ async function ensureBlockGenerated(blockIndex) {
     blockTitle,
     previousComment: prevComment,
     language: getStudyLanguage(),
-  });
+  };
 
-  // #region agent log
-  agentDebugLog("block-flow", "H-block-generation", "block completion returned", {
-    blockIndex,
-    hasObject: Boolean(obj && typeof obj === "object"),
-    questionCount: Array.isArray(obj?.questions) ? obj.questions.length : null,
-    explanationLen: String(obj?.explanation || "").length,
-  });
-  // #endregion
+  let obj = null;
+  try {
+    obj = await deepSeekGenerateBlockJson(blockRequest);
+  } catch (err) {
+    const message = err?.message ? String(err.message) : String(err);
+    if (!message.includes("valid JSON")) throw err;
+    obj = await deepSeekGenerateBlockJson(blockRequest);
+  }
 
   const cleaned =
     obj && typeof obj === "object"
@@ -707,14 +643,6 @@ async function copyPlainTextToClipboard(text) {
 }
 
 export function wireStudyHandlers() {
-  // #region agent log
-  agentDebugLog("module-flow", "H-module-version", "study handlers wired", {
-    href: window.location.href,
-    generateFormPresent: Boolean(els.generateBlocksForm),
-    safeParseFenceBuild: AGENT_DEBUG_BUILD,
-  });
-  // #endregion
-
   els.modeTestBtn.addEventListener("click", () => setMode("test"));
   els.modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
   setMode("test");
@@ -764,15 +692,6 @@ export function wireStudyHandlers() {
     state.lastCleanedMaterialWordCount = 0;
     state.lastBlockIndex = null;
 
-    // #region agent log
-    agentDebugLog("generate-flow", "H-handler-entry", "generate submit entered", {
-      requestedBlocks: Number(els.blocksInput.value),
-      fileCount: els.fileInput.files ? els.fileInput.files.length : 0,
-      mode: state.sessionMode,
-      language: getStudyLanguage(),
-    });
-    // #endregion
-
     const apiKey = getStoredKey();
     if (!apiKey) {
       setGenerateError("Missing API key. Click “Change API key” to set it.");
@@ -810,15 +729,6 @@ export function wireStudyHandlers() {
       state.originalMaterialText = cleanedText;
       state.lastNBlocks = nBlocks;
 
-      // #region agent log
-      agentDebugLog("generate-flow", "H-before-split-api", "calling split completion", {
-        nBlocks,
-        materialLen: cleanedText.length,
-        wordCount,
-        promptHasChunksRemoved: true,
-      });
-      // #endregion
-
       const blocksList = await deepSeekSplitIntoBlocks({
         apiKey,
         nBlocks,
@@ -827,73 +737,9 @@ export function wireStudyHandlers() {
         language: getStudyLanguage(),
       });
 
-      // #region agent log
-      agentDebugLog("generate-flow", "H-after-split-api", "split completion returned", {
-        nBlocks,
-        contentLen: String(blocksList || "").length,
-        head120: String(blocksList || "").slice(0, 120),
-        tail80: String(blocksList || "").slice(-80),
-        hasMarkdownFence: /```/.test(String(blocksList || "")),
-      });
-      // #endregion
-
       const parsed = safeParseJson(blocksList);
       const normalized = normalizeBlockIndexArray(parsed, { requireChunk: false });
       if (!normalized || normalized.length !== nBlocks) {
-        // #region agent log
-        const raw = String(blocksList || "");
-        let rowDiag = null;
-        if (Array.isArray(parsed)) {
-          for (let i = 0; i < parsed.length; i++) {
-            const item = parsed[i];
-            if (!item || typeof item !== "object") {
-              rowDiag = { i, issue: "not_object" };
-              break;
-            }
-            const id = Number(item.id);
-            const title = String(item.title || "").trim();
-            const summary = String(item.summary || "").trim();
-            const chunk = String(item.chunk || "").trim();
-            if (!Number.isFinite(id) || id <= 0) rowDiag = { i, issue: "bad_id", rawId: item.id };
-            else if (!title) rowDiag = { i, issue: "empty_title" };
-            else if (!summary) rowDiag = { i, issue: "empty_summary" };
-            else if (!chunk) rowDiag = { i, issue: "empty_chunk" };
-            if (rowDiag) break;
-          }
-        }
-        fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Debug-Session-Id": "79a3e4",
-          },
-          body: JSON.stringify({
-            sessionId: "79a3e4",
-            runId: "pre-fix",
-            hypothesisId: "H-split-json",
-            location: "study.js:generateBlocksForm",
-            message: "blocks split validation failed",
-            data: {
-              nBlocks,
-              contentLen: raw.length,
-              head400: raw.slice(0, 400),
-              tail120: raw.slice(-120),
-              parsedNull: parsed === null,
-              parsedIsArray: Array.isArray(parsed),
-              topLevelKeys:
-                parsed && typeof parsed === "object" && !Array.isArray(parsed)
-                  ? Object.keys(parsed).slice(0, 12)
-                  : [],
-              arrayLen: Array.isArray(parsed) ? parsed.length : null,
-              normalizedLen: normalized ? normalized.length : null,
-              rowDiag,
-              hasMarkdownFence: /```/.test(raw),
-              parseDiagnostics: describeJsonParseFailure(raw),
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         throw new Error(
           "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
         );
@@ -903,33 +749,6 @@ export function wireStudyHandlers() {
         ...b,
         chunk: String(b.chunk || localChunks[i] || "").trim(),
       }));
-      // #region agent log
-      fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "79a3e4",
-        },
-        body: JSON.stringify({
-          sessionId: "79a3e4",
-          runId: "post-fix",
-          hypothesisId: "H-split-json",
-          location: "study.js:generateBlocksForm",
-          message: "blocks split validation passed",
-          data: {
-            nBlocks,
-            contentLen: String(blocksList || "").length,
-            parsedIsArray: Array.isArray(parsed),
-            normalizedLen: normalized.length,
-            localChunksLen: localChunks.length,
-            emptyChunkCount: state.lastBlockIndex.filter((b) => !String(b.chunk || "").trim())
-              .length,
-            hasMarkdownFence: /```/.test(String(blocksList || "")),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
       els.blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
       showScreen("blocks");
     } catch (err) {
@@ -943,14 +762,6 @@ export function wireStudyHandlers() {
   els.confirmBlocksBtn.addEventListener("click", async () => {
     clearConfirmError();
     els.confirmBlocksStatus.textContent = "";
-
-    // #region agent log
-    agentDebugLog("confirm-flow", "H-confirm-state", "confirm blocks clicked", {
-      lastNBlocks: state.lastNBlocks,
-      lastBlockIndexLen: Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex.length : null,
-      outputLen: String(els.blocksListOutput.value || "").length,
-    });
-    // #endregion
 
     const apiKey = getStoredKey();
     if (!apiKey) {
