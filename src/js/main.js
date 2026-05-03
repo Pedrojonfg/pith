@@ -1,12 +1,12 @@
-import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js";
-import { updateDictionaryButtonVisibility } from "./dictionary.js";
-import { exportSessionMarkdown } from "./export.js";
-import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js";
-import { initGuideChat, sendGuideMessage } from "./guide-chat.js";
-import { getStoredKey, loadActiveSession, state } from "./session.js";
-import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js";
-import { wireReviewHandlers } from "./review.js";
-import { wireStudyHandlers } from "./study.js";
+import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260503_2";
+import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_2";
+import { exportSessionMarkdown } from "./export.js?v=20260503_2";
+import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260503_2";
+import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260503_2";
+import { getStoredKey, loadActiveSession, state } from "./session.js?v=20260503_2";
+import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260503_2";
+import { wireReviewHandlers } from "./review.js?v=20260503_2";
+import { wireStudyHandlers } from "./study.js?v=20260503_2";
 
 function clearActiveSessionStorage() {
   try {

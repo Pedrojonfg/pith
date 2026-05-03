@@ -2,7 +2,7 @@ import {
   LS_ACTIVE_SESSION_KEY,
   LS_BLOCK_INDEX_KEY,
   LS_KEY,
-} from "./config.js";
+} from "./config.js?v=20260503_2";
 
 export const state = {
   sessionMode: "test",
