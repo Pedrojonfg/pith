@@ -1,4 +1,4 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260503_3";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260503_7";
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
@@ -91,6 +91,11 @@ export const els = {
   generateBlocksForm: document.getElementById("generateBlocksForm"),
   fileInput: document.getElementById("fileInput"),
   fileExtractHint: document.getElementById("fileExtractHint"),
+  resumeMaterialInput: document.getElementById("resumeMaterialInput"),
+  resumeMdInput: document.getElementById("resumeMdInput"),
+  resumeSessionBtn: document.getElementById("resumeSessionBtn"),
+  resumeSessionStatus: document.getElementById("resumeSessionStatus"),
+  resumeSessionError: document.getElementById("resumeSessionError"),
   blocksInput: document.getElementById("blocksInput"),
   languageSelect: document.getElementById("languageSelect"),
   studyNotesInput: document.getElementById("studyNotesInput"),

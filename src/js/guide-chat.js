@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_ACTIVE_SESSION_KEY, LS_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260503_3";
+import { DS_CHAT_COMPLETIONS_URL, LS_ACTIVE_SESSION_KEY, LS_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260503_7";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -83,15 +83,56 @@ export function initGuideChat() {
     currentBlockIndex,
   });
 
+  const sessionId = getSessionId(activeSession);
+
   window.guideContext = {
-    sessionId: getSessionId(activeSession),
+    sessionId,
     language,
     title,
     currentBlockIndex,
     sessionContext,
   };
 
-  window.guideHistory = [];
+  let history = [];
+  try {
+    const raw = localStorage.getItem(`guide_chat_${sessionId}`);
+    if (raw && raw.trim()) {
+      const parsed = safeJsonParse(raw);
+      if (Array.isArray(parsed)) history = parsed;
+    }
+  } catch {
+    // ignore
+  }
+  window.guideHistory = history;
+}
+
+export function refreshGuideContext() {
+  const activeSession = getActiveSessionFromStorage();
+  const language = getStudyLanguageFromStorage();
+  const currentBlockIndex = Number(activeSession?.current_block_index) || 0;
+  const { title, sessionContext } = buildSessionContext({
+    activeSession,
+    currentBlockIndex,
+  });
+  const sessionId = getSessionId(activeSession);
+  window.guideContext = {
+    sessionId,
+    language,
+    title,
+    currentBlockIndex,
+    sessionContext,
+  };
+  let history = [];
+  try {
+    const raw = localStorage.getItem(`guide_chat_${sessionId}`);
+    if (raw && raw.trim()) {
+      const parsed = safeJsonParse(raw);
+      if (Array.isArray(parsed)) history = parsed;
+    }
+  } catch {
+    // ignore
+  }
+  window.guideHistory = history;
 }
 
 export function buildGuidePrompt(userMessage, currentBlockIndex) {
