@@ -24,7 +24,7 @@ import {
 import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_3";
 import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_3";
 
-const AGENT_DEBUG_BUILD = "20260503_3";
+const AGENT_DEBUG_BUILD = "20260503_4";
 
 // #region agent log
 function agentDebugLog(runId, hypothesisId, message, data = {}) {
@@ -49,6 +49,35 @@ function agentDebugLog(runId, hypothesisId, message, data = {}) {
   }).catch(() => {});
 }
 // #endregion
+
+function describeJsonParseFailure(text) {
+  const raw = String(text || "").trim();
+  const withoutFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  const candidates = withoutFence && withoutFence !== raw
+    ? [
+        { name: "raw", value: raw },
+        { name: "withoutFence", value: withoutFence },
+      ]
+    : [{ name: "raw", value: raw }];
+  return candidates.map(({ name, value }) => {
+    try {
+      JSON.parse(value);
+      return { name, ok: true, len: value.length };
+    } catch (err) {
+      const message = err?.message ? String(err.message) : String(err);
+      const match = message.match(/position\s+(\d+)/i);
+      const pos = match ? Number(match[1]) : null;
+      const around =
+        Number.isFinite(pos) && pos >= 0
+          ? value.slice(Math.max(0, pos - 80), Math.min(value.length, pos + 80))
+          : "";
+      return { name, ok: false, len: value.length, message, pos, around };
+    }
+  });
+}
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;
@@ -859,6 +888,7 @@ export function wireStudyHandlers() {
               normalizedLen: normalized ? normalized.length : null,
               rowDiag,
               hasMarkdownFence: /```/.test(raw),
+              parseDiagnostics: describeJsonParseFailure(raw),
             },
             timestamp: Date.now(),
           }),
