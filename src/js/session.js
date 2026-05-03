@@ -2,7 +2,8 @@ import {
   LS_ACTIVE_SESSION_KEY,
   LS_BLOCK_INDEX_KEY,
   LS_KEY,
-} from "./config.js?v=20260503_3";
+  LS_SESSION_CONCEPTS_KEY,
+} from "./config.js?v=20260503_7";
 
 export const state = {
   sessionMode: "test",
@@ -182,6 +183,351 @@ export function parseBlockTitlesFromList(text) {
   return map;
 }
 
+/** Each line: `id. title — summary` (summary optional). */
+export function parseBlocksPlanFromList(text) {
+  const raw = String(text || "");
+  const lines = raw.split("\n");
+  const out = [];
+  for (const line of lines) {
+    const m = line.match(/^\s*(\d+)\s*[\.\)\-:]\s*(.+?)\s*$/);
+    if (!m) continue;
+    const id = Number(m[1]);
+    const rest = String(m[2] || "").trim();
+    if (!Number.isFinite(id) || id <= 0 || !rest) continue;
+    const emMatch = rest.match(/^(.*?)\s+(?:—|–|-)\s+(.*)$/);
+    const title = String(emMatch ? emMatch[1] : rest).trim();
+    const summary = String(emMatch ? emMatch[2] : "").trim();
+    if (!title) continue;
+    out.push({ id, title, summary });
+  }
+  out.sort((a, b) => a.id - b.id);
+  return out;
+}
+
+const RESUME_FORMAT_VERSION = 1;
+
+function deepCloneJson(obj) {
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return null;
+  }
+}
+
+function getQuestionsForMode(block, mode) {
+  const qs = Array.isArray(block?.questions) ? block.questions : [];
+  const m = String(mode || "").trim();
+  if (m === "test") return qs.filter((q) => q && typeof q === "object" && q.type === "test");
+  if (m === "socratic") {
+    return qs.filter((q) => q && typeof q === "object" && q.type === "socratic");
+  }
+  return qs;
+}
+
+function countAnsweredInBlock(blockIndex, questionCount, responses) {
+  const b =
+    responses?.blocks &&
+    typeof responses.blocks === "object" &&
+    responses.blocks[String(blockIndex)] &&
+    typeof responses.blocks[String(blockIndex)] === "object"
+      ? responses.blocks[String(blockIndex)]
+      : null;
+  const qm = b?.questions && typeof b.questions === "object" ? b.questions : {};
+  let n = 0;
+  for (let qi = 0; qi < questionCount; qi += 1) {
+    const r = qm[String(qi)];
+    if (r && typeof r === "object" && r.user_answer != null && String(r.user_answer).trim()) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/** Human-readable status for Session Plan export. */
+export function getBlockResumeStatus({ block, blockIndex, mode, responses }) {
+  const bi = Number(blockIndex);
+  const m = String(mode || "").trim();
+  if (!block || typeof block !== "object") {
+    return { phase: "pending", answered: 0, total: 0, label: "pending (not generated yet)" };
+  }
+  const qs = getQuestionsForMode(block, m);
+  const total = qs.length;
+  const answered =
+    total > 0 ? countAnsweredInBlock(bi, total, responses) : 0;
+  if (total === 0) {
+    return { phase: "generated", answered: 0, total: 0, label: "generated (no questions)" };
+  }
+  if (answered >= total) {
+    return { phase: "complete", answered, total, label: `complete (${answered}/${total} answered)` };
+  }
+  return {
+    phase: "in_progress",
+    answered,
+    total,
+    label: `in progress (${answered}/${total} answered)`,
+  };
+}
+
+export function buildResumePayload(session, { activeBlockIndex, activeQuestionIndex } = {}) {
+  const safe = session && typeof session === "object" ? session : {};
+  const n = Math.max(1, Number(safe.n_blocks) || 1);
+  const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  let blocksPlan = parseBlocksPlanFromList(safe.blocks_list_text || "");
+  if (blocksPlan.length < n) {
+    const titleMap = parseBlockTitlesFromList(safe.blocks_list_text);
+    const byId = new Map(blocksPlan.map((b) => [b.id, b]));
+    for (let id = 1; id <= n; id += 1) {
+      if (byId.has(id)) continue;
+      const bl = blocks[id - 1];
+      const fromBlock =
+        bl && typeof bl === "object"
+          ? { id, title: String(bl.title || "").trim(), summary: "" }
+          : {
+              id,
+              title: titleMap[String(id)] || `Block ${id}`,
+              summary: "",
+            };
+      byId.set(id, {
+        id,
+        title: fromBlock.title || `Block ${id}`,
+        summary: String(fromBlock.summary || "").trim(),
+      });
+    }
+    blocksPlan = Array.from(byId.values()).sort((a, b) => a.id - b.id);
+  }
+  blocksPlan = blocksPlan.filter((b) => b && Number(b.id) >= 1 && Number(b.id) <= n);
+  blocksPlan.sort((a, b) => a.id - b.id);
+
+  const blocksOut = Array.from({ length: n }, (_, i) =>
+    blocks[i] && typeof blocks[i] === "object" ? deepCloneJson(blocks[i]) : null,
+  );
+
+  const meta =
+    safe._meta && typeof safe._meta === "object" ? deepCloneJson(safe._meta) : {};
+  const responses =
+    safe._responses && typeof safe._responses === "object"
+      ? deepCloneJson(safe._responses)
+      : { blocks: {} };
+
+  const fromSessionQ =
+    safe.active_question_index != null && Number.isFinite(Number(safe.active_question_index))
+      ? Math.max(0, Math.floor(Number(safe.active_question_index)))
+      : null;
+  const abi =
+    activeBlockIndex != null && Number.isFinite(Number(activeBlockIndex))
+      ? clampInt(activeBlockIndex, 0, n - 1, 0)
+      : clampInt(Number(safe.current_block_index) || 0, 0, n - 1, 0);
+  const aqi =
+    fromSessionQ != null
+      ? fromSessionQ
+      : activeQuestionIndex != null && Number.isFinite(Number(activeQuestionIndex))
+        ? Math.max(0, Math.floor(Number(activeQuestionIndex)))
+        : 0;
+
+  let sessionConcepts = [];
+  try {
+    const raw = localStorage.getItem(LS_SESSION_CONCEPTS_KEY);
+    const arr = raw ? JSON.parse(raw) : null;
+    sessionConcepts = Array.isArray(arr)
+      ? arr
+          .map((c) => (c && typeof c === "object" ? c : null))
+          .filter(Boolean)
+          .map((c) => ({
+            term: String(c.term || "").trim(),
+            definition: String(c.definition || "").trim(),
+          }))
+          .filter((c) => c.term)
+      : [];
+  } catch {
+    sessionConcepts = [];
+  }
+
+  return {
+    format_version: RESUME_FORMAT_VERSION,
+    exported_at: new Date().toISOString(),
+    session_mode: String(safe.session_mode || ""),
+    n_blocks: n,
+    current_block_index: clampInt(Number(safe.current_block_index) || 0, 0, n - 1, 0),
+    active_block_index: abi,
+    active_question_index: aqi,
+    blocks_list_text: String(safe.blocks_list_text || ""),
+    blocks_plan: blocksPlan,
+    blocks: blocksOut,
+    _meta: meta || {},
+    _responses: responses || { blocks: {} },
+    _pending_comment_for_next_block: String(safe._pending_comment_for_next_block || ""),
+    session_concepts: sessionConcepts,
+  };
+}
+
+export function normalizeResumePayload(raw) {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Resume payload is missing or invalid.");
+  }
+  const ver = Number(raw.format_version);
+  if (ver !== 1) {
+    throw new Error(`Unsupported resume format_version (${raw.format_version}). Expected 1.`);
+  }
+  const mode = String(raw.session_mode || "").trim();
+  if (mode !== "test" && mode !== "socratic") {
+    throw new Error('Resume payload has invalid session_mode (need "test" or "socratic").');
+  }
+  const n = Math.max(1, Math.floor(Number(raw.n_blocks)));
+  if (!Number.isFinite(n) || n < 1) {
+    throw new Error("Resume payload has invalid n_blocks.");
+  }
+
+  let blocksPlan = Array.isArray(raw.blocks_plan) ? raw.blocks_plan : [];
+  if (!blocksPlan.length) {
+    blocksPlan = parseBlocksPlanFromList(String(raw.blocks_list_text || ""));
+  }
+  const planById = new Map();
+  for (const item of blocksPlan) {
+    if (!item || typeof item !== "object") continue;
+    const id = Number(item.id);
+    const title = String(item.title || "").trim();
+    const summary = String(item.summary || "").trim();
+    if (!Number.isFinite(id) || id < 1 || id > n || !title) continue;
+    planById.set(id, { id, title, summary: summary || "(see material)" });
+  }
+  for (let id = 1; id <= n; id += 1) {
+    if (!planById.has(id)) {
+      throw new Error(`Resume payload is missing block plan entry for id ${id}.`);
+    }
+  }
+  blocksPlan = Array.from({ length: n }, (_, i) => planById.get(i + 1));
+
+  let blocks = Array.isArray(raw.blocks) ? raw.blocks : [];
+  if (blocks.length < n) {
+    blocks = [...blocks, ...Array.from({ length: n - blocks.length }, () => null)];
+  }
+  if (blocks.length > n) blocks = blocks.slice(0, n);
+
+  const responses =
+    raw._responses && typeof raw._responses === "object"
+      ? deepCloneJson(raw._responses)
+      : { blocks: {} };
+  if (!responses.blocks || typeof responses.blocks !== "object") responses.blocks = {};
+
+  const meta = raw._meta && typeof raw._meta === "object" ? deepCloneJson(raw._meta) : {};
+
+  const currentBlockIndex = clampInt(
+    Number(raw.current_block_index),
+    0,
+    n - 1,
+    0,
+  );
+  const activeBlockIndex = clampInt(
+    Number(raw.active_block_index != null ? raw.active_block_index : currentBlockIndex),
+    0,
+    n - 1,
+    currentBlockIndex,
+  );
+  const activeQuestionIndex = Math.max(
+    0,
+    Math.floor(Number(raw.active_question_index) || 0),
+  );
+
+  let sessionConcepts = [];
+  if (Array.isArray(raw.session_concepts)) {
+    sessionConcepts = raw.session_concepts
+      .map((c) => (c && typeof c === "object" ? c : null))
+      .filter(Boolean)
+      .map((c) => ({
+        term: String(c.term || "").trim(),
+        definition: String(c.definition || "").trim(),
+      }))
+      .filter((c) => c.term);
+  }
+
+  return {
+    format_version: 1,
+    exported_at: String(raw.exported_at || ""),
+    session_mode: mode,
+    n_blocks: n,
+    current_block_index: currentBlockIndex,
+    active_block_index: activeBlockIndex,
+    active_question_index: activeQuestionIndex,
+    blocks_list_text: String(raw.blocks_list_text || "").trim() || blocksListTextFromBlockIndex(blocksPlan),
+    blocks_plan: blocksPlan,
+    blocks,
+    _meta: meta,
+    _responses: responses,
+    _pending_comment_for_next_block: String(raw._pending_comment_for_next_block || ""),
+    session_concepts: sessionConcepts,
+  };
+}
+
+/** First block/question that still needs study (deterministic restore). */
+export function computeResumePointer(p) {
+  const normalized = normalizeResumePayload(p);
+  const mode = normalized.session_mode;
+  const n = normalized.n_blocks;
+  const blocks = normalized.blocks;
+  const responses = normalized._responses;
+  for (let bi = 0; bi < n; bi += 1) {
+    const block = blocks[bi];
+    if (!block || typeof block !== "object") {
+      return { current_block_index: bi, active_question_index: 0, session_complete: false };
+    }
+    const qs = getQuestionsForMode(block, mode);
+    if (!qs.length) continue;
+    for (let qi = 0; qi < qs.length; qi += 1) {
+      const r = responses?.blocks?.[String(bi)]?.questions?.[String(qi)];
+      const answered =
+        r &&
+        typeof r === "object" &&
+        r.user_answer != null &&
+        String(r.user_answer).trim();
+      if (!answered) {
+        return { current_block_index: bi, active_question_index: qi, session_complete: false };
+      }
+    }
+  }
+  return {
+    current_block_index: Math.max(0, n - 1),
+    active_question_index: 0,
+    session_complete: true,
+  };
+}
+
+export function buildSessionFromResumePayload(payload) {
+  const p = normalizeResumePayload(payload);
+  const ptr = computeResumePointer(p);
+  const sessionObj = {
+    session_mode: p.session_mode,
+    n_blocks: p.n_blocks,
+    blocks_list_text: p.blocks_list_text,
+    current_block_index: ptr.session_complete
+      ? Math.max(0, p.n_blocks - 1)
+      : ptr.current_block_index,
+    active_question_index: ptr.session_complete ? 0 : ptr.active_question_index,
+    blocks: p.blocks,
+    _pending_comment_for_next_block: p._pending_comment_for_next_block,
+    _meta: p._meta,
+    _responses: p._responses,
+  };
+  return {
+    sessionObj,
+    pointer: ptr,
+    session_concepts: p.session_concepts,
+  };
+}
+
+export function buildBlockIndexFromResumePayload(payload, materialText) {
+  const p = normalizeResumePayload(payload);
+  const chunks = splitMaterialIntoBlockChunks(materialText, p.n_blocks);
+  if (chunks.length !== p.n_blocks) {
+    throw new Error("Could not split material into the expected number of blocks.");
+  }
+  return p.blocks_plan.map((row, i) => ({
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    chunk: String(chunks[i] || "").trim(),
+  }));
+}
+
 export function safeParseJson(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
@@ -283,6 +629,7 @@ export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText 
     n_blocks: n,
     blocks_list_text: String(blocksListText || ""),
     current_block_index: 0,
+    active_question_index: 0,
     blocks: Array.from({ length: n }, () => null),
   };
 }

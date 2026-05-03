@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL } from "./config.js?v=20260503_3";
+import { DS_CHAT_COMPLETIONS_URL } from "./config.js?v=20260503_7";
 
 function stripJsonFence(text) {
   return String(text || "")

@@ -239,6 +239,38 @@
 
               <div id="generateBlocksError" class="error" hidden></div>
             </form>
+
+            <div class="divider"></div>
+
+            <h2 style="margin-bottom: 8px">Resume saved session</h2>
+            <p class="subtle" style="margin-top: 0">
+              Upload the <strong>original</strong> material and your latest
+              <strong>exported</strong> markdown (must include the resume footer).
+            </p>
+
+            <label for="resumeMaterialInput">Original material file</label>
+            <input
+              id="resumeMaterialInput"
+              name="resumeMaterial"
+              type="file"
+              accept=".pdf,.html,.txt"
+            />
+
+            <div style="height: 10px"></div>
+
+            <label for="resumeMdInput">Session markdown</label>
+            <input
+              id="resumeMdInput"
+              name="resumeMd"
+              type="file"
+              accept=".md,.markdown,.txt,text/markdown"
+            />
+
+            <div class="row" style="margin-top: 10px">
+              <button type="button" id="resumeSessionBtn">Resume session</button>
+              <span class="hint" id="resumeSessionStatus" role="status"></span>
+            </div>
+            <div id="resumeSessionError" class="error" hidden></div>
           </div>
         </section>
 
@@ -643,6 +675,6 @@
     <div id="root"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <script type="module" src="src/js/main.js?v=20260503_6"></script>
+    <script type="module" src="src/js/main.js?v=20260503_7"></script>
   </body>
 </html>

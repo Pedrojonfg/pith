@@ -1,9 +1,13 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_6";
-import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_3";
-import { exportSessionMarkdown } from "./export.js?v=20260503_3";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_3";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_7";
+import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
+import { exportSessionMarkdown } from "./export.js?v=20260503_7";
+import { refreshGuideContext } from "./guide-chat.js?v=20260503_7";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_7";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260503_7";
 import {
   blocksListTextFromBlockIndex,
+  buildBlockIndexFromResumePayload,
+  buildSessionFromResumePayload,
   formatBlockIndexForConfirmation,
   getBlockChunkFromIndex,
   getBlockTitleFromList,
@@ -20,9 +24,9 @@ import {
   state,
   storeActiveSession,
   ensureSessionResponseState,
-} from "./session.js?v=20260503_3";
-import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_3";
-import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_3";
+} from "./session.js?v=20260503_7";
+import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_7";
+import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;
@@ -60,7 +64,22 @@ function clearConfirmError() {
   els.confirmBlocksError.textContent = "";
 }
 
-function readFileAsText(file) {
+function clearResumeError() {
+  if (!els.resumeSessionError) return;
+  els.resumeSessionError.hidden = true;
+  els.resumeSessionError.textContent = "";
+}
+function setResumeError(message) {
+  if (!els.resumeSessionError) return;
+  els.resumeSessionError.hidden = false;
+  els.resumeSessionError.textContent = message;
+}
+function setResumeLoading(isLoading) {
+  if (els.resumeSessionBtn) els.resumeSessionBtn.disabled = isLoading;
+  if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = isLoading ? "Restoring…" : "";
+}
+
+export function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Failed to read file."));
@@ -178,7 +197,7 @@ function extractCleanTextFromHtml(html) {
     .trim();
 }
 
-function cleanMaterialText(rawText) {
+export function cleanMaterialText(rawText) {
   const raw = String(rawText || "");
   const looksLikeHtml = /<[a-z][\s\S]*>/i.test(raw);
   if (!looksLikeHtml) {
@@ -188,7 +207,7 @@ function cleanMaterialText(rawText) {
   return extractCleanTextFromHtml(raw);
 }
 
-async function readAndCleanMaterialText(file) {
+export async function readAndCleanMaterialText(file) {
   const raw = await readFileAsText(file);
   const cleanedText = cleanMaterialText(raw);
   return {
@@ -375,7 +394,6 @@ function beginRsvpForCurrentBlock({ onDone }) {
 
 async function startTestBlock() {
   clearTestError();
-  state.activeQuestionIndex = 0;
   setTestMeta();
   updateStudyProgressUi();
 
@@ -528,6 +546,10 @@ function handleTestAnswer({ chosen, correct, feedback }) {
   els.testNextBtn.onclick = () => {
     if (!isLastQuestion) {
       state.activeQuestionIndex += 1;
+      if (state.activeSession && typeof state.activeSession === "object") {
+        state.activeSession.active_question_index = state.activeQuestionIndex;
+        storeActiveSession(state.activeSession);
+      }
       renderTestQuestion();
       return;
     }
@@ -583,6 +605,9 @@ async function continueToNextBlock({ commentText }) {
     state.activeSession._pending_comment_for_next_block = String(commentText || "").trim();
     state.activeBlockIndex = nextIndex;
     state.activeQuestionIndex = 0;
+    if (state.activeSession && typeof state.activeSession === "object") {
+      state.activeSession.active_question_index = 0;
+    }
     state.activeSession.current_block_index = state.activeBlockIndex;
     storeActiveSession(state.activeSession, { bumpRev: true });
     updateStudyProgressUi();
@@ -889,7 +914,11 @@ export function wireStudyHandlers() {
     state.studyMode = mode === "test" || mode === "socratic" ? mode : null;
     ensureSessionResponseState();
     state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
-    state.activeQuestionIndex = 0;
+    const savedQ = state.activeSession?.active_question_index;
+    state.activeQuestionIndex =
+      savedQ != null && Number.isFinite(Number(savedQ))
+        ? Math.max(0, Math.floor(Number(savedQ)))
+        : 0;
     updateStudyProgressUi();
     if (state.studyMode === "socratic") {
       showScreen("socratic");
@@ -1005,6 +1034,10 @@ export function wireStudyHandlers() {
     const socQs = getBlockSocraticQuestions(block);
     if (state.activeQuestionIndex < socQs.length - 1) {
       state.activeQuestionIndex += 1;
+      if (state.activeSession && typeof state.activeSession === "object") {
+        state.activeSession.active_question_index = state.activeQuestionIndex;
+        storeActiveSession(state.activeSession);
+      }
     }
     renderSocraticQuestion();
   });
@@ -1032,6 +1065,11 @@ export function wireStudyHandlers() {
     clearTestError();
     els.testFeedback.hidden = true;
     els.testFeedback.textContent = "";
+    state.activeQuestionIndex = 0;
+    if (state.activeSession && typeof state.activeSession === "object") {
+      state.activeSession.active_question_index = 0;
+      storeActiveSession(state.activeSession);
+    }
     beginRsvpForCurrentBlock({
       onDone: () => {
         showScreen("test");
@@ -1155,6 +1193,77 @@ export function wireStudyHandlers() {
     e.preventDefault();
     setRsvpPlayState(!rsvpState.playing);
   });
+
+  if (els.resumeSessionBtn) {
+    els.resumeSessionBtn.addEventListener("click", async () => {
+      clearResumeError();
+      if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = "";
+      const apiKey = getStoredKey();
+      if (!apiKey) {
+        setResumeError('Missing API key. Click "Change API key" to set it.');
+        showScreen("setup");
+        return;
+      }
+      const origFile = els.resumeMaterialInput?.files?.[0];
+      const mdFile = els.resumeMdInput?.files?.[0];
+      if (!origFile) {
+        setResumeError("Please choose the original material file.");
+        return;
+      }
+      if (!mdFile) {
+        setResumeError("Please choose the exported session markdown (.md).");
+        return;
+      }
+      setResumeLoading(true);
+      try {
+        const mdText = await readFileAsText(mdFile);
+        const rawPayload = extractResumePayloadFromMarkdown(mdText);
+        const { cleanedText, wordCount } = await readAndCleanMaterialText(origFile);
+        if (!cleanedText.trim()) {
+          throw new Error("Original material file appears to be empty.");
+        }
+        const { sessionObj, pointer, session_concepts } =
+          buildSessionFromResumePayload(rawPayload);
+        const blockIdxArr = buildBlockIndexFromResumePayload(rawPayload, cleanedText);
+        localStorage.setItem(LS_BLOCK_INDEX_KEY, JSON.stringify(blockIdxArr));
+        try {
+          localStorage.setItem(LS_SESSION_CONCEPTS_KEY, JSON.stringify(session_concepts || []));
+        } catch {
+          // ignore
+        }
+        if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
+        sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
+        storeActiveSession(sessionObj);
+        state.activeSession = sessionObj;
+        state.sessionMode = sessionObj.session_mode;
+        state.studyMode = sessionObj.session_mode;
+        state.originalMaterialText = cleanedText;
+        state.lastCleanedMaterialText = cleanedText;
+        state.lastCleanedMaterialWordCount = wordCount;
+        state.lastNBlocks = sessionObj.n_blocks;
+        state.lastUploadedFileNames = [String(origFile.name || "")];
+        state.lastBlockIndex = blockIdxArr;
+        if (pointer.session_complete) {
+          state.activeBlockIndex = Math.max(0, sessionObj.n_blocks - 1);
+          state.activeQuestionIndex = 0;
+          showScreen("complete");
+        } else {
+          state.activeBlockIndex = pointer.current_block_index;
+          state.activeQuestionIndex = pointer.active_question_index;
+          showScreen("ready");
+          els.sessionReadyMeta.textContent = `Session restored. Next: Block ${
+            pointer.current_block_index + 1
+          } of ${sessionObj.n_blocks}.`;
+        }
+        refreshGuideContext();
+        updateDictionaryButtonVisibility();
+      } catch (err) {
+        setResumeError(err?.message ? String(err.message) : String(err));
+      } finally {
+        setResumeLoading(false);
+      }
+    });
+  }
 
   updateDictionaryButtonVisibility();
 }

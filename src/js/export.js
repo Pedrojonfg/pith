@@ -1,8 +1,14 @@
 import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260503_3";
-import { parseBlockTitlesFromList, state, ensureSessionResponseState } from "./session.js?v=20260503_3";
+} from "./config.js?v=20260503_7";
+import {
+  buildResumePayload,
+  getBlockResumeStatus,
+  parseBlockTitlesFromList,
+  state,
+  ensureSessionResponseState,
+} from "./session.js?v=20260503_7";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -70,12 +76,32 @@ function setLastExportState({ sessionId, rev }) {
   }
 }
 
+function encodeResumeCapsule(payload) {
+  const json = JSON.stringify(payload);
+  const b64 = btoa(unescape(encodeURIComponent(json)));
+  return `<!-- study-session-resume:v1:${b64} -->`;
+}
+
 export function buildMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
+  if (session === state.activeSession) {
+    ensureSessionResponseState();
+  }
+  const resumePayload = buildResumePayload(safe, {
+    activeBlockIndex: state.activeBlockIndex,
+    activeQuestionIndex: state.activeQuestionIndex,
+  });
+
   const dateStr = new Date().toISOString().slice(0, 10);
   const mode = String(safe.session_mode || "");
   const studyNotes = String(safe?._meta?.study_notes || "").trim();
   const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  const nBlocksExport = Math.max(
+    blocks.length,
+    Number(safe.n_blocks) || 0,
+    Number(resumePayload.n_blocks) || 0,
+    1,
+  );
   const titleMap = parseBlockTitlesFromList(safe.blocks_list_text);
   const respBlocks =
     safe._responses?.blocks && typeof safe._responses.blocks === "object"
@@ -92,7 +118,34 @@ export function buildMarkdown(session) {
   }
   lines.push("");
 
-  for (let bi = 0; bi < blocks.length; bi += 1) {
+  lines.push("## Session Plan");
+  lines.push("");
+  lines.push(
+    "To **resume** this session later: use *Resume saved session* with the **original material file** plus this markdown export.",
+  );
+  lines.push("");
+  const plan = Array.isArray(resumePayload.blocks_plan) ? resumePayload.blocks_plan : [];
+  const nPlan = Math.max(1, Number(resumePayload.n_blocks) || 1);
+  for (let bi = 0; bi < nPlan; bi += 1) {
+    const planRow = plan[bi];
+    const title = planRow ? String(planRow.title || "").trim() : `Block ${bi + 1}`;
+    const summary = planRow ? String(planRow.summary || "").trim() : "";
+    const blk = resumePayload.blocks && resumePayload.blocks[bi] ? resumePayload.blocks[bi] : null;
+    const st = getBlockResumeStatus({
+      block: blk,
+      blockIndex: bi,
+      mode: resumePayload.session_mode,
+      responses: resumePayload._responses,
+    });
+    const sumShort =
+      summary.length > 220 ? `${summary.slice(0, 217).trim()}…` : summary;
+    lines.push(
+      `- **Block ${bi + 1} — ${title}** · ${st.label}${sumShort ? ` · *${sumShort}*` : ""}`,
+    );
+  }
+  lines.push("");
+
+  for (let bi = 0; bi < nBlocksExport; bi += 1) {
     const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : {};
     const fallbackTitle = titleMap[String(bi + 1)]
       ? String(titleMap[String(bi + 1)])
@@ -215,6 +268,8 @@ export function buildMarkdown(session) {
     );
     lines.push("");
   }
+
+  lines.push(encodeResumeCapsule(resumePayload));
 
   return lines.join("\n").trim() + "\n";
 }
