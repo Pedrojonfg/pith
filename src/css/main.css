@@ -248,6 +248,11 @@ textarea:focus {
   max-width: 980px;
   word-break: break-word;
 }
+.rsvp-chunk mjx-container,
+.rsvp-chunk .mjx-chtml {
+  font-size: clamp(1.05rem, 3.4vw + 1rem, 2.85rem);
+  max-width: 100%;
+}
 .rsvp-controls {
   border-top: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.04);

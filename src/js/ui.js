@@ -154,14 +154,15 @@ export const els = {
   testError: document.getElementById("testError"),
 };
 
+/** @returns {Promise<void>} */
 export function typesetMath(containerEl) {
   try {
     const mj = window.MathJax;
-    if (!mj || typeof mj.typesetPromise !== "function") return;
-    if (!containerEl) return;
-    mj.typesetPromise([containerEl]);
+    if (!mj || typeof mj.typesetPromise !== "function") return Promise.resolve();
+    if (!containerEl) return Promise.resolve();
+    return mj.typesetPromise([containerEl]).catch(() => undefined);
   } catch {
-    // ignore MathJax errors
+    return Promise.resolve();
   }
 }
 
