@@ -102,12 +102,12 @@ export async function deepSeekSplitIntoBlocks({
   const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a university student.
 Return ONLY valid JSON: an array of objects with this exact schema:
 [
-  { "id": 1, "title": "...", "summary": "2-3 sentence description", "chunk": "verbatim extracted text from the source material for this block" }
+  { "id": 1, "title": "...", "summary": "2-3 sentence description" }
 ]
 Rules:
 - The array length MUST equal {N}.
 - "id" MUST be 1..{N} in order.
-- "chunk" must be verbatim excerpts from the input material (no paraphrasing).
+- Do NOT include source excerpts, chunks, quotes, or verbatim material.
 - Do not include any extra keys.
 - Return ONLY JSON. No preamble, no backticks, no markdown fences.
 
