@@ -1,7 +1,7 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js";
-import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js";
-import { exportSessionMarkdown } from "./export.js";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_2";
+import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_2";
+import { exportSessionMarkdown } from "./export.js?v=20260503_2";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_2";
 import {
   blocksListTextFromBlockIndex,
   formatBlockIndexForConfirmation,
@@ -20,9 +20,9 @@ import {
   state,
   storeActiveSession,
   ensureSessionResponseState,
-} from "./session.js";
-import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js";
-import { LS_STUDY_NOTES_KEY } from "./config.js";
+} from "./session.js?v=20260503_2";
+import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_2";
+import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_2";
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;

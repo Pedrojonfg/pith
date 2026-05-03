@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_ACTIVE_SESSION_KEY, LS_KEY, LS_STUDY_LANG_KEY } from "./config.js";
+import { DS_CHAT_COMPLETIONS_URL, LS_ACTIVE_SESSION_KEY, LS_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260503_2";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();

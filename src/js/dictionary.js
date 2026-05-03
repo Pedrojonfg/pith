@@ -1,6 +1,6 @@
-import { LS_SESSION_CONCEPTS_KEY } from "./config.js";
-import { state, getBlocksSafe } from "./session.js";
-import { els, typesetMath } from "./ui.js";
+import { LS_SESSION_CONCEPTS_KEY } from "./config.js?v=20260503_2";
+import { state, getBlocksSafe } from "./session.js?v=20260503_2";
+import { els, typesetMath } from "./ui.js?v=20260503_2";
 
 function loadSessionConcepts() {
   try {

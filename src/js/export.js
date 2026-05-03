@@ -1,8 +1,8 @@
 import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js";
-import { parseBlockTitlesFromList, state, ensureSessionResponseState } from "./session.js";
+} from "./config.js?v=20260503_2";
+import { parseBlockTitlesFromList, state, ensureSessionResponseState } from "./session.js?v=20260503_2";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();

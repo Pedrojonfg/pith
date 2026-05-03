@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL } from "./config.js";
+import { DS_CHAT_COMPLETIONS_URL } from "./config.js?v=20260503_2";
 
 export async function deepSeekSocraticTutor({
   apiKey,

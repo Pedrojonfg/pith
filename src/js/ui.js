@@ -1,4 +1,4 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260503_2";
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
