@@ -185,14 +185,22 @@ export function parseBlockTitlesFromList(text) {
 export function safeParseJson(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  const withoutFence = raw
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  const candidates = withoutFence && withoutFence !== raw ? [raw, withoutFence] : [raw];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try next candidate
+    }
   }
+  return null;
 }
 
-export function normalizeBlockIndexArray(arr) {
+export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
   if (!Array.isArray(arr)) return null;
   const out = [];
   for (const item of arr) {
@@ -204,11 +212,27 @@ export function normalizeBlockIndexArray(arr) {
     if (!Number.isFinite(id) || id <= 0) return null;
     if (!title) return null;
     if (!summary) return null;
-    if (!chunk) return null;
+    if (requireChunk && !chunk) return null;
     out.push({ id, title, summary, chunk });
   }
   out.sort((a, b) => a.id - b.id);
   return out;
+}
+
+export function splitMaterialIntoBlockChunks(text, nBlocks) {
+  const raw = String(text || "").trim();
+  const n = Math.max(0, Math.floor(Number(nBlocks)));
+  if (!raw || n <= 0) return [];
+  const words = raw.split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const chunks = [];
+  for (let i = 0; i < n; i += 1) {
+    const start = Math.floor((i * words.length) / n);
+    const end = Math.floor(((i + 1) * words.length) / n);
+    const chunk = words.slice(start, Math.max(end, start + 1)).join(" ").trim();
+    chunks.push(chunk || raw);
+  }
+  return chunks;
 }
 
 export function formatBlockIndexForConfirmation(arr) {

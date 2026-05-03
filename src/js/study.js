@@ -16,6 +16,7 @@ import {
   normalizeBlockIndexArray,
   recordResponse,
   safeParseJson,
+  splitMaterialIntoBlockChunks,
   state,
   storeActiveSession,
   ensureSessionResponseState,
@@ -728,7 +729,7 @@ export function wireStudyHandlers() {
       });
 
       const parsed = safeParseJson(blocksList);
-      const normalized = normalizeBlockIndexArray(parsed);
+      const normalized = normalizeBlockIndexArray(parsed, { requireChunk: false });
       if (!normalized || normalized.length !== nBlocks) {
         // #region agent log
         const raw = String(blocksList || "");
@@ -787,7 +788,38 @@ export function wireStudyHandlers() {
           "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
         );
       }
-      state.lastBlockIndex = normalized;
+      const localChunks = splitMaterialIntoBlockChunks(cleanedText, nBlocks);
+      state.lastBlockIndex = normalized.map((b, i) => ({
+        ...b,
+        chunk: String(b.chunk || localChunks[i] || "").trim(),
+      }));
+      // #region agent log
+      fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "79a3e4",
+        },
+        body: JSON.stringify({
+          sessionId: "79a3e4",
+          runId: "post-fix",
+          hypothesisId: "H-split-json",
+          location: "study.js:generateBlocksForm",
+          message: "blocks split validation passed",
+          data: {
+            nBlocks,
+            contentLen: String(blocksList || "").length,
+            parsedIsArray: Array.isArray(parsed),
+            normalizedLen: normalized.length,
+            localChunksLen: localChunks.length,
+            emptyChunkCount: state.lastBlockIndex.filter((b) => !String(b.chunk || "").trim())
+              .length,
+            hasMarkdownFence: /```/.test(String(blocksList || "")),
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       els.blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
       showScreen("blocks");
     } catch (err) {
