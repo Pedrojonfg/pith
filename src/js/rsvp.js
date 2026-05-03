@@ -122,15 +122,20 @@ function segmentTextAndMath(raw) {
     let found = null;
     let i = pos;
     while (i < s.length && !found) {
-      if (s[i] === "\\") {
+      if (s.startsWith("$$", i)) {
+        found = { kind: "ddollar", idx: i, openLen: 2 };
+      } else if (s.startsWith("\\[", i) && !isEscapedAt(s, i)) {
+        found = { kind: "brack", idx: i, openLen: 2 };
+      } else if (s.startsWith("\\(", i) && !isEscapedAt(s, i)) {
+        found = { kind: "paren", idx: i, openLen: 2 };
+      } else if (s[i] === "$") {
+        found = { kind: "dollar", idx: i, openLen: 1 };
+      } else if (s[i] === "\\") {
         i += Math.min(2, s.length - i);
         continue;
+      } else {
+        i += 1;
       }
-      if (s.startsWith("$$", i)) found = { kind: "ddollar", idx: i, openLen: 2 };
-      else if (s.startsWith("\\[", i)) found = { kind: "brack", idx: i, openLen: 2 };
-      else if (s.startsWith("\\(", i)) found = { kind: "paren", idx: i, openLen: 2 };
-      else if (s[i] === "$") found = { kind: "dollar", idx: i, openLen: 1 };
-      else i += 1;
     }
 
     if (!found) {
