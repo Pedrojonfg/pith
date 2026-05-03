@@ -6,7 +6,7 @@ import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260503_3";
 import { getStoredKey, loadActiveSession, state } from "./session.js?v=20260503_3";
 import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260503_3";
 import { wireReviewHandlers } from "./review.js?v=20260503_3";
-import { wireStudyHandlers } from "./study.js?v=20260503_3";
+import { wireStudyHandlers } from "./study.js?v=20260503_4";
 
 function clearActiveSessionStorage() {
   try {
