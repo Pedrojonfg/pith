@@ -1,7 +1,7 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_2";
-import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_2";
-import { exportSessionMarkdown } from "./export.js?v=20260503_2";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_2";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_3";
+import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_3";
+import { exportSessionMarkdown } from "./export.js?v=20260503_3";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_3";
 import {
   blocksListTextFromBlockIndex,
   formatBlockIndexForConfirmation,
@@ -20,9 +20,35 @@ import {
   state,
   storeActiveSession,
   ensureSessionResponseState,
-} from "./session.js?v=20260503_2";
-import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_2";
-import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_2";
+} from "./session.js?v=20260503_3";
+import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_3";
+import { LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_3";
+
+const AGENT_DEBUG_BUILD = "20260503_3";
+
+// #region agent log
+function agentDebugLog(runId, hypothesisId, message, data = {}) {
+  fetch("http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Debug-Session-Id": "79a3e4",
+    },
+    body: JSON.stringify({
+      sessionId: "79a3e4",
+      runId,
+      hypothesisId,
+      location: "study.js",
+      message,
+      data: {
+        build: AGENT_DEBUG_BUILD,
+        ...data,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
 
 function setMode(nextMode) {
   state.sessionMode = nextMode;
@@ -256,6 +282,15 @@ async function ensureBlockGenerated(blockIndex) {
   const existing = blocks[blockIndex];
   if (existing && typeof existing === "object") return existing;
 
+  // #region agent log
+  agentDebugLog("block-flow", "H-block-generation", "ensure block generation started", {
+    blockIndex,
+    activeBlocksLen: blocks.length,
+    totalBlocks: getTotalBlocksSafe(),
+    hasBlockIndexEntry: Boolean(getBlockChunkFromIndex(blockIndex)),
+  });
+  // #endregion
+
   const apiKey = getStoredKey();
   if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
 
@@ -284,6 +319,15 @@ async function ensureBlockGenerated(blockIndex) {
     previousComment: prevComment,
     language: getStudyLanguage(),
   });
+
+  // #region agent log
+  agentDebugLog("block-flow", "H-block-generation", "block completion returned", {
+    blockIndex,
+    hasObject: Boolean(obj && typeof obj === "object"),
+    questionCount: Array.isArray(obj?.questions) ? obj.questions.length : null,
+    explanationLen: String(obj?.explanation || "").length,
+  });
+  // #endregion
 
   const cleaned =
     obj && typeof obj === "object"
@@ -634,6 +678,14 @@ async function copyPlainTextToClipboard(text) {
 }
 
 export function wireStudyHandlers() {
+  // #region agent log
+  agentDebugLog("module-flow", "H-module-version", "study handlers wired", {
+    href: window.location.href,
+    generateFormPresent: Boolean(els.generateBlocksForm),
+    safeParseFenceBuild: AGENT_DEBUG_BUILD,
+  });
+  // #endregion
+
   els.modeTestBtn.addEventListener("click", () => setMode("test"));
   els.modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
   setMode("test");
@@ -683,6 +735,15 @@ export function wireStudyHandlers() {
     state.lastCleanedMaterialWordCount = 0;
     state.lastBlockIndex = null;
 
+    // #region agent log
+    agentDebugLog("generate-flow", "H-handler-entry", "generate submit entered", {
+      requestedBlocks: Number(els.blocksInput.value),
+      fileCount: els.fileInput.files ? els.fileInput.files.length : 0,
+      mode: state.sessionMode,
+      language: getStudyLanguage(),
+    });
+    // #endregion
+
     const apiKey = getStoredKey();
     if (!apiKey) {
       setGenerateError("Missing API key. Click “Change API key” to set it.");
@@ -720,6 +781,15 @@ export function wireStudyHandlers() {
       state.originalMaterialText = cleanedText;
       state.lastNBlocks = nBlocks;
 
+      // #region agent log
+      agentDebugLog("generate-flow", "H-before-split-api", "calling split completion", {
+        nBlocks,
+        materialLen: cleanedText.length,
+        wordCount,
+        promptHasChunksRemoved: true,
+      });
+      // #endregion
+
       const blocksList = await deepSeekSplitIntoBlocks({
         apiKey,
         nBlocks,
@@ -727,6 +797,16 @@ export function wireStudyHandlers() {
         studyNotes: String(state.studyNotes || ""),
         language: getStudyLanguage(),
       });
+
+      // #region agent log
+      agentDebugLog("generate-flow", "H-after-split-api", "split completion returned", {
+        nBlocks,
+        contentLen: String(blocksList || "").length,
+        head120: String(blocksList || "").slice(0, 120),
+        tail80: String(blocksList || "").slice(-80),
+        hasMarkdownFence: /```/.test(String(blocksList || "")),
+      });
+      // #endregion
 
       const parsed = safeParseJson(blocksList);
       const normalized = normalizeBlockIndexArray(parsed, { requireChunk: false });
@@ -833,6 +913,14 @@ export function wireStudyHandlers() {
   els.confirmBlocksBtn.addEventListener("click", async () => {
     clearConfirmError();
     els.confirmBlocksStatus.textContent = "";
+
+    // #region agent log
+    agentDebugLog("confirm-flow", "H-confirm-state", "confirm blocks clicked", {
+      lastNBlocks: state.lastNBlocks,
+      lastBlockIndexLen: Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex.length : null,
+      outputLen: String(els.blocksListOutput.value || "").length,
+    });
+    // #endregion
 
     const apiKey = getStoredKey();
     if (!apiKey) {
