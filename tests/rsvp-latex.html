@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RSVP LaTeX Diagnostic Tests</title>
+  <style>
+    body { font-family: monospace; background: #111; color: #eee; padding: 24px; line-height: 1.6; }
+    h1 { color: #aef; margin-bottom: 4px; }
+    h2 { color: #ccc; font-size: 14px; margin: 20px 0 4px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+    .suite { margin-bottom: 28px; }
+    .pass { color: #6f6; }
+    .fail { color: #f66; }
+    .info { color: #fa0; }
+    .result { margin: 3px 0; font-size: 13px; }
+    pre { background: #222; padding: 8px; border-radius: 4px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; }
+    #render-area { position: absolute; left: -9999px; top: -9999px; }
+    #visual-area { margin-top: 24px; padding: 16px; background: #1a1a2e; border-radius: 8px; border: 1px solid #444; }
+    .math-box { font-size: 2rem; text-align: center; padding: 16px; background: #222; border-radius: 6px; margin: 8px 0; }
+    #summary { margin-top: 20px; padding: 12px; border-radius: 6px; font-size: 14px; font-weight: bold; }
+    .all-pass { background: #1a3a1a; border: 1px solid #6f6; color: #6f6; }
+    .has-fail { background: #3a1a1a; border: 1px solid #f66; color: #f66; }
+  </style>
+</head>
+<body>
+  <h1>RSVP LaTeX Diagnostic Tests</h1>
+  <p style="color:#888;font-size:13px">Open browser console for full output. Tests run automatically on load.</p>
+
+  <div id="render-area"></div>
+  <div id="output"></div>
+  <div id="visual-area">
+    <h2 style="border:none;margin-top:0">Visual rendering verification (should show rendered math, NOT raw LaTeX)</h2>
+    <div class="math-box" id="visual-inline">Loading $E = mc^2$ test...</div>
+    <div class="math-box" id="visual-display">Loading $$\int_0^\infty e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$ test...</div>
+    <div class="math-box" id="visual-paren">Loading \(F = ma\) test...</div>
+    <div class="math-box" id="visual-reuse">Loading reuse test (2nd render on same element)...</div>
+    <div class="math-box" id="visual-fresh">Loading fresh-element test (pre-render approach)...</div>
+  </div>
+  <div id="summary"></div>
+
+  <script>
+    // ─── Inline copy of pure parser functions (matches src/js/rsvp.js exactly) ───
+
+    function isEscapedAt(str, idx) {
+      let n = 0;
+      for (let j = idx - 1; j >= 0 && str[j] === "\\"; j -= 1) n += 1;
+      return n % 2 === 1;
+    }
+    function findFirstUnescaped(s, from, needle) {
+      let i = from;
+      while (i <= s.length - needle.length) {
+        const idx = s.indexOf(needle, i);
+        if (idx === -1) return -1;
+        if (!isEscapedAt(s, idx)) return idx;
+        i = idx + needle.length;
+      }
+      return -1;
+    }
+    function findClosingInlineDollar(s, openEnd) {
+      let i = openEnd;
+      while (i < s.length) {
+        const ch = s[i];
+        if (ch === "\\") { i += Math.min(2, s.length - i); continue; }
+        if (ch !== "$") { i += 1; continue; }
+        if (s[i + 1] === "$") { i += 2; continue; }
+        return i;
+      }
+      return -1;
+    }
+    function segmentTextAndMath(raw) {
+      const s = String(raw || "");
+      const out = [];
+      let pos = 0;
+      while (pos < s.length) {
+        let found = null, i = pos;
+        while (i < s.length && !found) {
+          if (s[i] === "\\") { i += Math.min(2, s.length - i); continue; }
+          if (s.startsWith("$$", i)) found = { kind: "ddollar", idx: i, openLen: 2 };
+          else if (s.startsWith("\\[", i)) found = { kind: "brack", idx: i, openLen: 2 };
+          else if (s.startsWith("\\(", i)) found = { kind: "paren", idx: i, openLen: 2 };
+          else if (s[i] === "$") found = { kind: "dollar", idx: i, openLen: 1 };
+          else i += 1;
+        }
+        if (!found) { const tail = s.slice(pos); if (tail) out.push({ type: "text", raw: tail }); break; }
+        if (found.idx > pos) out.push({ type: "text", raw: s.slice(pos, found.idx) });
+        const bodyStart = found.idx + found.openLen;
+        let closeEnd = -1;
+        if (found.kind === "ddollar") { const ci = findFirstUnescaped(s, bodyStart, "$$"); if (ci !== -1) closeEnd = ci + 2; }
+        else if (found.kind === "brack") { const ci = findFirstUnescaped(s, bodyStart, "\\]"); if (ci !== -1) closeEnd = ci + 2; }
+        else if (found.kind === "paren") { const ci = findFirstUnescaped(s, bodyStart, "\\)"); if (ci !== -1) closeEnd = ci + 2; }
+        else { const ci = findClosingInlineDollar(s, bodyStart); if (ci !== -1) closeEnd = ci + 1; }
+        if (closeEnd === -1) { pos = found.idx + 1; continue; }
+        out.push({ type: "math", raw: s.slice(found.idx, closeEnd) });
+        pos = closeEnd;
+      }
+      return out;
+    }
+    function tokenizeWords(text) {
+      const raw = String(text || "").replace(/\s+/g, " ").trim();
+      if (!raw) return [];
+      return raw.split(" ").filter(Boolean);
+    }
+    function chunkWords(words, wpf) {
+      const out = [];
+      for (let i = 0; i < words.length; i += wpf) out.push(words.slice(i, i + wpf).join(" "));
+      return out;
+    }
+    function buildChunksFromExplanation(text, wpf) {
+      const chunks = [];
+      for (const seg of segmentTextAndMath(text)) {
+        if (seg.type === "text") {
+          for (const t of chunkWords(tokenizeWords(seg.raw), wpf)) if (t) chunks.push({ type: "text", content: t });
+        } else {
+          const t = String(seg.raw || "").trim();
+          if (t) chunks.push({ type: "math", content: t });
+        }
+      }
+      return chunks;
+    }
+
+    // ─── Test runner ────────────────────────────────────────────────────────────
+
+    const results = [];
+    function test(name, fn) {
+      try {
+        const ok = fn();
+        results.push({ name, pass: ok, error: null });
+      } catch (e) {
+        results.push({ name, pass: false, error: e.message });
+      }
+    }
+    function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
+    // ─── Suite 1: Parser correctness ────────────────────────────────────────────
+
+    test("segmentTextAndMath: plain text returns single text segment", () => {
+      const r = segmentTextAndMath("hello world");
+      return r.length === 1 && r[0].type === "text" && r[0].raw === "hello world";
+    });
+    test("segmentTextAndMath: $...$ detected as math", () => {
+      const r = segmentTextAndMath("foo $x^2$ bar");
+      return r.length === 3 && r[1].type === "math" && r[1].raw === "$x^2$";
+    });
+    test("segmentTextAndMath: $$...$$ detected as display math", () => {
+      const r = segmentTextAndMath("foo $$E=mc^2$$ bar");
+      return r.length === 3 && r[1].type === "math" && r[1].raw === "$$E=mc^2$$";
+    });
+    test("segmentTextAndMath: \\(...\\) detected as math", () => {
+      const r = segmentTextAndMath("foo \\(F=ma\\) bar");
+      return r.length === 3 && r[1].type === "math" && r[1].raw === "\\(F=ma\\)";
+    });
+    test("segmentTextAndMath: \\[...\\] detected as display math", () => {
+      const r = segmentTextAndMath("foo \\[\\sum_i x_i\\] bar");
+      return r.length === 3 && r[1].type === "math" && r[1].raw === "\\[\\sum_i x_i\\]";
+    });
+    test("segmentTextAndMath: unclosed $ treated as text", () => {
+      const r = segmentTextAndMath("cost is $5");
+      return r.length === 1 && r[0].type === "text";
+    });
+    test("segmentTextAndMath: multiple formulas in sequence", () => {
+      const r = segmentTextAndMath("$a$ and $b$");
+      return r.length === 5 && r[0].type === "math" && r[2].type === "math";
+    });
+
+    test("buildChunksFromExplanation: math chunk is isolated", () => {
+      const chunks = buildChunksFromExplanation("La energía $E=mc^2$ es fundamental", 3);
+      const mathChunks = chunks.filter(c => c.type === "math");
+      return mathChunks.length === 1 && mathChunks[0].content === "$E=mc^2$";
+    });
+    test("buildChunksFromExplanation: math chunk is never split by WPF", () => {
+      for (const wpf of [1, 2, 3]) {
+        const chunks = buildChunksFromExplanation("$E=mc^2$", wpf);
+        if (chunks.length !== 1 || chunks[0].type !== "math") return false;
+      }
+      return true;
+    });
+    test("buildChunksFromExplanation: WPF=1 splits text into individual words", () => {
+      const chunks = buildChunksFromExplanation("one two three", 1);
+      return chunks.length === 3 && chunks.every(c => c.type === "text");
+    });
+    test("buildChunksFromExplanation: WPF=3 groups words", () => {
+      const chunks = buildChunksFromExplanation("one two three four", 3);
+      return chunks.length === 2 && chunks[0].content === "one two three";
+    });
+
+    // ─── Suite 2: MathJax config ────────────────────────────────────────────────
+
+    test("window.MathJax config exists before CDN loads", () => {
+      // This file doesn't preload MathJax; we're checking if the config object
+      // was set in the MAIN app (index.html). Here we set it ourselves to prove
+      // the mechanism, then check our own config.
+      return typeof window.MathJax === "object" && window.MathJax !== null;
+    });
+    test("MathJax config has $ as inline delimiter", () => {
+      const cfg = window.MathJax;
+      if (!cfg || !cfg.tex) return false;
+      const inline = cfg.tex.inlineMath || [];
+      return inline.some(pair => pair[0] === "$" && pair[1] === "$");
+    });
+    test("MathJax config has \\( as inline delimiter", () => {
+      const cfg = window.MathJax;
+      if (!cfg || !cfg.tex) return false;
+      const inline = cfg.tex.inlineMath || [];
+      return inline.some(pair => pair[0] === "\\(");
+    });
+    test("MathJax config has $$ as display delimiter", () => {
+      const cfg = window.MathJax;
+      if (!cfg || !cfg.tex) return false;
+      const display = cfg.tex.displayMath || [];
+      return display.some(pair => pair[0] === "$$" && pair[1] === "$$");
+    });
+  </script>
+
+  <!-- Configure MathJax BEFORE loading it (same as index.html) -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [["$", "$"], ["\\(", "\\)"]],
+        displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+      },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <script>
+    // ─── Suite 3: MathJax rendering tests (require MathJax to be loaded) ───────
+
+    async function waitForMathJax() {
+      return new Promise(resolve => {
+        if (window.MathJax && typeof window.MathJax.typesetPromise === "function") {
+          resolve();
+          return;
+        }
+        const t = setInterval(() => {
+          if (window.MathJax && typeof window.MathJax.typesetPromise === "function") {
+            clearInterval(t);
+            resolve();
+          }
+        }, 100);
+        setTimeout(() => { clearInterval(t); resolve(); }, 8000);
+      });
+    }
+
+    function containsMathOutput(el) {
+      // MathJax 3 output contains <mjx-container> elements
+      return el.querySelector("mjx-container") !== null || el.innerHTML.includes("mjx-");
+    }
+
+    async function runRenderingTests() {
+      const container = document.getElementById("render-area");
+      await waitForMathJax();
+
+      const mj = window.MathJax;
+      const hasTypeset = mj && typeof mj.typesetPromise === "function";
+
+      // Test: MathJax loaded and has typesetPromise
+      results.push({
+        name: "MathJax loaded with typesetPromise()",
+        pass: hasTypeset,
+        error: hasTypeset ? null : "window.MathJax.typesetPromise is not a function"
+      });
+
+      if (!hasTypeset) return;
+
+      // ── Test A: Fresh element renders $...$ ──────────────────────────────────
+      const elA = document.createElement("div");
+      elA.textContent = "$E = mc^2$";
+      container.appendChild(elA);
+      await mj.typesetPromise([elA]).catch(() => {});
+      const passA = containsMathOutput(elA);
+      results.push({ name: "Fresh element: $E=mc^2$ renders to MathJax output", pass: passA });
+      container.removeChild(elA);
+
+      // ── Test B: Reused element — 2nd render WITHOUT typesetClear ────────────
+      // This is the bug: same element, different content, no cache clear → fails.
+      const elB = document.createElement("div");
+      elB.textContent = "$x^2$";
+      container.appendChild(elB);
+      await mj.typesetPromise([elB]).catch(() => {});
+      const firstRender = containsMathOutput(elB);
+
+      // Simulate what old applyChunkToDom did: clear innerHTML, set new content, call typesetPromise again
+      elB.innerHTML = "";
+      elB.textContent = "$y^2$";
+      await mj.typesetPromise([elB]).catch(() => {});
+      const secondRenderReuse = containsMathOutput(elB);
+
+      results.push({
+        name: "Reused element: 1st render works",
+        pass: firstRender
+      });
+      results.push({
+        name: "Reused element: 2nd render WITHOUT typesetClear FAILS (this is the bug — expected FAIL)",
+        pass: !secondRenderReuse,
+        info: true
+      });
+      container.removeChild(elB);
+
+      // ── Test C: typesetClear then re-render on same element ──────────────────
+      const elC = document.createElement("div");
+      elC.textContent = "$a + b$";
+      container.appendChild(elC);
+      await mj.typesetPromise([elC]).catch(() => {});
+
+      if (typeof mj.typesetClear === "function") {
+        mj.typesetClear([elC]);
+      }
+      elC.innerHTML = "";
+      elC.textContent = "$c + d$";
+      await mj.typesetPromise([elC]).catch(() => {});
+      const passC = containsMathOutput(elC);
+      results.push({ name: "typesetClear + re-render on same element works", pass: passC });
+      container.removeChild(elC);
+
+      // ── Test D: Fresh child element approach (the fix) ───────────────────────
+      const elD = document.createElement("div");
+      container.appendChild(elD);
+
+      async function renderInFreshChild(parent, latex) {
+        parent.innerHTML = "";
+        const child = document.createElement("span");
+        child.textContent = latex;
+        parent.appendChild(child);
+        await mj.typesetPromise([child]).catch(() => {});
+        return containsMathOutput(child);
+      }
+
+      const d1 = await renderInFreshChild(elD, "$\\alpha + \\beta$");
+      const d2 = await renderInFreshChild(elD, "$\\gamma^2$");
+      const d3 = await renderInFreshChild(elD, "$$\\int_0^1 x \\, dx = \\frac{1}{2}$$");
+      results.push({ name: "Fresh child approach: 1st render", pass: d1 });
+      results.push({ name: "Fresh child approach: 2nd render (same parent)", pass: d2 });
+      results.push({ name: "Fresh child approach: 3rd render (display math)", pass: d3 });
+      container.removeChild(elD);
+
+      // ── Test E: Pre-render to cached innerHTML, then display via innerHTML ───
+      const elE_src = document.createElement("span");
+      elE_src.textContent = "$\\nabla \\cdot E = \\rho/\\varepsilon_0$";
+      container.appendChild(elE_src);
+      await mj.typesetPromise([elE_src]).catch(() => {});
+      const cachedHtml = elE_src.innerHTML;
+      container.removeChild(elE_src);
+
+      const elE_dst = document.createElement("div");
+      elE_dst.innerHTML = cachedHtml;
+      const passE = containsMathOutput(elE_dst);
+      results.push({ name: "Pre-rendered innerHTML can be cloned without re-calling MathJax", pass: passE });
+
+      // ─── Visual section ──────────────────────────────────────────────────────
+      async function renderVisual(id, latex) {
+        const el = document.getElementById(id);
+        const child = document.createElement("span");
+        child.textContent = latex;
+        el.innerHTML = "";
+        el.appendChild(child);
+        await mj.typesetPromise([child]).catch(() => {});
+        if (!containsMathOutput(child)) {
+          el.innerHTML = `<span style="color:#f66">FAILED to render: ${latex}</span>`;
+        }
+      }
+      await renderVisual("visual-inline", "$E = mc^2$");
+      await renderVisual("visual-display", "$$\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}$$");
+      await renderVisual("visual-paren", "\\(F = ma\\)");
+
+      // Visual: reuse bug
+      const reuseEl = document.getElementById("visual-reuse");
+      const rChild1 = document.createElement("span");
+      rChild1.textContent = "$x^2$";
+      reuseEl.innerHTML = "";
+      reuseEl.appendChild(rChild1);
+      await mj.typesetPromise([rChild1]).catch(() => {});
+      // Now simulate reuse: clear and set new content WITHOUT a fresh child
+      reuseEl.innerHTML = "";
+      reuseEl.textContent = "$y^2$ ← this should FAIL to render if typesetClear is missing";
+      await mj.typesetPromise([reuseEl]).catch(() => {});
+      if (!containsMathOutput(reuseEl)) {
+        const txt = reuseEl.textContent;
+        reuseEl.innerHTML = `<span style="color:#f66">BUG CONFIRMED: ${txt}</span>`;
+      } else {
+        reuseEl.innerHTML += " ← rendered OK (typesetClear works in this MathJax version)";
+      }
+
+      // Visual: fresh child approach (the fix)
+      const freshEl = document.getElementById("visual-fresh");
+      const fChild = document.createElement("span");
+      fChild.textContent = "$\\oint E \\cdot dA = Q/\\varepsilon_0$ — fresh child, always works";
+      freshEl.innerHTML = "";
+      freshEl.appendChild(fChild);
+      await mj.typesetPromise([fChild]).catch(() => {});
+      if (!containsMathOutput(fChild)) {
+        freshEl.innerHTML = `<span style="color:#f66">FAILED — MathJax not working at all</span>`;
+      }
+    }
+
+    // ─── Render output ──────────────────────────────────────────────────────────
+
+    async function main() {
+      await runRenderingTests();
+
+      const out = document.getElementById("output");
+      const suites = {
+        "Suite 1: Parser (segmentTextAndMath / buildChunksFromExplanation)": results.slice(0, 11),
+        "Suite 2: MathJax config": results.slice(11, 15),
+        "Suite 3: MathJax rendering": results.slice(15),
+      };
+
+      let totalPass = 0, totalFail = 0;
+      for (const [title, tests] of Object.entries(suites)) {
+        const div = document.createElement("div");
+        div.className = "suite";
+        const h = document.createElement("h2");
+        h.textContent = title;
+        div.appendChild(h);
+        for (const r of tests) {
+          const p = document.createElement("div");
+          p.className = "result";
+          const icon = r.info ? "ℹ" : r.pass ? "✓" : "✗";
+          const cls = r.info ? "info" : r.pass ? "pass" : "fail";
+          p.innerHTML = `<span class="${cls}">${icon} ${r.name}</span>`;
+          if (r.error) {
+            const pre = document.createElement("pre");
+            pre.textContent = "Error: " + r.error;
+            p.appendChild(pre);
+          }
+          div.appendChild(p);
+          if (!r.info) { r.pass ? totalPass++ : totalFail++; }
+        }
+        out.appendChild(div);
+      }
+
+      const summary = document.getElementById("summary");
+      summary.textContent = totalFail === 0
+        ? `✓ All ${totalPass} tests passed`
+        : `✗ ${totalFail} failed, ${totalPass} passed`;
+      summary.className = totalFail === 0 ? "all-pass" : "has-fail";
+    }
+
+    main();
+  </script>
+</body>
+</html>

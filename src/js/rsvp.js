@@ -2,7 +2,7 @@ import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js?v=
 import { clampInt } from "./session.js?v=20260503_7";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
 
-/** @typedef {{ type: "text"|"math", content: string }} RsvpChunk */
+/** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string }} RsvpChunk */
 
 export const rsvpState = {
   /** Full explanation markdown (persisted across WPF rebuilds). */
@@ -198,20 +198,55 @@ function clearRsvpChunkEl() {
   els.rsvpChunk.innerHTML = "";
 }
 
+/**
+ * Pre-renders all math chunks into a hidden off-screen container, caching the
+ * resulting innerHTML on each chunk. Uses a fresh element per chunk so MathJax
+ * never re-encounters a previously-processed node and skips re-rendering.
+ *
+ * @param {RsvpChunk[]} chunks
+ * @param {number} genCapture
+ */
+async function preRenderMathChunks(chunks, genCapture) {
+  const mathChunks = chunks.filter(c => c.type === "math" && !c.preRenderedHtml);
+  if (!mathChunks.length) return;
+
+  const container = document.createElement("div");
+  container.style.cssText = "position:absolute;left:-9999px;top:-9999px;pointer-events:none";
+  document.body.appendChild(container);
+  try {
+    for (const chunk of mathChunks) {
+      if (genCapture !== rsvpState.playbackGen) break;
+      const el = document.createElement("span");
+      el.textContent = chunk.content;
+      container.appendChild(el);
+      await typesetMath(el);
+      chunk.preRenderedHtml = el.innerHTML;
+      container.removeChild(el);
+    }
+  } finally {
+    if (container.parentNode) container.parentNode.removeChild(container);
+  }
+}
+
 /** @param {RsvpChunk} meta */
 function applyChunkToDom(meta) {
-  const mj = window.MathJax;
-  if (mj && typeof mj.typesetClear === "function") {
-    mj.typesetClear([els.rsvpChunk]);
-  }
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
   if (meta.type === "text") {
     els.rsvpChunk.textContent = meta.content || "";
     return Promise.resolve();
   }
-  els.rsvpChunk.textContent = meta.content || "";
-  return typesetMath(els.rsvpChunk);
+  // Fast path: use pre-rendered HTML (no MathJax call needed, no flicker)
+  if (meta.preRenderedHtml) {
+    els.rsvpChunk.innerHTML = meta.preRenderedHtml;
+    return Promise.resolve();
+  }
+  // Fallback: render on-demand with a FRESH child element so MathJax always
+  // sees an unprocessed node and never skips re-rendering due to its cache.
+  const el = document.createElement("span");
+  el.textContent = meta.content || "";
+  els.rsvpChunk.appendChild(el);
+  return typesetMath(el);
 }
 
 /**
@@ -375,6 +410,10 @@ export function setWordsPerFlash(nextWpf) {
     return;
   }
 
+  // Re-render math for the new chunking. The fallback in applyChunkToDom
+  // handles any chunk that hasn't finished pre-rendering yet.
+  void preRenderMathChunks(rsvpState.chunks, rsvpState.playbackGen);
+
   if (midSession && rsvpState.playing) {
     const gen = rsvpState.playbackGen;
     void showChunkByIndex(rsvpState.displayedChunkIndex, gen);
@@ -408,6 +447,10 @@ export function startRsvpForText(explanationText, onDone) {
   setWpfUi(rsvpState.wordsPerFlash);
   els.rsvpChunk.textContent = "3...";
   els.rsvpPlayPauseBtn.textContent = "Pause";
+
+  // Pre-render all math chunks during the 3-second countdown so the first
+  // flash is always instant (no MathJax async latency mid-playback).
+  void preRenderMathChunks(rsvpState.chunks, rsvpState.playbackGen);
 
   const steps = ["3...", "2...", "1..."];
   let i = 0;
