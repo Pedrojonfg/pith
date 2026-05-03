@@ -194,6 +194,7 @@ Return a single JSON object with this schema:
 }
 Respond entirely in {language}.
 Mode is {mode}. For test: 3-4 questions, 4 options (A/B/C/D), correct answer, brief feedback.
+When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly. Wrong options must reflect realistic student mistakes—not nonsense; keep options parallel in structure and length where possible.
 For socratic: 2-3 open questions requiring reasoning or synthesis.
 Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.
 Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
