@@ -187,23 +187,25 @@ export async function deepSeekSplitIntoBlocks({
   studyNotes,
   language,
 }) {
-  const systemPrompt = `You will receive study material. Split it into exactly {N} thematic blocks for a university student.
-Return ONLY valid JSON: an array of objects with this exact schema:
-[
-  { "id": 1, "title": "...", "summary": "2-3 sentence description" }
-]
-Rules:
-- The array length MUST equal {N}.
-- "id" MUST be 1..{N} in order.
-- Do NOT include source excerpts, chunks, quotes, or verbatim material.
-- Do not include any extra keys.
-- Return ONLY JSON. No preamble, no backticks, no markdown fences.
+  const systemPrompt = `You are splitting a study document into blocks.
 
-You MUST cover the ENTIRE document from start to finish. 
-Distribute blocks proportionally across all sections. 
-The last block must correspond to the last section of the document. 
-Do not over-represent early sections at the expense of later ones.
-If the student provides study comments/focus, use them to choose titles and allocate MORE detail/blocks to the relevant parts, while still covering the full document.
+Rules:
+- Each block must cover ONE distinct concept. Not one section, one concept.
+- If multiple sections of the document discuss the SAME idea (e.g. "introduction to X", "how to compute X", "examples of X"), merge them into ONE block titled after the concept.
+- Never create a block whose primary concept appears in another block.
+- Each block must have a unique "signature": a list of 3-5 key terms that ONLY appear as the main focus of that block, not in others.
+- The "chunk" field must include ALL source text relevant to that concept, even if it spans multiple sections.
+
+Return ONLY valid JSON:
+[{
+  "id": 1,
+  "title": "...",
+  "summary": "2-3 sentences",
+  "signature": ["term1", "term2", "term3"],
+  "chunk": "verbatim text from ALL relevant sections"
+}]
+
+You MUST cover the ENTIRE document. The last block must correspond to the last section. Each concept appears in exactly ONE block.
 
 Respond entirely in {language}.`
     .split("{N}")
@@ -230,6 +232,131 @@ Respond entirely in {language}.`
       model: "deepseek-chat",
       messages,
       temperature: 0.2,
+    }),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // ignore JSON parse error; handled below
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    throw new Error(apiMsg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("Unexpected API response (missing message content).");
+  }
+  return content.trim();
+}
+
+export async function deepSeekAuditBlockIndex({ apiKey, blockIndexJson, language }) {
+  const systemPrompt = `You are auditing a study session block index for conceptual overlap.
+
+Here is the block index (id, title, summary, signature):
+{blockIndexJSON}
+
+Your task:
+1. Identify ALL pairs of blocks where the primary concept overlaps.
+   Overlap = the same core idea, formula, or theorem is taught in both.
+2. For each overlapping pair, recommend: MERGE or KEEP SEPARATE.
+   MERGE if: both blocks teach the same concept at the same depth.
+   KEEP SEPARATE if: one introduces and the other extends significantly.
+3. Output a merge plan:
+
+{
+  "merges": [
+    {
+      "keep_id": 3,
+      "absorb_ids": [4, 5],
+      "new_title": "Line Integrals: Concept, Calculation and Circulation",
+      "reason": "Blocks 3, 4, 5 all teach the formula ∫F·c'dt with the same example"
+    }
+  ],
+  "no_change": [1, 2, 6, 7],
+  "summary": "X blocks → Y blocks after merging"
+}
+
+Be aggressive: if in doubt, merge. Redundancy is worse than density.
+Respond ONLY with valid JSON.`
+    .replace("{blockIndexJSON}", String(blockIndexJson || "[]"))
+    .replace("{language}", language);
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 2000,
+    }),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // ignore JSON parse error; handled below
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    throw new Error(apiMsg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("Unexpected API response (missing message content).");
+  }
+  return content.trim();
+}
+
+export async function deepSeekPostMergeChunk({
+  apiKey,
+  keep_id,
+  absorb_ids,
+  new_title,
+  concatenated_chunks,
+}) {
+  const systemPrompt = `The following blocks have been merged:
+- Original blocks {absorb_ids} are absorbed into block {keep_id}
+- New title: {new_title}
+
+Here are the original chunks for all merged blocks:
+{concatenated_chunks}
+
+Return a single merged chunk: combine the source texts, remove duplicate explanations, keep all unique examples and formulas.
+Preserve verbatim source text where possible. Max 2000 words.`
+    .replace("{keep_id}", String(keep_id))
+    .replace("{absorb_ids}", Array.isArray(absorb_ids) ? absorb_ids.join(", ") : String(absorb_ids))
+    .replace("{new_title}", String(new_title || ""))
+    .replace("{concatenated_chunks}", String(concatenated_chunks || ""));
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 2000,
     }),
   });
 
