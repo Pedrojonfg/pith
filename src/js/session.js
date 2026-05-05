@@ -1019,6 +1019,76 @@ export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText 
   };
 }
 
+export function applyAssessmentResults(assessmentResults) {
+  const skipped = Boolean(
+    assessmentResults?.skipped === true || (window?.assessmentConfig && window.assessmentConfig.skipped),
+  );
+  if (skipped) {
+    return { skipped: true, adjusted: false, strongBlocks: [], weakBlocks: [] };
+  }
+
+  const sessionObj = loadActiveSession();
+  if (!sessionObj || typeof sessionObj !== "object") throw new Error("No active session found.");
+
+  const blocks = Array.isArray(sessionObj.blocks) ? sessionObj.blocks : [];
+  const blockIndex = loadBlockIndex() || [];
+  const perBlock =
+    assessmentResults?.perBlock && typeof assessmentResults.perBlock === "object"
+      ? assessmentResults.perBlock
+      : {};
+  const sessionDefaults = {
+    n_test: clampInt(sessionObj.n_test, 0, 5, 2),
+    n_socratic: clampInt(sessionObj.n_socratic, 0, 3, 1),
+  };
+
+  const strongBlocks = [];
+  const weakBlocks = [];
+  let adjusted = false;
+
+  for (let i = 0; i < blocks.length; i += 1) {
+    const blk = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
+    const blockId = Number(blockIndex[i]?.id || i + 1);
+    const classification = String(perBlock[String(blockId)]?.classification || "").trim();
+
+    if (classification === "strong") {
+      blk._config = { n_test: 1, n_socratic: 0 };
+      strongBlocks.push(blockId);
+      adjusted = true;
+    } else if (classification === "weak") {
+      blk._config = {
+        n_test: sessionDefaults.n_test,
+        n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
+      };
+      weakBlocks.push(blockId);
+      adjusted = true;
+    } else {
+      blk._config = { ...sessionDefaults };
+    }
+    blocks[i] = blk;
+  }
+
+  if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
+  const maxQuestions = Math.max(1, Math.floor(Number(assessmentResults?.maxQuestions) || 0));
+  const penalisedTotal = Number(assessmentResults?.penalisedTotal || 0);
+  const rawTotal = Number(assessmentResults?.rawTotal || 0);
+  const pct = maxQuestions > 0 ? (penalisedTotal / maxQuestions) * 100 : 0;
+  sessionObj._meta.assessment = {
+    penalised_total: penalisedTotal,
+    raw_total: rawTotal,
+    max_questions: maxQuestions,
+    pct,
+    strong_blocks: strongBlocks,
+    weak_blocks: weakBlocks,
+    config_adjustments_applied: adjusted,
+  };
+
+  sessionObj.blocks = blocks;
+  storeActiveSession(sessionObj, { bumpRev: true });
+  state.activeSession = sessionObj;
+
+  return { skipped: false, adjusted, strongBlocks, weakBlocks, session: sessionObj };
+}
+
 export let prefetchState = {
   blockIndex: null,
   status: "idle", // idle | generating | ready | failed

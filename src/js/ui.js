@@ -8,6 +8,7 @@ export const els = {
   screenApiSetup: document.getElementById("screenApiSetup"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenBlocksList: document.getElementById("screenBlocksList"),
+  screenInitialAssessment: document.getElementById("screenInitialAssessment"),
   screenSessionReady: document.getElementById("screenSessionReady"),
   screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
   screenSocratic: document.getElementById("screenSocratic"),
@@ -118,6 +119,17 @@ export const els = {
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
   confirmBlocksError: document.getElementById("confirmBlocksError"),
+
+  assessmentChoiceWrap: document.getElementById("assessmentChoiceWrap"),
+  assessmentSkipBtn: document.getElementById("assessmentSkipBtn"),
+  assessmentTakeBtn: document.getElementById("assessmentTakeBtn"),
+  assessmentConfigWrap: document.getElementById("assessmentConfigWrap"),
+  assessmentMaxQuestions: document.getElementById("assessmentMaxQuestions"),
+  assessmentMaxQuestionsLabel: document.getElementById("assessmentMaxQuestionsLabel"),
+  assessmentPenaliseBtn: document.getElementById("assessmentPenaliseBtn"),
+  assessmentPenaliseSubtitle: document.getElementById("assessmentPenaliseSubtitle"),
+  assessmentStartBtn: document.getElementById("assessmentStartBtn"),
+
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   startStudyingBtn: document.getElementById("startStudyingBtn"),
   startStudyingStatus: document.getElementById("startStudyingStatus"),
@@ -324,6 +336,7 @@ export function showScreen(which) {
   const showSetup = which === "setup";
   const showCreate = which === "create";
   const showBlocks = which === "blocks";
+  const showAssessment = which === "assessment";
   const showReady = which === "ready";
   const showBetween = which === "between";
   const showSocratic = which === "socratic";
@@ -338,6 +351,7 @@ export function showScreen(which) {
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
+  els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
   els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
   els.screenBetweenBlocks.setAttribute("aria-hidden", String(!showBetween));
   els.screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
@@ -366,6 +380,10 @@ export function showScreen(which) {
 
   if (showBlocks) {
     setTimeout(() => els.blocksListOutput.focus(), 0);
+  }
+
+  if (showAssessment) {
+    setTimeout(() => els.assessmentSkipBtn?.focus?.(), 0);
   }
 
   if (showBetween) {
