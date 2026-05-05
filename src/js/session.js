@@ -2,14 +2,19 @@ import {
   LS_ACTIVE_SESSION_KEY,
   LS_BLOCK_INDEX_KEY,
   LS_KEY,
+  LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
 } from "./config.js?v=20260503_7";
+import { deepSeekGenerateBlockJson } from "./api.js?v=20260503_7";
+import { getStudyLanguage } from "./ui.js?v=20260503_7";
 
 export const state = {
-  sessionMode: "test",
   studyMode: null,
   originalMaterialText: "",
   studyNotes: "",
+  nTest: 2,
+  nSocratic: 1,
+  nextBlockQuestionOverride: null, // { blockIndex, n_test, n_socratic, _touched }
   lastNBlocks: 0,
   lastUploadedFileNames: [],
   lastCleanedMaterialText: "",
@@ -35,6 +40,46 @@ export function getStoredKey() {
 
 export function saveKey(key) {
   localStorage.setItem(LS_KEY, key);
+}
+
+export function loadDefaultQuestionConfig() {
+  try {
+    const raw = localStorage.getItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY);
+    const obj = raw ? JSON.parse(raw) : null;
+    const n_test = clampInt(obj?.n_test, 0, 5, 2);
+    const n_socratic = clampInt(obj?.n_socratic, 0, 3, 1);
+    return { n_test, n_socratic };
+  } catch {
+    return { n_test: 2, n_socratic: 1 };
+  }
+}
+
+export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
+  try {
+    const safe = {
+      n_test: clampInt(n_test, 0, 5, 2),
+      n_socratic: clampInt(n_socratic, 0, 3, 1),
+    };
+    localStorage.setItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY, JSON.stringify(safe));
+  } catch {
+    // ignore
+  }
+}
+
+export function resolveBlockQuestionConfig(blockIndex) {
+  const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
+  const defaults = {
+    n_test: clampInt(session.n_test, 0, 5, clampInt(state.nTest, 0, 5, 2)),
+    n_socratic: clampInt(session.n_socratic, 0, 3, clampInt(state.nSocratic, 0, 3, 1)),
+  };
+  const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+  const b = blocks[blockIndex];
+  const cfg = b && typeof b === "object" && b._config && typeof b._config === "object" ? b._config : null;
+  if (!cfg) return defaults;
+  return {
+    n_test: clampInt(cfg.n_test, 0, 5, defaults.n_test),
+    n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
+  };
 }
 
 export function storeActiveSession(sessionObj, { bumpRev } = {}) {
@@ -215,6 +260,48 @@ export function getBlockChunkFromIndex(blockIndex) {
   return chunk;
 }
 
+export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, previousComment } = {}) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const apiKey = getStoredKey();
+  if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
+
+  const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
+  if (!blocksListText) throw new Error("Missing confirmed blocks list.");
+
+  const cfg = {
+    n_test: clampInt(n_test, 0, 5, resolveBlockQuestionConfig(idx).n_test),
+    n_socratic: clampInt(n_socratic, 0, 3, resolveBlockQuestionConfig(idx).n_socratic),
+  };
+
+  const materialChunk = getBlockChunkFromIndex(idx);
+  if (!materialChunk) {
+    throw new Error("Missing block chunk for this session. Please regenerate blocks.");
+  }
+
+  const blockTitle = getBlockTitleFromList(idx);
+  const blockRequest = {
+    apiKey,
+    blocksListText,
+    materialText: materialChunk,
+    blockIndex: idx,
+    blockTitle,
+    previousComment: String(previousComment || "").trim(),
+    language: getStudyLanguage(),
+    n_test: cfg.n_test,
+    n_socratic: cfg.n_socratic,
+  };
+
+  let obj = null;
+  try {
+    obj = await deepSeekGenerateBlockJson(blockRequest);
+  } catch (err) {
+    const message = err?.message ? String(err.message) : String(err);
+    if (!message.includes("valid JSON")) throw err;
+    obj = await deepSeekGenerateBlockJson(blockRequest);
+  }
+  return obj;
+}
+
 export function parseBlockTitlesFromList(text) {
   const raw = String(text || "");
   const lines = raw.split("\n");
@@ -255,7 +342,7 @@ export function parseBlocksPlanFromList(text) {
   return out;
 }
 
-const RESUME_FORMAT_VERSION = 1;
+const RESUME_FORMAT_VERSION = 2;
 
 function deepCloneJson(obj) {
   try {
@@ -272,7 +359,9 @@ function getQuestionsForMode(block, mode) {
   if (m === "socratic") {
     return qs.filter((q) => q && typeof q === "object" && q.type === "socratic");
   }
-  return qs;
+  const testQs = qs.filter((q) => q && typeof q === "object" && q.type === "test");
+  const socQs = qs.filter((q) => q && typeof q === "object" && q.type === "socratic");
+  return [...testQs, ...socQs];
 }
 
 function countAnsweredInBlock(blockIndex, questionCount, responses) {
@@ -396,8 +485,9 @@ export function buildResumePayload(session, { activeBlockIndex, activeQuestionIn
   return {
     format_version: RESUME_FORMAT_VERSION,
     exported_at: new Date().toISOString(),
-    session_mode: String(safe.session_mode || ""),
     n_blocks: n,
+    n_test: clampInt(safe.n_test, 0, 5, 2),
+    n_socratic: clampInt(safe.n_socratic, 0, 3, 1),
     current_block_index: clampInt(Number(safe.current_block_index) || 0, 0, n - 1, 0),
     active_block_index: abi,
     active_question_index: aqi,
@@ -416,17 +506,26 @@ export function normalizeResumePayload(raw) {
     throw new Error("Resume payload is missing or invalid.");
   }
   const ver = Number(raw.format_version);
-  if (ver !== 1) {
-    throw new Error(`Unsupported resume format_version (${raw.format_version}). Expected 1.`);
+  if (ver !== 1 && ver !== 2) {
+    throw new Error(`Unsupported resume format_version (${raw.format_version}). Expected 1 or 2.`);
   }
-  const mode = String(raw.session_mode || "").trim();
-  if (mode !== "test" && mode !== "socratic") {
+  const mode = ver === 1 ? String(raw.session_mode || "").trim() : "";
+  if (ver === 1 && mode !== "test" && mode !== "socratic") {
     throw new Error('Resume payload has invalid session_mode (need "test" or "socratic").');
   }
   const n = Math.max(1, Math.floor(Number(raw.n_blocks)));
   if (!Number.isFinite(n) || n < 1) {
     throw new Error("Resume payload has invalid n_blocks.");
   }
+
+  const defaultsFromV1 =
+    ver === 1
+      ? mode === "test"
+        ? { n_test: 2, n_socratic: 0 }
+        : { n_test: 0, n_socratic: 1 }
+      : { n_test: 2, n_socratic: 1 };
+  const n_test = clampInt(raw.n_test, 0, 5, defaultsFromV1.n_test);
+  const n_socratic = clampInt(raw.n_socratic, 0, 3, defaultsFromV1.n_socratic);
 
   let blocksPlan = Array.isArray(raw.blocks_plan) ? raw.blocks_plan : [];
   if (!blocksPlan.length) {
@@ -492,10 +591,11 @@ export function normalizeResumePayload(raw) {
   }
 
   return {
-    format_version: 1,
+    format_version: 2,
     exported_at: String(raw.exported_at || ""),
-    session_mode: mode,
     n_blocks: n,
+    n_test,
+    n_socratic,
     current_block_index: currentBlockIndex,
     active_block_index: activeBlockIndex,
     active_question_index: activeQuestionIndex,
@@ -512,7 +612,6 @@ export function normalizeResumePayload(raw) {
 /** First block/question that still needs study (deterministic restore). */
 export function computeResumePointer(p) {
   const normalized = normalizeResumePayload(p);
-  const mode = normalized.session_mode;
   const n = normalized.n_blocks;
   const blocks = normalized.blocks;
   const responses = normalized._responses;
@@ -521,7 +620,7 @@ export function computeResumePointer(p) {
     if (!block || typeof block !== "object") {
       return { current_block_index: bi, active_question_index: 0, session_complete: false };
     }
-    const qs = getQuestionsForMode(block, mode);
+    const qs = getQuestionsForMode(block, "");
     if (!qs.length) continue;
     for (let qi = 0; qi < qs.length; qi += 1) {
       const r = responses?.blocks?.[String(bi)]?.questions?.[String(qi)];
@@ -546,8 +645,9 @@ export function buildSessionFromResumePayload(payload) {
   const p = normalizeResumePayload(payload);
   const ptr = computeResumePointer(p);
   const sessionObj = {
-    session_mode: p.session_mode,
     n_blocks: p.n_blocks,
+    n_test: p.n_test,
+    n_socratic: p.n_socratic,
     blocks_list_text: p.blocks_list_text,
     current_block_index: ptr.session_complete
       ? Math.max(0, p.n_blocks - 1)
@@ -905,13 +1005,17 @@ export function getBlockTitleSafe(blockIndex) {
 
 export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText }) {
   const n = Math.max(1, Number(nBlocks) || 1);
+  const defaults = loadDefaultQuestionConfig();
   return {
-    session_mode: mode,
     n_blocks: n,
+    n_test: defaults.n_test,
+    n_socratic: defaults.n_socratic,
     blocks_list_text: String(blocksListText || ""),
     current_block_index: 0,
     active_question_index: 0,
-    blocks: Array.from({ length: n }, () => null),
+    blocks: Array.from({ length: n }, () => ({
+      _config: { n_test: defaults.n_test, n_socratic: defaults.n_socratic },
+    })),
   };
 }
 
@@ -920,36 +1024,67 @@ export let prefetchState = {
   status: "idle", // idle | generating | ready | failed
   data: null, // generated block JSON when ready
   error: null,
+  configKey: "",
 };
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function triggerPrefetch(blockIndex) {
-  if (prefetchState.status === "generating") return;
-  if (prefetchState.blockIndex === blockIndex && prefetchState.status === "ready") return;
+export function triggerPrefetch(blockIndex, { n_test, n_socratic, force } = {}) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const cfg = {
+    n_test: clampInt(n_test, 0, 5, resolveBlockQuestionConfig(idx).n_test),
+    n_socratic: clampInt(n_socratic, 0, 3, resolveBlockQuestionConfig(idx).n_socratic),
+  };
+  const configKey = `${cfg.n_test}|${cfg.n_socratic}`;
 
-  prefetchState = { blockIndex, status: "generating", data: null, error: null };
+  const alreadyGeneratingSame =
+    prefetchState.status === "generating" &&
+    prefetchState.blockIndex === idx &&
+    prefetchState.configKey === configKey;
+  if (alreadyGeneratingSame && !force) return;
 
-  void import("./api.js?v=20260503_7")
-    .then((m) => m.generateBlock(blockIndex))
+  const alreadyReadySame =
+    prefetchState.status === "ready" &&
+    prefetchState.blockIndex === idx &&
+    prefetchState.configKey === configKey;
+  if (alreadyReadySame && !force) return;
+
+  prefetchState = {
+    blockIndex: idx,
+    status: "generating",
+    data: null,
+    error: null,
+    configKey,
+  };
+
+  void generateBlockForIndex(idx, cfg)
     .then((result) => {
-      if (prefetchState.blockIndex !== blockIndex) return;
+      if (prefetchState.blockIndex !== idx) return;
+      if (prefetchState.configKey !== configKey) return;
       prefetchState.status = "ready";
       prefetchState.data = result;
     })
     .catch((err) => {
-      if (prefetchState.blockIndex !== blockIndex) return;
+      if (prefetchState.blockIndex !== idx) return;
+      if (prefetchState.configKey !== configKey) return;
       prefetchState.status = "failed";
       prefetchState.error = err;
     });
 }
 
-export async function getPrefetchedBlock(blockIndex) {
-  if (prefetchState.blockIndex === blockIndex && prefetchState.status === "ready") {
+export async function getPrefetchedBlock(blockIndex, { configKey } = {}) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const wantKey = configKey != null ? String(configKey) : null;
+
+  if (
+    prefetchState.blockIndex === idx &&
+    prefetchState.status === "ready" &&
+    (wantKey == null || prefetchState.configKey === wantKey)
+  ) {
     const data = prefetchState.data;
-    prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+    prefetchState = { blockIndex: null, status: "idle", data: null, error: null, configKey: "" };
     return data;
   }
 
@@ -958,15 +1093,15 @@ export async function getPrefetchedBlock(blockIndex) {
   let delayIndex = 0;
 
   while (Date.now() - startedAt < 30_000) {
-    if (prefetchState.blockIndex === blockIndex) {
+    if (prefetchState.blockIndex === idx && (wantKey == null || prefetchState.configKey === wantKey)) {
       if (prefetchState.status === "ready") {
         const data = prefetchState.data;
-        prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+        prefetchState = { blockIndex: null, status: "idle", data: null, error: null, configKey: "" };
         return data;
       }
       if (prefetchState.status === "failed") {
         const err = prefetchState.error;
-        prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+        prefetchState = { blockIndex: null, status: "idle", data: null, error: null, configKey: "" };
         throw err instanceof Error ? err : new Error(String(err));
       }
     }

@@ -8,6 +8,7 @@ export const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
 export const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
 export const LS_SESSION_CONCEPTS_KEY = "session_concepts";
 export const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
+export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 
 export const DS_CHAT_COMPLETIONS_URL =
   "https://api.deepseek.com/v1/chat/completions";

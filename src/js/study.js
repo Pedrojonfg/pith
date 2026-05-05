@@ -6,6 +6,7 @@ import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDe
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260503_7";
 import {
   blocksListTextFromBlockIndex,
+  clampInt,
   buildBlockIndexFromResumePayload,
   buildSessionFromResumePayload,
   formatBlockIndexForConfirmation,
@@ -16,12 +17,15 @@ import {
   getStoredKey,
   getTotalBlocksSafe,
   initActiveSessionFromBlocksList,
+  loadDefaultQuestionConfig,
   loadActiveSession,
   normalizeBlockIndexArray,
   prefetchState,
   recordResponse,
+  resolveBlockQuestionConfig,
   safeParseJson,
   splitMaterialIntoBlockChunks,
+  storeDefaultQuestionConfig,
   twoPhaseSplitMerge,
   state,
   storeActiveSession,
@@ -261,14 +265,29 @@ function renderBlockIndexEditor(blocks) {
   if (first) setTimeout(() => first.focus(), 0);
 }
 
-function setMode(nextMode) {
-  state.sessionMode = nextMode;
-  const isTest = state.sessionMode === "test";
-  els.modeTestBtn.setAttribute("aria-pressed", String(isTest));
-  els.modeSocraticBtn.setAttribute("aria-pressed", String(!isTest));
-  els.modeHint.textContent = isTest
-    ? "Multiple-choice questions (A/B/C/D)"
-    : "Open-ended reasoning questions";
+function setQuestionPreviewLabel(nTest, nSocratic) {
+  if (!els.questionsPreviewLabel) return;
+  const t = Math.max(0, Math.min(5, Math.round(Number(nTest) || 0)));
+  const s = Math.max(0, Math.min(3, Math.round(Number(nSocratic) || 0)));
+  const total = t + s;
+  els.questionsPreviewLabel.textContent = total
+    ? `${total} questions per block (${t} test + ${s} socratic)`
+    : "0 questions per block (increase at least one)";
+}
+
+function renderQuestionConfigUi() {
+  if (els.nTestValue) els.nTestValue.textContent = String(state.nTest);
+  if (els.nSocraticValue) els.nSocraticValue.textContent = String(state.nSocratic);
+  setQuestionPreviewLabel(state.nTest, state.nSocratic);
+}
+
+function bumpQuestionCount(kind, delta) {
+  if (kind === "test") {
+    state.nTest = clampInt(state.nTest + delta, 0, 5, 2);
+  } else {
+    state.nSocratic = clampInt(state.nSocratic + delta, 0, 3, 1);
+  }
+  renderQuestionConfigUi();
 }
 
 function setGenerateLoading(isLoading) {
@@ -524,6 +543,75 @@ function getOrCreateTransitionOverlay() {
 
   const dictionaryWrap = document.createElement("div");
 
+  const nextQDetails = document.createElement("details");
+  nextQDetails.style.marginTop = "8px";
+  nextQDetails.open = false;
+
+  const nextQSummary = document.createElement("summary");
+  nextQSummary.textContent = "Next block questions";
+  nextQSummary.className = "hint";
+  nextQSummary.style.cursor = "pointer";
+
+  const nextQStatus = document.createElement("div");
+  nextQStatus.className = "hint";
+  nextQStatus.style.marginTop = "6px";
+  nextQStatus.textContent = "Using session defaults";
+
+  const nextQRow1 = document.createElement("div");
+  nextQRow1.className = "row";
+  nextQRow1.style.marginTop = "10px";
+  nextQRow1.style.gap = "10px";
+  nextQRow1.style.alignItems = "center";
+
+  const nextTestMinus = document.createElement("button");
+  nextTestMinus.type = "button";
+  nextTestMinus.textContent = "−";
+  const nextTestValue = document.createElement("div");
+  nextTestValue.style.minWidth = "22px";
+  nextTestValue.style.textAlign = "center";
+  nextTestValue.style.fontVariantNumeric = "tabular-nums";
+  nextTestValue.textContent = "2";
+  const nextTestPlus = document.createElement("button");
+  nextTestPlus.type = "button";
+  nextTestPlus.textContent = "+";
+  const nextTestLabel = document.createElement("span");
+  nextTestLabel.className = "hint";
+  nextTestLabel.textContent = "Test";
+  nextQRow1.appendChild(nextTestMinus);
+  nextQRow1.appendChild(nextTestValue);
+  nextQRow1.appendChild(nextTestPlus);
+  nextQRow1.appendChild(nextTestLabel);
+
+  const nextQRow2 = document.createElement("div");
+  nextQRow2.className = "row";
+  nextQRow2.style.marginTop = "0";
+  nextQRow2.style.gap = "10px";
+  nextQRow2.style.alignItems = "center";
+
+  const nextSocMinus = document.createElement("button");
+  nextSocMinus.type = "button";
+  nextSocMinus.textContent = "−";
+  const nextSocValue = document.createElement("div");
+  nextSocValue.style.minWidth = "22px";
+  nextSocValue.style.textAlign = "center";
+  nextSocValue.style.fontVariantNumeric = "tabular-nums";
+  nextSocValue.textContent = "1";
+  const nextSocPlus = document.createElement("button");
+  nextSocPlus.type = "button";
+  nextSocPlus.textContent = "+";
+  const nextSocLabel = document.createElement("span");
+  nextSocLabel.className = "hint";
+  nextSocLabel.textContent = "Socratic";
+  nextQRow2.appendChild(nextSocMinus);
+  nextQRow2.appendChild(nextSocValue);
+  nextQRow2.appendChild(nextSocPlus);
+  nextQRow2.appendChild(nextSocLabel);
+
+  nextQDetails.appendChild(nextQSummary);
+  nextQDetails.appendChild(nextQStatus);
+  nextQDetails.appendChild(nextQRow1);
+  nextQDetails.appendChild(nextQRow2);
+
   const label = document.createElement("label");
   label.textContent = "Any questions for the guide? (optional)";
 
@@ -603,6 +691,8 @@ function getOrCreateTransitionOverlay() {
   card.appendChild(divider);
   card.appendChild(dictionaryWrap);
   card.appendChild(divider.cloneNode(true));
+  card.appendChild(nextQDetails);
+  card.appendChild(divider.cloneNode(true));
   card.appendChild(label);
   card.appendChild(textarea);
   card.appendChild(row);
@@ -615,6 +705,14 @@ function getOrCreateTransitionOverlay() {
     wrap,
     title,
     dictionaryWrap,
+    nextQDetails,
+    nextQStatus,
+    nextTestMinus,
+    nextTestPlus,
+    nextTestValue,
+    nextSocMinus,
+    nextSocPlus,
+    nextSocValue,
     textarea,
     continueBtn,
     retryBtn,
@@ -669,7 +767,13 @@ function ensureGuideResponseCardVisible({ replyText } = {}) {
 async function ensureBlockGenerated(blockIndex) {
   const blocks = getBlocksSafe();
   const existing = blocks[blockIndex];
-  if (existing && typeof existing === "object") return existing;
+  const looksGenerated =
+    existing &&
+    typeof existing === "object" &&
+    (typeof existing.explanation === "string" ||
+      Array.isArray(existing.questions) ||
+      Array.isArray(existing.concepts));
+  if (looksGenerated) return existing;
 
   const apiKey = getStoredKey();
   if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
@@ -677,25 +781,26 @@ async function ensureBlockGenerated(blockIndex) {
   const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
   if (!blocksListText) throw new Error("Missing confirmed blocks list.");
 
-  const mode = String(state.activeSession?.session_mode || "");
-  if (mode !== "test" && mode !== "socratic") {
-    throw new Error('Unsupported "session_mode". Use "test" or "socratic".');
-  }
-
   const blockTitle = getBlockTitleFromList(blockIndex);
   const materialChunk = getBlockChunkFromIndex(blockIndex);
   if (!materialChunk) {
     throw new Error("Missing block chunk for this session. Please regenerate blocks.");
   }
 
+  const cfg = resolveBlockQuestionConfig(blockIndex);
+  if ((cfg.n_test || 0) <= 0 && (cfg.n_socratic || 0) <= 0) {
+    console.warn(`Block ${blockIndex + 1}: invalid question config (n_test=0 and n_socratic=0).`);
+  }
+
   const blockRequest = {
     apiKey,
-    mode,
     blocksListText,
     materialText: materialChunk,
     blockIndex,
     blockTitle,
     language: getStudyLanguage(),
+    n_test: cfg.n_test,
+    n_socratic: cfg.n_socratic,
   };
 
   let obj = null;
@@ -717,6 +822,20 @@ async function ensureBlockGenerated(blockIndex) {
   if (!cleaned.explanation) cleaned.explanation = "";
   if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
   if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
+  if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
+  cleaned._config.n_test = cfg.n_test;
+  cleaned._config.n_socratic = cfg.n_socratic;
+
+  const testCount = cleaned.questions.filter((q) => q && typeof q === "object" && q.type === "test")
+    .length;
+  const socCount = cleaned.questions.filter(
+    (q) => q && typeof q === "object" && q.type === "socratic",
+  ).length;
+  if (testCount < cfg.n_test || socCount < cfg.n_socratic) {
+    console.warn(
+      `Block ${blockIndex + 1}: fewer questions than requested. Requested (${cfg.n_test} test, ${cfg.n_socratic} socratic), got (${testCount} test, ${socCount} socratic).`,
+    );
+  }
 
   if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
   state.activeSession.blocks[blockIndex] = cleaned;
@@ -758,6 +877,38 @@ function getBlockTestQuestions(block) {
 function getBlockSocraticQuestions(block) {
   const qs = Array.isArray(block?.questions) ? block.questions : [];
   return qs.filter((q) => q && typeof q === "object" && q.type === "socratic");
+}
+
+function getBlockOrderedQuestions(block) {
+  const testQs = getBlockTestQuestions(block);
+  const socQs = getBlockSocraticQuestions(block);
+  return { testQs, socQs, allQs: [...testQs, ...socQs] };
+}
+
+function getActiveQuestionContext() {
+  const blocks = getBlocksSafe();
+  const block = blocks[state.activeBlockIndex];
+  const { testQs, socQs, allQs } = getBlockOrderedQuestions(block);
+  const total = allQs.length;
+  const globalIndex = Math.max(0, Math.floor(Number(state.activeQuestionIndex) || 0));
+  const q = allQs[globalIndex] || null;
+  const type = q && typeof q === "object" ? String(q.type || "") : "";
+  const phase = type === "socratic" ? "Socratic" : "Test";
+  const localIndex = type === "socratic" ? Math.max(0, globalIndex - testQs.length) : globalIndex;
+  return { block, testQs, socQs, allQs, total, globalIndex, localIndex, type, phase, q };
+}
+
+function setQuestionProgressUi() {
+  const ctx = getActiveQuestionContext();
+  const n = Math.max(1, ctx.total);
+  const label = `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
+  if (els.testMeta) {
+    const totalBlocks = Math.max(1, getTotalBlocksSafe());
+    els.testMeta.textContent = `${label} · Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+  }
+  if (els.socraticQuestionTitle) {
+    els.socraticQuestionTitle.textContent = label;
+  }
 }
 
 function setTestMeta() {
@@ -859,21 +1010,28 @@ function renderTestQuestion() {
   els.testNextBtn.hidden = true;
   els.testNextBtn.textContent = "";
 
-  const blocks = getBlocksSafe();
-  const block = blocks[state.activeBlockIndex];
-  if (!block) {
+  const ctx = getActiveQuestionContext();
+  if (!ctx.block) {
     setTestError("Missing block.");
     return;
   }
 
-  const qs = getBlockTestQuestions(block);
-  const q = qs[state.activeQuestionIndex];
-  if (!q || !q.question) {
-    setTestError("Missing question.");
+  if (ctx.type !== "test") {
+    // If test questions are exhausted, jump to Socratic (or finish block).
+    if (ctx.type === "socratic") {
+      showScreen("socratic");
+      renderSocraticQuestion();
+      return;
+    }
+    setTestError("No questions found for this block.");
     return;
   }
 
-  els.testQuestionText.textContent = String(q.question);
+  setTestMeta();
+  setQuestionProgressUi();
+
+  const q = ctx.q;
+  els.testQuestionText.textContent = String(q?.question || "");
   els.testOptions.innerHTML = "";
   typesetMath(els.testQuestionText);
 
@@ -887,8 +1045,8 @@ function renderTestQuestion() {
     btn.addEventListener("click", () => {
       handleTestAnswer({
         chosen: letter,
-        correct: String(q.answer || ""),
-        feedback: String(q.feedback || ""),
+        correct: String(q?.answer || ""),
+        feedback: String(q?.feedback || ""),
       });
     });
     els.testOptions.appendChild(btn);
@@ -900,15 +1058,13 @@ function handleTestAnswer({ chosen, correct, feedback }) {
   const btns = Array.from(els.testOptions.querySelectorAll("button"));
   for (const b of btns) b.disabled = true;
 
-  const blocks = getBlocksSafe();
-  const block = blocks[state.activeBlockIndex];
-  const qs = getBlockTestQuestions(block);
-  const q = qs[state.activeQuestionIndex];
+  const ctx = getActiveQuestionContext();
+  const q = ctx.q;
   const optText = q?.options && q.options[chosen] != null ? String(q.options[chosen]) : "";
   const userAnswer = optText ? `${chosen}. ${optText}` : String(chosen || "");
   recordResponse({
     blockIndex: state.activeBlockIndex,
-    questionIndex: state.activeQuestionIndex,
+    questionIndex: ctx.globalIndex,
     questionType: "test",
     questionText: q?.question != null ? String(q.question) : "",
     userAnswer,
@@ -925,31 +1081,32 @@ function handleTestAnswer({ chosen, correct, feedback }) {
   els.testFeedback.textContent = feedback || "";
   typesetMath(els.testFeedback);
 
-  const isLastQuestion = state.activeQuestionIndex >= qs.length - 1;
+  const blocks = getBlocksSafe();
+  const isLastGlobal = ctx.globalIndex >= ctx.total - 1;
   const isLastBlock = state.activeBlockIndex >= blocks.length - 1;
 
   els.testNextBtn.hidden = false;
-  els.testNextBtn.textContent = isLastQuestion
-    ? isLastBlock
-      ? "Finish"
-      : "Next block"
-    : "Next question";
+  els.testNextBtn.textContent = isLastGlobal ? (isLastBlock ? "Finish" : "Next block") : "Next";
 
   els.testNextBtn.onclick = () => {
-    if (!isLastQuestion) {
+    if (!isLastGlobal) {
       state.activeQuestionIndex += 1;
       if (state.activeSession && typeof state.activeSession === "object") {
         state.activeSession.active_question_index = state.activeQuestionIndex;
         storeActiveSession(state.activeSession);
       }
-      renderTestQuestion();
+      const nextCtx = getActiveQuestionContext();
+      if (nextCtx.type === "socratic") {
+        showScreen("socratic");
+        renderSocraticQuestion();
+      } else {
+        renderTestQuestion();
+      }
       return;
     }
-    if (!isLastBlock) {
-      void finishQuestions(state.activeBlockIndex);
-      return;
-    }
-    showSessionComplete();
+
+    if (!isLastBlock) void finishQuestions(state.activeBlockIndex);
+    else showSessionComplete();
   };
 }
 
@@ -962,27 +1119,29 @@ function renderSocraticQuestion() {
   els.socraticNextQuestionBtn.hidden = true;
   els.socraticNextBlockBtn.hidden = true;
 
-  const blocks = getBlocksSafe();
-  const block = blocks[state.activeBlockIndex];
-  if (!block) {
+  const ctx = getActiveQuestionContext();
+  if (!ctx.block) {
     setSocraticError("No blocks found in session.");
     return;
   }
 
-  const socQs = getBlockSocraticQuestions(block);
-  const q = socQs[state.activeQuestionIndex];
-  if (!q || !q.question) {
+  if (ctx.type !== "socratic") {
+    if (ctx.type === "test") {
+      showScreen("test");
+      showTestQuestions();
+      renderTestQuestion();
+      return;
+    }
     setSocraticError("No Socratic questions found for this block.");
     return;
   }
 
+  const q = ctx.q;
   const total = Math.max(1, getTotalBlocksSafe());
   const blockTitle = getBlockTitleSafe(state.activeBlockIndex);
   els.socraticHeader.textContent = "Socratic";
   els.socraticMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}: ${blockTitle}`;
-  els.socraticQuestionTitle.textContent = `Question ${
-    state.activeQuestionIndex + 1
-  } of ${socQs.length}`;
+  setQuestionProgressUi();
   els.socraticQuestionText.textContent = String(q.question);
   typesetMath(els.socraticQuestionText);
 
@@ -998,7 +1157,8 @@ function startBlock(blockIndex) {
   if (nextIdx < total) {
     prefetchStartedAtByIndex.set(nextIdx, Date.now());
     setPrefetchIndicator("generating");
-    triggerPrefetch(nextIdx);
+    const cfg = resolveBlockQuestionConfig(nextIdx);
+    triggerPrefetch(nextIdx, cfg);
   }
 
   // 2) triggerCommentReply() — fire and forget
@@ -1014,16 +1174,8 @@ function startBlock(blockIndex) {
   }
 
   updateStudyProgressUi();
-
-  if (state.studyMode === "socratic") {
-    showScreen("socratic");
-    void startSocraticBlock();
-    return;
-  }
-  if (state.studyMode === "test") {
-    showScreen("test");
-    void startTestBlock();
-  }
+  showScreen("test");
+  void startTestBlock();
 }
 
 function withTimeout(promise, timeoutMs, label) {
@@ -1037,10 +1189,19 @@ function withTimeout(promise, timeoutMs, label) {
   ]);
 }
 
-async function generateBlockDirect(blockIndex, { timeoutMs } = {}) {
+async function generateBlockDirect(blockIndex, { timeoutMs, n_test, n_socratic } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
-  const p = import("./api.js?v=20260503_7").then((m) => m.generateBlock(idx));
-  const data = await withTimeout(p, timeoutMs, "Block generation timed out");
+  const cfg = {
+    n_test: n_test != null ? n_test : resolveBlockQuestionConfig(idx).n_test,
+    n_socratic: n_socratic != null ? n_socratic : resolveBlockQuestionConfig(idx).n_socratic,
+  };
+  const configKey = `${clampInt(cfg.n_test, 0, 5, 2)}|${clampInt(cfg.n_socratic, 0, 3, 1)}`;
+  triggerPrefetch(idx, { ...cfg, force: true });
+  const data = await withTimeout(
+    getPrefetchedBlock(idx, { configKey }),
+    timeoutMs,
+    "Block generation timed out",
+  );
   if (state.activeSession && typeof state.activeSession === "object") {
     if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
     state.activeSession.blocks[idx] = data;
@@ -1089,16 +1250,26 @@ function showQuestions(blockIndex) {
 
   updateStudyProgressUi();
 
-  if (state.studyMode === "test") {
+  const blocks = getBlocksSafe();
+  const block = blocks[idx];
+  const { testQs, socQs, allQs } = getBlockOrderedQuestions(block);
+  if (!allQs.length) {
+    console.warn(`Block ${idx + 1}: no questions available.`);
+  }
+
+  if (testQs.length) {
     showScreen("test");
     showTestQuestions();
     renderTestQuestion();
     return;
   }
-  if (state.studyMode === "socratic") {
+  if (socQs.length) {
     showScreen("socratic");
     renderSocraticQuestion();
+    return;
   }
+  // No questions: skip directly to next block transition
+  void finishQuestions(idx);
 }
 
 async function finishQuestions(blockIndex) {
@@ -1130,11 +1301,36 @@ async function finishQuestions(blockIndex) {
     collapsedByDefault: concepts.length > 10,
   });
 
+  const sessionDefaults = {
+    n_test: clampInt(state.activeSession?.n_test, 0, 5, 2),
+    n_socratic: clampInt(state.activeSession?.n_socratic, 0, 3, 1),
+  };
+  let nextCfg = { ...sessionDefaults };
+  const keyOf = (c) => `${clampInt(c?.n_test, 0, 5, sessionDefaults.n_test)}|${clampInt(
+    c?.n_socratic,
+    0,
+    3,
+    sessionDefaults.n_socratic,
+  )}`;
+
+  const renderNextCfgUi = () => {
+    if (o.nextTestValue) o.nextTestValue.textContent = String(nextCfg.n_test);
+    if (o.nextSocValue) o.nextSocValue.textContent = String(nextCfg.n_socratic);
+    if (o.nextQStatus) {
+      o.nextQStatus.textContent =
+        keyOf(nextCfg) === keyOf(sessionDefaults) ? "Using session defaults" : "Custom";
+    }
+  };
+
+  renderNextCfgUi();
+
   // 3) Start waiting for the prefetched block immediately in the background
   const startedAt = prefetchStartedAtByIndex.get(nextIndex) || Date.now();
   let prefetchedData = null;
   let prefetchedError = null;
   let continueRequested = false;
+  let expectedConfigKey = keyOf(nextCfg);
+  let waitToken = 0;
 
   const setStatusPreparing = () => {
     o.statusBarText.textContent = "Preparing next block...";
@@ -1163,7 +1359,9 @@ async function finishQuestions(blockIndex) {
   o.statusBarText.style.color = "";
 
   const alreadyReady =
-    prefetchState.blockIndex === nextIndex && prefetchState.status === "ready";
+    prefetchState.blockIndex === nextIndex &&
+    prefetchState.status === "ready" &&
+    prefetchState.configKey === expectedConfigKey;
   if (alreadyReady) {
     setStatusReady();
   } else {
@@ -1187,19 +1385,54 @@ async function finishQuestions(blockIndex) {
   o.retryBtn.hidden = true;
   o.skipBtn.hidden = true;
 
-  const prefetchedPromise = getPrefetchedBlock(nextIndex)
-    .then((data) => {
-      prefetchedData = data;
-      setPrefetchIndicator("ready");
-      setStatusReady();
-      return data;
-    })
-    .catch((err) => {
-      prefetchedError = err;
-      setPrefetchIndicator("failed");
-      setStatusFailed();
-      throw err;
-    });
+  const startPrefetchWait = () => {
+    const token = (waitToken += 1);
+    const key = expectedConfigKey;
+    return getPrefetchedBlock(nextIndex, { configKey: key })
+      .then((data) => {
+        if (token !== waitToken) return null;
+        prefetchedData = data;
+        setPrefetchIndicator("ready");
+        setStatusReady();
+        return data;
+      })
+      .catch((err) => {
+        if (token !== waitToken) return null;
+        prefetchedError = err;
+        setPrefetchIndicator("failed");
+        setStatusFailed();
+        throw err;
+      });
+  };
+
+  let prefetchedPromise = startPrefetchWait();
+
+  const maybeRegeneratePrefetch = () => {
+    expectedConfigKey = keyOf(nextCfg);
+    renderNextCfgUi();
+
+    const currentKey = prefetchState.blockIndex === nextIndex ? String(prefetchState.configKey || "") : "";
+    if (currentKey && currentKey === expectedConfigKey) return;
+
+    prefetchedData = null;
+    prefetchedError = null;
+    setPrefetchIndicator("generating");
+    setStatusPreparing();
+    o.statusBarText.textContent = "Regenerating next block…";
+    triggerPrefetch(nextIndex, { ...nextCfg, force: true });
+    prefetchedPromise = startPrefetchWait();
+  };
+
+  const bumpNext = (kind, delta) => {
+    if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, 5, sessionDefaults.n_test);
+    else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, 3, sessionDefaults.n_socratic);
+    maybeRegeneratePrefetch();
+  };
+
+  if (o.nextTestMinus) o.nextTestMinus.onclick = () => bumpNext("test", -1);
+  if (o.nextTestPlus) o.nextTestPlus.onclick = () => bumpNext("test", +1);
+  if (o.nextSocMinus) o.nextSocMinus.onclick = () => bumpNext("socratic", -1);
+  if (o.nextSocPlus) o.nextSocPlus.onclick = () => bumpNext("socratic", +1);
 
   o.continueBtn.onclick = async () => {
     o.error.hidden = true;
@@ -1209,12 +1442,33 @@ async function finishQuestions(blockIndex) {
     const comment = String(o.textarea.value || "").trim();
     if (comment) setPendingComment(comment);
 
+    if ((nextCfg.n_test || 0) <= 0 && (nextCfg.n_socratic || 0) <= 0) {
+      showRetryControls("Please set at least one question for the next block.");
+      return;
+    }
+
+    // Persist override onto the next block placeholder (or existing block) only.
+    if (state.activeSession && typeof state.activeSession === "object") {
+      if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
+      const existingNext = state.activeSession.blocks[nextIndex];
+      const base = existingNext && typeof existingNext === "object" ? existingNext : {};
+      if (!base._config || typeof base._config !== "object") base._config = {};
+      base._config.n_test = nextCfg.n_test;
+      base._config.n_socratic = nextCfg.n_socratic;
+      state.activeSession.blocks[nextIndex] = base;
+      storeActiveSession(state.activeSession, { bumpRev: true });
+    }
+
     if (prefetchedError && !autoRetried) {
       autoRetried = true;
       showRetryingCard();
       try {
         setPrefetchIndicator("generating");
-        const data = await generateBlockDirect(nextIndex, { timeoutMs: 30_000 });
+        const data = await generateBlockDirect(nextIndex, {
+          timeoutMs: 30_000,
+          n_test: nextCfg.n_test,
+          n_socratic: nextCfg.n_socratic,
+        });
         prefetchedData = data;
         prefetchedError = null;
         setPrefetchIndicator("ready");
@@ -1248,6 +1502,7 @@ async function finishQuestions(blockIndex) {
     try {
       const data = await prefetchedPromise;
       if (!continueRequested) return;
+      if (!data) return;
       if (state.activeSession && typeof state.activeSession === "object") {
         if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
         state.activeSession.blocks[nextIndex] = data;
@@ -1265,7 +1520,11 @@ async function finishQuestions(blockIndex) {
         showRetryingCard();
         try {
           setPrefetchIndicator("generating");
-          const data2 = await generateBlockDirect(nextIndex, { timeoutMs: 30_000 });
+          const data2 = await generateBlockDirect(nextIndex, {
+            timeoutMs: 30_000,
+            n_test: nextCfg.n_test,
+            n_socratic: nextCfg.n_socratic,
+          });
           prefetchedData = data2;
           prefetchedError = null;
           setPrefetchIndicator("ready");
@@ -1361,9 +1620,16 @@ async function copyPlainTextToClipboard(text) {
 }
 
 export function wireStudyHandlers() {
-  els.modeTestBtn.addEventListener("click", () => setMode("test"));
-  els.modeSocraticBtn.addEventListener("click", () => setMode("socratic"));
-  setMode("test");
+  const defaults = loadDefaultQuestionConfig();
+  state.nTest = clampInt(defaults.n_test, 0, 5, 2);
+  state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
+  renderQuestionConfigUi();
+
+  if (els.nTestMinusBtn) els.nTestMinusBtn.addEventListener("click", () => bumpQuestionCount("test", -1));
+  if (els.nTestPlusBtn) els.nTestPlusBtn.addEventListener("click", () => bumpQuestionCount("test", +1));
+  if (els.nSocraticMinusBtn) els.nSocraticMinusBtn.addEventListener("click", () => bumpQuestionCount("socratic", -1));
+  if (els.nSocraticPlusBtn) els.nSocraticPlusBtn.addEventListener("click", () => bumpQuestionCount("socratic", +1));
+
   loadRsvpDefaultsFromStorage();
 
   if (els.blocksFilterInput) {
@@ -1446,6 +1712,13 @@ export function wireStudyHandlers() {
       showScreen("setup");
       return;
     }
+
+    // Validate global question defaults for this session.
+    if ((state.nTest || 0) <= 0 && (state.nSocratic || 0) <= 0) {
+      setGenerateError("Please set at least one question per block (test or socratic).");
+      return;
+    }
+    storeDefaultQuestionConfig({ n_test: state.nTest, n_socratic: state.nSocratic });
 
     const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
     state.lastUploadedFileNames = fileList.map((f) => String(f?.name || "")).filter(Boolean);
@@ -1620,10 +1893,22 @@ export function wireStudyHandlers() {
       const confirmedBlocksListText = blocksListTextFromBlockIndex(merged);
 
       const sessionObj = initActiveSessionFromBlocksList({
-        mode: state.sessionMode,
         nBlocks,
         blocksListText: confirmedBlocksListText,
       });
+      sessionObj.n_test = clampInt(state.nTest, 0, 5, 2);
+      sessionObj.n_socratic = clampInt(state.nSocratic, 0, 3, 1);
+      if (Array.isArray(sessionObj.blocks)) {
+        for (let i = 0; i < sessionObj.blocks.length; i += 1) {
+          const b = sessionObj.blocks[i];
+          if (!b || typeof b !== "object") sessionObj.blocks[i] = {};
+          if (!sessionObj.blocks[i]._config || typeof sessionObj.blocks[i]._config !== "object") {
+            sessionObj.blocks[i]._config = {};
+          }
+          sessionObj.blocks[i]._config.n_test = sessionObj.n_test;
+          sessionObj.blocks[i]._config.n_socratic = sessionObj.n_socratic;
+        }
+      }
       if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
         sessionObj._meta = {};
       }
@@ -1659,9 +1944,9 @@ export function wireStudyHandlers() {
       showScreen("create");
       return;
     }
-    const mode = String(state.activeSession?.session_mode || "");
-    state.studyMode = mode === "test" || mode === "socratic" ? mode : null;
     ensureSessionResponseState();
+    state.nTest = clampInt(state.activeSession?.n_test, 0, 5, state.nTest);
+    state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
     state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
     const savedQ = state.activeSession?.active_question_index;
     state.activeQuestionIndex =
@@ -1669,16 +1954,7 @@ export function wireStudyHandlers() {
         ? Math.max(0, Math.floor(Number(savedQ)))
         : 0;
     updateStudyProgressUi();
-    if (state.studyMode === "socratic") {
-      startBlock(state.activeBlockIndex);
-      return;
-    }
-    if (state.studyMode === "test") {
-      startBlock(state.activeBlockIndex);
-      return;
-    }
-    els.startStudyingError.hidden = false;
-    els.startStudyingError.textContent = 'Unsupported "session_mode". Use "test" or "socratic".';
+    startBlock(state.activeBlockIndex);
   });
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
@@ -1700,13 +1976,12 @@ export function wireStudyHandlers() {
       setSocraticError("Missing block.");
       return;
     }
-
-    const socQs = getBlockSocraticQuestions(block);
-    const q = socQs[state.activeQuestionIndex];
-    if (!q || !q.question) {
+    const ctx = getActiveQuestionContext();
+    if (ctx.type !== "socratic" || !ctx.q || !ctx.q.question) {
       setSocraticError("Missing question.");
       return;
     }
+    const q = ctx.q;
 
     const answer = String(els.socraticAnswer.value || "").trim();
     if (!answer) {
@@ -1716,7 +1991,7 @@ export function wireStudyHandlers() {
 
     recordResponse({
       blockIndex: state.activeBlockIndex,
-      questionIndex: state.activeQuestionIndex,
+      questionIndex: ctx.globalIndex,
       questionType: "socratic",
       questionText: String(q.question || ""),
       userAnswer: answer,
@@ -1740,7 +2015,7 @@ export function wireStudyHandlers() {
 
       recordResponse({
         blockIndex: state.activeBlockIndex,
-        questionIndex: state.activeQuestionIndex,
+        questionIndex: ctx.globalIndex,
         questionType: "socratic",
         questionText: String(q.question || ""),
         userAnswer: answer,
@@ -1748,7 +2023,7 @@ export function wireStudyHandlers() {
         correctAnswer: "",
       });
 
-      const isLastQuestion = state.activeQuestionIndex >= socQs.length - 1;
+      const isLastQuestion = ctx.globalIndex >= ctx.total - 1;
       const isLastBlock = state.activeBlockIndex >= blocks.length - 1;
       if (!isLastQuestion) {
         els.socraticNextQuestionBtn.hidden = false;
@@ -1767,18 +2042,22 @@ export function wireStudyHandlers() {
   });
 
   els.socraticNextQuestionBtn.addEventListener("click", () => {
-    const blocks = getBlocksSafe();
-    const block = blocks[state.activeBlockIndex];
-    if (!block) return;
-    const socQs = getBlockSocraticQuestions(block);
-    if (state.activeQuestionIndex < socQs.length - 1) {
+    const ctx = getActiveQuestionContext();
+    if (ctx.globalIndex < ctx.total - 1) {
       state.activeQuestionIndex += 1;
       if (state.activeSession && typeof state.activeSession === "object") {
         state.activeSession.active_question_index = state.activeQuestionIndex;
         storeActiveSession(state.activeSession);
       }
     }
-    renderSocraticQuestion();
+    const nextCtx = getActiveQuestionContext();
+    if (nextCtx.type === "test") {
+      showScreen("test");
+      showTestQuestions();
+      renderTestQuestion();
+    } else {
+      renderSocraticQuestion();
+    }
   });
 
   els.socraticNextBlockBtn.addEventListener("click", () => {
@@ -1974,8 +2253,8 @@ export function wireStudyHandlers() {
         sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
         storeActiveSession(sessionObj);
         state.activeSession = sessionObj;
-        state.sessionMode = sessionObj.session_mode;
-        state.studyMode = sessionObj.session_mode;
+        state.nTest = clampInt(sessionObj.n_test, 0, 5, state.nTest);
+        state.nSocratic = clampInt(sessionObj.n_socratic, 0, 3, state.nSocratic);
         state.originalMaterialText = cleanedText;
         state.lastCleanedMaterialText = cleanedText;
         state.lastCleanedMaterialWordCount = wordCount;

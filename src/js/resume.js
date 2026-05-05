@@ -1,9 +1,9 @@
 export function extractResumePayloadFromMarkdown(mdText) {
   const text = String(mdText || "");
-  const m = text.match(/<!--\s*study-session-resume:v1:([A-Za-z0-9+/=]+)\s*-->/);
+  const m = text.match(/<!--\s*study-session-resume:v(?:1|2):([A-Za-z0-9+/=]+)\s*-->/);
   if (!m || !m[1]) {
     throw new Error(
-      "This markdown does not contain resume data (missing <!-- study-session-resume:v1:... -->). Export again from a current session or use a newer export file.",
+      "This markdown does not contain resume data (missing <!-- study-session-resume:v1:... --> or v2). Export again from a current session or use a newer export file.",
     );
   }
   let json = "";

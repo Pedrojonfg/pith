@@ -80,7 +80,7 @@ function setLastExportState({ sessionId, rev }) {
 function encodeResumeCapsule(payload) {
   const json = JSON.stringify(payload);
   const b64 = btoa(unescape(encodeURIComponent(json)));
-  return `<!-- study-session-resume:v1:${b64} -->`;
+  return `<!-- study-session-resume:v2:${b64} -->`;
 }
 
 export function buildMarkdown(session) {
@@ -94,7 +94,6 @@ export function buildMarkdown(session) {
   });
 
   const dateStr = new Date().toISOString().slice(0, 10);
-  const mode = String(safe.session_mode || "");
   const studyNotes = String(safe?._meta?.study_notes || "").trim();
   const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
   const nBlocksExport = Math.max(
@@ -111,7 +110,9 @@ export function buildMarkdown(session) {
 
   const lines = [];
   lines.push(`# Study Session — ${dateStr}`);
-  lines.push(`Mode: ${mode}`);
+  lines.push(
+    `Questions per block: ${Number(resumePayload.n_test) || 0} test + ${Number(resumePayload.n_socratic) || 0} socratic`,
+  );
   if (studyNotes) {
     lines.push("");
     lines.push("## Study focus / comments");
@@ -168,7 +169,7 @@ export function buildMarkdown(session) {
     const st = getBlockResumeStatus({
       block: blk,
       blockIndex: bi,
-      mode: resumePayload.session_mode,
+      mode: "",
       responses: resumePayload._responses,
     });
     const sumShort =
