@@ -1,4 +1,10 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_ACTIVE_SESSION_KEY, LS_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260503_7";
+import {
+  DS_CHAT_COMPLETIONS_URL,
+  LS_ACTIVE_SESSION_KEY,
+  LS_KEY,
+  LS_STUDY_LANG_KEY,
+} from "./config.js?v=20260503_7";
+import { typesetMath } from "./ui.js?v=20260503_7";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -42,6 +48,20 @@ function truncate(s, n) {
   if (!t) return "";
   if (t.length <= n) return t;
   return `${t.slice(0, n)}...`;
+}
+
+function looksLikeLatex(s) {
+  const t = String(s || "");
+  if (!t) return false;
+  // Quick heuristic: avoids calling MathJax for plain text.
+  return (
+    t.includes("$$") ||
+    t.includes("\\(") ||
+    t.includes("\\)") ||
+    t.includes("\\[") ||
+    t.includes("\\]") ||
+    t.includes("$")
+  );
 }
 
 function buildSessionContext({ activeSession, currentBlockIndex }) {
@@ -193,13 +213,19 @@ function renderChatMessage({ role, content, isError } = {}) {
   if (!messagesEl) return;
   const el = document.createElement("div");
   el.className = `chat-message ${role === "user" ? "message-user" : "message-assistant"}`;
-  el.textContent = String(content || "");
+  // Render into a fresh child so MathJax never reuses a processed node.
+  const child = document.createElement("span");
+  child.textContent = String(content || "");
+  el.appendChild(child);
   if (isError) {
     el.style.color = "rgba(248, 113, 113, 0.95)";
     el.style.background = "rgba(248, 113, 113, 0.08)";
     el.style.border = "1px solid rgba(248, 113, 113, 0.35)";
   }
   messagesEl.appendChild(el);
+  if (looksLikeLatex(content)) {
+    void typesetMath(child);
+  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
