@@ -554,12 +554,19 @@ export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
     const id = Number(item.id);
     const title = String(item.title || "").trim();
     const summary = String(item.summary || "").trim();
+    const signatureArr = Array.isArray(item.signature) ? item.signature : null;
+    const signature = signatureArr
+      ? signatureArr.map((t) => String(t || "").trim()).filter(Boolean)
+      : String(item.signature || "")
+          .split(/[,\n;]/g)
+          .map((t) => String(t || "").trim())
+          .filter(Boolean);
     const chunk = String(item.chunk || "").trim();
     if (!Number.isFinite(id) || id <= 0) return null;
     if (!title) return null;
     if (!summary) return null;
     if (requireChunk && !chunk) return null;
-    out.push({ id, title, summary, chunk });
+    out.push({ id, title, summary, signature, chunk });
   }
   out.sort((a, b) => a.id - b.id);
   return out;
@@ -579,6 +586,229 @@ export function splitMaterialIntoBlockChunks(text, nBlocks) {
     chunks.push(chunk || raw);
   }
   return chunks;
+}
+
+function normalizeAuditResult(raw) {
+  const obj = raw && typeof raw === "object" ? raw : null;
+  const mergesRaw = Array.isArray(obj?.merges) ? obj.merges : [];
+  const noChangeRaw = Array.isArray(obj?.no_change) ? obj.no_change : [];
+
+  const merges = [];
+  const used = new Set();
+
+  for (const m of mergesRaw) {
+    if (!m || typeof m !== "object") continue;
+    const keep = Number(m.keep_id ?? m.keep ?? m.keepBlock ?? m.keep_block);
+    const absorb = Array.isArray(m.absorb_ids ?? m.absorb ?? m.absorbBlocks ?? m.absorb_blocks)
+      ? (m.absorb_ids ?? m.absorb ?? m.absorbBlocks ?? m.absorb_blocks)
+      : [];
+    const absorbIds = absorb.map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0);
+    if (!Number.isFinite(keep) || keep <= 0) continue;
+    if (!absorbIds.length) continue;
+
+    // Enforce uniqueness across all merges.
+    if (used.has(keep)) continue;
+    let ok = true;
+    for (const a of absorbIds) {
+      if (a === keep || used.has(a)) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    used.add(keep);
+    for (const a of absorbIds) used.add(a);
+
+    merges.push({
+      keep_id: keep,
+      absorb_ids: Array.from(new Set(absorbIds)).sort((a, b) => a - b),
+      new_title: String(m.new_title || "").trim(),
+      reason: String(m.reason || "").trim(),
+    });
+  }
+
+  const no_change = noChangeRaw
+    .map((x) => Number(x))
+    .filter((x) => Number.isFinite(x) && x > 0 && !used.has(x))
+    .sort((a, b) => a - b);
+
+  merges.sort((a, b) => a.keep_id - b.keep_id);
+  return {
+    merges,
+    no_change,
+    summary: String(obj?.summary || "").trim(),
+  };
+}
+
+function buildAuditPayload(blockIndex) {
+  const safe = Array.isArray(blockIndex) ? blockIndex : [];
+  const view = safe
+    .slice()
+    .sort((a, b) => Number(a.id) - Number(b.id))
+    .map((b) => ({
+      id: Number(b.id),
+      title: String(b.title || "").trim(),
+      summary: String(b.summary || "").trim(),
+      signature: Array.isArray(b.signature)
+        ? b.signature.map((t) => String(t || "").trim()).filter(Boolean)
+        : String(b.signature || "")
+            .split(/[,\n;]/g)
+            .map((t) => String(t || "").trim())
+            .filter(Boolean),
+    }));
+  return JSON.stringify(view, null, 2);
+}
+
+export async function auditBlockIndex(blockIndex, { apiKey, language }) {
+  const key = String(apiKey || "").trim();
+  if (!key) throw new Error("Missing API key.");
+  const lang = String(language || "English").trim() || "English";
+
+  const payload = buildAuditPayload(blockIndex);
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260503_7");
+  const text = await deepSeekAuditBlockIndex({
+    apiKey: key,
+    blockIndexJson: payload,
+    language: lang,
+  });
+
+  const parsed = safeParseJson(text);
+  return normalizeAuditResult(parsed);
+}
+
+export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids, new_title }, { apiKey } = {}) {
+  const key = String(apiKey || "").trim();
+  if (!key) throw new Error("Missing API key.");
+  const keep = keepBlock && typeof keepBlock === "object" ? keepBlock : null;
+  const absorbs = Array.isArray(absorbBlocks) ? absorbBlocks : [];
+  if (!keep) throw new Error("Missing keepBlock for merge.");
+  if (!absorbs.length) throw new Error("Missing absorbBlocks for merge.");
+
+  const concatenated_chunks = [
+    String(keep.chunk || "").trim(),
+    ...absorbs.map((b) => String(b?.chunk || "").trim()),
+  ]
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260503_7");
+  const mergedChunk = await deepSeekPostMergeChunk({
+    apiKey: key,
+    keep_id,
+    absorb_ids,
+    new_title,
+    concatenated_chunks,
+  });
+
+  return String(mergedChunk || "").trim();
+}
+
+function renumberBlockIndexSequential(blocks) {
+  const safe = Array.isArray(blocks) ? blocks.slice() : [];
+  safe.sort((a, b) => Number(a.id) - Number(b.id));
+  return safe.map((b, i) => ({
+    ...b,
+    id: i + 1,
+  }));
+}
+
+export async function twoPhaseSplitMerge(blockIndex, { apiKey, language } = {}) {
+  const original = Array.isArray(blockIndex) ? blockIndex.slice() : [];
+  const originalN = original.length;
+  if (!originalN) {
+    return {
+      blockIndex: [],
+      auditResult: { merges: [], no_change: [] },
+      mergeInfo: { original_n: 0, final_n: 0, merged_count: 0, merges: [] },
+    };
+  }
+
+  const auditResult = await auditBlockIndex(original, { apiKey, language });
+  const merges = Array.isArray(auditResult?.merges) ? auditResult.merges : [];
+  if (!merges.length) {
+    return {
+      blockIndex: renumberBlockIndexSequential(original),
+      auditResult,
+      mergeInfo: {
+        original_n: originalN,
+        final_n: originalN,
+        merged_count: 0,
+        merges: [],
+      },
+    };
+  }
+
+  const byId = new Map(original.map((b) => [Number(b.id), b]));
+  const removed = new Set();
+  const mergeInfoRows = [];
+
+  for (const m of merges) {
+    const keepId = Number(m.keep_id);
+    if (removed.has(keepId)) continue;
+    const keep = byId.get(keepId);
+    if (!keep) continue;
+
+    const absorbIds = Array.isArray(m.absorb_ids) ? m.absorb_ids : [];
+    const absorbs = [];
+    for (const aid of absorbIds) {
+      const id = Number(aid);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      if (id === keepId) continue;
+      if (removed.has(id)) continue;
+      const b = byId.get(id);
+      if (!b) continue;
+      absorbs.push(b);
+    }
+    if (!absorbs.length) continue;
+
+    const beforeKeepTitle = String(keep.title || "").trim();
+    const beforeAbsorbTitles = absorbs.map((b) => String(b.title || "").trim());
+
+    const desiredTitle = String(m.new_title || "").trim();
+    const mergedChunk = await mergeChunks(
+      {
+        keepBlock: keep,
+        absorbBlocks: absorbs,
+        keep_id: keepId,
+        absorb_ids: absorbs.map((b) => Number(b.id)),
+        new_title: desiredTitle || beforeKeepTitle,
+      },
+      { apiKey },
+    );
+
+    byId.set(keepId, {
+      ...keep,
+      title: desiredTitle || beforeKeepTitle,
+      chunk: mergedChunk,
+    });
+    for (const b of absorbs) removed.add(Number(b.id));
+
+    mergeInfoRows.push({
+      keep_id: keepId,
+      keep_title_before: beforeKeepTitle,
+      keep_title_after: desiredTitle || beforeKeepTitle,
+      absorb_ids: absorbs.map((b) => Number(b.id)),
+      absorb_titles: beforeAbsorbTitles,
+      reason: String(m.reason || "").trim(),
+    });
+  }
+
+  const remaining = Array.from(byId.values()).filter((b) => !removed.has(Number(b.id)));
+  const renumbered = renumberBlockIndexSequential(remaining);
+  const absorbedCount = mergeInfoRows.reduce((acc, r) => acc + (r.absorb_ids?.length || 0), 0);
+
+  return {
+    blockIndex: renumbered,
+    auditResult,
+    mergeInfo: {
+      original_n: originalN,
+      final_n: renumbered.length,
+      merged_count: absorbedCount,
+      merges: mergeInfoRows,
+    },
+  };
 }
 
 export function formatBlockIndexForConfirmation(arr) {

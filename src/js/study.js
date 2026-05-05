@@ -22,6 +22,7 @@ import {
   recordResponse,
   safeParseJson,
   splitMaterialIntoBlockChunks,
+  twoPhaseSplitMerge,
   state,
   storeActiveSession,
   triggerPrefetch,
@@ -30,6 +31,124 @@ import {
 } from "./session.js?v=20260503_7";
 import { els, getStudyLanguage, setPrefetchIndicator, showScreen, typesetMath } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
+
+let splitMergeSummaryEls = null;
+function ensureSplitMergeSummaryEls() {
+  if (splitMergeSummaryEls) return splitMergeSummaryEls;
+  const host = els.screenBlocksList;
+  if (!host) return null;
+
+  const wrap = document.createElement("div");
+  wrap.id = "splitMergeSummary";
+  wrap.className = "card";
+  wrap.style.marginBottom = "14px";
+  wrap.hidden = true;
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "600";
+  title.textContent = "Split summary";
+
+  const meta = document.createElement("div");
+  meta.className = "hint";
+  meta.style.marginTop = "6px";
+
+  const detailsWrap = document.createElement("div");
+  detailsWrap.style.marginTop = "10px";
+
+  wrap.appendChild(title);
+  wrap.appendChild(meta);
+  wrap.appendChild(detailsWrap);
+
+  // Insert near top of blocks screen, above the editor controls.
+  host.prepend(wrap);
+
+  splitMergeSummaryEls = { wrap, meta, detailsWrap };
+  return splitMergeSummaryEls;
+}
+
+function renderSplitMergeSummary(mergeInfo) {
+  const o = ensureSplitMergeSummaryEls();
+  if (!o) return;
+
+  const info = mergeInfo && typeof mergeInfo === "object" ? mergeInfo : null;
+  const originalN = Number(info?.original_n);
+  const finalN = Number(info?.final_n);
+  const mergedCount = Number(info?.merged_count);
+  const merges = Array.isArray(info?.merges) ? info.merges : [];
+
+  if (!Number.isFinite(originalN) || !Number.isFinite(finalN)) {
+    o.wrap.hidden = true;
+    o.meta.textContent = "";
+    o.detailsWrap.innerHTML = "";
+    return;
+  }
+
+  o.wrap.hidden = false;
+  o.meta.textContent = `Split complete: ${originalN} blocks → ${finalN} blocks (${Number.isFinite(
+    mergedCount,
+  )
+    ? mergedCount
+    : 0} merged for overlap)`;
+
+  o.detailsWrap.innerHTML = "";
+  if (!merges.length) return;
+
+  const details = document.createElement("details");
+  details.open = false;
+
+  const summary = document.createElement("summary");
+  summary.textContent = `Merged groups (${merges.length})`;
+  details.appendChild(summary);
+
+  const list = document.createElement("div");
+  list.style.marginTop = "10px";
+  list.style.display = "grid";
+  list.style.gap = "10px";
+
+  for (const row of merges) {
+    const keepId = Number(row?.keep_id);
+    const absorbIds = Array.isArray(row?.absorb_ids) ? row.absorb_ids : [];
+    const reason = String(row?.reason || "").trim();
+    const keepBefore = String(row?.keep_title_before || "").trim();
+    const keepAfter = String(row?.keep_title_after || "").trim();
+    const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
+
+    const card = document.createElement("div");
+    card.style.border = "1px solid rgba(148, 163, 184, 0.25)";
+    card.style.borderRadius = "12px";
+    card.style.padding = "10px";
+    card.style.background = "rgba(148, 163, 184, 0.06)";
+
+    const top = document.createElement("div");
+    top.style.fontWeight = "600";
+    top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ← absorb ${absorbIds
+      .map((x) => `#${x}`)
+      .join(", ")}`;
+
+    const sub = document.createElement("div");
+    sub.className = "hint";
+    sub.style.marginTop = "6px";
+    sub.textContent =
+      absorbTitles.length || keepBefore
+        ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
+            absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
+          }`
+        : "";
+
+    const why = document.createElement("div");
+    why.className = "hint";
+    why.style.marginTop = sub.textContent ? "6px" : "0";
+    why.textContent = reason ? `Reason: ${reason}` : "";
+
+    card.appendChild(top);
+    if (sub.textContent) card.appendChild(sub);
+    if (why.textContent) card.appendChild(why);
+    list.appendChild(card);
+  }
+
+  details.appendChild(list);
+  o.detailsWrap.appendChild(details);
+}
 
 function normalizeWhitespace(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
@@ -1367,21 +1486,42 @@ export function wireStudyHandlers() {
       });
 
       const parsed = safeParseJson(blocksList);
-      const normalized = normalizeBlockIndexArray(parsed, { requireChunk: false });
+      const normalized = normalizeBlockIndexArray(parsed, { requireChunk: true });
       if (!normalized || normalized.length !== nBlocks) {
         throw new Error(
           "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
         );
       }
-      const localChunks = splitMaterialIntoBlockChunks(cleanedText, nBlocks);
-      state.lastBlockIndex = normalized.map((b, i) => ({
+      state.lastBlockIndex = normalized.map((b) => ({
         ...b,
-        chunk: String(b.chunk || localChunks[i] || "").trim(),
+        chunk: String(b.chunk || "").trim(),
       }));
-      renderBlockIndexEditor(normalized);
+
+      // Phase 2: audit overlap + merge chunks (conservative).
+      els.generateBlocksStatus.textContent = "Auditing split for overlap…";
+      let finalIndex = state.lastBlockIndex;
+      let mergeInfo = null;
+      try {
+        const r = await twoPhaseSplitMerge(state.lastBlockIndex, {
+          apiKey,
+          language: getStudyLanguage(),
+        });
+        if (r && typeof r === "object" && Array.isArray(r.blockIndex) && r.blockIndex.length) {
+          finalIndex = r.blockIndex;
+          mergeInfo = r.mergeInfo || null;
+        }
+      } catch {
+        // best-effort: keep the original split if audit/merge fails
+        finalIndex = state.lastBlockIndex;
+        mergeInfo = null;
+      }
+      state.lastBlockIndex = finalIndex;
+
+      renderSplitMergeSummary(mergeInfo);
+      renderBlockIndexEditor(finalIndex);
       if (els.blocksListOutput) {
         // keep the hidden textarea in a stable, pretty format (debug + fallback)
-        els.blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
+        els.blocksListOutput.value = formatBlockIndexForConfirmation(finalIndex);
       }
       showScreen("blocks");
     } catch (err) {
