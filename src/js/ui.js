@@ -229,6 +229,16 @@ export function typesetMath(containerEl) {
     const mj = window.MathJax;
     if (!mj || typeof mj.typesetPromise !== "function") return Promise.resolve();
     if (!containerEl) return Promise.resolve();
+    // MathJax caches typeset state per element. When we reuse containers and
+    // replace their contents (common in our quiz UI), re-typesetting without
+    // clearing can result in missing/blank output in some cases.
+    if (typeof mj.typesetClear === "function") {
+      try {
+        mj.typesetClear([containerEl]);
+      } catch {
+        // ignore
+      }
+    }
     return mj.typesetPromise([containerEl]).catch(() => undefined);
   } catch {
     return Promise.resolve();
