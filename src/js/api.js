@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL } from "./config.js?v=20260503_7";
+import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260503_7";
 
 function stripJsonFence(text) {
   return String(text || "")
@@ -86,6 +86,250 @@ function parseModelJsonObject(text) {
   }
 
   return null;
+}
+
+function parseModelJsonValue(text) {
+  const raw = String(text || "").trim();
+  const withoutFence = stripJsonFence(raw);
+  const extractedObj = extractJsonObjectText(withoutFence);
+
+  const candidates = [withoutFence, extractedObj, raw].filter(Boolean);
+  const uniqueCandidates = Array.from(new Set(candidates));
+
+  for (const candidate of uniqueCandidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try repair candidates below
+    }
+  }
+
+  for (const candidate of uniqueCandidates) {
+    const repairedCandidates = [
+      escapeLatexMathBackslashes(candidate),
+      escapeInvalidJsonBackslashes(candidate),
+      escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate)),
+    ];
+    for (const repaired of repairedCandidates) {
+      try {
+        return JSON.parse(repaired);
+      } catch {
+        // try next repair
+      }
+    }
+  }
+
+  return null;
+}
+
+function shuffleInPlace(arr) {
+  const a = Array.isArray(arr) ? arr : [];
+  for (let i = a.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+export async function generateAssessmentQuestions(blockIndex, maxQuestions) {
+  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+  if (!apiKey) {
+    throw new Error("Missing API key. Click “Change API key” to set it.");
+  }
+
+  const blocks = Array.isArray(blockIndex) ? blockIndex : [];
+  const maxQ = Math.max(1, Math.floor(Number(maxQuestions) || 0));
+  if (!blocks.length) throw new Error("Missing block index.");
+
+  const minimalIndex = blocks.map((b) => ({
+    id: Number(b?.id),
+    title: String(b?.title || "").trim(),
+    summary: String(b?.summary || "").trim(),
+  }));
+
+  // Step 1 — distribute budget
+  let selected = minimalIndex;
+  if (minimalIndex.length > maxQ) {
+    const step = minimalIndex.length / maxQ;
+    const picks = [];
+    const used = new Set();
+    for (let i = 0; i < maxQ; i += 1) {
+      const idx = Math.min(minimalIndex.length - 1, Math.floor(i * step));
+      if (!used.has(idx)) {
+        used.add(idx);
+        picks.push(minimalIndex[idx]);
+      }
+    }
+    // If rounding produced fewer than maxQ unique indices, fill by moving forward.
+    let cursor = 0;
+    while (picks.length < maxQ && cursor < minimalIndex.length) {
+      if (!used.has(cursor)) {
+        used.add(cursor);
+        picks.push(minimalIndex[cursor]);
+      }
+      cursor += 1;
+    }
+    selected = picks;
+  }
+
+  const questionsPerBlock = Math.max(1, Math.floor(maxQ / selected.length));
+  const distribution = {};
+  let remaining = maxQ;
+  for (let i = 0; i < selected.length; i += 1) {
+    const id = Number(selected[i]?.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const n = Math.min(questionsPerBlock, remaining);
+    distribution[String(id)] = n;
+    remaining -= n;
+  }
+  // Distribute leftovers (at most selected.length - 1) across blocks.
+  if (remaining > 0) {
+    for (let i = 0; i < selected.length && remaining > 0; i += 1) {
+      const id = Number(selected[i]?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      distribution[String(id)] = (distribution[String(id)] || 0) + 1;
+      remaining -= 1;
+    }
+  }
+
+  // Step 2 — single DeepSeek call
+  const systemPrompt = `Generate exactly {maxQuestions} multiple-choice assessment questions 
+from this study index. Rules:
+- Conceptual only. No arithmetic. Answerable in under 10 seconds.
+- 4 options (A/B/C/D), one correct answer.
+- Questions must test recognition and understanding, not computation.
+- Cover ALL blocks proportionally. 
+  Distribution: {block_id: n_questions, ...}
+- Each question tagged with its block_id.
+- Bad question: 'Compute the flux of F=(x,y) over the unit circle'
+- Good question: 'What does flux measure across a closed curve?'
+Return ONLY valid JSON:
+[{
+  block_id: 1,
+  question: '...',
+  options: {A:'...', B:'...', C:'...', D:'...'},
+  answer: 'B'
+}]
+Distribution: {distribution}`.replace("{maxQuestions}", String(maxQ)).replace(
+    "{distribution}",
+    JSON.stringify(distribution),
+  );
+
+  const userPrompt = JSON.stringify(
+    selected.map((b) => ({ id: b.id, title: b.title, summary: b.summary })),
+  );
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.2,
+    }),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // ignore JSON parse error; handled below
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    throw new Error(apiMsg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("Unexpected API response (missing message content).");
+  }
+
+  const raw = content.trim();
+  const arr = parseModelJsonValue(raw);
+  if (!Array.isArray(arr)) {
+    console.warn("Invalid assessment JSON response:", raw);
+    throw new Error("Model did not return a valid JSON array. Please try again.");
+  }
+
+  // Step 3 — shuffle returned array before returning
+  return shuffleInPlace(arr);
+}
+
+export async function generateAssessmentSynthesis(assessmentResults, blockIndex, language) {
+  try {
+    const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+    if (!apiKey) return null;
+
+    const safeResults =
+      assessmentResults && typeof assessmentResults === "object" ? assessmentResults : {};
+    const safeIndex = Array.isArray(blockIndex) ? blockIndex : [];
+
+    const weakBlocks = safeIndex
+      .filter((b) => safeResults?.perBlock?.[String(Number(b?.id))]?.classification === "weak")
+      .map((b) => String(b?.title || "").trim())
+      .filter(Boolean);
+    const strongBlocks = safeIndex
+      .filter((b) => safeResults?.perBlock?.[String(Number(b?.id))]?.classification === "strong")
+      .map((b) => String(b?.title || "").trim())
+      .filter(Boolean);
+
+    const maxQuestions = Math.max(1, Math.floor(Number(safeResults?.maxQuestions) || 0));
+    const pct = Math.round((Number(safeResults?.rawTotal || 0) / maxQuestions) * 100);
+
+    const systemPrompt = `You are a study coach. Be direct and specific.
+Respond in {language}. Max 3 sentences.`.replace("{language}", String(language || "English"));
+    const userPrompt = `Assessment results for a study session:
+Overall score: ${pct}%
+Weak areas (need focus): ${weakBlocks.join(", ") || "none"}
+Strong areas (already solid): ${strongBlocks.join(", ") || "none"}
+All blocks in order: ${safeIndex.map((b) => String(b?.title || "").trim()).filter(Boolean).join(" → ")}
+
+Give a concrete study recommendation: what to prioritise,
+whether to skim or skip strong blocks, and flag any weak blocks
+that are prerequisites for later strong ones.`;
+
+    const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        max_tokens: 300,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      // ignore
+    }
+    if (!res.ok) return null;
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content || typeof content !== "string") return null;
+    return content.trim();
+  } catch {
+    return null;
+  }
 }
 
 export async function deepSeekSocraticTutor({

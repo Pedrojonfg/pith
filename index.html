@@ -349,6 +349,70 @@
         </section>
 
         <section
+          id="screenInitialAssessment"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Initial Assessment (optional)"
+        >
+          <div class="card">
+            <h1>Initial Assessment (optional)</h1>
+            <p class="subtle" style="margin-top: 0">
+              You can start studying right away, or take a quick assessment to personalise this
+              session.
+            </p>
+
+            <div id="assessmentChoiceWrap" style="display: grid; gap: 12px; margin-top: 12px">
+              <button
+                type="button"
+                id="assessmentSkipBtn"
+                style="width: 100%; padding: 16px 14px; font-size: 16px"
+              >
+                Skip — start studying directly
+              </button>
+              <button
+                type="button"
+                id="assessmentTakeBtn"
+                style="width: 100%; padding: 16px 14px; font-size: 16px"
+              >
+                Take assessment — personalise this session
+              </button>
+            </div>
+
+            <div id="assessmentConfigWrap" hidden>
+              <div class="divider"></div>
+
+              <label for="assessmentMaxQuestions">Maximum questions</label>
+              <input
+                id="assessmentMaxQuestions"
+                type="range"
+                min="10"
+                max="60"
+                step="5"
+                value="20"
+                aria-label="Maximum questions"
+              />
+              <div id="assessmentMaxQuestionsLabel" class="hint" aria-live="polite"></div>
+
+              <div style="height: 16px"></div>
+
+              <label>Scoring</label>
+              <div class="toggle" role="group" aria-label="Scoring">
+                <button type="button" id="assessmentPenaliseBtn" aria-pressed="true">
+                  Penalise wrong answers (-0.33 per wrong)
+                </button>
+              </div>
+              <div id="assessmentPenaliseSubtitle" class="hint" style="margin-top: 6px">
+                Rewards knowing what you don't know
+              </div>
+
+              <div class="row" style="margin-top: 16px">
+                <button type="button" id="assessmentStartBtn">Start assessment →</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
           id="screenSessionReady"
           class="screen"
           aria-hidden="true"

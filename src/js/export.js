@@ -119,6 +119,30 @@ export function buildMarkdown(session) {
     lines.push(studyNotes);
   }
 
+  const assessmentMeta =
+    safe?._meta?.assessment && typeof safe._meta.assessment === "object"
+      ? safe._meta.assessment
+      : null;
+  if (assessmentMeta) {
+    const maxQuestions = Math.max(1, Number(assessmentMeta.max_questions) || 1);
+    const penalisedTotal = Number(assessmentMeta.penalised_total || 0);
+    const pct = Number.isFinite(Number(assessmentMeta.pct))
+      ? Number(assessmentMeta.pct)
+      : (penalisedTotal / maxQuestions) * 100;
+    const strongIds = Array.isArray(assessmentMeta.strong_blocks) ? assessmentMeta.strong_blocks : [];
+    const weakIds = Array.isArray(assessmentMeta.weak_blocks) ? assessmentMeta.weak_blocks : [];
+    const strongList = strongIds.length ? strongIds.map((x) => `Block ${x}`).join(", ") : "None";
+    const weakList = weakIds.length ? weakIds.map((x) => `Block ${x}`).join(", ") : "None";
+    const adjusted = assessmentMeta.config_adjustments_applied ? "yes" : "no";
+
+    lines.push("");
+    lines.push("## Initial Assessment");
+    lines.push(`Score: ${penalisedTotal.toFixed(2)}/${maxQuestions} (${Math.round(pct)}%)`);
+    lines.push(`Strong blocks: ${strongList}`);
+    lines.push(`Weak blocks: ${weakList}`);
+    lines.push(`Config adjustments applied: ${adjusted}`);
+  }
+
   const guideHistory = Array.isArray(window?.guideHistory) ? window.guideHistory : [];
   const sidebarNotes = guideHistory
     .filter((m) => m && typeof m === "object")

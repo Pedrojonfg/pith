@@ -1,4 +1,4 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_7";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
 import { exportSessionMarkdown } from "./export.js?v=20260503_7";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260503_7";
@@ -32,8 +32,9 @@ import {
   triggerPrefetch,
   getPrefetchedBlock,
   ensureSessionResponseState,
+  applyAssessmentResults,
 } from "./session.js?v=20260503_7";
-import { els, getStudyLanguage, setPrefetchIndicator, showScreen, typesetMath } from "./ui.js?v=20260503_7";
+import { els, getStudyLanguage, hideSidebar, setPrefetchIndicator, showScreen, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
 let splitMergeSummaryEls = null;
@@ -1619,11 +1620,579 @@ async function copyPlainTextToClipboard(text) {
   }
 }
 
+let assessmentRunnerEls = null;
+function ensureAssessmentRunnerEls() {
+  if (assessmentRunnerEls) return assessmentRunnerEls;
+
+  const root = document.createElement("section");
+  root.id = "assessmentRunner";
+  root.className = "assessment-runner";
+  root.hidden = true;
+  root.innerHTML = `
+    <div class="assessment-runner-inner">
+      <div class="assessment-top">
+        <span id="assessmentRunnerMeta">Question 1 of 1</span>
+        <span id="assessmentRunnerScore">Score: 0.00</span>
+      </div>
+      <div class="assessment-bar-track" aria-hidden="true">
+        <div id="assessmentRunnerProgress" class="assessment-bar-fill"></div>
+      </div>
+      <div class="assessment-bar-track assessment-timer-track" aria-hidden="true">
+        <div id="assessmentRunnerTimer" class="assessment-bar-fill assessment-timer-fill"></div>
+      </div>
+      <div id="assessmentRunnerQuestion" class="assessment-question"></div>
+      <div id="assessmentRunnerOptions" class="assessment-options"></div>
+      <div id="assessmentRunnerPenalty" class="assessment-penalty"></div>
+    </div>
+  `;
+  document.body.appendChild(root);
+
+  const o = {
+    root,
+    meta: root.querySelector("#assessmentRunnerMeta"),
+    score: root.querySelector("#assessmentRunnerScore"),
+    progress: root.querySelector("#assessmentRunnerProgress"),
+    timer: root.querySelector("#assessmentRunnerTimer"),
+    question: root.querySelector("#assessmentRunnerQuestion"),
+    options: root.querySelector("#assessmentRunnerOptions"),
+    penalty: root.querySelector("#assessmentRunnerPenalty"),
+  };
+  assessmentRunnerEls = o;
+  return o;
+}
+
 export function wireStudyHandlers() {
   const defaults = loadDefaultQuestionConfig();
   state.nTest = clampInt(defaults.n_test, 0, 5, 2);
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
   renderQuestionConfigUi();
+
+  function setAssessmentUiDefaults() {
+    if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = false;
+    if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = true;
+    if (els.assessmentMaxQuestions) els.assessmentMaxQuestions.value = "20";
+    if (els.assessmentPenaliseBtn) els.assessmentPenaliseBtn.setAttribute("aria-pressed", "true");
+    if (els.assessmentPenaliseSubtitle) els.assessmentPenaliseSubtitle.hidden = false;
+    if (els.assessmentMaxQuestionsLabel) {
+      const n = 20;
+      els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
+    }
+  }
+
+  async function startStudyingNow() {
+    els.startStudyingError.hidden = true;
+    els.startStudyingError.textContent = "";
+    els.startStudyingStatus.textContent = "";
+
+    state.activeSession = loadActiveSession();
+    if (!state.activeSession) {
+      els.startStudyingError.hidden = false;
+      els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
+      showScreen("create");
+      return;
+    }
+    ensureSessionResponseState();
+    state.nTest = clampInt(state.activeSession?.n_test, 0, 5, state.nTest);
+    state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
+    state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
+    const savedQ = state.activeSession?.active_question_index;
+    state.activeQuestionIndex =
+      savedQ != null && Number.isFinite(Number(savedQ))
+        ? Math.max(0, Math.floor(Number(savedQ)))
+        : 0;
+    updateStudyProgressUi();
+    startBlock(state.activeBlockIndex);
+  }
+
+  function showAssessmentResults(responses, questions) {
+    const resp = Array.isArray(responses) ? responses : [];
+    const qs = Array.isArray(questions) ? questions : [];
+    const blockIndex = Array.isArray(state.lastBlockIndex)
+      ? state.lastBlockIndex
+      : safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
+    const byBlock = new Map();
+
+    function ensureBlockBucket(blockId) {
+      const id = Number(blockId);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      if (!byBlock.has(id)) {
+        byBlock.set(id, {
+          total: 0,
+          correct: 0,
+          wrong: 0,
+          skipped: 0,
+          title:
+            String(
+              (Array.isArray(blockIndex) ? blockIndex.find((b) => Number(b?.id) === id)?.title : "") ||
+                `Block ${id}`,
+            ).trim() || `Block ${id}`,
+        });
+      }
+      return byBlock.get(id);
+    }
+
+    for (let i = 0; i < qs.length; i += 1) {
+      const q = qs[i] || {};
+      const r = resp[i] || {};
+      const blockId = Number(r.block_id ?? q.block_id);
+      const b = ensureBlockBucket(blockId);
+      if (!b) continue;
+      b.total += 1;
+      if (r.skipped) {
+        b.skipped += 1;
+      } else if (r.correct === true) {
+        b.correct += 1;
+      } else if (r.correct === false) {
+        b.wrong += 1;
+      }
+    }
+
+    const perBlock = {};
+    let strongCount = 0;
+    let weakCount = 0;
+    let rawTotal = 0;
+    let penalisedTotal = 0;
+
+    const blockRows = Array.from(byBlock.entries())
+      .map(([id, b]) => ({ id, ...b }))
+      .sort((a, b) => a.id - b.id);
+
+    for (const row of blockRows) {
+      const total = Math.max(1, Number(row.total) || 0);
+      const raw = Number(row.correct) / total;
+      const penalised = (Number(row.correct) - 0.33 * Number(row.wrong)) / total;
+      let classification = "ok";
+      if (penalised > 0.75) classification = "strong";
+      else if (penalised < 0.45) classification = "weak";
+      if (classification === "strong") strongCount += 1;
+      if (classification === "weak") weakCount += 1;
+      rawTotal += Number(row.correct);
+      penalisedTotal += Number(row.correct) - 0.33 * Number(row.wrong);
+      perBlock[String(row.id)] = {
+        score: penalised,
+        classification,
+      };
+      row.raw = raw;
+      row.penalised = penalised;
+      row.classification = classification;
+    }
+
+    const maxQuestions = Math.max(1, qs.length);
+    const pct = (penalisedTotal / maxQuestions) * 100;
+    window.assessmentResults = {
+      perBlock,
+      penalisedTotal,
+      rawTotal,
+      maxQuestions,
+      pct,
+      skipped: false,
+    };
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    const prevToggleDisplay = sidebarToggleBtn ? sidebarToggleBtn.style.display : "";
+    if (sidebarToggleBtn) sidebarToggleBtn.style.display = "none";
+    hideSidebar();
+    document.body.classList.add("assessment-active");
+
+    const o = ensureAssessmentRunnerEls();
+    o.root.hidden = false;
+    o.root.innerHTML = "";
+
+    const wrap = document.createElement("div");
+    wrap.className = "assessment-runner-inner";
+
+    const h = document.createElement("h1");
+    h.style.margin = "0";
+    h.style.fontSize = "24px";
+    h.textContent = `Assessment complete — ${penalisedTotal.toFixed(2)}/${maxQuestions} (${Math.round(
+      pct,
+    )}%) · ${strongCount} strong · ${weakCount} weak blocks`;
+    wrap.appendChild(h);
+
+    const synthesisPlaceholder = document.createElement("div");
+    synthesisPlaceholder.className = "hint";
+    synthesisPlaceholder.textContent = "Analysing your results...";
+    synthesisPlaceholder.style.marginTop = "4px";
+    wrap.appendChild(synthesisPlaceholder);
+
+    const heatmap = document.createElement("div");
+    heatmap.style.display = "grid";
+    heatmap.style.gridTemplateColumns = "repeat(auto-fill, minmax(180px, 1fr))";
+    heatmap.style.gap = "10px";
+
+    const palette = {
+      strong: "rgba(34, 197, 94, 0.24)",
+      ok: "rgba(250, 204, 21, 0.2)",
+      weak: "rgba(248, 113, 113, 0.24)",
+    };
+    for (const row of blockRows) {
+      const pill = document.createElement("button");
+      pill.type = "button";
+      pill.style.textAlign = "left";
+      pill.style.background = palette[row.classification] || palette.ok;
+      pill.style.minHeight = "54px";
+      pill.style.borderRadius = "999px";
+      pill.style.padding = "10px 14px";
+      const words = String(row.title || "")
+        .trim()
+        .split(/\s+/)
+        .slice(0, 4)
+        .join(" ");
+      pill.textContent = words || `Block ${row.id}`;
+      pill.title = `Score: ${row.correct}/${row.total} questions`;
+      heatmap.appendChild(pill);
+    }
+    wrap.appendChild(heatmap);
+
+    void generateAssessmentSynthesis(window.assessmentResults, blockIndex, getStudyLanguage()).then(
+      (text) => {
+        if (!synthesisPlaceholder.isConnected) return;
+        if (!text) {
+          synthesisPlaceholder.remove();
+          return;
+        }
+        const card = document.createElement("div");
+        card.textContent = String(text);
+        card.style.borderLeft = "3px solid var(--accent)";
+        card.style.padding = "0.75rem 1rem";
+        card.style.fontSize = "0.95rem";
+        card.style.background = "var(--panel)";
+        card.style.marginTop = "4px";
+        synthesisPlaceholder.replaceWith(card);
+      },
+    );
+
+    const summary = document.createElement("div");
+    summary.className = "response-box";
+    summary.style.marginTop = "6px";
+    if (weakCount === 0 && strongCount === 0) {
+      summary.textContent = "No changes — all blocks in normal range";
+    } else {
+      summary.innerHTML = `${weakCount} blocks flagged as weak → extra socratic question added<br>${strongCount} blocks flagged as strong → RSVP only, no questions`;
+    }
+    wrap.appendChild(summary);
+
+    const actions = document.createElement("div");
+    actions.className = "row";
+    const acceptBtn = document.createElement("button");
+    acceptBtn.type = "button";
+    acceptBtn.textContent = "Accept suggestions";
+    const customBtn = document.createElement("button");
+    customBtn.type = "button";
+    customBtn.textContent = "Customise";
+    actions.appendChild(acceptBtn);
+    actions.appendChild(customBtn);
+    wrap.appendChild(actions);
+
+    const customWrap = document.createElement("div");
+    customWrap.hidden = true;
+    customWrap.style.display = "grid";
+    customWrap.style.gap = "8px";
+    customWrap.style.marginTop = "8px";
+    wrap.appendChild(customWrap);
+
+    for (const row of blockRows) {
+      const line = document.createElement("div");
+      line.className = "card";
+      line.style.padding = "12px";
+      const baseCfg = resolveBlockQuestionConfig(Math.max(0, row.id - 1));
+      const title = document.createElement("div");
+      title.style.fontWeight = "600";
+      title.textContent = `#${row.id} ${row.title || `Block ${row.id}`}`;
+      const testLabel = document.createElement("label");
+      testLabel.textContent = `Test questions (${baseCfg.n_test})`;
+      const testRange = document.createElement("input");
+      testRange.type = "range";
+      testRange.min = "0";
+      testRange.max = "5";
+      testRange.step = "1";
+      testRange.value = String(baseCfg.n_test);
+      const socLabel = document.createElement("label");
+      socLabel.textContent = `Socratic questions (${baseCfg.n_socratic})`;
+      const socRange = document.createElement("input");
+      socRange.type = "range";
+      socRange.min = "0";
+      socRange.max = "3";
+      socRange.step = "1";
+      socRange.value = String(baseCfg.n_socratic);
+      testRange.addEventListener("input", () => {
+        testLabel.textContent = `Test questions (${testRange.value})`;
+      });
+      socRange.addEventListener("input", () => {
+        socLabel.textContent = `Socratic questions (${socRange.value})`;
+      });
+      line.dataset.blockId = String(row.id);
+      line.appendChild(title);
+      line.appendChild(testLabel);
+      line.appendChild(testRange);
+      line.appendChild(socLabel);
+      line.appendChild(socRange);
+      customWrap.appendChild(line);
+    }
+
+    function applySuggestedConfig(custom = false) {
+      const sessionObj = loadActiveSession();
+      if (!sessionObj || !Array.isArray(sessionObj.blocks)) return;
+      for (let i = 0; i < sessionObj.blocks.length; i += 1) {
+        const b = sessionObj.blocks[i] || {};
+        if (!b._config || typeof b._config !== "object") b._config = {};
+        const blockId = i + 1;
+        const bucket = perBlock[String(blockId)];
+        if (custom) {
+          const row = customWrap.querySelector(`[data-block-id="${blockId}"]`);
+          const ranges = row ? row.querySelectorAll("input[type=range]") : [];
+          const testV = Number(ranges[0]?.value);
+          const socV = Number(ranges[1]?.value);
+          b._config.n_test = clampInt(testV, 0, 5, resolveBlockQuestionConfig(i).n_test);
+          b._config.n_socratic = clampInt(socV, 0, 3, resolveBlockQuestionConfig(i).n_socratic);
+          continue;
+        }
+        if (!bucket || bucket.classification === "ok") continue;
+        if (bucket.classification === "weak") {
+          b._config.n_socratic = clampInt(resolveBlockQuestionConfig(i).n_socratic + 1, 0, 3, 1);
+          b._config.n_test = clampInt(resolveBlockQuestionConfig(i).n_test, 0, 5, 2);
+        }
+        if (bucket.classification === "strong") {
+          b._config.n_test = 0;
+          b._config.n_socratic = 0;
+        }
+      }
+      storeActiveSession(sessionObj);
+    }
+
+    function cleanupResultsUi() {
+      o.root.hidden = true;
+      o.root.innerHTML = `
+        <div class="assessment-runner-inner">
+          <div class="assessment-top">
+            <span id="assessmentRunnerMeta">Question 1 of 1</span>
+            <span id="assessmentRunnerScore">Score: 0.00</span>
+          </div>
+          <div class="assessment-bar-track" aria-hidden="true">
+            <div id="assessmentRunnerProgress" class="assessment-bar-fill"></div>
+          </div>
+          <div class="assessment-bar-track assessment-timer-track" aria-hidden="true">
+            <div id="assessmentRunnerTimer" class="assessment-bar-fill assessment-timer-fill"></div>
+          </div>
+          <div id="assessmentRunnerQuestion" class="assessment-question"></div>
+          <div id="assessmentRunnerOptions" class="assessment-options"></div>
+          <div id="assessmentRunnerPenalty" class="assessment-penalty"></div>
+        </div>
+      `;
+      assessmentRunnerEls = null;
+      document.body.classList.remove("assessment-active");
+      showSidebar();
+      if (sidebarToggleBtn) sidebarToggleBtn.style.display = prevToggleDisplay;
+    }
+
+    acceptBtn.addEventListener("click", async () => {
+      const applyResult = applyAssessmentResults(window.assessmentResults || {});
+
+      wrap.innerHTML = "";
+      const okTitle = document.createElement("h1");
+      okTitle.style.margin = "0";
+      okTitle.style.fontSize = "24px";
+      okTitle.textContent = "Session personalised. Ready to generate blocks.";
+      const okMeta = document.createElement("p");
+      okMeta.className = "subtle";
+      okMeta.style.margin = "8px 0 0";
+      okMeta.textContent = `Strong: ${applyResult.strongBlocks.length} · Weak: ${applyResult.weakBlocks.length}`;
+      const goBtn = document.createElement("button");
+      goBtn.type = "button";
+      goBtn.textContent = "Start generating →";
+      goBtn.style.marginTop = "12px";
+      wrap.appendChild(okTitle);
+      wrap.appendChild(okMeta);
+      wrap.appendChild(goBtn);
+      goBtn.addEventListener("click", async () => {
+        cleanupResultsUi();
+        await startStudyingNow();
+      });
+    });
+
+    customBtn.addEventListener("click", async () => {
+      if (customWrap.hidden) {
+        customWrap.hidden = false;
+        customBtn.textContent = "Apply custom";
+        return;
+      }
+      applySuggestedConfig(true);
+      cleanupResultsUi();
+      await startStudyingNow();
+    });
+
+    o.root.appendChild(wrap);
+  }
+
+  async function runAssessment(questions, penalise) {
+    const o = ensureAssessmentRunnerEls();
+    const list = Array.isArray(questions) ? questions : [];
+    const penaltyOn = Boolean(penalise);
+    if (!list.length) {
+      showAssessmentResults([], []);
+      return;
+    }
+
+    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+    const prevToggleDisplay = sidebarToggleBtn ? sidebarToggleBtn.style.display : "";
+
+    let currentQ = 0;
+    const responses = [];
+    let score = 0;
+    let settled = false;
+    let timerId = null;
+    let rafId = null;
+    let startedAt = 0;
+    const timerMs = 15000;
+
+    function cleanup() {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      document.removeEventListener("keydown", onKeyDown);
+      o.root.hidden = true;
+      document.body.classList.remove("assessment-active");
+      showSidebar();
+      if (sidebarToggleBtn) sidebarToggleBtn.style.display = prevToggleDisplay;
+    }
+
+    function formatScore(n) {
+      return `${n >= 0 ? "" : "-"}${Math.abs(n).toFixed(2)}`;
+    }
+
+    function renderHeader() {
+      o.meta.textContent = `Question ${currentQ + 1} of ${list.length}`;
+      o.score.textContent = `Score: ${formatScore(score)}`;
+      const p = ((currentQ + 1) / list.length) * 100;
+      o.progress.style.width = `${Math.max(0, Math.min(100, p))}%`;
+    }
+
+    function stopTimer() {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function tickTimer() {
+      const elapsed = Date.now() - startedAt;
+      const ratio = Math.max(0, Math.min(1, elapsed / timerMs));
+      const remaining = 1 - ratio;
+      o.timer.style.width = `${remaining * 100}%`;
+      const hue = 120 * remaining; // green -> red
+      o.timer.style.background = `hsl(${hue} 90% 55%)`;
+      if (ratio < 1 && !settled) rafId = requestAnimationFrame(tickTimer);
+    }
+
+    function getLetterFromKey(e) {
+      const k = String(e.key || "").toUpperCase();
+      if (k === "A" || k === "B" || k === "C" || k === "D") return k;
+      return "";
+    }
+
+    function renderQuestion() {
+      settled = false;
+      stopTimer();
+      renderHeader();
+
+      const q = list[currentQ] || {};
+      const qText = String(q.question || "").trim();
+      o.question.textContent = qText || "Untitled question";
+      o.options.innerHTML = "";
+
+      const options = q && typeof q.options === "object" && q.options ? q.options : {};
+      for (const key of ["A", "B", "C", "D"]) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "assessment-option-btn";
+        btn.setAttribute("data-option", key);
+        btn.innerHTML = `<span class="assessment-option-key">${key}</span><span>${String(
+          options[key] || "",
+        )}</span>`;
+        btn.addEventListener("click", () => settleAnswer(key));
+        o.options.appendChild(btn);
+      }
+
+      o.penalty.textContent = penaltyOn ? "Wrong answers: -0.33 pts" : "";
+      startedAt = Date.now();
+      o.timer.style.width = "100%";
+      o.timer.style.background = "hsl(120 90% 55%)";
+      rafId = requestAnimationFrame(tickTimer);
+      timerId = setTimeout(() => settleAnswer(""), timerMs);
+    }
+
+    function markCorrectAnswer(correctLetter) {
+      if (!correctLetter) return;
+      const correctBtn = o.options.querySelector(`[data-option="${correctLetter}"]`);
+      if (correctBtn) correctBtn.classList.add("is-correct");
+    }
+
+    function disableOptions() {
+      const all = o.options.querySelectorAll("button");
+      for (const b of all) b.disabled = true;
+    }
+
+    function settleAnswer(letter) {
+      if (settled) return;
+      settled = true;
+      stopTimer();
+      disableOptions();
+
+      const q = list[currentQ] || {};
+      const correctAnswer = String(q.answer || "").trim().toUpperCase();
+      const blockId = Number(q.block_id);
+
+      if (!letter) {
+        responses.push({ block_id: blockId, correct: null, skipped: true });
+      } else if (letter === correctAnswer) {
+        score += 1;
+        window.assessmentScore = score;
+        responses.push({ block_id: blockId, correct: true, skipped: false });
+        const selected = o.options.querySelector(`[data-option="${letter}"]`);
+        if (selected) selected.classList.add("is-correct");
+      } else {
+        if (penaltyOn) score -= 0.33;
+        window.assessmentScore = score;
+        responses.push({ block_id: blockId, correct: false, skipped: false });
+        const selected = o.options.querySelector(`[data-option="${letter}"]`);
+        if (selected) selected.classList.add("is-wrong");
+        markCorrectAnswer(correctAnswer);
+      }
+
+      renderHeader();
+      window.setTimeout(() => {
+        currentQ += 1;
+        if (currentQ >= list.length) {
+          cleanup();
+          showAssessmentResults(responses, list);
+          return;
+        }
+        renderQuestion();
+      }, 800);
+    }
+
+    function onKeyDown(e) {
+      const letter = getLetterFromKey(e);
+      if (!letter || settled) return;
+      e.preventDefault();
+      settleAnswer(letter);
+    }
+
+    hideSidebar();
+    if (sidebarToggleBtn) sidebarToggleBtn.style.display = "none";
+    document.body.classList.add("assessment-active");
+    o.root.hidden = false;
+    document.addEventListener("keydown", onKeyDown);
+    renderQuestion();
+  }
 
   if (els.nTestMinusBtn) els.nTestMinusBtn.addEventListener("click", () => bumpQuestionCount("test", -1));
   if (els.nTestPlusBtn) els.nTestPlusBtn.addEventListener("click", () => bumpQuestionCount("test", +1));
@@ -1922,8 +2491,10 @@ export function wireStudyHandlers() {
         }));
       }
       storeActiveSession(sessionObj);
-      els.sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
-      showScreen("ready");
+      // Gate block generation behind an optional initial assessment step.
+      window.assessmentConfig = { skipped: true };
+      setAssessmentUiDefaults();
+      showScreen("assessment");
     } catch (err) {
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
@@ -1932,30 +2503,55 @@ export function wireStudyHandlers() {
     }
   });
 
-  els.startStudyingBtn.addEventListener("click", async () => {
-    els.startStudyingError.hidden = true;
-    els.startStudyingError.textContent = "";
-    els.startStudyingStatus.textContent = "";
+  els.startStudyingBtn.addEventListener("click", async () => startStudyingNow());
 
-    state.activeSession = loadActiveSession();
-    if (!state.activeSession) {
-      els.startStudyingError.hidden = false;
-      els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
-      showScreen("create");
-      return;
-    }
-    ensureSessionResponseState();
-    state.nTest = clampInt(state.activeSession?.n_test, 0, 5, state.nTest);
-    state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
-    state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
-    const savedQ = state.activeSession?.active_question_index;
-    state.activeQuestionIndex =
-      savedQ != null && Number.isFinite(Number(savedQ))
-        ? Math.max(0, Math.floor(Number(savedQ)))
-        : 0;
-    updateStudyProgressUi();
-    startBlock(state.activeBlockIndex);
-  });
+  if (els.assessmentMaxQuestions) {
+    els.assessmentMaxQuestions.addEventListener("input", () => {
+      const n = clampInt(els.assessmentMaxQuestions.value, 10, 60, 20);
+      if (els.assessmentMaxQuestionsLabel) {
+        els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
+      }
+    });
+  }
+  if (els.assessmentPenaliseBtn) {
+    els.assessmentPenaliseBtn.addEventListener("click", () => {
+      const pressed = els.assessmentPenaliseBtn.getAttribute("aria-pressed") === "true";
+      const next = !pressed;
+      els.assessmentPenaliseBtn.setAttribute("aria-pressed", String(next));
+      if (els.assessmentPenaliseSubtitle) els.assessmentPenaliseSubtitle.hidden = !next;
+    });
+  }
+  if (els.assessmentTakeBtn) {
+    els.assessmentTakeBtn.addEventListener("click", () => {
+      if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = true;
+      if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = false;
+      // Ensure labels are consistent even if user never touched slider yet.
+      const n = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
+      if (els.assessmentMaxQuestionsLabel) {
+        els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
+      }
+    });
+  }
+  if (els.assessmentSkipBtn) {
+    els.assessmentSkipBtn.addEventListener("click", async () => {
+      window.assessmentConfig = { skipped: true };
+      await startStudyingNow();
+    });
+  }
+  if (els.assessmentStartBtn) {
+    els.assessmentStartBtn.addEventListener("click", async () => {
+      const maxQuestions = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
+      const penalise = els.assessmentPenaliseBtn?.getAttribute("aria-pressed") === "true";
+      window.assessmentConfig = { maxQuestions, penalise, skipped: false };
+      try {
+        const rawBlockIndex = JSON.parse(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
+        const questions = await generateAssessmentQuestions(rawBlockIndex, maxQuestions);
+        await runAssessment(questions, penalise);
+      } catch {
+        await startStudyingNow();
+      }
+    });
+  }
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
     clearSocraticError();
