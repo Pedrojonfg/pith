@@ -1,7 +1,7 @@
 import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar } from "./api.js?v=20260503_7";
-import { commitSessionConceptsForBlock, renderBetweenBlocksDictionary, renderConceptDictionaryInto, setDictionaryOverlayOpen, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
+import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
 import { exportSessionMarkdown } from "./export.js?v=20260503_7";
-import { refreshGuideContext } from "./guide-chat.js?v=20260503_7";
+import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260503_7";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_7";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260503_7";
 import {
@@ -18,14 +18,17 @@ import {
   initActiveSessionFromBlocksList,
   loadActiveSession,
   normalizeBlockIndexArray,
+  prefetchState,
   recordResponse,
   safeParseJson,
   splitMaterialIntoBlockChunks,
   state,
   storeActiveSession,
+  triggerPrefetch,
+  getPrefetchedBlock,
   ensureSessionResponseState,
 } from "./session.js?v=20260503_7";
-import { els, getStudyLanguage, showScreen, typesetMath } from "./ui.js?v=20260503_7";
+import { els, getStudyLanguage, setPrefetchIndicator, showScreen, typesetMath } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
 function setMode(nextMode) {
@@ -220,7 +223,9 @@ function updateStudyProgressUi() {
   const total = Math.max(1, getTotalBlocksSafe());
   const idx = Math.min(Math.max(0, state.activeBlockIndex), total - 1);
   const title = getBlockTitleSafe(idx);
-  els.studyProgressLabel.textContent = `Block ${idx + 1} of ${total}`;
+  const labelText = `Block ${idx + 1} of ${total}`;
+  if (els.studyProgressLabelText) els.studyProgressLabelText.textContent = labelText;
+  else els.studyProgressLabel.textContent = labelText;
   els.studyProgressTitle.textContent = title;
   const pct = ((idx + 1) / total) * 100;
   els.studyProgressFill.style.width = `${pct}%`;
@@ -235,39 +240,200 @@ function showSessionComplete() {
   showScreen("complete");
 }
 
-function showBetweenBlocksPrompt() {
-  const total = Math.max(1, getTotalBlocksSafe());
-  const isLastBlock = state.activeBlockIndex >= total - 1;
-  if (isLastBlock) {
-    showSessionComplete();
-    return;
+let transitionOverlayEls = null;
+let lastConsumedPendingGuideReplyTs = null;
+const prefetchStartedAtByIndex = new Map();
+
+function setTransitionOverlayOpen(isOpen) {
+  const o = getOrCreateTransitionOverlay();
+  o.wrap.setAttribute("aria-hidden", String(!isOpen));
+  if (isOpen) {
+    o.status.textContent = "";
+    o.error.hidden = true;
+    o.error.textContent = "";
+    o.textarea.disabled = false;
+    o.continueBtn.disabled = false;
+    o.retryBtn.hidden = true;
+    o.skipBtn.hidden = true;
+    o.textarea.value = "";
+    setTimeout(() => o.textarea.focus(), 0);
   }
-  const nextIndex = state.activeBlockIndex + 1;
-  const nextTitle = getBlockTitleSafe(nextIndex);
-  els.betweenBlocksHeader.textContent = "Before the next block";
-  els.betweenBlocksMeta.textContent = `Next: Block ${nextIndex + 1} of ${total}: ${nextTitle}`;
-  try {
-    commitSessionConceptsForBlock(state.activeBlockIndex);
-  } catch {
-    // ignore concept commit errors
-  }
-  renderBetweenBlocksDictionary({ nextBlockIndex: nextIndex });
-  showScreen("between");
 }
 
-function setBetweenBlocksError(message) {
-  els.betweenBlocksError.hidden = false;
-  els.betweenBlocksError.textContent = message;
+function getOrCreateTransitionOverlay() {
+  if (transitionOverlayEls) return transitionOverlayEls;
+
+  const wrap = document.createElement("div");
+  wrap.id = "transitionOverlay";
+  wrap.className = "dict-overlay";
+  wrap.setAttribute("aria-hidden", "true");
+  wrap.setAttribute("aria-label", "Continue to next block");
+
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const header = document.createElement("div");
+  header.className = "rowline";
+  header.style.justifyContent = "space-between";
+  header.style.gap = "10px";
+
+  const title = document.createElement("span");
+  title.style.fontWeight = "600";
+  title.textContent = "Continue";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.textContent = "Close";
+  closeBtn.addEventListener("click", () => setTransitionOverlayOpen(false));
+
+  header.appendChild(title);
+  header.appendChild(closeBtn);
+
+  const divider = document.createElement("div");
+  divider.className = "divider";
+
+  const dictionaryWrap = document.createElement("div");
+
+  const label = document.createElement("label");
+  label.textContent = "Any questions for the guide? (optional)";
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "answer-textarea";
+  textarea.rows = 4;
+  textarea.spellcheck = true;
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const continueBtn = document.createElement("button");
+  continueBtn.type = "button";
+  continueBtn.textContent = "Continue";
+
+  const retryBtn = document.createElement("button");
+  retryBtn.type = "button";
+  retryBtn.textContent = "Retry";
+  retryBtn.hidden = true;
+
+  const skipBtn = document.createElement("button");
+  skipBtn.type = "button";
+  skipBtn.textContent = "Skip this block";
+  skipBtn.hidden = true;
+
+  const status = document.createElement("span");
+  status.className = "hint";
+  status.setAttribute("role", "status");
+
+  const error = document.createElement("div");
+  error.className = "error";
+  error.hidden = true;
+
+  const statusBar = document.createElement("div");
+  statusBar.style.marginTop = "12px";
+  statusBar.style.paddingTop = "10px";
+  statusBar.style.borderTop = "1px solid rgba(148, 163, 184, 0.25)";
+
+  const statusBarText = document.createElement("div");
+  statusBarText.className = "hint";
+  statusBarText.textContent = "";
+
+  const statusBarTrack = document.createElement("div");
+  statusBarTrack.style.height = "3px";
+  statusBarTrack.style.marginTop = "8px";
+  statusBarTrack.style.background = "rgba(148, 163, 184, 0.22)";
+  statusBarTrack.style.borderRadius = "999px";
+  statusBarTrack.style.overflow = "hidden";
+
+  const statusBarFill = document.createElement("div");
+  statusBarFill.style.height = "100%";
+  statusBarFill.style.width = "40%";
+  statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
+  statusBarFill.style.borderRadius = "999px";
+  statusBarFill.style.transform = "translateX(-120%)";
+  statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
+
+  // Add the keyframes once.
+  if (!document.getElementById("transitionOverlayStyles")) {
+    const style = document.createElement("style");
+    style.id = "transitionOverlayStyles";
+    style.textContent =
+      "@keyframes transitionBarSlide { 0% { transform: translateX(-120%);} 50% { transform: translateX(140%);} 100% { transform: translateX(140%);} }";
+    document.head.appendChild(style);
+  }
+
+  statusBarTrack.appendChild(statusBarFill);
+  statusBar.appendChild(statusBarText);
+  statusBar.appendChild(statusBarTrack);
+
+  row.appendChild(continueBtn);
+  row.appendChild(retryBtn);
+  row.appendChild(skipBtn);
+  row.appendChild(status);
+
+  card.appendChild(header);
+  card.appendChild(divider);
+  card.appendChild(dictionaryWrap);
+  card.appendChild(divider.cloneNode(true));
+  card.appendChild(label);
+  card.appendChild(textarea);
+  card.appendChild(row);
+  card.appendChild(error);
+  card.appendChild(statusBar);
+  wrap.appendChild(card);
+  document.body.appendChild(wrap);
+
+  transitionOverlayEls = {
+    wrap,
+    title,
+    dictionaryWrap,
+    textarea,
+    continueBtn,
+    retryBtn,
+    skipBtn,
+    status,
+    error,
+    statusBarText,
+    statusBarFill,
+    statusBarTrack,
+  };
+  return transitionOverlayEls;
 }
-function clearBetweenBlocksError() {
-  els.betweenBlocksError.hidden = true;
-  els.betweenBlocksError.textContent = "";
-}
-function setBetweenBlocksLoading(isLoading) {
-  els.betweenBlocksSkipBtn.disabled = isLoading;
-  els.betweenBlocksSendBtn.disabled = isLoading;
-  els.betweenBlocksInput.disabled = isLoading;
-  els.betweenBlocksStatus.textContent = isLoading ? "Continuing…" : "";
+
+function ensureGuideResponseCardVisible({ replyText } = {}) {
+  const text = String(replyText || "").trim();
+  if (!text) return;
+
+  const card = document.createElement("div");
+  card.className = "response-box";
+  card.style.border = "1px solid rgba(99, 102, 241, 0.45)";
+  card.style.background = "rgba(99, 102, 241, 0.08)";
+  card.style.marginTop = "10px";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "600";
+  title.textContent = "Guide response";
+
+  const subtitle = document.createElement("div");
+  subtitle.className = "hint";
+  subtitle.style.marginTop = "4px";
+  subtitle.textContent = "Re: your question from the previous block";
+
+  const body = document.createElement("div");
+  body.style.whiteSpace = "pre-wrap";
+  body.style.marginTop = "10px";
+  body.textContent = text;
+
+  card.appendChild(title);
+  card.appendChild(subtitle);
+  card.appendChild(body);
+
+  if (els.screenTest?.getAttribute("aria-hidden") === "false" && els.testQaView) {
+    els.testQaView.prepend(card);
+    return;
+  }
+  if (els.screenSocratic?.getAttribute("aria-hidden") === "false") {
+    const cardEl = els.screenSocratic.querySelector(".card");
+    if (cardEl) cardEl.appendChild(card);
+  }
 }
 
 async function ensureBlockGenerated(blockIndex) {
@@ -287,7 +453,6 @@ async function ensureBlockGenerated(blockIndex) {
   }
 
   const blockTitle = getBlockTitleFromList(blockIndex);
-  const prevComment = String(state.activeSession?._pending_comment_for_next_block || "").trim();
   const materialChunk = getBlockChunkFromIndex(blockIndex);
   if (!materialChunk) {
     throw new Error("Missing block chunk for this session. Please regenerate blocks.");
@@ -300,7 +465,6 @@ async function ensureBlockGenerated(blockIndex) {
     materialText: materialChunk,
     blockIndex,
     blockTitle,
-    previousComment: prevComment,
     language: getStudyLanguage(),
   };
 
@@ -327,7 +491,6 @@ async function ensureBlockGenerated(blockIndex) {
   if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
   state.activeSession.blocks[blockIndex] = cleaned;
   state.activeSession.current_block_index = blockIndex;
-  state.activeSession._pending_comment_for_next_block = "";
   storeActiveSession(state.activeSession, { bumpRev: true });
   return cleaned;
 }
@@ -425,8 +588,7 @@ async function startTestBlock() {
     onDone: () => {
       showScreen("test");
       updateStudyProgressUi();
-      showTestQuestions();
-      renderTestQuestion();
+      finishRSVP(state.activeBlockIndex);
     },
   });
 }
@@ -455,7 +617,7 @@ async function startSocraticBlock() {
     onDone: () => {
       showScreen("socratic");
       updateStudyProgressUi();
-      renderSocraticQuestion();
+      finishRSVP(state.activeBlockIndex);
     },
   });
 }
@@ -554,7 +716,7 @@ function handleTestAnswer({ chosen, correct, feedback }) {
       return;
     }
     if (!isLastBlock) {
-      showBetweenBlocksPrompt();
+      void finishQuestions(state.activeBlockIndex);
       return;
     }
     showSessionComplete();
@@ -597,34 +759,335 @@ function renderSocraticQuestion() {
   setTimeout(() => els.socraticAnswer.focus(), 0);
 }
 
-async function continueToNextBlock({ commentText }) {
-  clearBetweenBlocksError();
-  try {
-    setBetweenBlocksLoading(true);
-    const nextIndex = state.activeBlockIndex + 1;
-    state.activeSession._pending_comment_for_next_block = String(commentText || "").trim();
-    state.activeBlockIndex = nextIndex;
-    state.activeQuestionIndex = 0;
-    if (state.activeSession && typeof state.activeSession === "object") {
-      state.activeSession.active_question_index = 0;
-    }
-    state.activeSession.current_block_index = state.activeBlockIndex;
-    storeActiveSession(state.activeSession, { bumpRev: true });
-    updateStudyProgressUi();
-    if (state.studyMode === "socratic") {
-      showScreen("socratic");
-      await startSocraticBlock();
-    } else if (state.studyMode === "test") {
-      showScreen("test");
-      await startTestBlock();
-    } else {
-      throw new Error("Missing study mode.");
-    }
-  } catch (err) {
-    setBetweenBlocksError(err?.message ? String(err.message) : String(err));
-  } finally {
-    setBetweenBlocksLoading(false);
+function startBlock(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+
+  // 1) triggerPrefetch(N+1) — fire and forget
+  const total = Math.max(1, getTotalBlocksSafe());
+  const nextIdx = idx + 1;
+  if (nextIdx < total) {
+    prefetchStartedAtByIndex.set(nextIdx, Date.now());
+    setPrefetchIndicator("generating");
+    triggerPrefetch(nextIdx);
   }
+
+  // 2) triggerCommentReply() — fire and forget
+  triggerCommentReply();
+
+  // 3) showRSVP(N) — uses already-generated block data (not prefetch)
+  state.activeBlockIndex = idx;
+  state.activeQuestionIndex = 0;
+  if (state.activeSession && typeof state.activeSession === "object") {
+    state.activeSession.current_block_index = idx;
+    state.activeSession.active_question_index = 0;
+    storeActiveSession(state.activeSession, { bumpRev: true });
+  }
+
+  updateStudyProgressUi();
+
+  if (state.studyMode === "socratic") {
+    showScreen("socratic");
+    void startSocraticBlock();
+    return;
+  }
+  if (state.studyMode === "test") {
+    showScreen("test");
+    void startTestBlock();
+  }
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  const ms = Math.max(0, Number(timeoutMs) || 0);
+  if (!ms) return promise;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(label || "Operation timed out")), ms),
+    ),
+  ]);
+}
+
+async function generateBlockDirect(blockIndex, { timeoutMs } = {}) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const p = import("./api.js?v=20260503_7").then((m) => m.generateBlock(idx));
+  const data = await withTimeout(p, timeoutMs, "Block generation timed out");
+  if (state.activeSession && typeof state.activeSession === "object") {
+    if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
+    state.activeSession.blocks[idx] = data;
+    storeActiveSession(state.activeSession, { bumpRev: true });
+  }
+  return data;
+}
+
+function finishRSVP(blockIndex) {
+  // 1) Show duda response section if a reply exists (and hasn't been consumed)
+  const reply = getCommentReply();
+  if (reply) {
+    const history = Array.isArray(window.guideHistory) ? window.guideHistory : [];
+    let replyTs = null;
+    for (let i = history.length - 1; i >= 0; i--) {
+      const m = history[i];
+      if (!m || typeof m !== "object") continue;
+      if (String(m.role || "") !== "assistant") continue;
+      const meta = m.meta && typeof m.meta === "object" ? m.meta : null;
+      if (meta?.fromPendingComment === true) {
+        const ts = Number(m.timestamp);
+        replyTs = Number.isFinite(ts) ? ts : null;
+        break;
+      }
+    }
+
+    if (replyTs != null && replyTs !== lastConsumedPendingGuideReplyTs) {
+      ensureGuideResponseCardVisible({ replyText: reply });
+      lastConsumedPendingGuideReplyTs = replyTs; // clear after displaying
+    }
+  }
+
+  // 2) showQuestions(N)
+  showQuestions(blockIndex);
+}
+
+function showQuestions(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  state.activeBlockIndex = idx;
+  state.activeQuestionIndex = 0;
+  if (state.activeSession && typeof state.activeSession === "object") {
+    state.activeSession.current_block_index = idx;
+    state.activeSession.active_question_index = 0;
+    storeActiveSession(state.activeSession);
+  }
+
+  updateStudyProgressUi();
+
+  if (state.studyMode === "test") {
+    showScreen("test");
+    showTestQuestions();
+    renderTestQuestion();
+    return;
+  }
+  if (state.studyMode === "socratic") {
+    showScreen("socratic");
+    renderSocraticQuestion();
+  }
+}
+
+async function finishQuestions(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const total = Math.max(1, getTotalBlocksSafe());
+  if (idx >= total - 1) {
+    showSessionComplete();
+    return;
+  }
+
+  // Commit concepts for this block (best-effort)
+  try {
+    commitSessionConceptsForBlock(idx);
+  } catch {
+    // ignore
+  }
+
+  // 2) Show comment textarea (optional) + continue
+  const o = getOrCreateTransitionOverlay();
+  const nextIndex = idx + 1;
+  o.title.textContent = `Continue to Block ${nextIndex + 1} of ${total}`;
+
+  // 1) Dictionary is the first element, immediately rendered (collapsible if > 10 terms)
+  const concepts = getSortedSessionConcepts();
+  renderDictionary({
+    containerEl: o.dictionaryWrap,
+    title: `Concepts so far (${concepts.length} terms)`,
+    concepts,
+    collapsedByDefault: concepts.length > 10,
+  });
+
+  // 3) Start waiting for the prefetched block immediately in the background
+  const startedAt = prefetchStartedAtByIndex.get(nextIndex) || Date.now();
+  let prefetchedData = null;
+  let prefetchedError = null;
+  let continueRequested = false;
+
+  const setStatusPreparing = () => {
+    o.statusBarText.textContent = "Preparing next block...";
+    o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
+    o.statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
+    o.statusBarFill.style.transform = "translateX(-120%)";
+  };
+  const setStatusReady = () => {
+    o.statusBarText.textContent = "Ready ✓";
+    o.statusBarText.style.color = "rgba(34, 197, 94, 0.95)";
+    o.statusBarFill.style.animation = "none";
+    o.statusBarFill.style.width = "100%";
+    o.statusBarFill.style.transform = "translateX(0)";
+    o.statusBarFill.style.background = "rgba(34, 197, 94, 0.85)";
+  };
+  const setStatusFailed = () => {
+    o.statusBarText.textContent = "Preparing next block failed";
+    o.statusBarText.style.color = "rgba(248, 113, 113, 0.95)";
+    o.statusBarFill.style.animation = "none";
+    o.statusBarFill.style.width = "100%";
+    o.statusBarFill.style.transform = "translateX(0)";
+    o.statusBarFill.style.background = "rgba(248, 113, 113, 0.6)";
+  };
+
+  // Reset status bar text color (it may have been set previously)
+  o.statusBarText.style.color = "";
+
+  const alreadyReady =
+    prefetchState.blockIndex === nextIndex && prefetchState.status === "ready";
+  if (alreadyReady) {
+    setStatusReady();
+  } else {
+    setStatusPreparing();
+  }
+
+  let autoRetried = false;
+
+  const showRetryingCard = () => {
+    o.error.hidden = false;
+    o.error.textContent = "Block generation failed. Retrying...";
+  };
+
+  const showRetryControls = (message) => {
+    o.error.hidden = false;
+    o.error.textContent = String(message || "Block generation failed.");
+    o.retryBtn.hidden = false;
+    o.skipBtn.hidden = false;
+  };
+
+  o.retryBtn.hidden = true;
+  o.skipBtn.hidden = true;
+
+  const prefetchedPromise = getPrefetchedBlock(nextIndex)
+    .then((data) => {
+      prefetchedData = data;
+      setPrefetchIndicator("ready");
+      setStatusReady();
+      return data;
+    })
+    .catch((err) => {
+      prefetchedError = err;
+      setPrefetchIndicator("failed");
+      setStatusFailed();
+      throw err;
+    });
+
+  o.continueBtn.onclick = async () => {
+    o.error.hidden = true;
+    o.error.textContent = "";
+    o.status.textContent = "";
+
+    const comment = String(o.textarea.value || "").trim();
+    if (comment) setPendingComment(comment);
+
+    if (prefetchedError && !autoRetried) {
+      autoRetried = true;
+      showRetryingCard();
+      try {
+        setPrefetchIndicator("generating");
+        const data = await generateBlockDirect(nextIndex, { timeoutMs: 30_000 });
+        prefetchedData = data;
+        prefetchedError = null;
+        setPrefetchIndicator("ready");
+        setStatusReady();
+      } catch (err) {
+        prefetchedError = err;
+        setPrefetchIndicator("failed");
+        setStatusFailed();
+        showRetryControls(err?.message ? String(err.message) : String(err));
+        return;
+      }
+    } else if (prefetchedError) {
+      showRetryControls(
+        prefetchedError?.message ? String(prefetchedError.message) : String(prefetchedError),
+      );
+      return;
+    }
+
+    if (prefetchedData) {
+      setTransitionOverlayOpen(false);
+      startBlock(nextIndex);
+      return;
+    }
+
+    // Not ready yet: keep the screen open and auto-continue when ready.
+    continueRequested = true;
+    const elapsed = Date.now() - startedAt;
+    const remainingMs = Math.max(0, 30_000 - elapsed);
+    const remainingSec = Math.max(1, Math.round(remainingMs / 1000));
+    o.status.textContent = `Finishing up… (~${remainingSec}s)`;
+    try {
+      const data = await prefetchedPromise;
+      if (!continueRequested) return;
+      if (state.activeSession && typeof state.activeSession === "object") {
+        if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
+        state.activeSession.blocks[nextIndex] = data;
+        storeActiveSession(state.activeSession, { bumpRev: true });
+      }
+      o.status.textContent = "";
+      setTransitionOverlayOpen(false);
+      startBlock(nextIndex);
+    } catch (err) {
+      prefetchedError = err;
+      setPrefetchIndicator("failed");
+      setStatusFailed();
+      if (!autoRetried) {
+        autoRetried = true;
+        showRetryingCard();
+        try {
+          setPrefetchIndicator("generating");
+          const data2 = await generateBlockDirect(nextIndex, { timeoutMs: 30_000 });
+          prefetchedData = data2;
+          prefetchedError = null;
+          setPrefetchIndicator("ready");
+          setStatusReady();
+          o.status.textContent = "";
+          setTransitionOverlayOpen(false);
+          startBlock(nextIndex);
+          return;
+        } catch (err2) {
+          prefetchedError = err2;
+          setPrefetchIndicator("failed");
+          setStatusFailed();
+          showRetryControls(err2?.message ? String(err2.message) : String(err2));
+          o.status.textContent = "";
+          return;
+        }
+      }
+      showRetryControls(err?.message ? String(err.message) : String(err));
+      o.status.textContent = "";
+    }
+  };
+
+  o.retryBtn.onclick = async () => {
+    o.error.hidden = true;
+    o.error.textContent = "";
+    o.status.textContent = "Retrying…";
+    try {
+      setPrefetchIndicator("generating");
+      const data = await generateBlockDirect(nextIndex, { timeoutMs: 10_000 });
+      prefetchedData = data;
+      prefetchedError = null;
+      setPrefetchIndicator("ready");
+      setStatusReady();
+      o.status.textContent = "";
+      setTransitionOverlayOpen(false);
+      startBlock(nextIndex);
+    } catch (err) {
+      prefetchedError = err;
+      setPrefetchIndicator("failed");
+      setStatusFailed();
+      showRetryControls(err?.message ? String(err.message) : String(err));
+      o.status.textContent = "";
+    }
+  };
+
+  o.skipBtn.onclick = () => {
+    const skipIndex = nextIndex + 1; // skip this block, attempt N+2
+    setTransitionOverlayOpen(false);
+    startBlock(skipIndex);
+  };
+
+  setTransitionOverlayOpen(true);
 }
 
 function setSummaryOverlayOpen(isOpen) {
@@ -921,25 +1384,15 @@ export function wireStudyHandlers() {
         : 0;
     updateStudyProgressUi();
     if (state.studyMode === "socratic") {
-      showScreen("socratic");
-      await startSocraticBlock();
+      startBlock(state.activeBlockIndex);
       return;
     }
     if (state.studyMode === "test") {
-      showScreen("test");
-      await startTestBlock();
+      startBlock(state.activeBlockIndex);
       return;
     }
     els.startStudyingError.hidden = false;
     els.startStudyingError.textContent = 'Unsupported "session_mode". Use "test" or "socratic".';
-  });
-
-  els.betweenBlocksSkipBtn.addEventListener("click", async () => {
-    await continueToNextBlock({ commentText: "" });
-  });
-  els.betweenBlocksSendBtn.addEventListener("click", async () => {
-    const msg = String(els.betweenBlocksInput.value || "").trim();
-    await continueToNextBlock({ commentText: msg });
   });
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
@@ -1045,7 +1498,7 @@ export function wireStudyHandlers() {
   els.socraticNextBlockBtn.addEventListener("click", () => {
     const blocks = getBlocksSafe();
     if (state.activeBlockIndex < blocks.length - 1) {
-      showBetweenBlocksPrompt();
+      void finishQuestions(state.activeBlockIndex);
       return;
     }
     showSessionComplete();

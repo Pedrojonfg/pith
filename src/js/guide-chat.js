@@ -10,6 +10,17 @@ function safeJsonParse(raw) {
   }
 }
 
+window.pendingComment = null;
+try {
+  const raw = localStorage.getItem("pending_comment");
+  const parsed = safeJsonParse(raw);
+  if (parsed && typeof parsed === "object" && typeof parsed.text === "string") {
+    window.pendingComment = parsed;
+  }
+} catch {
+  // ignore
+}
+
 function getActiveSessionFromStorage() {
   const raw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
   const obj = safeJsonParse(raw);
@@ -153,7 +164,12 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
 export function appendChatMessage(role, content, timestamp) {
   const r = String(role || "").trim();
   const c = String(content || "");
-  const ts = timestamp ? String(timestamp) : new Date().toISOString();
+  const ts =
+    typeof timestamp === "number"
+      ? timestamp
+      : timestamp
+        ? Number(timestamp) || String(timestamp)
+        : Date.now();
 
   if (!Array.isArray(window.guideHistory)) window.guideHistory = [];
   window.guideHistory.push({ role: r, content: c, timestamp: ts });
@@ -284,5 +300,153 @@ export async function sendGuideMessage(userText, currentBlockIndex) {
     const messagesEl = document.getElementById("chat-messages");
     if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
+}
+
+export function setPendingComment(text) {
+  const t = String(text || "").trim();
+  if (!t) return;
+  const blockIndex = Number(window.guideContext?.currentBlockIndex) || 0;
+  const pending = { text: t, blockIndex, timestamp: Date.now() };
+  window.pendingComment = pending;
+  try {
+    localStorage.setItem("pending_comment", JSON.stringify(pending));
+  } catch {
+    // ignore
+  }
+}
+
+async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
+  const text = String(userText || "").trim();
+  if (!text) return null;
+
+  if (!Array.isArray(window.guideHistory)) window.guideHistory = [];
+  window.guideHistory.push({
+    role: "user",
+    content: text,
+    timestamp: Date.now(),
+    meta: meta && typeof meta === "object" ? meta : undefined,
+  });
+
+  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+  if (!apiKey) throw new Error("Missing API key. Please set your DeepSeek API key.");
+
+  const systemPrompt = buildGuidePrompt(text, currentBlockIndex);
+
+  const history = Array.isArray(window.guideHistory) ? window.guideHistory : [];
+  const msgHistory = history
+    .filter((m) => m && typeof m === "object")
+    .map((m) => ({ role: String(m.role || ""), content: String(m.content || "") }));
+
+  const messages = [{ role: "system", content: systemPrompt }, ...msgHistory];
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      max_tokens: 1500,
+      messages,
+      temperature: 0.2,
+    }),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // handled below
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    throw new Error(apiMsg);
+  }
+
+  const content =
+    (typeof data?.choices?.[0]?.message?.content === "string"
+      ? data.choices[0].message.content
+      : null) ||
+    (typeof data?.response?.content?.[0]?.text === "string"
+      ? data.response.content[0].text
+      : null) ||
+    (typeof data?.content?.[0]?.text === "string" ? data.content[0].text : null);
+
+  const assistantText = String(content || "").trim();
+  if (!assistantText) throw new Error("Unexpected API response (missing message content).");
+
+  const assistantMsg = {
+    role: "assistant",
+    content: assistantText,
+    timestamp: Date.now(),
+    meta: meta && typeof meta === "object" ? meta : undefined,
+  };
+  window.guideHistory.push(assistantMsg);
+
+  const sessionId =
+    String(window.guideContext?.sessionId || "").trim() || "unknown_session";
+  const key = `guide_chat_${sessionId}`;
+  try {
+    localStorage.setItem(key, JSON.stringify(window.guideHistory));
+  } catch {
+    // ignore
+  }
+
+  return assistantText;
+}
+
+export function triggerCommentReply() {
+  const pending = window.pendingComment;
+  if (!pending) return;
+
+  const pendingTs = Number(pending.timestamp) || Date.now();
+  const blockIndex = Number.isFinite(Number(pending.blockIndex))
+    ? Number(pending.blockIndex)
+    : Number(window.guideContext?.currentBlockIndex) || 0;
+
+  (async () => {
+    try {
+      const meta = { fromPendingComment: true, pendingCommentTimestamp: pendingTs };
+      await sendGuideMessageSilent(pending.text, blockIndex, meta);
+    } catch (err) {
+      // silent fail; guide chat remains usable
+      try {
+        console.log(`Guide comment reply failed: ${String(err?.message || err || "Unknown error")}`);
+      } catch {
+        // ignore
+      }
+    } finally {
+      window.pendingComment = null;
+      try {
+        localStorage.removeItem("pending_comment");
+      } catch {
+        // ignore
+      }
+    }
+  })();
+}
+
+export function getCommentReply() {
+  const history = Array.isArray(window.guideHistory) ? window.guideHistory : [];
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    if (!m || typeof m !== "object") continue;
+    if (String(m.role || "") !== "assistant") continue;
+
+    const meta = m.meta && typeof m.meta === "object" ? m.meta : null;
+    const fromPending = meta?.fromPendingComment === true;
+    const pendingTs = Number(meta?.pendingCommentTimestamp);
+    const msgTs = Number(m.timestamp);
+
+    if (fromPending) return String(m.content || "");
+    if (Number.isFinite(pendingTs) && Number.isFinite(msgTs) && Math.abs(msgTs - pendingTs) <= 2 * 60 * 1000) {
+      return String(m.content || "");
+    }
+    return null;
+  }
+  return null;
 }
 

@@ -634,3 +634,67 @@ export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText 
   };
 }
 
+export let prefetchState = {
+  blockIndex: null,
+  status: "idle", // idle | generating | ready | failed
+  data: null, // generated block JSON when ready
+  error: null,
+};
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function triggerPrefetch(blockIndex) {
+  if (prefetchState.status === "generating") return;
+  if (prefetchState.blockIndex === blockIndex && prefetchState.status === "ready") return;
+
+  prefetchState = { blockIndex, status: "generating", data: null, error: null };
+
+  void import("./api.js?v=20260503_7")
+    .then((m) => m.generateBlock(blockIndex))
+    .then((result) => {
+      if (prefetchState.blockIndex !== blockIndex) return;
+      prefetchState.status = "ready";
+      prefetchState.data = result;
+    })
+    .catch((err) => {
+      if (prefetchState.blockIndex !== blockIndex) return;
+      prefetchState.status = "failed";
+      prefetchState.error = err;
+    });
+}
+
+export async function getPrefetchedBlock(blockIndex) {
+  if (prefetchState.blockIndex === blockIndex && prefetchState.status === "ready") {
+    const data = prefetchState.data;
+    prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+    return data;
+  }
+
+  const delays = [250, 500, 1000, 2000, 4000];
+  const startedAt = Date.now();
+  let delayIndex = 0;
+
+  while (Date.now() - startedAt < 30_000) {
+    if (prefetchState.blockIndex === blockIndex) {
+      if (prefetchState.status === "ready") {
+        const data = prefetchState.data;
+        prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+        return data;
+      }
+      if (prefetchState.status === "failed") {
+        const err = prefetchState.error;
+        prefetchState = { blockIndex: null, status: "idle", data: null, error: null };
+        throw err instanceof Error ? err : new Error(String(err));
+      }
+    }
+
+    const d = delays[Math.min(delayIndex, delays.length - 1)];
+    delayIndex += 1;
+    await sleep(d);
+  }
+
+  throw new Error("Block generation timed out");
+}
+
