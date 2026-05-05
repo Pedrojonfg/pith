@@ -382,14 +382,18 @@ Preserve verbatim source text where possible. Max 2000 words.`
 
 export async function deepSeekGenerateBlockJson({
   apiKey,
-  mode,
   blocksListText,
   materialText,
   blockIndex,
   blockTitle,
   previousComment,
   language,
+  n_test,
+  n_socratic,
 }) {
+  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+
   const systemPrompt = `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
 Return a single JSON object with this schema:
 {
@@ -408,17 +412,21 @@ Return a single JSON object with this schema:
   ]
 }
 Respond entirely in {language}.
-Mode is {mode}. For test: 3-4 questions, 4 options (A/B/C/D), correct answer, brief feedback.
+Generate exactly {n_test} test questions (type: "test") and {n_socratic} socratic questions (type: "socratic") in the questions array.
+Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
+Socratic questions: open-ended, no options, no correct answer field.
+Order: all test questions first, then all socratic questions.
+If n_test=0 or n_socratic=0, omit that type entirely.
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly. Wrong options must reflect realistic student mistakes—not nonsense; keep options parallel in structure and length where possible.
-For socratic: 2-3 open questions requiring reasoning or synthesis.
 Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.
 Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
 For each: the term exactly as used in the material, and a definition of max 15 words.
 Only include terms that are non-obvious or domain-specific. No common words.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
-    .replace("{mode}", mode)
-    .replace("{language}", language);
+    .replace("{language}", language)
+    .replace("{n_test}", String(nTest))
+    .replace("{n_socratic}", String(nSocratic));
 
   const commentLine = previousComment
     ? `\n\nThe student had this comment after the previous block:\n${previousComment}\nTake it into account for the explanation and questions.`

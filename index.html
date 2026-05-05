@@ -209,26 +209,50 @@
 
               <div class="divider"></div>
 
-              <label>Mode</label>
-              <div class="row" style="margin-top: 0">
-                <div class="toggle" role="group" aria-label="Mode selector">
-                  <button
-                    type="button"
-                    id="modeTestBtn"
-                    aria-pressed="true"
-                  >
-                    Test
-                  </button>
-                  <button
-                    type="button"
-                    id="modeSocraticBtn"
-                    aria-pressed="false"
-                  >
-                    Socratic
-                  </button>
+              <label>Questions per block</label>
+              <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
+                <button type="button" id="nTestMinusBtn" aria-label="Decrease test questions">
+                  −
+                </button>
+                <div
+                  id="nTestValue"
+                  style="min-width: 22px; text-align: center; font-variant-numeric: tabular-nums"
+                  aria-label="Test questions per block"
+                >
+                  2
                 </div>
-                <span class="hint" id="modeHint"></span>
+                <button type="button" id="nTestPlusBtn" aria-label="Increase test questions">
+                  +
+                </button>
+                <span class="hint" style="margin-left: 6px">Test questions</span>
               </div>
+
+              <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
+                <button
+                  type="button"
+                  id="nSocraticMinusBtn"
+                  aria-label="Decrease socratic questions"
+                >
+                  −
+                </button>
+                <div
+                  id="nSocraticValue"
+                  style="min-width: 22px; text-align: center; font-variant-numeric: tabular-nums"
+                  aria-label="Socratic questions per block"
+                >
+                  1
+                </div>
+                <button
+                  type="button"
+                  id="nSocraticPlusBtn"
+                  aria-label="Increase socratic questions"
+                >
+                  +
+                </button>
+                <span class="hint" style="margin-left: 6px">Socratic questions</span>
+              </div>
+
+              <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
 
               <div class="row">
                 <button type="submit" id="generateBlocksBtn">

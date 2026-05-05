@@ -28,7 +28,6 @@ function resetToNewSession() {
   cancelRsvpTimer();
   setRsvpOverlayActive(false);
 
-  state.sessionMode = "test";
   state.studyMode = null;
   state.originalMaterialText = "";
   state.lastNBlocks = 0;
