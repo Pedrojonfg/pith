@@ -283,13 +283,34 @@
           <div class="card">
             <h1>Blocks (edit if needed)</h1>
             <p>
-              This is the blocks JSON returned by DeepSeek (titles + summaries only
-              shown here). Next we’ll use it to generate each block as you study.
+              Review the block titles and summaries. You can edit them freely before
+              starting the session.
             </p>
+            <div class="blocks-tools" aria-label="Blocks tools">
+              <input
+                id="blocksFilterInput"
+                type="text"
+                inputmode="text"
+                autocomplete="off"
+                spellcheck="true"
+                placeholder="Filter blocks (title or summary)…"
+                aria-label="Filter blocks"
+              />
+              <div class="blocks-tools-actions" aria-label="Blocks tool actions">
+                <button type="button" id="blocksExpandAllBtn">Expand all</button>
+                <button type="button" id="blocksCollapseAllBtn">Collapse all</button>
+                <button type="button" id="blocksClearFilterBtn">Clear</button>
+              </div>
+            </div>
+            <div id="blocksListEditor" class="blocks-editor" aria-label="Blocks editor"></div>
+            <!-- kept for backwards-compat + internal syncing; not meant for users -->
             <textarea
               id="blocksListOutput"
               spellcheck="false"
               autocapitalize="none"
+              hidden
+              aria-hidden="true"
+              tabindex="-1"
             ></textarea>
 
             <div class="row">
