@@ -137,6 +137,57 @@ export function recordResponse({
   storeActiveSession(state.activeSession, { bumpRev: true });
 }
 
+function parseAnswerLetter(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  const m = t.match(/\b([ABCD])\b/i);
+  return m ? String(m[1]).toUpperCase() : "";
+}
+
+export function getMissedTestQuestions(session) {
+  const safe = session && typeof session === "object" ? session : {};
+  const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  const respBlocks =
+    safe._responses?.blocks && typeof safe._responses.blocks === "object"
+      ? safe._responses.blocks
+      : {};
+
+  const missed = [];
+  for (let bi = 0; bi < blocks.length; bi += 1) {
+    const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : null;
+    if (!b) continue;
+    const qs = Array.isArray(b.questions) ? b.questions : [];
+    const qResp =
+      respBlocks[String(bi)]?.questions && typeof respBlocks[String(bi)].questions === "object"
+        ? respBlocks[String(bi)].questions
+        : {};
+
+    for (let qi = 0; qi < qs.length; qi += 1) {
+      const q = qs[qi] && typeof qs[qi] === "object" ? qs[qi] : null;
+      if (!q || String(q.type || "").trim() !== "test") continue;
+      const r = qResp[String(qi)];
+      if (!r || typeof r !== "object") continue;
+
+      const correct = String(r.correct_answer || "").trim().toUpperCase();
+      const userLetter = parseAnswerLetter(r.user_answer);
+      if (!correct || !userLetter) continue;
+      if (userLetter === correct) continue;
+
+      missed.push({
+        blockIndex: bi,
+        questionIndex: qi,
+        question: String(q.question || "").trim(),
+        user_answer: String(r.user_answer || "").trim(),
+        correct_answer: correct,
+        feedback: String(r.feedback || "").trim(),
+        answered_at: String(r.answered_at || "").trim(),
+      });
+    }
+  }
+
+  return missed;
+}
+
 export function loadBlockIndex() {
   const raw = localStorage.getItem(LS_BLOCK_INDEX_KEY);
   if (raw && raw.trim()) {

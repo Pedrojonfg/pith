@@ -1,7 +1,7 @@
 import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260503_7";
 import { buildMarkdown } from "./export.js?v=20260503_7";
 import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260503_7";
-import { clampInt, getStoredKey, state } from "./session.js?v=20260503_7";
+import { clampInt, getMissedTestQuestions, getStoredKey, state } from "./session.js?v=20260503_7";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260503_7";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
@@ -82,14 +82,48 @@ function extractSessionContentFromMarkdown(md) {
 function buildSessionContentForReview() {
   const md = getSessionMarkdownForReview();
   const parsed = extractSessionContentFromMarkdown(md);
-  if (parsed) return parsed;
+  const base =
+    parsed ||
+    (() => {
+      const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
+      return blocks
+        .map((b) => (b && typeof b === "object" ? String(b.explanation || "").trim() : ""))
+        .filter(Boolean)
+        .join("\n\n")
+        .trim();
+    })();
 
-  const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
-  return blocks
-    .map((b) => (b && typeof b === "object" ? String(b.explanation || "").trim() : ""))
+  const extras = [];
+
+  const missed = state.activeSession ? getMissedTestQuestions(state.activeSession) : [];
+  if (missed.length) {
+    const lines = [];
+    lines.push("WEAK SPOTS (missed questions):");
+    for (const m of missed.slice(0, 40)) {
+      const q = String(m.question || "").trim();
+      lines.push(
+        `- Block ${Number(m.blockIndex) + 1}, Q${Number(m.questionIndex) + 1}: ${q || "(missing)"} | Your: ${
+          m.user_answer || "(blank)"
+        } | Correct: ${m.correct_answer || "(unknown)"}`,
+      );
+    }
+    extras.push(lines.join("\n"));
+  }
+
+  // Include user notes from the sidebar if present (best effort).
+  const gh = Array.isArray(window?.guideHistory) ? window.guideHistory : [];
+  const userNotes = gh
+    .filter((m) => m && typeof m === "object")
+    .filter((m) => String(m.role || "").trim().toLowerCase() === "user")
+    .map((m) => String(m.content || "").trim())
     .filter(Boolean)
-    .join("\n\n")
-    .trim();
+    .slice(-20);
+  if (userNotes.length) {
+    extras.push(`SIDEBAR NOTES:\n${userNotes.map((t) => `- ${t}`).join("\n")}`);
+  }
+
+  const out = [base, ...extras].filter(Boolean).join("\n\n").trim();
+  return out;
 }
 
 function parseJsonArrayFromModel(content) {

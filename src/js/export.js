@@ -5,6 +5,7 @@ import {
 import {
   buildResumePayload,
   getBlockResumeStatus,
+  getMissedTestQuestions,
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
@@ -115,6 +116,39 @@ export function buildMarkdown(session) {
     lines.push("");
     lines.push("## Study focus / comments");
     lines.push(studyNotes);
+  }
+
+  const guideHistory = Array.isArray(window?.guideHistory) ? window.guideHistory : [];
+  const sidebarNotes = guideHistory
+    .filter((m) => m && typeof m === "object")
+    .filter((m) => String(m.role || "").trim().toLowerCase() === "user")
+    .map((m) => ({
+      content: String(m.content || "").trim(),
+      timestamp: m.timestamp,
+      meta: m.meta && typeof m.meta === "object" ? m.meta : null,
+    }))
+    .filter((m) => m.content);
+  if (sidebarNotes.length) {
+    lines.push("");
+    lines.push("## Sidebar notes");
+    for (const n of sidebarNotes) {
+      const isPending = n.meta?.fromPendingComment === true;
+      const label = isPending ? "Pending comment" : "Note";
+      lines.push(`- **${label}:** ${n.content}`);
+    }
+  }
+
+  const missed = getMissedTestQuestions(safe);
+  if (missed.length) {
+    lines.push("");
+    lines.push("## Missed questions (to review)");
+    for (const m of missed) {
+      const q = m.question ? `Q: ${m.question}` : "Q: (missing)";
+      lines.push(`- **Block ${Number(m.blockIndex) + 1}, Q${Number(m.questionIndex) + 1}:** ${q}`);
+      lines.push(`  - Your answer: ${m.user_answer || "(blank)"}`);
+      lines.push(`  - Correct: ${m.correct_answer || "(unknown)"}`);
+      if (m.feedback) lines.push(`  - Feedback: ${m.feedback}`);
+    }
   }
   lines.push("");
 
@@ -239,7 +273,6 @@ export function buildMarkdown(session) {
   lines.push("## Study Guide Chat");
   lines.push("");
 
-  const guideHistory = Array.isArray(window?.guideHistory) ? window.guideHistory : [];
   if (!guideHistory.length) {
     lines.push("(No guide interactions recorded.)");
     lines.push("");
