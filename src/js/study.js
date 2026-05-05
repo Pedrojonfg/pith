@@ -31,6 +31,117 @@ import {
 import { els, getStudyLanguage, setPrefetchIndicator, showScreen, typesetMath } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
+function normalizeWhitespace(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+
+function syncHiddenBlocksJsonFromEditor() {
+  if (!els.blocksListEditor || !els.blocksListOutput) return;
+  const items = Array.from(els.blocksListEditor.querySelectorAll("[data-block-id]"));
+  const arr = [];
+  for (const item of items) {
+    const id = Number(item.getAttribute("data-block-id"));
+    const title = normalizeWhitespace(
+      item.querySelector('input[name="blockTitle"]')?.value || "",
+    );
+    const summary = normalizeWhitespace(
+      item.querySelector('textarea[name="blockSummary"]')?.value || "",
+    );
+    arr.push({ id, title, summary });
+  }
+  els.blocksListOutput.value = JSON.stringify(arr, null, 2);
+}
+
+function getBlockFilterQuery() {
+  return normalizeWhitespace(els.blocksFilterInput?.value || "").toLowerCase();
+}
+
+function applyBlockFilterToEditor() {
+  if (!els.blocksListEditor) return;
+  const q = getBlockFilterQuery();
+  const items = Array.from(els.blocksListEditor.querySelectorAll("[data-block-id]"));
+  for (const item of items) {
+    const title = String(item.querySelector('input[name="blockTitle"]')?.value || "");
+    const summary = String(
+      item.querySelector('textarea[name="blockSummary"]')?.value || "",
+    );
+    const hay = `${title} ${summary}`.toLowerCase();
+    const show = !q || hay.includes(q);
+    item.hidden = !show;
+    if (show && q) item.open = true;
+  }
+}
+
+function renderBlockIndexEditor(blocks) {
+  if (!els.blocksListEditor) return;
+  const safe = Array.isArray(blocks) ? blocks : [];
+  els.blocksListEditor.innerHTML = "";
+
+  for (let i = 0; i < safe.length; i += 1) {
+    const b = safe[i] || {};
+    const id = Number(b.id);
+    const title = String(b.title || "").trim();
+    const summary = String(b.summary || "").trim();
+
+    const details = document.createElement("details");
+    details.className = "block-item";
+    details.open = i === 0;
+    details.setAttribute("data-block-id", String(id));
+
+    const summaryEl = document.createElement("summary");
+    summaryEl.className = "block-summary";
+    const badge = document.createElement("span");
+    badge.className = "block-badge";
+    badge.textContent = String(id);
+    const titlePreview = document.createElement("span");
+    titlePreview.className = "block-title-preview";
+    titlePreview.textContent = title || `Block ${id}`;
+    summaryEl.appendChild(badge);
+    summaryEl.appendChild(titlePreview);
+    details.appendChild(summaryEl);
+
+    const body = document.createElement("div");
+    body.className = "block-body";
+
+    const titleLabel = document.createElement("label");
+    titleLabel.textContent = "Title";
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.name = "blockTitle";
+    titleInput.value = title;
+    titleInput.autocapitalize = "sentences";
+    titleInput.addEventListener("input", () => {
+      titlePreview.textContent = normalizeWhitespace(titleInput.value) || `Block ${id}`;
+      syncHiddenBlocksJsonFromEditor();
+      applyBlockFilterToEditor();
+    });
+
+    const summaryLabel = document.createElement("label");
+    summaryLabel.textContent = "Summary";
+    const summaryTa = document.createElement("textarea");
+    summaryTa.name = "blockSummary";
+    summaryTa.rows = 3;
+    summaryTa.value = summary;
+    summaryTa.addEventListener("input", () => {
+      syncHiddenBlocksJsonFromEditor();
+      applyBlockFilterToEditor();
+    });
+
+    body.appendChild(titleLabel);
+    body.appendChild(titleInput);
+    body.appendChild(summaryLabel);
+    body.appendChild(summaryTa);
+    details.appendChild(body);
+
+    els.blocksListEditor.appendChild(details);
+  }
+
+  syncHiddenBlocksJsonFromEditor();
+  applyBlockFilterToEditor();
+  const first = els.blocksListEditor.querySelector('input[name="blockTitle"]');
+  if (first) setTimeout(() => first.focus(), 0);
+}
+
 function setMode(nextMode) {
   state.sessionMode = nextMode;
   const isTest = state.sessionMode === "test";
@@ -1136,6 +1247,36 @@ export function wireStudyHandlers() {
   setMode("test");
   loadRsvpDefaultsFromStorage();
 
+  if (els.blocksFilterInput) {
+    els.blocksFilterInput.addEventListener("input", () => applyBlockFilterToEditor());
+  }
+  if (els.blocksClearFilterBtn) {
+    els.blocksClearFilterBtn.addEventListener("click", () => {
+      if (els.blocksFilterInput) els.blocksFilterInput.value = "";
+      applyBlockFilterToEditor();
+      const first = els.blocksListEditor?.querySelector('input[name="blockTitle"]');
+      if (first) first.focus();
+    });
+  }
+  if (els.blocksExpandAllBtn) {
+    els.blocksExpandAllBtn.addEventListener("click", () => {
+      const items = Array.from(
+        els.blocksListEditor?.querySelectorAll("[data-block-id]") || [],
+      );
+      for (const item of items) {
+        if (!item.hidden) item.open = true;
+      }
+    });
+  }
+  if (els.blocksCollapseAllBtn) {
+    els.blocksCollapseAllBtn.addEventListener("click", () => {
+      const items = Array.from(
+        els.blocksListEditor?.querySelectorAll("[data-block-id]") || [],
+      );
+      for (const item of items) item.open = false;
+    });
+  }
+
   if (els.studyNotesInput) {
     const stored = String(localStorage.getItem(LS_STUDY_NOTES_KEY) || "");
     els.studyNotesInput.value = stored;
@@ -1237,7 +1378,11 @@ export function wireStudyHandlers() {
         ...b,
         chunk: String(b.chunk || localChunks[i] || "").trim(),
       }));
-      els.blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
+      renderBlockIndexEditor(normalized);
+      if (els.blocksListOutput) {
+        // keep the hidden textarea in a stable, pretty format (debug + fallback)
+        els.blocksListOutput.value = formatBlockIndexForConfirmation(normalized);
+      }
       showScreen("blocks");
     } catch (err) {
       setGenerateError(err?.message ? String(err.message) : String(err));
@@ -1281,10 +1426,11 @@ export function wireStudyHandlers() {
         throw new Error("Missing generated blocks. Please regenerate blocks.");
       }
 
+      syncHiddenBlocksJsonFromEditor();
       const edited = safeParseJson(els.blocksListOutput.value || "");
       if (!Array.isArray(edited)) {
         throw new Error(
-          "Blocks must be valid JSON (array of {id,title,summary}). Please fix and try again.",
+          "Blocks list looks invalid. Please ensure each block has a title and a summary.",
         );
       }
 

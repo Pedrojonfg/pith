@@ -38,6 +38,8 @@ function resetToNewSession() {
   state.activeQuestionIndex = 0;
 
   if (els.fileInput) els.fileInput.value = "";
+  if (els.blocksFilterInput) els.blocksFilterInput.value = "";
+  if (els.blocksListEditor) els.blocksListEditor.innerHTML = "";
   if (els.blocksListOutput) els.blocksListOutput.value = "";
   if (els.generateBlocksError) {
     els.generateBlocksError.hidden = true;

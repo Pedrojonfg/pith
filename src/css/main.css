@@ -128,6 +128,25 @@ input[type="text"]:focus {
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
 }
 
+.blocks-tools {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.blocks-tools #blocksFilterInput {
+  flex: 1 1 260px;
+  min-width: 220px;
+}
+
+.blocks-tools-actions {
+  display: inline-flex;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
 .row {
   display: flex;
   gap: 12px;
@@ -212,6 +231,70 @@ textarea {
 textarea:focus {
   border-color: var(--focus);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+
+.blocks-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.block-item {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.18);
+  overflow: clip;
+}
+
+.block-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.block-summary::-webkit-details-marker {
+  display: none;
+}
+.block-item[open] .block-summary {
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.block-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(125, 211, 252, 0.14);
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  flex: 0 0 auto;
+}
+
+.block-title-preview {
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.block-body {
+  padding: 12px;
+}
+
+.block-body input[type="text"] {
+  margin-bottom: 12px;
+}
+
+.block-body textarea {
+  min-height: 96px;
 }
 
 .screen {
