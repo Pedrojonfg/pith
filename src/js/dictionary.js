@@ -117,6 +117,48 @@ export function renderConceptDictionaryInto({ listEl, defEl, concepts }) {
   if (selectedKey) setSelected(selectedKey);
 }
 
+export function renderDictionary({
+  containerEl,
+  title,
+  concepts,
+  collapsedByDefault,
+} = {}) {
+  if (!containerEl) return;
+  containerEl.innerHTML = "";
+
+  const arr = Array.isArray(concepts) ? concepts : [];
+  const n = arr.length;
+  const safeTitle = String(title || "").trim() || `Concepts so far (${n} terms)`;
+
+  const details = document.createElement("details");
+  details.open = !collapsedByDefault;
+
+  const summary = document.createElement("summary");
+  summary.style.cursor = "pointer";
+  summary.style.fontWeight = "600";
+  summary.textContent = safeTitle;
+
+  const panel = document.createElement("div");
+  panel.className = "dict-panel";
+  panel.style.marginTop = "10px";
+
+  const listEl = document.createElement("div");
+  listEl.className = "dict-list";
+
+  const defEl = document.createElement("div");
+  defEl.className = "dict-definition";
+  defEl.textContent = "Select a term to see its definition.";
+
+  panel.appendChild(listEl);
+  panel.appendChild(defEl);
+
+  details.appendChild(summary);
+  details.appendChild(panel);
+  containerEl.appendChild(details);
+
+  renderConceptDictionaryInto({ listEl, defEl, concepts: arr });
+}
+
 export function setDictionaryOverlayOpen(isOpen) {
   els.dictionaryOverlay.setAttribute("aria-hidden", String(!isOpen));
 }

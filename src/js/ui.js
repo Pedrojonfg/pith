@@ -159,6 +159,70 @@ export const els = {
   testError: document.getElementById("testError"),
 };
 
+function ensurePrefetchDot() {
+  if (!els.studyProgressLabel) return;
+  if (els.studyProgressLabelText && els.prefetchDot) return;
+
+  const label = els.studyProgressLabel;
+  const existingText = String(label.textContent || "");
+  label.textContent = "";
+
+  const textSpan = document.createElement("span");
+  textSpan.id = "studyProgressLabelText";
+  textSpan.textContent = existingText;
+
+  const dot = document.createElement("span");
+  dot.id = "prefetchDot";
+  dot.setAttribute("aria-hidden", "true");
+  dot.style.display = "inline-block";
+  dot.style.width = "8px";
+  dot.style.height = "8px";
+  dot.style.borderRadius = "999px";
+  dot.style.marginLeft = "8px";
+  dot.style.background = "rgba(148, 163, 184, 0.9)"; // idle gray
+  dot.style.verticalAlign = "middle";
+
+  // Add keyframes once
+  if (!document.getElementById("prefetchDotStyles")) {
+    const style = document.createElement("style");
+    style.id = "prefetchDotStyles";
+    style.textContent =
+      "@keyframes prefetchDotPulse { 0%{transform:scale(1);opacity:.65} 50%{transform:scale(1.25);opacity:1} 100%{transform:scale(1);opacity:.65} }";
+    document.head.appendChild(style);
+  }
+
+  label.appendChild(textSpan);
+  label.appendChild(dot);
+
+  els.studyProgressLabelText = textSpan;
+  els.prefetchDot = dot;
+}
+
+export function setPrefetchIndicator(status) {
+  ensurePrefetchDot();
+  const dot = els.prefetchDot;
+  if (!dot) return;
+  const s = String(status || "idle");
+
+  dot.style.animation = "none";
+  dot.style.opacity = "1";
+
+  if (s === "generating") {
+    dot.style.background = "rgba(59, 130, 246, 0.95)"; // blue
+    dot.style.animation = "prefetchDotPulse 1.2s ease-in-out infinite";
+    return;
+  }
+  if (s === "ready") {
+    dot.style.background = "rgba(34, 197, 94, 0.95)"; // green
+    return;
+  }
+  if (s === "failed") {
+    dot.style.background = "rgba(248, 113, 113, 0.95)"; // red
+    return;
+  }
+  dot.style.background = "rgba(148, 163, 184, 0.9)"; // idle gray
+}
+
 /** @returns {Promise<void>} */
 export function typesetMath(containerEl) {
   try {
