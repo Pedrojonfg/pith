@@ -838,6 +838,106 @@ export function safeParseJson(text) {
   return null;
 }
 
+function isPedroSourceLine(line) {
+  const t = String(line || "").trim().toUpperCase();
+  return t === "O&R" || t === "TNC" || t === "SINT";
+}
+
+function isPedroLevelLine(line) {
+  const t = String(line || "").trim().toLowerCase();
+  return t === "basico" || t === "básico" || t === "intermedio" || t === "avanzado";
+}
+
+function stripLeadingListMarkers(line) {
+  return String(line || "").replace(/^[\d.\-*\s]+/, "").trim();
+}
+
+function stripTrailingMetadata(line) {
+  const raw = String(line || "");
+  const splitMeta = raw.split(/\s+·\s+/);
+  const noMeta = String(splitMeta[0] || raw);
+  const splitTab = noMeta.split("\t");
+  return String(splitTab[0] || noMeta).trim();
+}
+
+export function parseImportedIndexText(rawText) {
+  const raw = String(rawText || "");
+  const parsed = safeParseJson(raw);
+
+  // Strategy 1: JSON array with at least title.
+  if (Array.isArray(parsed)) {
+    const hasTitles = parsed.every(
+      (item) => item && typeof item === "object" && String(item.title || "").trim(),
+    );
+    if (hasTitles) {
+      const parsedIndex = parsed.map((item, i) => ({
+        id: Number.isFinite(Number(item.id)) ? Number(item.id) : i + 1,
+        title: String(item.title || "").trim(),
+        summary: String(item.summary || item.title || "").trim(),
+        source: String(item.source || "").trim(),
+        level: String(item.level || "").trim(),
+        chunk: String(item.chunk || "").trim(),
+      }));
+      if (parsedIndex.length) return parsedIndex;
+    }
+  }
+
+  // Strategy 2: Plain text / markdown list.
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((l) => String(l || "").trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+
+  // Pedro pattern: groups of 3 lines -> "N. Title", "source", "level".
+  const nGroups = Math.floor(lines.length / 3);
+  let matched = 0;
+  for (let i = 0; i < nGroups; i += 1) {
+    const titleLine = lines[i * 3];
+    const sourceLine = lines[i * 3 + 1];
+    const levelLine = lines[i * 3 + 2];
+    const titleOk = /^\d+\.\s*\S+/.test(titleLine);
+    if (titleOk && isPedroSourceLine(sourceLine) && isPedroLevelLine(levelLine)) {
+      matched += 1;
+    }
+  }
+  if (nGroups > 0 && matched / nGroups >= 0.5) {
+    const parsedIndex = [];
+    for (let i = 0; i < nGroups; i += 1) {
+      const titleLine = lines[i * 3];
+      const source = lines[i * 3 + 1];
+      const level = lines[i * 3 + 2];
+      const title = String(titleLine || "").replace(/^\d+\.\s*/, "").trim();
+      if (!title) continue;
+      parsedIndex.push({
+        id: i + 1,
+        title,
+        summary: title,
+        source: String(source || "").trim(),
+        level: String(level || "").trim(),
+        chunk: "",
+      });
+    }
+    if (parsedIndex.length) return parsedIndex;
+  }
+
+  const titles = [];
+  for (const line of lines) {
+    const cleaned = stripTrailingMetadata(stripLeadingListMarkers(line));
+    if (cleaned) titles.push(cleaned);
+  }
+  if (!titles.length) return [];
+
+  return titles.map((title, i) => ({
+    id: i + 1,
+    title,
+    summary: title,
+    source: "",
+    level: "",
+    chunk: "",
+  }));
+}
+
 export function parseOfflinePackMarkdown(text) {
   const raw = String(text || "");
   const match = raw.match(/<!--\s*OFFLINE_PACK_V1\s*([\s\S]*?)-->/);

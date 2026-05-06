@@ -22,6 +22,7 @@ import {
   loadDefaultQuestionConfig,
   loadActiveSession,
   normalizeBlockIndexArray,
+  parseImportedIndexText,
   parseOfflinePackMarkdown,
   prefetchState,
   recordResponse,
@@ -162,52 +163,6 @@ function renderSplitMergeSummary(mergeInfo) {
 
 function normalizeWhitespace(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
-}
-
-function parseImportedBlockIndex(rawText) {
-  const parsed = safeParseJson(rawText);
-  if (!Array.isArray(parsed)) {
-    throw new Error("Imported file must be a JSON array.");
-  }
-  if (!parsed.length) {
-    throw new Error("Imported index is empty.");
-  }
-  const imported = [];
-  const seen = new Set();
-  for (let i = 0; i < parsed.length; i += 1) {
-    const row = parsed[i];
-    if (!row || typeof row !== "object") {
-      throw new Error(`Row ${i + 1} must be an object.`);
-    }
-    const id = Number(row.id);
-    const title = normalizeWhitespace(row.title || "");
-    const source = normalizeWhitespace(row.source || "");
-    const level = normalizeWhitespace(row.level || "");
-    if (!Number.isFinite(id) || id <= 0) {
-      throw new Error(`Row ${i + 1} has an invalid id.`);
-    }
-    if (!title) {
-      throw new Error(`Row ${i + 1} is missing title.`);
-    }
-    if (!source) {
-      throw new Error(`Row ${i + 1} is missing source.`);
-    }
-    if (!level) {
-      throw new Error(`Row ${i + 1} is missing level.`);
-    }
-    if (seen.has(id)) {
-      throw new Error(`Duplicate id found: ${id}.`);
-    }
-    seen.add(id);
-    imported.push({
-      id,
-      title,
-      summary: title,
-      chunk: "",
-    });
-  }
-  imported.sort((a, b) => a.id - b.id);
-  return imported;
 }
 
 function syncHiddenBlocksJsonFromEditor() {
@@ -2468,16 +2423,17 @@ export function wireStudyHandlers() {
       for (const item of items) item.open = false;
     });
   }
-  if (els.importBlockIndexBtn && els.importBlockIndexInput) {
-    els.importBlockIndexBtn.addEventListener("click", () => {
+  if (els.importIndexBtn && els.importIndexFile) {
+    els.importIndexBtn.addEventListener("click", () => {
       clearConfirmError();
       if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
-      els.importBlockIndexInput.value = "";
-      els.importBlockIndexInput.click();
+      if (els.importIndexLabel) els.importIndexLabel.textContent = "";
+      els.importIndexFile.value = "";
+      els.importIndexFile.click();
     });
-    els.importBlockIndexInput.addEventListener("change", async () => {
-      const fileList = els.importBlockIndexInput.files
-        ? Array.from(els.importBlockIndexInput.files)
+    els.importIndexFile.addEventListener("change", async () => {
+      const fileList = els.importIndexFile.files
+        ? Array.from(els.importIndexFile.files)
         : [];
       const file = fileList[0];
       if (!file) return;
@@ -2485,19 +2441,27 @@ export function wireStudyHandlers() {
       if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "Importing…";
       try {
         const rawText = await file.text();
-        const mapped = parseImportedBlockIndex(rawText);
+        const mapped = parseImportedIndexText(rawText);
+        if (!Array.isArray(mapped) || !mapped.length) {
+          throw new Error("Could not parse file. Expected JSON array or text list.");
+        }
         state.lastBlockIndex = mapped;
         state.lastNBlocks = mapped.length;
+        window.blockIndex = mapped;
+        window.indexWasImported = true;
         renderSplitMergeSummary(null);
         renderBlockIndexEditor(mapped, { readOnly: false });
         if (els.blocksListOutput) {
           els.blocksListOutput.value = formatBlockIndexForConfirmation(mapped);
         }
-        if (els.confirmBlocksStatus) {
-          els.confirmBlocksStatus.textContent = `Imported ${mapped.length} blocks from file`;
+        if (els.importIndexLabel) {
+          els.importIndexLabel.textContent = `✓ ${mapped.length} blocks imported — skipping auto-split`;
         }
+        if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
       } catch (err) {
-        setConfirmError(err?.message ? String(err.message) : String(err));
+        setConfirmError("Could not parse file. Expected JSON array or text list.");
+        if (els.importIndexLabel) els.importIndexLabel.textContent = "";
+        window.indexWasImported = false;
         if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
       }
     });
@@ -2570,6 +2534,8 @@ export function wireStudyHandlers() {
     state.lastCleanedMaterialText = "";
     state.lastCleanedMaterialWordCount = 0;
     state.lastBlockIndex = null;
+    window.indexWasImported = false;
+    if (els.importIndexLabel) els.importIndexLabel.textContent = "";
 
     const apiKey = getStoredKey();
     if (!apiKey) {
@@ -2654,6 +2620,8 @@ export function wireStudyHandlers() {
         mergeInfo = null;
       }
       state.lastBlockIndex = finalIndex;
+      window.blockIndex = finalIndex;
+      window.indexWasImported = false;
 
       renderSplitMergeSummary(mergeInfo);
       renderBlockIndexEditor(finalIndex, { readOnly: false });
@@ -2734,7 +2702,7 @@ export function wireStudyHandlers() {
       return;
     }
 
-    if (!state.originalMaterialText.trim()) {
+    if (!window.indexWasImported && !state.originalMaterialText.trim()) {
       setConfirmError(
         "Missing original material from previous step. Please re-upload and regenerate blocks.",
       );
