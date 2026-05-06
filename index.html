@@ -191,6 +191,19 @@
                 </button>
                 <span class="hint" id="offlinePackStatus" role="status"></span>
               </div>
+              <div class="import-index-row">
+                <button id="import-index-btn" class="btn-secondary btn-small" type="button">
+                  📋 Import existing index
+                </button>
+                <span id="import-index-label" class="muted-label"></span>
+              </div>
+              <input
+                id="import-index-file"
+                name="importIndexFile"
+                type="file"
+                accept=".json,.txt"
+                style="display:none"
+              />
               <input
                 id="offlinePackInput"
                 name="offlinePack"
@@ -375,10 +388,10 @@
             ></textarea>
 
             <div class="import-index-row">
-              <button id="import-index-btn" class="btn-secondary btn-small" type="button">
+              <button id="import-index-btn-confirm" class="btn-secondary btn-small" type="button">
                 📋 Import existing index
               </button>
-              <span id="import-index-label" class="muted-label"></span>
+              <span id="import-index-label-confirm" class="muted-label"></span>
             </div>
             <div class="row">
               <button type="button" id="confirmBlocksBtn">
@@ -386,14 +399,6 @@
               </button>
               <span class="hint" id="confirmBlocksStatus" role="status"></span>
             </div>
-            <input
-              id="import-index-file"
-              name="importIndexFile"
-              type="file"
-              accept=".json,.txt"
-              style="display:none"
-            />
-
             <div id="confirmBlocksError" class="error" hidden></div>
           </div>
         </section>
