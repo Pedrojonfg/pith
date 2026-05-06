@@ -127,6 +127,8 @@ export const els = {
   importIndexBtn: document.getElementById("import-index-btn"),
   importIndexLabel: document.getElementById("import-index-label"),
   importIndexFile: document.getElementById("import-index-file"),
+  importIndexConfirmBtn: document.getElementById("import-index-btn-confirm"),
+  importIndexConfirmLabel: document.getElementById("import-index-label-confirm"),
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
   confirmBlocksError: document.getElementById("confirmBlocksError"),
@@ -358,7 +360,7 @@ export function enableUnifiedMaterialUpload() {
   fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:352',message:'enableUnifiedMaterialUpload called',data:{beforeHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});
   // #endregion
   if (els.loadOfflinePackBtn) {
-    els.loadOfflinePackBtn.hidden = true;
+    els.loadOfflinePackBtn.hidden = false;
   }
   // #region agent log
   fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:357',message:'enableUnifiedMaterialUpload applied',data:{afterHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});

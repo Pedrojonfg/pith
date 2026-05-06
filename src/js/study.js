@@ -2426,14 +2426,24 @@ export function wireStudyHandlers() {
       for (const item of items) item.open = false;
     });
   }
-  if (els.importIndexBtn && els.importIndexFile) {
-    els.importIndexBtn.addEventListener("click", () => {
+  if (els.importIndexFile) {
+    const setImportIndexLabel = (text) => {
+      if (els.importIndexLabel) els.importIndexLabel.textContent = text;
+      if (els.importIndexConfirmLabel) els.importIndexConfirmLabel.textContent = text;
+    };
+    const openImportIndexFile = () => {
       clearConfirmError();
       if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
-      if (els.importIndexLabel) els.importIndexLabel.textContent = "";
+      setImportIndexLabel("");
       els.importIndexFile.value = "";
       els.importIndexFile.click();
-    });
+    };
+    if (els.importIndexBtn) {
+      els.importIndexBtn.addEventListener("click", openImportIndexFile);
+    }
+    if (els.importIndexConfirmBtn) {
+      els.importIndexConfirmBtn.addEventListener("click", openImportIndexFile);
+    }
     els.importIndexFile.addEventListener("change", async () => {
       const fileList = els.importIndexFile.files
         ? Array.from(els.importIndexFile.files)
@@ -2457,13 +2467,12 @@ export function wireStudyHandlers() {
         if (els.blocksListOutput) {
           els.blocksListOutput.value = formatBlockIndexForConfirmation(mapped);
         }
-        if (els.importIndexLabel) {
-          els.importIndexLabel.textContent = `✓ ${mapped.length} blocks imported — skipping auto-split`;
-        }
+        setImportIndexLabel(`✓ ${mapped.length} blocks imported — skipping auto-split`);
         if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
+        showScreen("blocks");
       } catch (err) {
         setConfirmError("Could not parse file. Expected JSON array or text list.");
-        if (els.importIndexLabel) els.importIndexLabel.textContent = "";
+        setImportIndexLabel("");
         window.indexWasImported = false;
         if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
       }
