@@ -352,26 +352,46 @@ export function buildOfflinePack(activeSession, blockIndex) {
     })
     .join("\n");
 
-  const payload = {
-    version: 1,
-    meta: safe?._meta,
-    config: { n_test: safe.n_test, language: safe.language },
-    blocks: blocks.map((b, idx) => ({
+  const results = blocks.map((b, idx) => {
+    const questions = Array.isArray(b?.questions)
+      ? b.questions.filter((q) => q && typeof q === "object" && q.type === "test")
+      : [];
+    return {
       id: b?.id != null ? b.id : idx + 1,
       title: b?.title,
       explanation: b?.explanation,
-      questions: Array.isArray(b?.questions)
-        ? b.questions.filter((q) => q && typeof q === "object" && q.type === "test")
-        : [],
+      questions,
       concepts: b?.concepts,
       socractic_model_answers: [],
-    })),
+      _offline: true,
+      _failed: Boolean(b?._failed),
+      _source: {
+        startPage: Number(b?.startPage) || -1,
+        endPage: Number(b?.endPage) || -1,
+      },
+    };
+  });
+  const failedBlocks = results.filter((b) => b._failed).length;
+  const generatedAt = new Date().toISOString();
+  const payload = {
+    version: 1,
+    meta: {
+      ...(safe?._meta && typeof safe._meta === "object" ? safe._meta : {}),
+      generated_at: generatedAt,
+      total_blocks: results.length,
+      failed_blocks: failedBlocks,
+      offline_pack: true,
+    },
+    config: { n_test: safe.n_test, language: safe.language },
+    blocks: results,
   };
 
   const lines = [];
   lines.push(`# Offline Study Pack — ${sourceFilename}`);
-  lines.push(`Generated: ${new Date().toISOString()}`);
-  lines.push(`Blocks: ${blockCount} | Language: ${language} | Mode: test only`);
+  lines.push(`Generated: ${generatedAt}`);
+  lines.push(
+    `Blocks: ${blockCount} | Language: ${language} | Mode: test only | Failed: ${failedBlocks}`,
+  );
   lines.push("");
   lines.push("## Index");
   lines.push(indexLines || "1. Block 1");

@@ -146,6 +146,12 @@ export const els = {
   fullPackProgressLabel: document.getElementById("fullPackProgressLabel"),
   fullPackProgressFill: document.getElementById("fullPackProgressFill"),
   fullPackEtaLabel: document.getElementById("fullPackEtaLabel"),
+  fullPackActionLabel: null,
+  fullPackPhaseWrap: null,
+  fullPackPhase1: null,
+  fullPackPhase2: null,
+  fullPackPhase3: null,
+  fullPackCtaSubtitle: null,
   fullPackWarning: document.getElementById("fullPackWarning"),
   fullPackError: document.getElementById("fullPackError"),
   fullPackCancelBtn: document.getElementById("fullPackCancelBtn"),
@@ -195,6 +201,125 @@ export const els = {
   testError: document.getElementById("testError"),
 };
 
+function ensureFullPackCtaSubtitle() {
+  if (els.fullPackCtaSubtitle) return els.fullPackCtaSubtitle;
+  if (!els.generateFullPackBtn) return null;
+  const subtitle = document.createElement("div");
+  subtitle.id = "fullPackCtaSubtitle";
+  subtitle.className = "hint";
+  subtitle.style.marginTop = "6px";
+  subtitle.style.fontSize = "12px";
+  subtitle.textContent = "Pre-generates all blocks · works without internet after";
+  els.generateFullPackBtn.insertAdjacentElement("afterend", subtitle);
+  els.fullPackCtaSubtitle = subtitle;
+  return subtitle;
+}
+
+function ensureFullPackProgressScaffold() {
+  if (!els.screenFullPackGenerating) return null;
+  if (els.fullPackActionLabel && els.fullPackPhaseWrap) return els;
+
+  const progressHost = els.fullPackProgressLabel?.parentElement || els.screenFullPackGenerating;
+
+  const phaseWrap = document.createElement("div");
+  phaseWrap.id = "fullPackPhaseWrap";
+  phaseWrap.className = "hint";
+  phaseWrap.style.display = "grid";
+  phaseWrap.style.gap = "6px";
+  phaseWrap.style.marginBottom = "12px";
+
+  const phase1 = document.createElement("div");
+  const phase2 = document.createElement("div");
+  const phase3 = document.createElement("div");
+  phase1.textContent = "Phase 1 of 3: Parsing document";
+  phase2.textContent = "Phase 2 of 3: Mapping blocks";
+  phase3.textContent = "Phase 3 of 3: Generating content";
+  phaseWrap.appendChild(phase1);
+  phaseWrap.appendChild(phase2);
+  phaseWrap.appendChild(phase3);
+
+  const action = document.createElement("div");
+  action.id = "fullPackActionLabel";
+  action.className = "hint";
+  action.style.marginBottom = "10px";
+
+  progressHost.insertBefore(phaseWrap, els.fullPackProgressLabel || null);
+  progressHost.insertBefore(action, els.fullPackProgressLabel || null);
+
+  els.fullPackPhaseWrap = phaseWrap;
+  els.fullPackPhase1 = phase1;
+  els.fullPackPhase2 = phase2;
+  els.fullPackPhase3 = phase3;
+  els.fullPackActionLabel = action;
+  return els;
+}
+
+function paintPhaseRow(el, status) {
+  if (!el) return;
+  if (status === "active") {
+    el.style.color = "#3b82f6";
+    el.style.fontWeight = "600";
+    return;
+  }
+  if (status === "done") {
+    el.style.color = "#cbd5e1";
+    el.style.fontWeight = "500";
+    return;
+  }
+  el.style.color = "#94a3b8";
+  el.style.fontWeight = "400";
+}
+
+export function setFullPackEntryCta(nBlocks) {
+  if (els.generateFullPackBtn) {
+    els.generateFullPackBtn.textContent = "Generate offline pack 📦";
+  }
+  const subtitle = ensureFullPackCtaSubtitle();
+  if (subtitle) {
+    const n = Math.max(0, Math.floor(Number(nBlocks) || 0));
+    subtitle.textContent = `Pre-generates all ${n} blocks · works without internet after`;
+  }
+}
+
+export function updateFullPackProgressUi({
+  pct = 0,
+  phase = 1,
+  phaseText = "",
+  actionText = "",
+  etaText = "",
+  warning = "",
+  error = "",
+} = {}) {
+  ensureFullPackProgressScaffold();
+  if (els.fullPackProgressFill) {
+    const safePct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+    els.fullPackProgressFill.style.width = `${safePct}%`;
+  }
+  if (els.fullPackProgressLabel) {
+    els.fullPackProgressLabel.textContent = String(phaseText || "");
+  }
+  if (els.fullPackActionLabel) {
+    els.fullPackActionLabel.textContent = String(actionText || "");
+  }
+  if (els.fullPackEtaLabel) {
+    els.fullPackEtaLabel.textContent = String(etaText || "");
+  }
+  paintPhaseRow(els.fullPackPhase1, phase === 1 ? "active" : phase > 1 ? "done" : "pending");
+  paintPhaseRow(els.fullPackPhase2, phase === 2 ? "active" : phase > 2 ? "done" : "pending");
+  paintPhaseRow(els.fullPackPhase3, phase === 3 ? "active" : "pending");
+
+  if (els.fullPackWarning) {
+    const t = String(warning || "").trim();
+    els.fullPackWarning.hidden = !t;
+    els.fullPackWarning.textContent = t;
+  }
+  if (els.fullPackError) {
+    const t = String(error || "").trim();
+    els.fullPackError.hidden = !t;
+    els.fullPackError.textContent = t;
+  }
+}
+
 function ensureOfflinePackButton() {
   if (els.downloadOfflinePackBtn) return els.downloadOfflinePackBtn;
   const actionsRow = els.screenComplete?.querySelector(".row");
@@ -219,6 +344,12 @@ export function setOfflinePackButtonVisibility(isVisible) {
   const btn = ensureOfflinePackButton();
   if (!btn) return;
   btn.hidden = !isVisible;
+}
+
+export function enableUnifiedMaterialUpload() {
+  if (els.loadOfflinePackBtn) {
+    els.loadOfflinePackBtn.hidden = true;
+  }
 }
 
 function ensureOfflineModeBanner() {
