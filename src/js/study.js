@@ -164,6 +164,52 @@ function normalizeWhitespace(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
 }
 
+function parseImportedBlockIndex(rawText) {
+  const parsed = safeParseJson(rawText);
+  if (!Array.isArray(parsed)) {
+    throw new Error("Imported file must be a JSON array.");
+  }
+  if (!parsed.length) {
+    throw new Error("Imported index is empty.");
+  }
+  const imported = [];
+  const seen = new Set();
+  for (let i = 0; i < parsed.length; i += 1) {
+    const row = parsed[i];
+    if (!row || typeof row !== "object") {
+      throw new Error(`Row ${i + 1} must be an object.`);
+    }
+    const id = Number(row.id);
+    const title = normalizeWhitespace(row.title || "");
+    const source = normalizeWhitespace(row.source || "");
+    const level = normalizeWhitespace(row.level || "");
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error(`Row ${i + 1} has an invalid id.`);
+    }
+    if (!title) {
+      throw new Error(`Row ${i + 1} is missing title.`);
+    }
+    if (!source) {
+      throw new Error(`Row ${i + 1} is missing source.`);
+    }
+    if (!level) {
+      throw new Error(`Row ${i + 1} is missing level.`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`Duplicate id found: ${id}.`);
+    }
+    seen.add(id);
+    imported.push({
+      id,
+      title,
+      summary: title,
+      chunk: "",
+    });
+  }
+  imported.sort((a, b) => a.id - b.id);
+  return imported;
+}
+
 function syncHiddenBlocksJsonFromEditor() {
   if (!els.blocksListEditor || !els.blocksListOutput) return;
   const items = Array.from(els.blocksListEditor.querySelectorAll("[data-block-id]"));
@@ -2420,6 +2466,40 @@ export function wireStudyHandlers() {
         els.blocksListEditor?.querySelectorAll("[data-block-id]") || [],
       );
       for (const item of items) item.open = false;
+    });
+  }
+  if (els.importBlockIndexBtn && els.importBlockIndexInput) {
+    els.importBlockIndexBtn.addEventListener("click", () => {
+      clearConfirmError();
+      if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
+      els.importBlockIndexInput.value = "";
+      els.importBlockIndexInput.click();
+    });
+    els.importBlockIndexInput.addEventListener("change", async () => {
+      const fileList = els.importBlockIndexInput.files
+        ? Array.from(els.importBlockIndexInput.files)
+        : [];
+      const file = fileList[0];
+      if (!file) return;
+      clearConfirmError();
+      if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "Importing…";
+      try {
+        const rawText = await file.text();
+        const mapped = parseImportedBlockIndex(rawText);
+        state.lastBlockIndex = mapped;
+        state.lastNBlocks = mapped.length;
+        renderSplitMergeSummary(null);
+        renderBlockIndexEditor(mapped, { readOnly: false });
+        if (els.blocksListOutput) {
+          els.blocksListOutput.value = formatBlockIndexForConfirmation(mapped);
+        }
+        if (els.confirmBlocksStatus) {
+          els.confirmBlocksStatus.textContent = `Imported ${mapped.length} blocks from file`;
+        }
+      } catch (err) {
+        setConfirmError(err?.message ? String(err.message) : String(err));
+        if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
+      }
     });
   }
 

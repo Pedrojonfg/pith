@@ -175,6 +175,12 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+button.secondary-btn {
+  padding: 7px 10px;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
 .hint {
   font-size: 13px;
   color: var(--muted);
