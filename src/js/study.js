@@ -1,4 +1,4 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAllBlocks, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260503_7";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260503_7";
@@ -37,8 +37,9 @@ import {
   getPrefetchedBlock,
   ensureSessionResponseState,
   applyAssessmentResults,
+  generateOfflinePack,
 } from "./session.js?v=20260503_7";
-import { els, getStudyLanguage, hideSidebar, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
+import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
 let splitMergeSummaryEls = null;
@@ -344,6 +345,12 @@ function setOfflinePackLoading(isLoading) {
   }
 }
 
+function formatOfflineGeneratedDate(rawDate) {
+  const d = new Date(String(rawDate || ""));
+  if (Number.isNaN(d.getTime())) return "unknown date";
+  return d.toLocaleDateString();
+}
+
 function summarizeExplanation(explanation) {
   const t = normalizeWhitespace(explanation);
   if (!t) return "";
@@ -375,6 +382,66 @@ function blockIndexFromOfflineBlocks(blocks) {
     summary: summarizeExplanation(b?.explanation),
     chunk: "",
   }));
+}
+
+async function loadOfflinePack(text, filename = "") {
+  const parsed = parseOfflinePackMarkdown(text);
+  if (!parsed.ok) {
+    if (parsed.reason === "not_offline_pack") {
+      throw new Error("This file is not an offline pack.");
+    }
+    throw new Error("Invalid or corrupted offline pack");
+  }
+
+  const pack = parsed.value;
+  const blocks = normalizeOfflineBlocks(pack.blocks);
+  if (!blocks.length) {
+    throw new Error("Invalid or corrupted offline pack");
+  }
+
+  const strictMetaOk = pack?.meta?.offline_pack === true;
+  const strictBlocksOk = Array.isArray(pack?.blocks)
+    && pack.blocks.every((b) => b && typeof b === "object" && b._offline === true);
+  if (!strictMetaOk || !strictBlocksOk) {
+    if (els.offlinePackStatus) {
+      els.offlinePackStatus.textContent = "This pack may be incomplete";
+    }
+  }
+
+  window.offlineMode = true;
+  window.offlinePack = pack;
+  state.lastUploadedFileNames = [String(filename || "offline-pack.md")];
+  state.lastNBlocks = blocks.length;
+  state.lastBlockIndex = blockIndexFromOfflineBlocks(blocks);
+  state.originalMaterialText = "";
+  state.lastRawMaterialText = "";
+  state.lastCleanedMaterialText = "";
+  state.lastCleanedMaterialWordCount = 0;
+  if (els.fileInput) els.fileInput.value = "";
+  if (els.fileExtractHint) els.fileExtractHint.textContent = "";
+
+  const generatedAt = formatOfflineGeneratedDate(pack?.meta?.generated_at);
+  const totalBlocks = Math.max(0, Number(pack?.meta?.total_blocks) || blocks.length);
+  const failedBlocks = Math.max(0, Number(pack?.meta?.failed_blocks) || 0);
+  setBlocksReadonlyMode({
+    enabled: true,
+    bannerText:
+      `📦 ${totalBlocks} blocks · Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` · ⚠️ ${failedBlocks} blocks have no content` : ""),
+  });
+  if (els.confirmBlocksStatus) {
+    els.confirmBlocksStatus.textContent = `📦 ${totalBlocks} blocks · Generated ${generatedAt}`;
+  }
+  if (els.confirmBlocksError) {
+    els.confirmBlocksError.hidden = failedBlocks <= 0;
+    els.confirmBlocksError.textContent =
+      failedBlocks > 0 ? `⚠️ ${failedBlocks} blocks have no content` : "";
+  }
+  renderBlockIndexEditor(state.lastBlockIndex, { readOnly: true });
+  if (els.blocksListOutput) {
+    els.blocksListOutput.value = formatBlockIndexForConfirmation(state.lastBlockIndex);
+  }
+  showScreen("blocks");
 }
 
 function setConfirmLoading(isLoading) {
@@ -593,34 +660,6 @@ function syncOfflinePackButtonVisibility() {
   setOfflinePackButtonVisibility(areAllBlocksGenerated(state.activeSession));
 }
 
-function setFullPackProgressUi({
-  completed = 0,
-  total = 0,
-  title = "",
-  warning = "",
-  failedCount = 0,
-  done = false,
-} = {}) {
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
-  if (els.fullPackProgressFill) els.fullPackProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
-  if (els.fullPackProgressLabel) {
-    const t = title ? ` — ${title}` : "";
-    els.fullPackProgressLabel.textContent = `Block ${completed} of ${total}${t}`;
-  }
-  if (els.fullPackEtaLabel) {
-    const remaining = Math.max(0, total - completed);
-    els.fullPackEtaLabel.textContent = done
-      ? "Generation complete."
-      : `${remaining} blocks · ~${remaining * 8}s remaining`;
-  }
-  if (els.fullPackWarning) {
-    const warnText =
-      warning || (done && failedCount > 0 ? `${failedCount} blocks failed and were skipped` : "");
-    els.fullPackWarning.hidden = !warnText;
-    els.fullPackWarning.textContent = warnText;
-  }
-}
-
 function resetFullPackActions() {
   if (els.fullPackError) {
     els.fullPackError.hidden = true;
@@ -637,7 +676,7 @@ function resetFullPackActions() {
 let transitionOverlayEls = null;
 let lastConsumedPendingGuideReplyTs = null;
 const prefetchStartedAtByIndex = new Map();
-let fullPackAbortController = null;
+let fullPackRunActive = false;
 
 function setTransitionOverlayOpen(isOpen) {
   const o = getOrCreateTransitionOverlay();
@@ -2400,11 +2439,6 @@ export function wireStudyHandlers() {
   }
 
   els.fileInput.addEventListener("change", async () => {
-    if (window.offlineMode === true) {
-      window.offlineMode = false;
-      window.offlinePack = null;
-      setBlocksReadonlyMode({ enabled: false, bannerText: "" });
-    }
     clearOfflinePackError();
     if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
     if (!els.fileExtractHint) return;
@@ -2414,7 +2448,18 @@ export function wireStudyHandlers() {
       const file = fileList[0];
       if (!file) return;
       els.fileExtractHint.textContent = "Extracting…";
+      const rawMaterialText = await readFileAsText(file);
+      if (String(rawMaterialText || "").includes("OFFLINE_PACK_V1")) {
+        await loadOfflinePack(rawMaterialText, String(file.name || ""));
+        return;
+      }
+      if (window.offlineMode === true) {
+        window.offlineMode = false;
+        window.offlinePack = null;
+        setBlocksReadonlyMode({ enabled: false, bannerText: "" });
+      }
       const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
+      state.lastRawMaterialText = String(rawMaterialText || "");
       state.lastCleanedMaterialText = cleanedText;
       state.lastCleanedMaterialWordCount = wordCount;
       els.fileExtractHint.textContent = `(~${wordCount} words extracted)`;
@@ -2423,63 +2468,7 @@ export function wireStudyHandlers() {
     }
   });
 
-  if (els.loadOfflinePackBtn && els.offlinePackInput) {
-    els.loadOfflinePackBtn.addEventListener("click", () => {
-      clearOfflinePackError();
-      if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
-      els.offlinePackInput.click();
-    });
-    els.offlinePackInput.addEventListener("change", async () => {
-      clearOfflinePackError();
-      if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
-      const file = els.offlinePackInput.files?.[0];
-      if (!file) return;
-      setOfflinePackLoading(true);
-      try {
-        const text = await readFileAsText(file);
-        const parsed = parseOfflinePackMarkdown(text);
-        if (!parsed.ok) {
-          if (parsed.reason === "not_offline_pack") {
-            throw new Error(
-              "This file is not an offline pack. To import a regular session, use Resume.",
-            );
-          }
-          throw new Error("Invalid or corrupted offline pack");
-        }
-
-        const pack = parsed.value;
-        const blocks = normalizeOfflineBlocks(pack.blocks);
-        if (!blocks.length) {
-          throw new Error("Invalid or corrupted offline pack");
-        }
-
-        window.offlineMode = true;
-        window.offlinePack = pack;
-        state.lastUploadedFileNames = [String(file.name || "")];
-        state.lastNBlocks = blocks.length;
-        state.lastBlockIndex = blockIndexFromOfflineBlocks(blocks);
-        state.originalMaterialText = "";
-        state.lastCleanedMaterialText = "";
-        state.lastCleanedMaterialWordCount = 0;
-        if (els.fileInput) els.fileInput.value = "";
-        if (els.fileExtractHint) els.fileExtractHint.textContent = "";
-
-        setBlocksReadonlyMode({
-          enabled: true,
-          bannerText: "📦 Offline mode — all content pre-loaded",
-        });
-        renderBlockIndexEditor(state.lastBlockIndex, { readOnly: true });
-        if (els.blocksListOutput) {
-          els.blocksListOutput.value = formatBlockIndexForConfirmation(state.lastBlockIndex);
-        }
-        showScreen("blocks");
-      } catch (err) {
-        setOfflinePackError(err?.message ? String(err.message) : "Invalid or corrupted offline pack");
-      } finally {
-        setOfflinePackLoading(false);
-      }
-    });
-  }
+  enableUnifiedMaterialUpload();
 
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -2638,6 +2627,7 @@ export function wireStudyHandlers() {
         storeActiveSession(sessionObj);
         window.assessmentConfig = { skipped: true };
         showScreen("ready");
+        setFullPackEntryCta(offlineBlocks.length);
         if (els.sessionReadyMeta) {
           els.sessionReadyMeta.textContent = `Offline session ready. Blocks: ${offlineBlocks.length}`;
         }
@@ -2765,6 +2755,7 @@ export function wireStudyHandlers() {
       storeActiveSession(sessionObj);
       window.assessmentConfig = { skipped: true };
       showScreen("ready");
+      setFullPackEntryCta(nBlocks);
       if (els.sessionReadyMeta) {
         els.sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
       }
@@ -2800,72 +2791,117 @@ export function wireStudyHandlers() {
       }
 
       resetFullPackActions();
-      setFullPackProgressUi({ completed: 0, total: blockIndex.length, title: "", warning: "" });
+      window.offlinePackCancelled = false;
+      fullPackRunActive = true;
+      updateFullPackProgressUi({
+        pct: 0,
+        phase: 1,
+        phaseText: "Phase 1 of 3: Parsing document",
+        actionText: "Preparing...",
+        etaText: "",
+        warning: "",
+        error: "",
+      });
       showScreen("fullPackGenerating");
-      fullPackAbortController = new AbortController();
-      let currentCompleted = 0;
 
       try {
-        const result = await generateAllBlocks(blockIndex, {
-          getApiKey: () => getStoredKey(),
-          blocksListText: String(state.activeSession?.blocks_list_text || ""),
+        const htmlText = String(
+          state.lastRawMaterialText || state.lastCleanedMaterialText || state.originalMaterialText || "",
+        );
+        const progressPhaseFromPct = (pct) => {
+          const p = Number(pct) || 0;
+          if (p < 6) return 1;
+          if (p < 20) return 2;
+          return 3;
+        };
+        const result = await generateOfflinePack(blockIndex, htmlText, {
           language: getStudyLanguage(),
           n_test: state.activeSession.n_test,
-          n_socratic: state.activeSession.n_socratic,
-          signal: fullPackAbortController.signal,
-          onProgress: ({ completed, total, title, block }) => {
-            currentCompleted = completed;
-            if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
-            state.activeSession.blocks[completed - 1] = block;
-            storeActiveSession(state.activeSession, { bumpRev: true });
-            setFullPackProgressUi({ completed, total, title });
+          updateProgress: (pct, phaseText, actionText) => {
+            updateFullPackProgressUi({
+              pct,
+              phase: progressPhaseFromPct(pct),
+              phaseText,
+              actionText,
+            });
           },
-          onWarning: (msg) => {
-            setFullPackProgressUi({
-              completed: currentCompleted,
-              total: blockIndex.length,
-              warning: String(msg || ""),
+          updateETA: (secondsRemaining) => {
+            const sec = Math.max(0, Number(secondsRemaining) || 0);
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            updateFullPackProgressUi({
+              etaText: `~${m}m ${s}s remaining`,
             });
           },
         });
-        state.activeSession.blocks = result.blocks;
+
+        state.activeSession.blocks = result.results;
         storeActiveSession(state.activeSession, { bumpRev: true });
-        setFullPackProgressUi({
-          completed: blockIndex.length,
-          total: blockIndex.length,
-          done: true,
-          failedCount: result.failedCount,
+        const failed = result.results.filter((b) => b && b._failed).length;
+
+        if (result.cancelled) {
+          updateFullPackProgressUi({
+            warning: `Cancelled. ${result.completed} of ${result.total} blocks generated.`,
+          });
+          if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
+          if (els.fullPackStudyNowBtn) {
+            els.fullPackStudyNowBtn.hidden = false;
+            els.fullPackStudyNowBtn.textContent = "Download partial pack";
+          }
+          if (els.fullPackExitBtn) {
+            els.fullPackExitBtn.hidden = false;
+            els.fullPackExitBtn.textContent = "Go back";
+          }
+          return;
+        }
+
+        updateFullPackProgressUi({
+          pct: 100,
+          phase: 3,
+          phaseText: "Phase 3 of 3: Generating content",
+          actionText: "Generation complete",
+          etaText: "~0m 0s remaining",
+          warning: failed > 0 ? `${failed} blocks failed and have no content` : "",
         });
         exportOfflinePack();
         if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
-        if (els.fullPackStudyNowBtn) els.fullPackStudyNowBtn.hidden = false;
-        if (els.fullPackExitBtn) els.fullPackExitBtn.hidden = false;
+        if (els.fullPackStudyNowBtn) {
+          els.fullPackStudyNowBtn.hidden = false;
+          els.fullPackStudyNowBtn.textContent = "Study now →";
+        }
+        if (els.fullPackExitBtn) {
+          els.fullPackExitBtn.hidden = false;
+          els.fullPackExitBtn.textContent = "Done — study later";
+        }
       } catch (err) {
         const msg = err?.message ? String(err.message) : String(err);
-        if (/cancelled/i.test(msg)) {
-          showScreen("blocks");
-        } else if (els.fullPackError) {
-          els.fullPackError.hidden = false;
-          els.fullPackError.textContent = msg;
-        }
+        updateFullPackProgressUi({ error: msg });
       } finally {
-        fullPackAbortController = null;
+        fullPackRunActive = false;
       }
     });
   }
   if (els.fullPackCancelBtn) {
     els.fullPackCancelBtn.addEventListener("click", () => {
-      if (fullPackAbortController) fullPackAbortController.abort();
-      showScreen("blocks");
+      window.offlinePackCancelled = true;
+      if (!fullPackRunActive) showScreen("blocks");
     });
   }
   if (els.fullPackStudyNowBtn) {
     els.fullPackStudyNowBtn.addEventListener("click", async () => {
+      if (els.fullPackStudyNowBtn.textContent === "Download partial pack") {
+        exportOfflinePack();
+        return;
+      }
       await startStudyingNow();
     });
   }
   if (els.fullPackExitBtn) {
     els.fullPackExitBtn.addEventListener("click", () => {
+      if (els.fullPackExitBtn.textContent === "Go back") {
+        showScreen("blocks");
+        return;
+      }
       showScreen("create");
     });
   }
@@ -3255,6 +3291,7 @@ export function wireStudyHandlers() {
           state.activeBlockIndex = pointer.current_block_index;
           state.activeQuestionIndex = pointer.active_question_index;
           showScreen("ready");
+          setFullPackEntryCta(sessionObj.n_blocks);
           els.sessionReadyMeta.textContent = `Session restored. Next: Block ${
             pointer.current_block_index + 1
           } of ${sessionObj.n_blocks}.`;

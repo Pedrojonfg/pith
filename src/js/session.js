@@ -5,7 +5,7 @@ import {
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
 } from "./config.js?v=20260503_7";
-import { deepSeekGenerateBlockJson } from "./api.js?v=20260503_7";
+import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260503_7";
 import { getStudyLanguage } from "./ui.js?v=20260503_7";
 import { isOfflineMode } from "./main.js?v=20260503_7";
 
@@ -18,6 +18,7 @@ export const state = {
   nextBlockQuestionOverride: null, // { blockIndex, n_test, n_socratic, _touched }
   lastNBlocks: 0,
   lastUploadedFileNames: [],
+  lastRawMaterialText: "",
   lastCleanedMaterialText: "",
   lastCleanedMaterialWordCount: 0,
   lastBlockIndex: null,
@@ -338,6 +339,108 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     obj = await deepSeekGenerateBlockJson(blockRequest);
   }
   return obj;
+}
+
+export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
+  const safeBlocks = Array.isArray(blockIndex) ? blockIndex : [];
+  const updateProgress =
+    typeof config.updateProgress === "function" ? config.updateProgress : () => undefined;
+  const updateETA = typeof config.updateETA === "function" ? config.updateETA : () => undefined;
+  const language = String(config.language || getStudyLanguage()).trim() || "English";
+  const delayMs = Math.max(0, Math.floor(Number(config.delayMs) || 200));
+  window.offlinePackCancelled = false;
+
+  if (!safeBlocks.length) {
+    return { results: [], mappedBlocks: [], cancelled: false, total: 0, completed: 0 };
+  }
+
+  updateProgress(2, "Phase 1 of 3: Parsing document", "Reading pages...");
+  let pages = extractPagesFromHTML(htmlText);
+  if (!Array.isArray(pages) || !pages.length) {
+    const fallbackText = String(htmlText || "").replace(/\s+/g, " ").trim();
+    pages = fallbackText ? [{ pageNum: 1, text: fallbackText }] : [];
+    window.extractedPages = pages;
+    window.totalPages = pages.length;
+  }
+  updateProgress(5, "Phase 1 of 3: Parsing document", `Reading ${pages.length} pages...`);
+
+  updateProgress(6, "Phase 2 of 3: Mapping blocks", "Mapping block 1 of 1...");
+  const mappedBlocks = await mapBlocksToPages(safeBlocks, pages, language);
+  updateProgress(
+    20,
+    "Phase 2 of 3: Mapping blocks",
+    `Mapped ${Array.isArray(mappedBlocks) ? mappedBlocks.length : 0} blocks`,
+  );
+
+  const results = [];
+  const safeMapped = Array.isArray(mappedBlocks) && mappedBlocks.length ? mappedBlocks : safeBlocks;
+  const startTime = Date.now();
+
+  for (let i = 0; i < safeMapped.length; i += 1) {
+    if (window.offlinePackCancelled) {
+      return {
+        results,
+        mappedBlocks: safeMapped,
+        cancelled: true,
+        total: safeMapped.length,
+        completed: i,
+      };
+    }
+
+    const block = safeMapped[i] && typeof safeMapped[i] === "object" ? safeMapped[i] : {};
+    const pct = 20 + Math.round((i / safeMapped.length) * 80);
+    const title = String(block.title || `Block ${i + 1}`).trim();
+    updateProgress(pct, "Phase 3 of 3: Generating content", `Block ${i + 1}/${safeMapped.length} — ${title}`);
+
+    let chunk = "";
+    if (Number(block.startPage) === -1) {
+      const prev = safeMapped[i - 1];
+      const next = safeMapped[i + 1];
+      const start = Math.max(1, Number(prev?.startPage) || 1);
+      const end = Math.max(start, Number(next?.endPage) || pages.length || start);
+      chunk = getChunkForPageRange(pages, start, end).slice(0, 3000);
+    } else {
+      const start = Math.max(1, Number(block.startPage) || 1);
+      const end = Math.max(start, Number(block.endPage) || start);
+      chunk = getChunkForPageRange(pages, start, end);
+    }
+    if (chunk.length > 12000) chunk = chunk.slice(0, 12000);
+    if (!chunk.trim()) chunk = String(block.chunk || "").trim().slice(0, 12000);
+
+    const blockConfig = {
+      n_test: clampInt(config.n_test, 0, 5, 2),
+      n_socratic: 0,
+    };
+
+    try {
+      const generated = await generateBlockFromChunk(block, chunk, blockConfig, language);
+      results.push({ ...block, ...generated, _offline: true });
+    } catch (err) {
+      console.warn(`Block ${Number(block.id) || i + 1} failed:`, err);
+      results.push({
+        ...block,
+        explanation: `[Generation failed for: ${title}]`,
+        questions: [],
+        concepts: [],
+        _failed: true,
+        _offline: true,
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    const elapsed = (Date.now() - startTime) / 1000;
+    const avgPerBlock = elapsed / (i + 1);
+    const remaining = Math.round(avgPerBlock * (safeMapped.length - i - 1));
+    updateETA(remaining);
+  }
+
+  return {
+    results,
+    mappedBlocks: safeMapped,
+    cancelled: false,
+    total: safeMapped.length,
+    completed: safeMapped.length,
+  };
 }
 
 export function parseBlockTitlesFromList(text) {
@@ -800,6 +903,58 @@ export function splitMaterialIntoBlockChunks(text, nBlocks) {
     chunks.push(chunk || raw);
   }
   return chunks;
+}
+
+export function extractPagesFromHTML(htmlText) {
+  const raw = String(htmlText || "");
+  if (typeof DOMParser === "undefined") {
+    if (typeof window !== "undefined") {
+      window.extractedPages = [];
+      window.totalPages = 0;
+    }
+    return [];
+  }
+  const doc = new DOMParser().parseFromString(raw, "text/html");
+  const pageDivs = doc.querySelectorAll("div.pf");
+  const pages = Array.from(pageDivs).map((pageDiv, i) => {
+    const text = String(pageDiv.innerText || pageDiv.textContent || "");
+    const cleanText = text
+      .replace(/\[IMAGEN ELIMINADA\]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return { pageNum: i + 1, text: cleanText };
+  });
+  if (typeof window !== "undefined") {
+    window.extractedPages = pages;
+    window.totalPages = pages.length;
+  }
+  return pages;
+}
+
+export function getChunkForPageRange(pages, startPage, endPage) {
+  const safePages = Array.isArray(pages) ? pages : [];
+  const start = Math.max(1, Math.floor(Number(startPage) || 1));
+  const end = Math.max(start, Math.floor(Number(endPage) || start));
+  return safePages
+    .filter((p) => {
+      const pageNum = Number(p?.pageNum);
+      return Number.isFinite(pageNum) && pageNum >= start && pageNum <= end;
+    })
+    .map((p) => String(p?.text || "").trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export function estimateBlockPageRange(blockIndex, totalPages) {
+  const safeBlocks = Array.isArray(blockIndex) ? blockIndex : [];
+  const pages = Math.max(0, Math.floor(Number(totalPages) || 0));
+  if (!safeBlocks.length || !pages) return safeBlocks.map((block) => ({ ...block }));
+  const pagesPerBlock = pages / safeBlocks.length;
+  return safeBlocks.map((block, i) => ({
+    ...block,
+    startPage: Math.floor(i * pagesPerBlock) + 1,
+    endPage: Math.floor((i + 1) * pagesPerBlock),
+  }));
 }
 
 function normalizeAuditResult(raw) {

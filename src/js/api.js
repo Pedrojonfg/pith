@@ -133,6 +133,192 @@ function shuffleInPlace(arr) {
   return a;
 }
 
+function normalizePageRange(rawStart, rawEnd, totalPages) {
+  const maxPage = Math.max(1, Math.floor(Number(totalPages) || 1));
+  let start = Math.floor(Number(rawStart));
+  let end = Math.floor(Number(rawEnd));
+  if (!Number.isFinite(start) || start < 1) start = 1;
+  if (!Number.isFinite(end) || end < start) end = start;
+  start = Math.min(start, maxPage);
+  end = Math.min(Math.max(end, start), maxPage);
+  return { startPage: start, endPage: end };
+}
+
+export async function mapBlocksToPages(blockIndex, extractedPages, language) {
+  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+  if (!apiKey) {
+    throw new Error("Missing API key. Click “Change API key” to set it.");
+  }
+
+  const safeBlocks = Array.isArray(blockIndex) ? blockIndex : [];
+  const safePages = Array.isArray(extractedPages) ? extractedPages : [];
+  if (!safeBlocks.length) return [];
+
+  const totalPages = Math.max(0, Math.floor(Number(safePages.length) || 0));
+  const lang = String(language || "English").trim() || "English";
+  const groupSize = 20;
+  const totalGroups = Math.max(1, Math.ceil(safeBlocks.length / groupSize));
+  const samplePages = safePages
+    .filter((_, i) => i % 10 === 0)
+    .map((p) => `[Page ${Number(p?.pageNum) || 0}]: ${String(p?.text || "").slice(0, 200)}`)
+    .join("\n");
+
+  const mappedById = new Map();
+
+  for (let gi = 0; gi < totalGroups; gi += 1) {
+    const group = safeBlocks.slice(gi * groupSize, (gi + 1) * groupSize);
+    if (!group.length) continue;
+
+    console.log(`Mapping blocks to pages... (group ${gi + 1} of ${totalGroups})`);
+
+    const systemPrompt = `You are mapping study blocks to page ranges in a textbook.
+The document has {totalPages} pages total.
+The document contains two sources:
+  - O&R = Osborne & Rubinstein game theory textbook (pages 1-~500)
+  - TNC = The Negotiation Challenge book (pages ~500-{totalPages})
+  - SINT = synthesis blocks, no direct source pages
+
+For each block, estimate the page range where its content appears.
+For SINT blocks: set startPage and endPage to -1.
+
+Page samples for orientation:
+{samplePages}
+
+Return ONLY valid JSON array:
+[{id, startPage, endPage}]
+
+Be generous with ranges - it's better to include
+extra pages than to miss content.
+Respond in {language}.`
+      .replaceAll("{totalPages}", String(totalPages))
+      .replace("{samplePages}", samplePages || "(no page samples)")
+      .replace("{language}", lang);
+
+    const userPrompt = JSON.stringify(
+      group.map((b) => ({
+        id: b?.id,
+        title: b?.title,
+        source: b?.source,
+        level: b?.level,
+      })),
+    );
+
+    const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        max_tokens: 800,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: 0.2,
+      }),
+    });
+
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      // ignore JSON parse error; handled below
+    }
+
+    if (!res.ok) {
+      const apiMsg =
+        data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+      throw new Error(apiMsg);
+    }
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content || typeof content !== "string") {
+      throw new Error("Unexpected API response (missing message content).");
+    }
+
+    const rawMap = parseModelJsonValue(content.trim());
+    if (!Array.isArray(rawMap)) {
+      throw new Error("Model did not return a valid JSON array for block-page mapping.");
+    }
+
+    for (const row of rawMap) {
+      const id = Number(row?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const startPage = Number(row?.startPage);
+      const endPage = Number(row?.endPage);
+      mappedById.set(id, { startPage, endPage });
+    }
+  }
+
+  const { estimateBlockPageRange } = await import("./session.js?v=20260503_7");
+  const estimated = estimateBlockPageRange(safeBlocks, totalPages);
+  const estimatedById = new Map(
+    estimated
+      .map((b) => ({
+        id: Number(b?.id),
+        startPage: Number(b?.startPage),
+        endPage: Number(b?.endPage),
+      }))
+      .filter((b) => Number.isFinite(b.id) && b.id > 0),
+  );
+
+  const mappedWithRanges = safeBlocks.map((block) => {
+    const id = Number(block?.id);
+    const source = String(block?.source || "").trim().toUpperCase();
+    const mapped = mappedById.get(id);
+    const isSint = source === "SINT";
+
+    if (!mapped) {
+      const fallback = estimatedById.get(id);
+      const safe = normalizePageRange(fallback?.startPage, fallback?.endPage, totalPages || 1);
+      return { ...block, startPage: safe.startPage, endPage: safe.endPage };
+    }
+
+    if (isSint && Number(mapped.startPage) === -1) {
+      return { ...block, startPage: -1, endPage: -1 };
+    }
+
+    const safe = normalizePageRange(mapped.startPage, mapped.endPage, totalPages || 1);
+    return { ...block, startPage: safe.startPage, endPage: safe.endPage };
+  });
+
+  const nearestNonSintRange = (targetId) => {
+    let best = null;
+    for (const block of mappedWithRanges) {
+      const id = Number(block?.id);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const source = String(block?.source || "").trim().toUpperCase();
+      if (source === "SINT") continue;
+      const startPage = Number(block?.startPage);
+      const endPage = Number(block?.endPage);
+      if (!Number.isFinite(startPage) || !Number.isFinite(endPage) || startPage < 1 || endPage < 1) continue;
+      const distance = Math.abs(id - targetId);
+      if (!best || distance < best.distance) {
+        best = { distance, startPage, endPage };
+      }
+    }
+    return best;
+  };
+
+  return mappedWithRanges.map((block) => {
+    const source = String(block?.source || "").trim().toUpperCase();
+    if (source !== "SINT" || Number(block?.startPage) !== -1) return block;
+
+    const id = Number(block?.id);
+    const near = nearestNonSintRange(id);
+    if (near) {
+      const safe = normalizePageRange(near.startPage, near.endPage, totalPages || 1);
+      return { ...block, startPage: safe.startPage, endPage: safe.endPage };
+    }
+
+    const fallback = estimatedById.get(id);
+    const safe = normalizePageRange(fallback?.startPage, fallback?.endPage, totalPages || 1);
+    return { ...block, startPage: safe.startPage, endPage: safe.endPage };
+  });
+}
+
 export async function generateAssessmentQuestions(blockIndex, maxQuestions) {
   const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
   if (!apiKey) {
@@ -722,6 +908,39 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
     throw new Error("Model did not return valid JSON for the block. Please try again.");
   }
   return blockObj;
+}
+
+export async function generateBlockFromChunk(block, chunk, config = {}, language = "English") {
+  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+  if (!apiKey) {
+    throw new Error("Missing API key. Click “Change API key” to set it.");
+  }
+  const safeBlock = block && typeof block === "object" ? block : {};
+  const id = Math.max(1, Math.floor(Number(safeBlock.id) || 1));
+  const title = String(safeBlock.title || `Block ${id}`).trim() || `Block ${id}`;
+  const source = String(safeBlock.source || "unknown").trim() || "unknown";
+  const nTest = Math.max(0, Math.min(5, Math.round(Number(config.n_test))));
+  const lang = String(language || "English").trim() || "English";
+  const materialText = String(chunk || "").trim();
+
+  const blocksListText = `${id}. ${title}`;
+  const sourceLine = `Source: block ${id} '${title}' from ${source}`;
+  const blockObj = await deepSeekGenerateBlockJson({
+    apiKey,
+    blocksListText,
+    materialText: `${sourceLine}\n\n${materialText}`,
+    blockIndex: id - 1,
+    blockTitle: title,
+    previousComment: "",
+    language: lang,
+    n_test: nTest,
+    n_socratic: 0,
+  });
+  return {
+    explanation: String(blockObj?.explanation || ""),
+    questions: Array.isArray(blockObj?.questions) ? blockObj.questions : [],
+    concepts: Array.isArray(blockObj?.concepts) ? blockObj.concepts : [],
+  };
 }
 
 function sleep(ms) {
