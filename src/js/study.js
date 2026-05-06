@@ -2798,9 +2798,13 @@ export function wireStudyHandlers() {
     }
     persistRsvpDefaults();
   });
-  els.rsvpWpf1.addEventListener("click", () => setWordsPerFlash(1));
-  els.rsvpWpf2.addEventListener("click", () => setWordsPerFlash(2));
-  els.rsvpWpf3.addEventListener("click", () => setWordsPerFlash(3));
+  for (const btn of els.rsvpWpfButtons || []) {
+    btn.addEventListener("click", () => {
+      const next = Number(btn.dataset.wpf);
+      if (!Number.isFinite(next)) return;
+      setWordsPerFlash(next);
+    });
+  }
   document.addEventListener("keydown", (e) => {
     if (e.code !== "Space") return;
     if (els.rsvpOverlay.getAttribute("aria-hidden") !== "false") return;

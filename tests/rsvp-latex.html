@@ -178,7 +178,7 @@
       return mathChunks.length === 1 && mathChunks[0].content === "$E=mc^2$";
     });
     test("buildChunksFromExplanation: math chunk is never split by WPF", () => {
-      for (const wpf of [1, 2, 3]) {
+      for (const wpf of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
         const chunks = buildChunksFromExplanation("$E=mc^2$", wpf);
         if (chunks.length !== 1 || chunks[0].type !== "math") return false;
       }
