@@ -21,6 +21,146 @@ export const rsvpState = {
   playbackGen: 0,
 };
 
+const LS_RSVP_CONTAINER_SIZE_KEY = "rsvp_container_size";
+const RSVP_DESKTOP_DEFAULT_WIDTH = 500;
+const RSVP_DESKTOP_DEFAULT_HEIGHT = 120;
+const RSVP_MOBILE_WIDTH_VW = 90;
+const RSVP_MOBILE_HEIGHT = 90;
+
+let rsvpContainerEl = null;
+let rsvpResizeObserver = null;
+let lastCalculatedNormalFontSize = 16;
+
+function isRsvpMobileViewport() {
+  return window.innerWidth < 600;
+}
+
+function loadStoredRsvpContainerSize() {
+  try {
+    const raw = localStorage.getItem(LS_RSVP_CONTAINER_SIZE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const width = Number(parsed?.width);
+    const height = Number(parsed?.height);
+    if (!Number.isFinite(width) || !Number.isFinite(height)) return null;
+    return { width: Math.round(width), height: Math.round(height) };
+  } catch {
+    return null;
+  }
+}
+
+function persistRsvpContainerSize(width, height) {
+  if (isRsvpMobileViewport()) return;
+  try {
+    localStorage.setItem(
+      LS_RSVP_CONTAINER_SIZE_KEY,
+      JSON.stringify({ width: Math.round(width), height: Math.round(height) }),
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function calcRSVPFontSize(containerWidth, containerHeight, wordCount) {
+  const testEl = document.getElementById("rsvp-word-display");
+  if (!testEl) return lastCalculatedNormalFontSize;
+  if (!Number.isFinite(containerWidth) || !Number.isFinite(containerHeight)) {
+    return lastCalculatedNormalFontSize;
+  }
+  // Keep signature aligned with caller context; longer flashes naturally
+  // measure larger through scrollWidth/scrollHeight.
+  void wordCount;
+  let lo = 8;
+  let hi = 120;
+  let best = 16;
+  for (let i = 0; i < 12; i += 1) {
+    const mid = (lo + hi) / 2;
+    testEl.style.fontSize = `${mid}px`;
+    const fits =
+      testEl.scrollWidth <= containerWidth * 0.85 &&
+      testEl.scrollHeight <= containerHeight * 0.7;
+    if (fits) {
+      best = mid;
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  testEl.style.fontSize = `${best}px`;
+  lastCalculatedNormalFontSize = best;
+  return best;
+}
+
+function isLatexLikeChunk(meta) {
+  const text = String(meta?.content || "");
+  return text.includes("\\") || text.includes("$");
+}
+
+function applyRsvpFontSizingForChunk(meta) {
+  const displayEl = document.getElementById("rsvp-word-display");
+  if (!displayEl || !rsvpContainerEl || !meta) return;
+  if (isLatexLikeChunk(meta)) {
+    displayEl.style.fontSize = `${Math.max(8, lastCalculatedNormalFontSize * 0.6)}px`;
+    return;
+  }
+  const wc = String(meta.content || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  calcRSVPFontSize(rsvpContainerEl.clientWidth, rsvpContainerEl.clientHeight, wc);
+}
+
+function applyRsvpContainerSizing() {
+  if (!rsvpContainerEl) return;
+  if (isRsvpMobileViewport()) {
+    rsvpContainerEl.style.resize = "none";
+    rsvpContainerEl.style.width = `${RSVP_MOBILE_WIDTH_VW}vw`;
+    rsvpContainerEl.style.height = `${RSVP_MOBILE_HEIGHT}px`;
+    return;
+  }
+  rsvpContainerEl.style.resize = "both";
+  const stored = loadStoredRsvpContainerSize();
+  const width = stored?.width || RSVP_DESKTOP_DEFAULT_WIDTH;
+  const height = stored?.height || RSVP_DESKTOP_DEFAULT_HEIGHT;
+  rsvpContainerEl.style.width = `${width}px`;
+  rsvpContainerEl.style.height = `${height}px`;
+}
+
+function ensureRsvpContainer() {
+  if (rsvpContainerEl && rsvpContainerEl.isConnected) return;
+  const existing = els.rsvpOverlay.querySelector(".rsvp-container");
+  if (existing) {
+    rsvpContainerEl = existing;
+  } else {
+    const container = document.createElement("div");
+    container.className = "rsvp-container";
+    if (els.rsvpChunk.parentNode) {
+      els.rsvpChunk.parentNode.insertBefore(container, els.rsvpChunk);
+      container.appendChild(els.rsvpChunk);
+    }
+    rsvpContainerEl = container;
+  }
+  applyRsvpContainerSizing();
+  if (!rsvpResizeObserver) {
+    rsvpResizeObserver = new ResizeObserver(() => {
+      if (!rsvpContainerEl) return;
+      if (!isRsvpMobileViewport()) {
+        persistRsvpContainerSize(rsvpContainerEl.clientWidth, rsvpContainerEl.clientHeight);
+      }
+      const currentMeta = rsvpState.chunks[rsvpState.displayedChunkIndex];
+      applyRsvpFontSizingForChunk(currentMeta);
+    });
+  }
+  rsvpResizeObserver.observe(rsvpContainerEl);
+}
+
+window.addEventListener("resize", () => {
+  if (!rsvpContainerEl) return;
+  applyRsvpContainerSizing();
+  const currentMeta = rsvpState.chunks[rsvpState.displayedChunkIndex];
+  applyRsvpFontSizingForChunk(currentMeta);
+});
+
 export function setRsvpOverlayActive(isActive) {
   els.rsvpOverlay.setAttribute("aria-hidden", String(!isActive));
   document.body.classList.toggle("rsvp-active", isActive);
@@ -251,6 +391,7 @@ function applyChunkToDom(meta) {
     const orpIndex = Math.min(getORP(word), Math.max(word.length - 1, 0));
     const display = document.createElement("span");
     display.className = "rsvp-word-display";
+    display.id = "rsvp-word-display";
 
     const before = document.createElement("span");
     before.className = "rsvp-before";
@@ -266,18 +407,26 @@ function applyChunkToDom(meta) {
 
     display.append(before, orp, after);
     els.rsvpChunk.appendChild(display);
+    applyRsvpFontSizingForChunk(meta);
     return Promise.resolve();
   }
   // Fast path: use pre-rendered HTML (no MathJax call needed, no flicker)
+  const mathDisplay = document.createElement("span");
+  mathDisplay.id = "rsvp-word-display";
+  mathDisplay.className = "rsvp-word-display";
   if (meta.preRenderedHtml) {
-    els.rsvpChunk.innerHTML = meta.preRenderedHtml;
+    mathDisplay.innerHTML = meta.preRenderedHtml;
+    els.rsvpChunk.appendChild(mathDisplay);
+    applyRsvpFontSizingForChunk(meta);
     return Promise.resolve();
   }
   // Fallback: render on-demand with a FRESH child element so MathJax always
   // sees an unprocessed node and never skips re-rendering due to its cache.
   const el = document.createElement("span");
   el.textContent = meta.content || "";
-  els.rsvpChunk.appendChild(el);
+  mathDisplay.appendChild(el);
+  els.rsvpChunk.appendChild(mathDisplay);
+  applyRsvpFontSizingForChunk(meta);
   return typesetMath(el);
 }
 
@@ -475,6 +624,7 @@ export function startRsvpForText(explanationText, onDone) {
 
   hideSidebar();
   setRsvpOverlayActive(true);
+  ensureRsvpContainer();
   els.rsvpWpm.value = String(rsvpState.wpm);
   els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
   setWpfUi(rsvpState.wordsPerFlash);
