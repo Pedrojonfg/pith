@@ -70,6 +70,15 @@ function chunkWords(words, wordsPerFlash) {
   return out;
 }
 
+function getORP(word) {
+  const len = String(word || "").replace(/[^a-zA-Z]/g, "").length;
+  if (len <= 1) return 0;
+  if (len <= 5) return 1;
+  if (len <= 9) return 2;
+  if (len <= 13) return 3;
+  return 4;
+}
+
 /** True if odd number of `\` chars immediately precede `idx`. */
 function isEscapedAt(str, idx) {
   let n = 0;
@@ -238,7 +247,25 @@ function applyChunkToDom(meta) {
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
   if (meta.type === "text") {
-    els.rsvpChunk.textContent = meta.content || "";
+    const word = String(meta.content || "");
+    const orpIndex = Math.min(getORP(word), Math.max(word.length - 1, 0));
+    const display = document.createElement("span");
+    display.className = "rsvp-word-display";
+
+    const before = document.createElement("span");
+    before.className = "rsvp-before";
+    before.textContent = word.slice(0, orpIndex);
+
+    const orp = document.createElement("span");
+    orp.className = "rsvp-orp";
+    orp.textContent = word[orpIndex] || "";
+
+    const after = document.createElement("span");
+    after.className = "rsvp-after";
+    after.textContent = word.slice(orpIndex + 1);
+
+    display.append(before, orp, after);
+    els.rsvpChunk.appendChild(display);
     return Promise.resolve();
   }
   // Fast path: use pre-rendered HTML (no MathJax call needed, no flicker)
