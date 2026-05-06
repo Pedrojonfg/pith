@@ -2812,7 +2812,13 @@ export function wireStudyHandlers() {
           name: String(name || ""),
         }));
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5',location:'src/js/study.js:2816',message:'confirm blocks before storeActiveSession',data:{nBlocks,sessionBlocks:Array.isArray(sessionObj.blocks)?sessionObj.blocks.length:null,stateActiveSessionBefore:!!state.activeSession,indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       storeActiveSession(sessionObj);
+      // #region agent log
+      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H6',location:'src/js/study.js:2820',message:'confirm blocks after storeActiveSession',data:{storedSessionExists:!!loadActiveSession(),stateActiveSessionAfterStore:!!state.activeSession},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       window.assessmentConfig = { skipped: true };
       showScreen("ready");
       setFullPackEntryCta(nBlocks);
@@ -2831,6 +2837,9 @@ export function wireStudyHandlers() {
   if (els.generateFullPackBtn) {
     els.generateFullPackBtn.addEventListener("click", async () => {
       const blockIndex = Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex : [];
+      // #region agent log
+      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5,H6,H7',location:'src/js/study.js:2835',message:'generate offline pack clicked',data:{blockIndexLength:blockIndex.length,stateActiveSession:!!state.activeSession,storedSessionExists:!!loadActiveSession(),indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       if (!blockIndex.length) {
         if (els.startStudyingError) {
           els.startStudyingError.hidden = false;
