@@ -204,6 +204,10 @@ export const els = {
   testError: document.getElementById("testError"),
 };
 
+// #region agent log
+fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H1',location:'src/js/ui.js:204',message:'DOM refs snapshot',data:{hasLoadOfflinePackBtn:!!els.loadOfflinePackBtn,hasImportIndexBtn:!!els.importIndexBtn,hasImportIndexFile:!!els.importIndexFile,hasImportIndexLabel:!!els.importIndexLabel},timestamp:Date.now()})}).catch(()=>{});
+// #endregion
+
 function ensureFullPackCtaSubtitle() {
   if (els.fullPackCtaSubtitle) return els.fullPackCtaSubtitle;
   if (!els.generateFullPackBtn) return null;
@@ -350,9 +354,15 @@ export function setOfflinePackButtonVisibility(isVisible) {
 }
 
 export function enableUnifiedMaterialUpload() {
+  // #region agent log
+  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:352',message:'enableUnifiedMaterialUpload called',data:{beforeHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   if (els.loadOfflinePackBtn) {
     els.loadOfflinePackBtn.hidden = true;
   }
+  // #region agent log
+  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:357',message:'enableUnifiedMaterialUpload applied',data:{afterHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
 }
 
 function ensureOfflineModeBanner() {
@@ -590,6 +600,9 @@ export function showScreen(which) {
   }
 
   if (showBlocks) {
+    // #region agent log
+    fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H3',location:'src/js/ui.js:598',message:'showScreen blocks',data:{hasImportBtn:!!els.importIndexBtn,importBtnText:els.importIndexBtn?els.importIndexBtn.textContent:'',importBtnHiddenAttr:els.importIndexBtn?els.importIndexBtn.hidden:null,hasImportRow:!!document.querySelector('.import-index-row')},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     setTimeout(() => els.blocksListOutput.focus(), 0);
   }
 
