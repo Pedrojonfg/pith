@@ -374,23 +374,24 @@
               tabindex="-1"
             ></textarea>
 
-            <div class="row">
-              <button type="button" id="importBlockIndexBtn" class="secondary-btn">
-                Import existing index (JSON)
+            <div class="import-index-row">
+              <button id="import-index-btn" class="btn-secondary btn-small" type="button">
+                📋 Import existing index
               </button>
+              <span id="import-index-label" class="muted-label"></span>
+            </div>
+            <div class="row">
               <button type="button" id="confirmBlocksBtn">
                 Looks good, start session
               </button>
               <span class="hint" id="confirmBlocksStatus" role="status"></span>
             </div>
             <input
-              id="importBlockIndexInput"
-              name="importBlockIndex"
+              id="import-index-file"
+              name="importIndexFile"
               type="file"
-              accept=".json,.txt,application/json,text/plain"
-              hidden
-              aria-hidden="true"
-              tabindex="-1"
+              accept=".json,.txt"
+              style="display:none"
             />
 
             <div id="confirmBlocksError" class="error" hidden></div>

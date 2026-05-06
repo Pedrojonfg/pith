@@ -175,10 +175,26 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-button.secondary-btn {
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-small {
   padding: 7px 10px;
   font-size: 13px;
-  opacity: 0.9;
+}
+
+.muted-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.import-index-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .hint {
