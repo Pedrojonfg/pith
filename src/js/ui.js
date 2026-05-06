@@ -124,6 +124,8 @@ export const els = {
   blocksListEditor: document.getElementById("blocksListEditor"),
   blocksReadonlyBanner: document.getElementById("blocksReadonlyBanner"),
   blocksListOutput: document.getElementById("blocksListOutput"),
+  importBlockIndexBtn: document.getElementById("importBlockIndexBtn"),
+  importBlockIndexInput: document.getElementById("importBlockIndexInput"),
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
   confirmBlocksError: document.getElementById("confirmBlocksError"),
