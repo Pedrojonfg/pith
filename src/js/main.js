@@ -92,18 +92,45 @@ function bootstrap() {
 
   const installPwaBtn = document.getElementById("installPwaBtn");
   let installPromptEvent = null;
+  const isStandalone =
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator.standalone === true;
+
+  const showInstallFallbackIfNeeded = () => {
+    if (!installPwaBtn) return;
+    if (isStandalone) {
+      installPwaBtn.hidden = true;
+      return;
+    }
+    if (!installPromptEvent) {
+      installPwaBtn.hidden = false;
+      installPwaBtn.textContent = "Instalar app (menu del navegador)";
+    }
+  };
+
+  if (installPwaBtn) installPwaBtn.hidden = isStandalone;
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     installPromptEvent = e;
-    if (installPwaBtn) installPwaBtn.hidden = false;
+    if (installPwaBtn) {
+      installPwaBtn.hidden = false;
+      installPwaBtn.textContent = "Instalar app";
+    }
+    console.log("PWA install prompt available.");
   });
   window.addEventListener("appinstalled", () => {
     installPromptEvent = null;
     if (installPwaBtn) installPwaBtn.hidden = true;
+    console.log("PWA installed.");
   });
   if (installPwaBtn) {
     installPwaBtn.addEventListener("click", async () => {
-      if (!installPromptEvent) return;
+      if (!installPromptEvent) {
+        console.info(
+          "Install prompt not available yet. In Chrome open menu > Install app or Add to Home screen.",
+        );
+        return;
+      }
       installPromptEvent.prompt();
       try {
         await installPromptEvent.userChoice;
@@ -112,6 +139,7 @@ function bootstrap() {
       }
     });
   }
+  setTimeout(showInstallFallbackIfNeeded, 3000);
 
   if (sidebarCloseBtn && sidebar) {
     sidebarCloseBtn.addEventListener("click", () => {
