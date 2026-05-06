@@ -45,7 +45,7 @@ function durationMsBaseTextChunk() {
 function durationMsVisibleForChunk(meta) {
   const base = durationMsBaseTextChunk();
   if (!meta || meta.type !== "math") return base;
-  return Math.round(base * 3);
+  return Math.round(base * 5);
 }
 
 function finalPauseMs() {
@@ -317,16 +317,17 @@ function restartPlaybackTail() {
 
 function setWpfUi(wpf) {
   const v = Number(wpf);
-  els.rsvpWpf1.setAttribute("aria-pressed", String(v === 1));
-  els.rsvpWpf2.setAttribute("aria-pressed", String(v === 2));
-  els.rsvpWpf3.setAttribute("aria-pressed", String(v === 3));
+  for (const btn of els.rsvpWpfButtons || []) {
+    const btnWpf = Number(btn.dataset.wpf);
+    btn.setAttribute("aria-pressed", String(btnWpf === v));
+  }
 }
 
 export function loadRsvpDefaultsFromStorage() {
   const storedWpm = localStorage.getItem(LS_RSVP_DEFAULT_WPM_KEY);
   const storedWpf = localStorage.getItem(LS_RSVP_DEFAULT_WPF_KEY);
   const wpm = clampInt(storedWpm, 100, 1000, 500);
-  const wpf = clampInt(storedWpf, 1, 3, 3);
+  const wpf = clampInt(storedWpf, 1, 10, 3);
   rsvpState.wpm = wpm;
   rsvpState.wordsPerFlash = wpf;
   els.rsvpWpm.value = String(wpm);
@@ -382,7 +383,7 @@ export function setRsvpPlayState(nextPlaying) {
 
 export function setWordsPerFlash(nextWpf) {
   const prev = Math.max(1, Number(rsvpState.wordsPerFlash) || 1);
-  const next = Math.max(1, Number(nextWpf) || 1);
+  const next = Math.min(10, Math.max(1, Number(nextWpf) || 1));
   if (prev === next) return;
 
   const overlayOpen = els.rsvpOverlay.getAttribute("aria-hidden") === "false";

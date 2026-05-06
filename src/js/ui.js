@@ -159,9 +159,7 @@ export const els = {
   rsvpChunk: document.getElementById("rsvpChunk"),
   rsvpWpm: document.getElementById("rsvpWpm"),
   rsvpWpmLabel: document.getElementById("rsvpWpmLabel"),
-  rsvpWpf1: document.getElementById("rsvpWpf1"),
-  rsvpWpf2: document.getElementById("rsvpWpf2"),
-  rsvpWpf3: document.getElementById("rsvpWpf3"),
+  rsvpWpfButtons: Array.from(document.querySelectorAll("[data-wpf]")),
   rsvpPlayPauseBtn: document.getElementById("rsvpPlayPauseBtn"),
   rsvpSkipBtn: document.getElementById("rsvpSkipBtn"),
 
