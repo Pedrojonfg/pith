@@ -3,7 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Study App</title>
+    <link rel="manifest" href="/manifest.json" />
     <link rel="stylesheet" href="src/css/main.css" />
     <link rel="stylesheet" href="src/css/sidebar.css" />
   </head>
@@ -171,6 +175,24 @@
               />
               <div class="hint" id="fileExtractHint" aria-live="polite"></div>
 
+              <div style="text-align: center; margin-top: 10px; color: var(--muted)">-- OR --</div>
+              <div class="row" style="margin-top: 8px">
+                <button type="button" id="loadOfflinePackBtn" style="opacity: 0.85">
+                  📦 Load offline pack
+                </button>
+                <span class="hint" id="offlinePackStatus" role="status"></span>
+              </div>
+              <input
+                id="offlinePackInput"
+                name="offlinePack"
+                type="file"
+                accept=".md,.markdown,.txt,text/markdown"
+                hidden
+                aria-hidden="true"
+                tabindex="-1"
+              />
+              <div id="offlinePackError" class="error" hidden></div>
+
               <div class="divider"></div>
 
               <label for="blocksInput">Blocks</label>
@@ -326,6 +348,12 @@
                 <button type="button" id="blocksClearFilterBtn">Clear</button>
               </div>
             </div>
+            <div
+              id="blocksReadonlyBanner"
+              class="hint"
+              hidden
+              style="margin-top: 10px; color: var(--accent); font-weight: 600"
+            ></div>
             <div id="blocksListEditor" class="blocks-editor" aria-label="Blocks editor"></div>
             <!-- kept for backwards-compat + internal syncing; not meant for users -->
             <textarea
@@ -422,10 +450,36 @@
             <h1>Session ready</h1>
             <p id="sessionReadyMeta">Session ready.</p>
             <div class="row">
-              <button type="button" id="startStudyingBtn">Start studying</button>
+              <button type="button" id="startStudyingBtn">Start studying →</button>
+              <button type="button" id="generateFullPackBtn">Generate full pack 📦</button>
               <span class="hint" id="startStudyingStatus" role="status"></span>
             </div>
             <div id="startStudyingError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenFullPackGenerating"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Generating offline pack"
+        >
+          <div class="card" style="max-width: 760px; margin: 0 auto">
+            <h1>Generating offline pack</h1>
+            <div class="hint" id="fullPackProgressLabel" style="margin-bottom: 10px">
+              Block 0 of 0
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div id="fullPackProgressFill" class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="hint" id="fullPackEtaLabel" style="margin-top: 10px"></div>
+            <div id="fullPackWarning" class="hint" hidden style="margin-top: 10px; color: #f59e0b"></div>
+            <div id="fullPackError" class="error" hidden></div>
+            <div class="row" style="margin-top: 14px">
+              <button type="button" id="fullPackCancelBtn">Cancel</button>
+              <button type="button" id="fullPackStudyNowBtn" hidden>Study now →</button>
+              <button type="button" id="fullPackExitBtn" hidden>Exit — study later</button>
+            </div>
           </div>
         </section>
 
@@ -806,5 +860,12 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script type="module" src="src/js/main.js?v=20260503_7"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker
+          .register("/sw.js")
+          .catch((err) => console.warn("SW registration failed:", err));
+      }
+    </script>
   </body>
 </html>

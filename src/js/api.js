@@ -724,6 +724,68 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
   return blockObj;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function generateAllBlocks(blockIndex, config = {}) {
+  const items = Array.isArray(blockIndex) ? blockIndex : [];
+  const total = items.length;
+  const results = Array.from({ length: total }, () => null);
+  const n_test = Math.max(0, Math.min(5, Math.round(Number(config.n_test))));
+  const n_socratic = Math.max(0, Math.min(3, Math.round(Number(config.n_socratic))));
+  const getApiKey = config.getApiKey;
+  const blocksListText = String(config.blocksListText || "");
+  const language = String(config.language || "English");
+  const signal = config.signal;
+  const onProgress = typeof config.onProgress === "function" ? config.onProgress : null;
+  const onWarning = typeof config.onWarning === "function" ? config.onWarning : null;
+  let failedCount = 0;
+
+  for (let i = 0; i < total; i += 1) {
+    if (signal?.aborted) throw new Error("Generation cancelled.");
+    const row = items[i] && typeof items[i] === "object" ? items[i] : {};
+    const title = String(row.title || `Block ${i + 1}`);
+    const materialText = String(row.chunk || "");
+    const apiKey = typeof getApiKey === "function" ? String(getApiKey() || "") : String(config.apiKey || "");
+    if (!apiKey) throw new Error("Missing API key.");
+    let block = null;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        block = await deepSeekGenerateBlockJson({
+          apiKey,
+          blocksListText,
+          materialText,
+          blockIndex: i,
+          blockTitle: title,
+          previousComment: "",
+          language,
+          n_test,
+          n_socratic,
+        });
+        break;
+      } catch (err) {
+        if (attempt === 0) {
+          if (onWarning) onWarning(`Block ${i + 1} failed — retrying...`);
+          continue;
+        }
+        failedCount += 1;
+        block = { id: i + 1, title, failed: true, questions: [], explanation: "" };
+        if (onWarning) onWarning(`Block ${i + 1} failed and was skipped.`);
+      }
+    }
+
+    results[i] = block;
+    if (onProgress) {
+      onProgress({ completed: i + 1, total, title, remaining: Math.max(0, total - (i + 1)), block });
+    }
+    await sleep(300);
+  }
+
+  return { blocks: results, failedCount };
+}
+
 export async function deepSeekGenerateReviewBatch({
   apiKey,
   sessionContent,

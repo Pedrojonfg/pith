@@ -5,6 +5,7 @@ import {
   LS_STUDY_LANG_KEY,
 } from "./config.js?v=20260503_7";
 import { typesetMath } from "./ui.js?v=20260503_7";
+import { isOfflineMode } from "./main.js?v=20260503_7";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -105,6 +106,12 @@ function buildSessionContext({ activeSession, currentBlockIndex }) {
 }
 
 export function initGuideChat() {
+  const toggleBtn = document.getElementById("sidebar-toggle-btn");
+  if (isOfflineMode()) {
+    if (toggleBtn) toggleBtn.style.display = "none";
+    return;
+  }
+  if (toggleBtn) toggleBtn.style.display = "";
   const activeSession = getActiveSessionFromStorage();
   const language = getStudyLanguageFromStorage();
 
@@ -244,6 +251,7 @@ function setSendUiDisabled(isDisabled) {
 }
 
 export async function sendGuideMessage(userText, currentBlockIndex) {
+  if (isOfflineMode()) return;
   const text = String(userText || "").trim();
   if (!text) return;
 
@@ -425,6 +433,7 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
 }
 
 export function triggerCommentReply() {
+  if (isOfflineMode()) return;
   const pending = window.pendingComment;
   if (!pending) return;
 

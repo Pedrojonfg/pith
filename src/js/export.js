@@ -10,6 +10,7 @@ import {
   state,
   ensureSessionResponseState,
 } from "./session.js?v=20260503_7";
+import { isOfflineMode } from "./main.js?v=20260503_7";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -332,6 +333,57 @@ export function buildMarkdown(session) {
   return lines.join("\n").trim() + "\n";
 }
 
+export function buildOfflinePack(activeSession, blockIndex) {
+  const safe = activeSession && typeof activeSession === "object" ? activeSession : {};
+  const sourceFiles = Array.isArray(safe?._meta?.source_files) ? safe._meta.source_files : [];
+  const sourceFilename = sourceFiles.length
+    ? String(sourceFiles[0]?.name || "").trim() || "unknown-source"
+    : "unknown-source";
+  const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  const totalBlocks = Number(safe.n_blocks);
+  const blockCount = Number.isFinite(totalBlocks) && totalBlocks > 0 ? totalBlocks : blocks.length;
+  const language = String(safe.language || "English").trim() || "English";
+  void blockIndex;
+
+  const indexLines = blocks
+    .map((b, idx) => {
+      const title = String(b?.title || "").trim() || `Block ${idx + 1}`;
+      return `${idx + 1}. ${title}`;
+    })
+    .join("\n");
+
+  const payload = {
+    version: 1,
+    meta: safe?._meta,
+    config: { n_test: safe.n_test, language: safe.language },
+    blocks: blocks.map((b, idx) => ({
+      id: b?.id != null ? b.id : idx + 1,
+      title: b?.title,
+      explanation: b?.explanation,
+      questions: Array.isArray(b?.questions)
+        ? b.questions.filter((q) => q && typeof q === "object" && q.type === "test")
+        : [],
+      concepts: b?.concepts,
+      socractic_model_answers: [],
+    })),
+  };
+
+  const lines = [];
+  lines.push(`# Offline Study Pack — ${sourceFilename}`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push(`Blocks: ${blockCount} | Language: ${language} | Mode: test only`);
+  lines.push("");
+  lines.push("## Index");
+  lines.push(indexLines || "1. Block 1");
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+  lines.push("<!-- OFFLINE_PACK_V1");
+  lines.push(JSON.stringify(payload, null, 2));
+  lines.push("-->");
+  return lines.join("\n").trim() + "\n";
+}
+
 export function downloadTextFile({ filename, text }) {
   const blob = new Blob([String(text || "")], { type: "text/markdown" });
   const url = URL.createObjectURL(blob);
@@ -363,5 +415,17 @@ export function exportSessionMarkdown() {
   if (sessionId && Number.isFinite(rev)) {
     setLastExportState({ sessionId, rev });
   }
+}
+
+export function exportOfflinePack() {
+  if (isOfflineMode()) return;
+  if (!state.activeSession) return;
+  const md = buildOfflinePack(state.activeSession, state.activeBlockIndex);
+  const ts = formatExportTimestamp(new Date());
+  const stem = getExportFilenameStem();
+  downloadTextFile({
+    filename: `${stem}_offline_${ts}.md`,
+    text: md,
+  });
 }
 

@@ -1,9 +1,10 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAllBlocks, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
-import { exportSessionMarkdown } from "./export.js?v=20260503_7";
+import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260503_7";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260503_7";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_7";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260503_7";
+import { isOfflineMode } from "./main.js?v=20260503_7";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -11,6 +12,7 @@ import {
   buildSessionFromResumePayload,
   formatBlockIndexForConfirmation,
   getBlockChunkFromIndex,
+  getBlock,
   getBlockTitleFromList,
   getBlockTitleSafe,
   getBlocksSafe,
@@ -20,10 +22,12 @@ import {
   loadDefaultQuestionConfig,
   loadActiveSession,
   normalizeBlockIndexArray,
+  parseOfflinePackMarkdown,
   prefetchState,
   recordResponse,
   resolveBlockQuestionConfig,
   safeParseJson,
+  shouldTriggerCommentReply,
   splitMaterialIntoBlockChunks,
   storeDefaultQuestionConfig,
   twoPhaseSplitMerge,
@@ -34,7 +38,7 @@ import {
   ensureSessionResponseState,
   applyAssessmentResults,
 } from "./session.js?v=20260503_7";
-import { els, getStudyLanguage, hideSidebar, setPrefetchIndicator, showScreen, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
+import { els, getStudyLanguage, hideSidebar, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
 
 let splitMergeSummaryEls = null;
@@ -196,7 +200,15 @@ function applyBlockFilterToEditor() {
   }
 }
 
-function renderBlockIndexEditor(blocks) {
+function setBlocksReadonlyMode({ enabled, bannerText = "" } = {}) {
+  if (els.blocksReadonlyBanner) {
+    const text = String(bannerText || "").trim();
+    els.blocksReadonlyBanner.hidden = !enabled;
+    els.blocksReadonlyBanner.textContent = enabled ? text : "";
+  }
+}
+
+function renderBlockIndexEditor(blocks, { readOnly = false } = {}) {
   if (!els.blocksListEditor) return;
   const safe = Array.isArray(blocks) ? blocks : [];
   els.blocksListEditor.innerHTML = "";
@@ -234,11 +246,14 @@ function renderBlockIndexEditor(blocks) {
     titleInput.name = "blockTitle";
     titleInput.value = title;
     titleInput.autocapitalize = "sentences";
-    titleInput.addEventListener("input", () => {
-      titlePreview.textContent = normalizeWhitespace(titleInput.value) || `Block ${id}`;
-      syncHiddenBlocksJsonFromEditor();
-      applyBlockFilterToEditor();
-    });
+    titleInput.readOnly = readOnly;
+    if (!readOnly) {
+      titleInput.addEventListener("input", () => {
+        titlePreview.textContent = normalizeWhitespace(titleInput.value) || `Block ${id}`;
+        syncHiddenBlocksJsonFromEditor();
+        applyBlockFilterToEditor();
+      });
+    }
 
     const summaryLabel = document.createElement("label");
     summaryLabel.textContent = "Summary";
@@ -246,10 +261,13 @@ function renderBlockIndexEditor(blocks) {
     summaryTa.name = "blockSummary";
     summaryTa.rows = 3;
     summaryTa.value = summary;
-    summaryTa.addEventListener("input", () => {
-      syncHiddenBlocksJsonFromEditor();
-      applyBlockFilterToEditor();
-    });
+    summaryTa.readOnly = readOnly;
+    if (!readOnly) {
+      summaryTa.addEventListener("input", () => {
+        syncHiddenBlocksJsonFromEditor();
+        applyBlockFilterToEditor();
+      });
+    }
 
     body.appendChild(titleLabel);
     body.appendChild(titleInput);
@@ -262,7 +280,7 @@ function renderBlockIndexEditor(blocks) {
 
   syncHiddenBlocksJsonFromEditor();
   applyBlockFilterToEditor();
-  const first = els.blocksListEditor.querySelector('input[name="blockTitle"]');
+  const first = els.blocksListEditor.querySelector(readOnly ? "details.block-item summary" : 'input[name="blockTitle"]');
   if (first) setTimeout(() => first.focus(), 0);
 }
 
@@ -302,6 +320,61 @@ function setGenerateError(message) {
 function clearGenerateError() {
   els.generateBlocksError.hidden = true;
   els.generateBlocksError.textContent = "";
+}
+
+function clearOfflinePackError() {
+  if (!els.offlinePackError) return;
+  els.offlinePackError.hidden = true;
+  els.offlinePackError.textContent = "";
+}
+
+function setOfflinePackError(message) {
+  if (!els.offlinePackError) return;
+  els.offlinePackError.hidden = false;
+  els.offlinePackError.textContent = message;
+}
+
+function setOfflinePackLoading(isLoading) {
+  if (els.loadOfflinePackBtn) {
+    els.loadOfflinePackBtn.disabled = isLoading;
+    els.loadOfflinePackBtn.textContent = isLoading ? "Loading offline pack…" : "📦 Load offline pack";
+  }
+  if (els.offlinePackStatus) {
+    els.offlinePackStatus.textContent = isLoading ? "Reading…" : "";
+  }
+}
+
+function summarizeExplanation(explanation) {
+  const t = normalizeWhitespace(explanation);
+  if (!t) return "";
+  if (t.length <= 140) return t;
+  return `${t.slice(0, 137).trim()}...`;
+}
+
+function normalizeOfflineBlocks(blocks) {
+  const safe = Array.isArray(blocks) ? blocks : [];
+  return safe.map((b, i) => {
+    const obj = b && typeof b === "object" ? b : {};
+    const questions = Array.isArray(obj.questions) ? obj.questions : [];
+    return {
+      id: Number(obj.id) || i + 1,
+      title: String(obj.title || "").trim() || `Block ${i + 1}`,
+      explanation: String(obj.explanation || ""),
+      questions: questions.filter((q) => q && typeof q === "object"),
+      concepts: Array.isArray(obj.concepts) ? obj.concepts : [],
+      _config: { n_test: Math.max(0, questions.length), n_socratic: 0 },
+    };
+  });
+}
+
+function blockIndexFromOfflineBlocks(blocks) {
+  const safe = Array.isArray(blocks) ? blocks : [];
+  return safe.map((b, i) => ({
+    id: i + 1,
+    title: String(b?.title || "").trim() || `Block ${i + 1}`,
+    summary: summarizeExplanation(b?.explanation),
+    chunk: "",
+  }));
 }
 
 function setConfirmLoading(isLoading) {
@@ -487,12 +560,84 @@ function showSessionComplete() {
   } catch {
     // ignore concept commit errors
   }
+  syncOfflinePackButtonVisibility();
   showScreen("complete");
+}
+
+function hasGeneratedBlockContent(block) {
+  return !!(
+    block &&
+    typeof block === "object" &&
+    typeof block.explanation === "string" &&
+    Array.isArray(block.questions)
+  );
+}
+
+function areAllBlocksGenerated(sessionObj) {
+  const safe = sessionObj && typeof sessionObj === "object" ? sessionObj : {};
+  const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  const total = Number(safe.n_blocks);
+  const expected = Number.isFinite(total) && total > 0 ? total : blocks.length;
+  if (!expected) return false;
+  for (let i = 0; i < expected; i += 1) {
+    if (!hasGeneratedBlockContent(blocks[i])) return false;
+  }
+  return true;
+}
+
+function syncOfflinePackButtonVisibility() {
+  if (isOfflineMode()) {
+    setOfflinePackButtonVisibility(false);
+    return;
+  }
+  setOfflinePackButtonVisibility(areAllBlocksGenerated(state.activeSession));
+}
+
+function setFullPackProgressUi({
+  completed = 0,
+  total = 0,
+  title = "",
+  warning = "",
+  failedCount = 0,
+  done = false,
+} = {}) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+  if (els.fullPackProgressFill) els.fullPackProgressFill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  if (els.fullPackProgressLabel) {
+    const t = title ? ` — ${title}` : "";
+    els.fullPackProgressLabel.textContent = `Block ${completed} of ${total}${t}`;
+  }
+  if (els.fullPackEtaLabel) {
+    const remaining = Math.max(0, total - completed);
+    els.fullPackEtaLabel.textContent = done
+      ? "Generation complete."
+      : `${remaining} blocks · ~${remaining * 8}s remaining`;
+  }
+  if (els.fullPackWarning) {
+    const warnText =
+      warning || (done && failedCount > 0 ? `${failedCount} blocks failed and were skipped` : "");
+    els.fullPackWarning.hidden = !warnText;
+    els.fullPackWarning.textContent = warnText;
+  }
+}
+
+function resetFullPackActions() {
+  if (els.fullPackError) {
+    els.fullPackError.hidden = true;
+    els.fullPackError.textContent = "";
+  }
+  if (els.fullPackStudyNowBtn) els.fullPackStudyNowBtn.hidden = true;
+  if (els.fullPackExitBtn) els.fullPackExitBtn.hidden = true;
+  if (els.fullPackCancelBtn) {
+    els.fullPackCancelBtn.hidden = false;
+    els.fullPackCancelBtn.disabled = false;
+  }
 }
 
 let transitionOverlayEls = null;
 let lastConsumedPendingGuideReplyTs = null;
 const prefetchStartedAtByIndex = new Map();
+let fullPackAbortController = null;
 
 function setTransitionOverlayOpen(isOpen) {
   const o = getOrCreateTransitionOverlay();
@@ -766,8 +911,7 @@ function ensureGuideResponseCardVisible({ replyText } = {}) {
 }
 
 async function ensureBlockGenerated(blockIndex) {
-  const blocks = getBlocksSafe();
-  const existing = blocks[blockIndex];
+  const existing = getBlock(blockIndex);
   const looksGenerated =
     existing &&
     typeof existing === "object" &&
@@ -775,6 +919,9 @@ async function ensureBlockGenerated(blockIndex) {
       Array.isArray(existing.questions) ||
       Array.isArray(existing.concepts));
   if (looksGenerated) return existing;
+  if (isOfflineMode()) {
+    throw new Error("Missing offline block data.");
+  }
 
   const apiKey = getStoredKey();
   if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
@@ -876,12 +1023,16 @@ function getBlockTestQuestions(block) {
 }
 
 function getBlockSocraticQuestions(block) {
+  if (isOfflineMode()) return [];
   const qs = Array.isArray(block?.questions) ? block.questions : [];
   return qs.filter((q) => q && typeof q === "object" && q.type === "socratic");
 }
 
 function getBlockOrderedQuestions(block) {
   const testQs = getBlockTestQuestions(block);
+  if (isOfflineMode()) {
+    return { testQs, socQs: [], allQs: [...testQs] };
+  }
   const socQs = getBlockSocraticQuestions(block);
   return { testQs, socQs, allQs: [...testQs, ...socQs] };
 }
@@ -1163,7 +1314,9 @@ function startBlock(blockIndex) {
   }
 
   // 2) triggerCommentReply() — fire and forget
-  triggerCommentReply();
+  if (shouldTriggerCommentReply()) {
+    triggerCommentReply();
+  }
 
   // 3) showRSVP(N) — uses already-generated block data (not prefetch)
   state.activeBlockIndex = idx;
@@ -2247,6 +2400,13 @@ export function wireStudyHandlers() {
   }
 
   els.fileInput.addEventListener("change", async () => {
+    if (window.offlineMode === true) {
+      window.offlineMode = false;
+      window.offlinePack = null;
+      setBlocksReadonlyMode({ enabled: false, bannerText: "" });
+    }
+    clearOfflinePackError();
+    if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
     if (!els.fileExtractHint) return;
     try {
       els.fileExtractHint.textContent = "";
@@ -2263,8 +2423,75 @@ export function wireStudyHandlers() {
     }
   });
 
+  if (els.loadOfflinePackBtn && els.offlinePackInput) {
+    els.loadOfflinePackBtn.addEventListener("click", () => {
+      clearOfflinePackError();
+      if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
+      els.offlinePackInput.click();
+    });
+    els.offlinePackInput.addEventListener("change", async () => {
+      clearOfflinePackError();
+      if (els.offlinePackStatus) els.offlinePackStatus.textContent = "";
+      const file = els.offlinePackInput.files?.[0];
+      if (!file) return;
+      setOfflinePackLoading(true);
+      try {
+        const text = await readFileAsText(file);
+        const parsed = parseOfflinePackMarkdown(text);
+        if (!parsed.ok) {
+          if (parsed.reason === "not_offline_pack") {
+            throw new Error(
+              "This file is not an offline pack. To import a regular session, use Resume.",
+            );
+          }
+          throw new Error("Invalid or corrupted offline pack");
+        }
+
+        const pack = parsed.value;
+        const blocks = normalizeOfflineBlocks(pack.blocks);
+        if (!blocks.length) {
+          throw new Error("Invalid or corrupted offline pack");
+        }
+
+        window.offlineMode = true;
+        window.offlinePack = pack;
+        state.lastUploadedFileNames = [String(file.name || "")];
+        state.lastNBlocks = blocks.length;
+        state.lastBlockIndex = blockIndexFromOfflineBlocks(blocks);
+        state.originalMaterialText = "";
+        state.lastCleanedMaterialText = "";
+        state.lastCleanedMaterialWordCount = 0;
+        if (els.fileInput) els.fileInput.value = "";
+        if (els.fileExtractHint) els.fileExtractHint.textContent = "";
+
+        setBlocksReadonlyMode({
+          enabled: true,
+          bannerText: "📦 Offline mode — all content pre-loaded",
+        });
+        renderBlockIndexEditor(state.lastBlockIndex, { readOnly: true });
+        if (els.blocksListOutput) {
+          els.blocksListOutput.value = formatBlockIndexForConfirmation(state.lastBlockIndex);
+        }
+        showScreen("blocks");
+      } catch (err) {
+        setOfflinePackError(err?.message ? String(err.message) : "Invalid or corrupted offline pack");
+      } finally {
+        setOfflinePackLoading(false);
+      }
+    });
+  }
+
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (isOfflineMode()) {
+      setGenerateError("Offline mode is active. Start this session from the loaded offline pack.");
+      return;
+    }
+    if (window.offlineMode === true) {
+      window.offlineMode = false;
+      window.offlinePack = null;
+    }
+    setBlocksReadonlyMode({ enabled: false, bannerText: "" });
     clearGenerateError();
     els.generateBlocksStatus.textContent = "";
     state.originalMaterialText = "";
@@ -2360,7 +2587,7 @@ export function wireStudyHandlers() {
       state.lastBlockIndex = finalIndex;
 
       renderSplitMergeSummary(mergeInfo);
-      renderBlockIndexEditor(finalIndex);
+      renderBlockIndexEditor(finalIndex, { readOnly: false });
       if (els.blocksListOutput) {
         // keep the hidden textarea in a stable, pretty format (debug + fallback)
         els.blocksListOutput.value = formatBlockIndexForConfirmation(finalIndex);
@@ -2377,6 +2604,51 @@ export function wireStudyHandlers() {
   els.confirmBlocksBtn.addEventListener("click", async () => {
     clearConfirmError();
     els.confirmBlocksStatus.textContent = "";
+
+    if (window.offlineMode === true) {
+      setConfirmLoading(true);
+      els.confirmBlocksStatus.textContent = "Loading offline session…";
+      try {
+        const pack = window.offlinePack && typeof window.offlinePack === "object" ? window.offlinePack : null;
+        const offlineBlocks = normalizeOfflineBlocks(pack?.blocks);
+        if (!pack || !offlineBlocks.length) {
+          throw new Error("Invalid or corrupted offline pack");
+        }
+        const index = blockIndexFromOfflineBlocks(offlineBlocks);
+        const confirmedBlocksListText = blocksListTextFromBlockIndex(index);
+        const sessionObj = initActiveSessionFromBlocksList({
+          nBlocks: offlineBlocks.length,
+          blocksListText: confirmedBlocksListText,
+        });
+        sessionObj.n_test = clampInt(pack?.config?.n_test, 0, 5, 2);
+        sessionObj.n_socratic = 0;
+        sessionObj.language = String(pack?.config?.language || getStudyLanguage()).trim() || "English";
+        sessionObj.blocks = offlineBlocks.map((b) => ({
+          ...b,
+          _config: { n_test: sessionObj.n_test, n_socratic: 0 },
+        }));
+        sessionObj._meta = pack.meta && typeof pack.meta === "object" ? pack.meta : {};
+        sessionObj.current_block_index = 0;
+        sessionObj.active_question_index = 0;
+        state.activeSession = sessionObj;
+        state.activeBlockIndex = 0;
+        state.activeQuestionIndex = 0;
+        state.nTest = sessionObj.n_test;
+        state.nSocratic = 0;
+        storeActiveSession(sessionObj);
+        window.assessmentConfig = { skipped: true };
+        showScreen("ready");
+        if (els.sessionReadyMeta) {
+          els.sessionReadyMeta.textContent = `Offline session ready. Blocks: ${offlineBlocks.length}`;
+        }
+      } catch (err) {
+        setConfirmError(err?.message ? String(err.message) : String(err));
+      } finally {
+        setConfirmLoading(false);
+        els.confirmBlocksStatus.textContent = "";
+      }
+      return;
+    }
 
     const apiKey = getStoredKey();
     if (!apiKey) {
@@ -2491,10 +2763,11 @@ export function wireStudyHandlers() {
         }));
       }
       storeActiveSession(sessionObj);
-      // Gate block generation behind an optional initial assessment step.
       window.assessmentConfig = { skipped: true };
-      setAssessmentUiDefaults();
-      showScreen("assessment");
+      showScreen("ready");
+      if (els.sessionReadyMeta) {
+        els.sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
+      }
     } catch (err) {
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
@@ -2504,6 +2777,98 @@ export function wireStudyHandlers() {
   });
 
   els.startStudyingBtn.addEventListener("click", async () => startStudyingNow());
+  if (els.generateFullPackBtn) {
+    els.generateFullPackBtn.addEventListener("click", async () => {
+      const blockIndex = Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex : [];
+      if (!blockIndex.length) {
+        if (els.startStudyingError) {
+          els.startStudyingError.hidden = false;
+          els.startStudyingError.textContent = "Missing blocks index. Please confirm blocks again.";
+        }
+        return;
+      }
+      if (!state.activeSession || typeof state.activeSession !== "object") {
+        if (els.startStudyingError) {
+          els.startStudyingError.hidden = false;
+          els.startStudyingError.textContent = "Missing active session.";
+        }
+        return;
+      }
+      if (els.startStudyingError) {
+        els.startStudyingError.hidden = true;
+        els.startStudyingError.textContent = "";
+      }
+
+      resetFullPackActions();
+      setFullPackProgressUi({ completed: 0, total: blockIndex.length, title: "", warning: "" });
+      showScreen("fullPackGenerating");
+      fullPackAbortController = new AbortController();
+      let currentCompleted = 0;
+
+      try {
+        const result = await generateAllBlocks(blockIndex, {
+          getApiKey: () => getStoredKey(),
+          blocksListText: String(state.activeSession?.blocks_list_text || ""),
+          language: getStudyLanguage(),
+          n_test: state.activeSession.n_test,
+          n_socratic: state.activeSession.n_socratic,
+          signal: fullPackAbortController.signal,
+          onProgress: ({ completed, total, title, block }) => {
+            currentCompleted = completed;
+            if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
+            state.activeSession.blocks[completed - 1] = block;
+            storeActiveSession(state.activeSession, { bumpRev: true });
+            setFullPackProgressUi({ completed, total, title });
+          },
+          onWarning: (msg) => {
+            setFullPackProgressUi({
+              completed: currentCompleted,
+              total: blockIndex.length,
+              warning: String(msg || ""),
+            });
+          },
+        });
+        state.activeSession.blocks = result.blocks;
+        storeActiveSession(state.activeSession, { bumpRev: true });
+        setFullPackProgressUi({
+          completed: blockIndex.length,
+          total: blockIndex.length,
+          done: true,
+          failedCount: result.failedCount,
+        });
+        exportOfflinePack();
+        if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
+        if (els.fullPackStudyNowBtn) els.fullPackStudyNowBtn.hidden = false;
+        if (els.fullPackExitBtn) els.fullPackExitBtn.hidden = false;
+      } catch (err) {
+        const msg = err?.message ? String(err.message) : String(err);
+        if (/cancelled/i.test(msg)) {
+          showScreen("blocks");
+        } else if (els.fullPackError) {
+          els.fullPackError.hidden = false;
+          els.fullPackError.textContent = msg;
+        }
+      } finally {
+        fullPackAbortController = null;
+      }
+    });
+  }
+  if (els.fullPackCancelBtn) {
+    els.fullPackCancelBtn.addEventListener("click", () => {
+      if (fullPackAbortController) fullPackAbortController.abort();
+      showScreen("blocks");
+    });
+  }
+  if (els.fullPackStudyNowBtn) {
+    els.fullPackStudyNowBtn.addEventListener("click", async () => {
+      await startStudyingNow();
+    });
+  }
+  if (els.fullPackExitBtn) {
+    els.fullPackExitBtn.addEventListener("click", () => {
+      showScreen("create");
+    });
+  }
 
   if (els.assessmentMaxQuestions) {
     els.assessmentMaxQuestions.addEventListener("input", () => {
@@ -2534,12 +2899,20 @@ export function wireStudyHandlers() {
   }
   if (els.assessmentSkipBtn) {
     els.assessmentSkipBtn.addEventListener("click", async () => {
+      if (isOfflineMode()) {
+        await startStudyingNow();
+        return;
+      }
       window.assessmentConfig = { skipped: true };
       await startStudyingNow();
     });
   }
   if (els.assessmentStartBtn) {
     els.assessmentStartBtn.addEventListener("click", async () => {
+      if (isOfflineMode()) {
+        await startStudyingNow();
+        return;
+      }
       const maxQuestions = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
       const penalise = els.assessmentPenaliseBtn?.getAttribute("aria-pressed") === "true";
       window.assessmentConfig = { maxQuestions, penalise, skipped: false };
@@ -2554,6 +2927,10 @@ export function wireStudyHandlers() {
   }
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
+    if (isOfflineMode()) {
+      setSocraticError("Offline mode supports test questions only.");
+      return;
+    }
     clearSocraticError();
     els.socraticStatus.textContent = "";
     els.socraticResponseBox.hidden = true;
@@ -2719,6 +3096,11 @@ export function wireStudyHandlers() {
   els.saveSessionBtn.addEventListener("click", () => {
     exportSessionMarkdown();
   });
+  if (els.downloadOfflinePackBtn) {
+    els.downloadOfflinePackBtn.addEventListener("click", () => {
+      exportOfflinePack();
+    });
+  }
   if (els.saveSessionInlineBtn) {
     els.saveSessionInlineBtn.addEventListener("click", () => exportSessionMarkdown());
   }
@@ -2735,6 +3117,9 @@ export function wireStudyHandlers() {
 
   if (els.summarySoFarBtn) {
     els.summarySoFarBtn.addEventListener("click", async () => {
+      if (isOfflineMode()) {
+        return;
+      }
       const explanations = state.activeSession?.blocks
         ?.filter((b) => b != null)
         .map((b) => b.explanation);
@@ -2864,6 +3249,7 @@ export function wireStudyHandlers() {
         if (pointer.session_complete) {
           state.activeBlockIndex = Math.max(0, sessionObj.n_blocks - 1);
           state.activeQuestionIndex = 0;
+          syncOfflinePackButtonVisibility();
           showScreen("complete");
         } else {
           state.activeBlockIndex = pointer.current_block_index;
@@ -2883,6 +3269,7 @@ export function wireStudyHandlers() {
     });
   }
 
+  syncOfflinePackButtonVisibility();
   updateDictionaryButtonVisibility();
 }
 

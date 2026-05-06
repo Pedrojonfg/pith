@@ -1,4 +1,5 @@
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260503_7";
+import { isOfflineMode } from "./main.js?v=20260503_7";
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
@@ -10,6 +11,7 @@ export const els = {
   screenBlocksList: document.getElementById("screenBlocksList"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
   screenSessionReady: document.getElementById("screenSessionReady"),
+  screenFullPackGenerating: document.getElementById("screenFullPackGenerating"),
   screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
   screenSocratic: document.getElementById("screenSocratic"),
   screenTest: document.getElementById("screenTest"),
@@ -31,6 +33,7 @@ export const els = {
   summarySoFarBtn: document.getElementById("summarySoFarBtn"),
 
   saveSessionBtn: document.getElementById("saveSessionBtn"),
+  downloadOfflinePackBtn: document.getElementById("downloadOfflinePackBtn"),
   reviewSessionBtn: document.getElementById("reviewSessionBtn"),
 
   betweenBlocksDictionaryWrap: document.getElementById(
@@ -92,6 +95,10 @@ export const els = {
   generateBlocksForm: document.getElementById("generateBlocksForm"),
   fileInput: document.getElementById("fileInput"),
   fileExtractHint: document.getElementById("fileExtractHint"),
+  loadOfflinePackBtn: document.getElementById("loadOfflinePackBtn"),
+  offlinePackInput: document.getElementById("offlinePackInput"),
+  offlinePackStatus: document.getElementById("offlinePackStatus"),
+  offlinePackError: document.getElementById("offlinePackError"),
   resumeMaterialInput: document.getElementById("resumeMaterialInput"),
   resumeMdInput: document.getElementById("resumeMdInput"),
   resumeSessionBtn: document.getElementById("resumeSessionBtn"),
@@ -115,6 +122,7 @@ export const els = {
   blocksCollapseAllBtn: document.getElementById("blocksCollapseAllBtn"),
   blocksClearFilterBtn: document.getElementById("blocksClearFilterBtn"),
   blocksListEditor: document.getElementById("blocksListEditor"),
+  blocksReadonlyBanner: document.getElementById("blocksReadonlyBanner"),
   blocksListOutput: document.getElementById("blocksListOutput"),
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
@@ -132,8 +140,17 @@ export const els = {
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   startStudyingBtn: document.getElementById("startStudyingBtn"),
+  generateFullPackBtn: document.getElementById("generateFullPackBtn"),
   startStudyingStatus: document.getElementById("startStudyingStatus"),
   startStudyingError: document.getElementById("startStudyingError"),
+  fullPackProgressLabel: document.getElementById("fullPackProgressLabel"),
+  fullPackProgressFill: document.getElementById("fullPackProgressFill"),
+  fullPackEtaLabel: document.getElementById("fullPackEtaLabel"),
+  fullPackWarning: document.getElementById("fullPackWarning"),
+  fullPackError: document.getElementById("fullPackError"),
+  fullPackCancelBtn: document.getElementById("fullPackCancelBtn"),
+  fullPackStudyNowBtn: document.getElementById("fullPackStudyNowBtn"),
+  fullPackExitBtn: document.getElementById("fullPackExitBtn"),
 
   betweenBlocksHeader: document.getElementById("betweenBlocksHeader"),
   betweenBlocksMeta: document.getElementById("betweenBlocksMeta"),
@@ -177,6 +194,63 @@ export const els = {
   testNextBtn: document.getElementById("testNextBtn"),
   testError: document.getElementById("testError"),
 };
+
+function ensureOfflinePackButton() {
+  if (els.downloadOfflinePackBtn) return els.downloadOfflinePackBtn;
+  const actionsRow = els.screenComplete?.querySelector(".row");
+  if (!actionsRow) return null;
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "downloadOfflinePackBtn";
+  btn.textContent = "Download offline pack";
+  btn.hidden = true;
+  if (els.reviewSessionBtn && els.reviewSessionBtn.parentElement === actionsRow) {
+    actionsRow.insertBefore(btn, els.reviewSessionBtn);
+  } else {
+    actionsRow.appendChild(btn);
+  }
+  els.downloadOfflinePackBtn = btn;
+  return btn;
+}
+
+ensureOfflinePackButton();
+
+export function setOfflinePackButtonVisibility(isVisible) {
+  const btn = ensureOfflinePackButton();
+  if (!btn) return;
+  btn.hidden = !isVisible;
+}
+
+function ensureOfflineModeBanner() {
+  if (els.offlineModeBanner) return els.offlineModeBanner;
+  if (!els.studyProgress) return null;
+  const banner = document.createElement("div");
+  banner.id = "offlineModeBanner";
+  banner.className = "hint";
+  banner.textContent = "📦 Offline mode";
+  banner.style.marginTop = "6px";
+  banner.style.fontSize = "12px";
+  banner.hidden = true;
+  els.studyProgress.appendChild(banner);
+  els.offlineModeBanner = banner;
+  return banner;
+}
+
+function applyOfflineUiRestrictions() {
+  const offline = isOfflineMode();
+  const banner = ensureOfflineModeBanner();
+  if (banner) banner.hidden = !offline;
+  if (els.summarySoFarBtn) {
+    els.summarySoFarBtn.hidden = offline;
+  }
+  if (els.generateFullPackBtn) {
+    els.generateFullPackBtn.hidden = offline;
+  }
+  const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.style.display = offline ? "none" : "";
+  }
+}
 
 function ensurePrefetchDot() {
   if (!els.studyProgressLabel) return;
@@ -265,6 +339,7 @@ export function typesetMath(containerEl) {
 }
 
 export function toggleSidebar() {
+  if (isOfflineMode()) return;
   const sidebar = document.getElementById("guide-sidebar");
   if (!sidebar) return;
   if (sidebar.classList.contains("disabled")) return;
@@ -286,6 +361,7 @@ export function hideSidebar() {
 }
 
 export function showSidebar() {
+  if (isOfflineMode()) return;
   const sidebar = document.getElementById("guide-sidebar");
   const toggleBtn = document.getElementById("sidebar-toggle-btn");
   if (sidebar) {
@@ -336,6 +412,7 @@ export function showScreen(which) {
   const showBlocks = which === "blocks";
   const showAssessment = which === "assessment";
   const showReady = which === "ready";
+  const showFullPackGenerating = which === "fullPackGenerating";
   const showBetween = which === "between";
   const showSocratic = which === "socratic";
   const showTest = which === "test";
@@ -351,6 +428,7 @@ export function showScreen(which) {
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
   els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
+  els.screenFullPackGenerating.setAttribute("aria-hidden", String(!showFullPackGenerating));
   els.screenBetweenBlocks.setAttribute("aria-hidden", String(!showBetween));
   els.screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
   els.screenTest.setAttribute("aria-hidden", String(!showTest));
@@ -365,6 +443,7 @@ export function showScreen(which) {
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
+  applyOfflineUiRestrictions();
 
   if (showSetup) {
     els.apiKeyInput.value = "";

@@ -8,6 +8,8 @@ import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=202605
 import { wireReviewHandlers } from "./review.js?v=20260503_7";
 import { wireStudyHandlers } from "./study.js?v=20260503_7";
 
+export const isOfflineMode = () => window.offlineMode === true;
+
 function clearActiveSessionStorage() {
   try {
     localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
@@ -27,6 +29,8 @@ function clearBlockIndexStorage() {
 function resetToNewSession() {
   cancelRsvpTimer();
   setRsvpOverlayActive(false);
+  window.offlineMode = false;
+  window.offlinePack = null;
 
   state.studyMode = null;
   state.originalMaterialText = "";
@@ -71,6 +75,8 @@ function startNewSessionFlow() {
 }
 
 function bootstrap() {
+  if (window.offlineMode !== true) window.offlineMode = false;
+  if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
   wireStudyHandlers();
   wireReviewHandlers();
