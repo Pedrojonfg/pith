@@ -1855,6 +1855,9 @@ function ensureAssessmentRunnerEls() {
 }
 
 export function wireStudyHandlers() {
+  // #region agent log
+  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H4',location:'src/js/study.js:1858',message:'wireStudyHandlers refs',data:{hasImportIndexBtn:!!els.importIndexBtn,hasImportIndexFile:!!els.importIndexFile,hasLoadOfflinePackBtn:!!els.loadOfflinePackBtn},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   const defaults = loadDefaultQuestionConfig();
   state.nTest = clampInt(defaults.n_test, 0, 5, 2);
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
