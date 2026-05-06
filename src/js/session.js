@@ -7,6 +7,7 @@ import {
 } from "./config.js?v=20260503_7";
 import { deepSeekGenerateBlockJson } from "./api.js?v=20260503_7";
 import { getStudyLanguage } from "./ui.js?v=20260503_7";
+import { isOfflineMode } from "./main.js?v=20260503_7";
 
 export const state = {
   studyMode: null,
@@ -114,6 +115,38 @@ export function loadActiveSession() {
 
 export function getBlocksSafe() {
   return Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
+}
+
+export function getBlock(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (isOfflineMode()) {
+    const blocks = Array.isArray(window?.offlinePack?.blocks) ? window.offlinePack.blocks : [];
+    return blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+  }
+  const blocks = getBlocksSafe();
+  return blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+}
+
+export function shouldTriggerCommentReply() {
+  return !isOfflineMode();
+}
+
+export function areAllSessionBlocksGenerated(sessionObj = state.activeSession) {
+  const safe = sessionObj && typeof sessionObj === "object" ? sessionObj : {};
+  const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
+  const total = Number(safe.n_blocks);
+  const expected = Number.isFinite(total) && total > 0 ? total : blocks.length;
+  if (!expected) return false;
+  for (let i = 0; i < expected; i += 1) {
+    const b = blocks[i];
+    const ok =
+      b &&
+      typeof b === "object" &&
+      typeof b.explanation === "string" &&
+      Array.isArray(b.questions);
+    if (!ok) return false;
+  }
+  return true;
 }
 
 export function getTotalBlocksSafe() {
@@ -262,6 +295,11 @@ export function getBlockChunkFromIndex(blockIndex) {
 
 export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, previousComment } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (isOfflineMode()) {
+    const block = getBlock(idx);
+    if (!block) throw new Error("Missing offline block.");
+    return block;
+  }
   const apiKey = getStoredKey();
   if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
 
@@ -697,6 +735,31 @@ export function safeParseJson(text) {
   return null;
 }
 
+export function parseOfflinePackMarkdown(text) {
+  const raw = String(text || "");
+  const match = raw.match(/<!--\s*OFFLINE_PACK_V1\s*([\s\S]*?)-->/);
+  if (!match) {
+    return { ok: false, reason: "not_offline_pack" };
+  }
+  const jsonText = String(match[1] || "").trim();
+  if (!jsonText) {
+    return { ok: false, reason: "invalid" };
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  const hasVersion = Object.prototype.hasOwnProperty.call(parsed || {}, "version");
+  const hasMeta = parsed && typeof parsed === "object" && parsed.meta && typeof parsed.meta === "object";
+  const hasBlocks = Array.isArray(parsed?.blocks);
+  if (!hasVersion || !hasMeta || !hasBlocks) {
+    return { ok: false, reason: "invalid" };
+  }
+  return { ok: true, value: parsed };
+}
+
 export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
   if (!Array.isArray(arr)) return null;
   const out = [];
@@ -1102,6 +1165,7 @@ function sleep(ms) {
 }
 
 export function triggerPrefetch(blockIndex, { n_test, n_socratic, force } = {}) {
+  if (isOfflineMode()) return;
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const cfg = {
     n_test: clampInt(n_test, 0, 5, resolveBlockQuestionConfig(idx).n_test),
@@ -1146,6 +1210,11 @@ export function triggerPrefetch(blockIndex, { n_test, n_socratic, force } = {}) 
 
 export async function getPrefetchedBlock(blockIndex, { configKey } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (isOfflineMode()) {
+    const block = getBlock(idx);
+    if (!block) throw new Error("Missing offline block.");
+    return block;
+  }
   const wantKey = configKey != null ? String(configKey) : null;
 
   if (
