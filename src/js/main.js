@@ -89,6 +89,30 @@ function bootstrap() {
   if (sidebarToggleBtn) {
     sidebarToggleBtn.addEventListener("click", toggleSidebar);
   }
+
+  const installPwaBtn = document.getElementById("installPwaBtn");
+  let installPromptEvent = null;
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    installPromptEvent = e;
+    if (installPwaBtn) installPwaBtn.hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    installPromptEvent = null;
+    if (installPwaBtn) installPwaBtn.hidden = true;
+  });
+  if (installPwaBtn) {
+    installPwaBtn.addEventListener("click", async () => {
+      if (!installPromptEvent) return;
+      installPromptEvent.prompt();
+      try {
+        await installPromptEvent.userChoice;
+      } catch {
+        // ignore
+      }
+    });
+  }
+
   if (sidebarCloseBtn && sidebar) {
     sidebarCloseBtn.addEventListener("click", () => {
       sidebar.classList.add("collapsed");
