@@ -380,8 +380,12 @@ textarea:focus {
 .rsvp-word-display {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0;
-  white-space: nowrap;
+  white-space: pre;
+  text-align: center;
+  max-width: 100%;
+  margin: 0 auto;
 }
 .rsvp-before {
   display: inline;
@@ -408,6 +412,13 @@ textarea:focus {
 .rsvp-chunk mjx-container,
 .rsvp-chunk .mjx-chtml {
   max-width: 100%;
+}
+.rsvp-word-display mjx-container {
+  margin: 0 !important;
+}
+.rsvp-word-display mjx-container[display="true"] {
+  display: inline-block !important;
+  text-align: center !important;
 }
 .rsvp-controls {
   border-top: 1px solid var(--border);
