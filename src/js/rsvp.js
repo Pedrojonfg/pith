@@ -30,6 +30,7 @@ const RSVP_MOBILE_HEIGHT = 90;
 let rsvpContainerEl = null;
 let rsvpResizeObserver = null;
 let lastCalculatedNormalFontSize = 16;
+let lastFontSizeCalcArgs = { containerWidth: null, containerHeight: null, wordCount: null };
 
 function isRsvpMobileViewport() {
   return window.innerWidth < 600;
@@ -63,32 +64,45 @@ function persistRsvpContainerSize(width, height) {
 
 function calcRSVPFontSize(containerWidth, containerHeight, wordCount) {
   const testEl = document.getElementById("rsvp-word-display");
-  if (!testEl) return lastCalculatedNormalFontSize;
-  if (!Number.isFinite(containerWidth) || !Number.isFinite(containerHeight)) {
-    return lastCalculatedNormalFontSize;
-  }
-  // Keep signature aligned with caller context; longer flashes naturally
-  // measure larger through scrollWidth/scrollHeight.
-  void wordCount;
-  let lo = 8;
-  let hi = 120;
-  let best = 16;
-  for (let i = 0; i < 12; i += 1) {
-    const mid = (lo + hi) / 2;
-    testEl.style.fontSize = `${mid}px`;
-    const fits =
-      testEl.scrollWidth <= containerWidth * 0.85 &&
-      testEl.scrollHeight <= containerHeight * 0.7;
+  if (!testEl) return;
+
+  // Allow calling without args (e.g., MathJax timing callback).
+  const cw =
+    Number.isFinite(containerWidth) ? containerWidth : Number(lastFontSizeCalcArgs.containerWidth);
+  const ch =
+    Number.isFinite(containerHeight) ? containerHeight : Number(lastFontSizeCalcArgs.containerHeight);
+  const wc =
+    Number.isFinite(wordCount) ? wordCount : Number(lastFontSizeCalcArgs.wordCount);
+  void wc;
+  if (!Number.isFinite(cw) || !Number.isFinite(ch)) return;
+
+  // Start higher — LaTeX and symbols need breathing room
+  let lo = 16,
+    hi = 200,
+    best = 32;
+
+  for (let i = 0; i < 15; i++) {
+    const mid = Math.floor((lo + hi) / 2);
+    testEl.style.fontSize = mid + "px";
+
+    // Force layout recalc
+    const scrollWidth = testEl.scrollWidth;
+    const scrollHeight = testEl.scrollHeight;
+
+    // More generous thresholds
+    // Target: use 75% of width and 60% of height (was 85% / 70%)
+    const fits = scrollWidth <= cw * 0.75 && scrollHeight <= ch * 0.6;
+
     if (fits) {
       best = mid;
-      lo = mid;
+      lo = mid + 1;
     } else {
-      hi = mid;
+      hi = mid - 1;
     }
   }
-  testEl.style.fontSize = `${best}px`;
+
+  testEl.style.fontSize = best + "px";
   lastCalculatedNormalFontSize = best;
-  return best;
 }
 
 function isLatexLikeChunk(meta) {
@@ -99,6 +113,11 @@ function isLatexLikeChunk(meta) {
 function applyRsvpFontSizingForChunk(meta) {
   const displayEl = document.getElementById("rsvp-word-display");
   if (!displayEl || !rsvpContainerEl || !meta) return;
+  lastFontSizeCalcArgs = {
+    containerWidth: rsvpContainerEl.clientWidth,
+    containerHeight: rsvpContainerEl.clientHeight,
+    wordCount: null,
+  };
   if (isLatexLikeChunk(meta)) {
     displayEl.style.fontSize = `${Math.max(8, lastCalculatedNormalFontSize * 0.6)}px`;
     return;
@@ -107,7 +126,8 @@ function applyRsvpFontSizingForChunk(meta) {
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
-  calcRSVPFontSize(rsvpContainerEl.clientWidth, rsvpContainerEl.clientHeight, wc);
+  lastFontSizeCalcArgs.wordCount = wc;
+  calcRSVPFontSize(lastFontSizeCalcArgs.containerWidth, lastFontSizeCalcArgs.containerHeight, wc);
 }
 
 function applyRsvpContainerSizing() {
@@ -217,6 +237,37 @@ function getORP(word) {
   if (len <= 9) return 2;
   if (len <= 13) return 3;
   return 4;
+}
+
+/** @param {string} word */
+function renderRSVPWord(word) {
+  const raw = String(word ?? "");
+  const orpIndex = Math.min(getORP(raw), Math.max(raw.length - 1, 0));
+
+  // Preserve ALL spacing and punctuation in the final render.
+  // Don't strip anything — split only for coloring.
+  const beforeText = raw.slice(0, orpIndex);
+  const orpText = raw[orpIndex] || "";
+  const afterText = raw.slice(orpIndex + 1);
+
+  const display = document.createElement("span");
+  display.className = "rsvp-word-display";
+  display.id = "rsvp-word-display";
+
+  const before = document.createElement("span");
+  before.className = "rsvp-before";
+  before.textContent = beforeText;
+
+  const orp = document.createElement("span");
+  orp.className = "rsvp-orp";
+  orp.textContent = orpText;
+
+  const after = document.createElement("span");
+  after.className = "rsvp-after";
+  after.textContent = afterText;
+
+  display.append(before, orp, after);
+  return display;
 }
 
 /** True if odd number of `\` chars immediately precede `idx`. */
@@ -387,25 +438,7 @@ function applyChunkToDom(meta) {
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
   if (meta.type === "text") {
-    const word = String(meta.content || "");
-    const orpIndex = Math.min(getORP(word), Math.max(word.length - 1, 0));
-    const display = document.createElement("span");
-    display.className = "rsvp-word-display";
-    display.id = "rsvp-word-display";
-
-    const before = document.createElement("span");
-    before.className = "rsvp-before";
-    before.textContent = word.slice(0, orpIndex);
-
-    const orp = document.createElement("span");
-    orp.className = "rsvp-orp";
-    orp.textContent = word[orpIndex] || "";
-
-    const after = document.createElement("span");
-    after.className = "rsvp-after";
-    after.textContent = word.slice(orpIndex + 1);
-
-    display.append(before, orp, after);
+    const display = renderRSVPWord(meta.content || "");
     els.rsvpChunk.appendChild(display);
     applyRsvpFontSizingForChunk(meta);
     return Promise.resolve();
@@ -418,6 +451,11 @@ function applyChunkToDom(meta) {
     mathDisplay.innerHTML = meta.preRenderedHtml;
     els.rsvpChunk.appendChild(mathDisplay);
     applyRsvpFontSizingForChunk(meta);
+    if (window.MathJax?.typesetPromise) {
+      MathJax.typesetPromise().then(() => {
+        setTimeout(() => calcRSVPFontSize(), 100);
+      });
+    }
     return Promise.resolve();
   }
   // Fallback: render on-demand with a FRESH child element so MathJax always
@@ -427,7 +465,13 @@ function applyChunkToDom(meta) {
   mathDisplay.appendChild(el);
   els.rsvpChunk.appendChild(mathDisplay);
   applyRsvpFontSizingForChunk(meta);
-  return typesetMath(el);
+  const p = typesetMath(el);
+  if (window.MathJax?.typesetPromise) {
+    MathJax.typesetPromise().then(() => {
+      setTimeout(() => calcRSVPFontSize(), 100);
+    });
+  }
+  return p;
 }
 
 /**
@@ -625,6 +669,17 @@ export function startRsvpForText(explanationText, onDone) {
   hideSidebar();
   setRsvpOverlayActive(true);
   ensureRsvpContainer();
+
+  // Ensure the container size is adequate on first load.
+  const container =
+    document.getElementById("rsvp-container") ||
+    rsvpContainerEl ||
+    els.rsvpOverlay.querySelector(".rsvp-container");
+  if (container && (container.offsetWidth < 300 || container.offsetHeight < 80)) {
+    container.style.width = "500px";
+    container.style.height = "150px";
+  }
+
   els.rsvpWpm.value = String(rsvpState.wpm);
   els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
   setWpfUi(rsvpState.wordsPerFlash);
