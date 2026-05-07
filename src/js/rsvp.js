@@ -214,18 +214,17 @@ function finalPauseMs() {
 }
 
 function tokenizeWords(text) {
-  const raw = String(text || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!raw) return [];
-  return raw.split(" ").filter(Boolean);
+  const raw = String(text || "");
+  if (!raw.trim()) return [];
+  // Preserve original spacing by keeping trailing whitespace with each token.
+  return raw.match(/\S+\s*/g) || [];
 }
 
 function chunkWords(words, wordsPerFlash) {
   const wpf = Math.max(1, Number(wordsPerFlash) || 1);
   const out = [];
   for (let i = 0; i < words.length; i += wpf) {
-    out.push(words.slice(i, i + wpf).join(" "));
+    out.push(words.slice(i, i + wpf).join(""));
   }
   return out;
 }
@@ -438,7 +437,7 @@ function applyChunkToDom(meta) {
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
   if (meta.type === "text") {
-    const display = renderRSVPWord(meta.content || "");
+    const display = renderRSVPWord(String(meta.content || "").trimEnd());
     els.rsvpChunk.appendChild(display);
     applyRsvpFontSizingForChunk(meta);
     return Promise.resolve();
@@ -452,7 +451,7 @@ function applyChunkToDom(meta) {
     els.rsvpChunk.appendChild(mathDisplay);
     applyRsvpFontSizingForChunk(meta);
     if (window.MathJax?.typesetPromise) {
-      MathJax.typesetPromise().then(() => {
+      window.MathJax.typesetPromise().then(() => {
         setTimeout(() => calcRSVPFontSize(), 100);
       });
     }
@@ -467,7 +466,7 @@ function applyChunkToDom(meta) {
   applyRsvpFontSizingForChunk(meta);
   const p = typesetMath(el);
   if (window.MathJax?.typesetPromise) {
-    MathJax.typesetPromise().then(() => {
+    window.MathJax.typesetPromise().then(() => {
       setTimeout(() => calcRSVPFontSize(), 100);
     });
   }
