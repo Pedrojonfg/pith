@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_2";
+import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_3";
 
 function stripJsonFence(text) {
   return String(text || "")
@@ -62,6 +62,33 @@ function escapeInvalidJsonBackslashes(text) {
   return String(text || "").replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
 }
 
+function repairJsonLight(text) {
+  return String(text || "")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/,\s*([\]}])/g, "$1");
+}
+
+function tryParseJsonCandidate(candidate) {
+  if (!candidate) return null;
+  const attempts = [
+    candidate,
+    repairJsonLight(candidate),
+    escapeLatexMathBackslashes(candidate),
+    escapeInvalidJsonBackslashes(candidate),
+    escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate)),
+    repairJsonLight(escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate))),
+  ];
+  for (const text of attempts) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      // next repair
+    }
+  }
+  return null;
+}
+
 function parseModelJsonObject(text) {
   const raw = String(text || "").trim();
   const withoutFence = stripJsonFence(raw);
@@ -70,27 +97,8 @@ function parseModelJsonObject(text) {
   const uniqueCandidates = Array.from(new Set(candidates));
 
   for (const candidate of uniqueCandidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // try repair candidates below
-    }
-  }
-
-  for (const candidate of uniqueCandidates) {
-    const repairedCandidates = [
-      escapeLatexMathBackslashes(candidate),
-      escapeInvalidJsonBackslashes(candidate),
-      escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate)),
-    ];
-
-    for (const repaired of repairedCandidates) {
-      try {
-        return JSON.parse(repaired);
-      } catch {
-        // try next repair
-      }
-    }
+    const parsed = tryParseJsonCandidate(candidate);
+    if (parsed != null) return parsed;
   }
 
   return null;
@@ -106,26 +114,8 @@ function parseModelJsonValue(text) {
   const uniqueCandidates = Array.from(new Set(candidates));
 
   for (const candidate of uniqueCandidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch {
-      // try repair candidates below
-    }
-  }
-
-  for (const candidate of uniqueCandidates) {
-    const repairedCandidates = [
-      escapeLatexMathBackslashes(candidate),
-      escapeInvalidJsonBackslashes(candidate),
-      escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate)),
-    ];
-    for (const repaired of repairedCandidates) {
-      try {
-        return JSON.parse(repaired);
-      } catch {
-        // try next repair
-      }
-    }
+    const parsed = tryParseJsonCandidate(candidate);
+    if (parsed != null) return parsed;
   }
 
   return null;
@@ -276,7 +266,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260523_2");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260523_3");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated
@@ -634,6 +624,68 @@ Be concise. Respond in {language}.`.replace("{language}", language);
   return content.trim();
 }
 
+function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
+  const chunkRule = compact
+    ? '- Set "chunk" to "" for every block.'
+    : '- Set "chunk" to "" (the app assigns source text locally; do NOT paste document text into chunk).';
+  return `You are splitting a study document into exactly ${n} blocks.
+
+Rules:
+- Return EXACTLY ${n} objects with ids 1 through ${n} (no more, no fewer).
+- Each block must cover ONE distinct concept. Not one section, one concept.
+- If multiple sections discuss the SAME idea, merge them into ONE block titled after the concept.
+- Never create a block whose primary concept appears in another block.
+- Each block must have a unique "signature": list of 3-5 key terms for that block only.
+${chunkRule}
+- Valid JSON only: double-quoted keys/strings, no trailing commas, no comments.
+
+Return ONLY one JSON object (no markdown, no preamble):
+{"blocks":[{"id":1,"title":"...","summary":"2-3 sentences","signature":["a","b"],"chunk":""}]}
+
+Cover the ENTIRE document in order. Respond entirely in ${lang}.`;
+}
+
+async function callDeepSeekSplit({ apiKey, messages, useJsonObjectMode }) {
+  const body = {
+    model: "deepseek-chat",
+    messages,
+    temperature: 0.2,
+  };
+  if (useJsonObjectMode) {
+    body.response_format = { type: "json_object" };
+  }
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // ignore
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    const err = new Error(apiMsg);
+    err.status = res.status;
+    throw err;
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new Error("Unexpected API response (missing message content).");
+  }
+  return content.trim();
+}
+
 export async function deepSeekSplitIntoBlocks({
   apiKey,
   nBlocks,
@@ -643,74 +695,61 @@ export async function deepSeekSplitIntoBlocks({
 }) {
   const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || "English").trim() || "English";
-  const systemPrompt = `You are splitting a study document into exactly ${n} blocks.
-
-Rules:
-- Return EXACTLY ${n} objects with ids 1 through ${n} (no more, no fewer).
-- Each block must cover ONE distinct concept. Not one section, one concept.
-- If multiple sections discuss the SAME idea, merge them into ONE block titled after the concept.
-- Never create a block whose primary concept appears in another block.
-- Each block must have a unique "signature": a list of 3-5 key terms that ONLY appear as the main focus of that block, not in others.
-- The "chunk" field must include ALL source text relevant to that concept, even if it spans multiple sections.
-- Escape backslashes in JSON strings (e.g. LaTeX \\\\frac not \\frac).
-
-Return ONLY a JSON array (no markdown fences, no preamble):
-[{
-  "id": 1,
-  "title": "...",
-  "summary": "2-3 sentences",
-  "signature": ["term1", "term2", "term3"],
-  "chunk": "verbatim text from ALL relevant sections"
-}]
-
-You MUST cover the ENTIRE document. The last block must correspond to the last section. Each concept appears in exactly ONE block.
-
-Respond entirely in ${lang}.`;
-
-  const messages = [{ role: "system", content: systemPrompt }];
   const notes = String(studyNotes || "").trim();
-  if (notes) {
+  const material = String(materialText || "").trim();
+
+  function buildMessages(compact) {
+    const messages = [{ role: "system", content: buildSplitBlocksPrompt(n, lang, { compact }) }];
+    if (notes) {
+      messages.push({
+        role: "user",
+        content: `Student comments / study focus (follow these preferences when splitting):\n${notes}`,
+      });
+    }
     messages.push({
       role: "user",
-      content: `Student comments / study focus (follow these preferences when splitting):\n${notes}`,
+      content: `Split the following material into exactly ${n} blocks.\n\n${material}`,
     });
-  }
-  messages.push({
-    role: "user",
-    content: `Split the following material into exactly ${n} blocks.\n\n${materialText}`,
-  });
-
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages,
-      temperature: 0.2,
-    }),
-  });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
+    return messages;
   }
 
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
+  const attempts = [
+    { compact: false, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: false },
+  ];
+
+  let lastRaw = "";
+  for (const attempt of attempts) {
+    try {
+      lastRaw = await callDeepSeekSplit({
+        apiKey,
+        messages: buildMessages(attempt.compact),
+        useJsonObjectMode: attempt.useJsonObjectMode,
+      });
+    } catch (err) {
+      if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+        lastRaw = await callDeepSeekSplit({
+          apiKey,
+          messages: buildMessages(attempt.compact),
+          useJsonObjectMode: false,
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    const blocks = parseBlockIndexFromModelResponse(lastRaw);
+    if (Array.isArray(blocks) && blocks.length) {
+      return blocks;
+    }
+    console.warn("Block split: parse failed, trying next attempt…", lastRaw.slice(0, 400));
   }
 
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
+  console.warn("Block split: all parse attempts failed:", lastRaw.slice(0, 800));
+  throw new Error(
+    "DeepSeek returned blocks JSON we could not parse. Please try generating blocks again.",
+  );
 }
 
 export async function deepSeekAuditBlockIndex({ apiKey, blockIndexJson, language }) {

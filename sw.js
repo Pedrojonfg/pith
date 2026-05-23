@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v5";
+const CACHE_NAME = "mylearning-v6";
 
 const STATIC_ASSETS = [
   "/",

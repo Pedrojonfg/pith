@@ -3,9 +3,9 @@ import {
   LS_ACTIVE_SESSION_KEY,
   LS_KEY,
   LS_STUDY_LANG_KEY,
-} from "./config.js?v=20260523_2";
-import { typesetMath } from "./ui.js?v=20260523_2";
-import { isOfflineMode } from "./main.js?v=20260523_2";
+} from "./config.js?v=20260523_3";
+import { typesetMath } from "./ui.js?v=20260523_3";
+import { isOfflineMode } from "./main.js?v=20260523_3";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
