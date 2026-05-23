@@ -1,10 +1,10 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis, parseBlockIndexFromModelResponse } from "./api.js?v=20260523_1";
-import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_1";
-import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260523_1";
-import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260523_1";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260523_1";
-import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260523_1";
-import { isOfflineMode } from "./main.js?v=20260523_1";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis, parseBlockIndexFromModelResponse } from "./api.js?v=20260523_2";
+import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_2";
+import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260523_2";
+import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260523_2";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260523_2";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260523_2";
+import { isOfflineMode } from "./main.js?v=20260523_2";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -40,9 +40,9 @@ import {
   ensureSessionResponseState,
   applyAssessmentResults,
   generateOfflinePack,
-} from "./session.js?v=20260523_1";
-import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260523_1";
-import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260523_1";
+} from "./session.js?v=20260523_2";
+import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260523_2";
+import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260523_2";
 
 let splitMergeSummaryEls = null;
 function ensureSplitMergeSummaryEls() {

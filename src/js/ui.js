@@ -1,5 +1,5 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260523_1";
-import { isOfflineMode } from "./main.js?v=20260523_1";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260523_2";
+import { isOfflineMode } from "./main.js?v=20260523_2";
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),

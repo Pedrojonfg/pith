@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_1";
+import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_2";
 
 function stripJsonFence(text) {
   return String(text || "")
@@ -276,7 +276,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260523_1");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260523_2");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated

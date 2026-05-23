@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v4";
+const CACHE_NAME = "mylearning-v5";
 
 const STATIC_ASSETS = [
   "/",
@@ -61,6 +61,24 @@ function isMathJaxAsset(url) {
   return MATHJAX_URLS.includes(url.href);
 }
 
+/** App JS/HTML must be network-first so deploys are not stuck on stale cache. */
+function isNetworkFirstAsset(url) {
+  if (url.pathname === "/index.html" || url.pathname === "/") return true;
+  return url.pathname.startsWith("/src/js/") && url.pathname.endsWith(".js");
+}
+
+function networkFirst(req) {
+  return fetch(req)
+    .then((res) => {
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
+      }
+      return res;
+    })
+    .catch(() => caches.match(req));
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -68,6 +86,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
 
   if (isApiRequest(url)) {
+    return;
+  }
+
+  if (isNetworkFirstAsset(url)) {
+    event.respondWith(networkFirst(req));
     return;
   }
 
@@ -85,13 +108,5 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
-        return res;
-      })
-      .catch(() => caches.match(req)),
-  );
+  event.respondWith(networkFirst(req));
 });

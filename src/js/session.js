@@ -4,10 +4,10 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260523_1";
-import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_1";
-import { getStudyLanguage } from "./ui.js?v=20260523_1";
-import { isOfflineMode } from "./main.js?v=20260523_1";
+} from "./config.js?v=20260523_2";
+import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_2";
+import { getStudyLanguage } from "./ui.js?v=20260523_2";
+import { isOfflineMode } from "./main.js?v=20260523_2";
 
 export const state = {
   studyMode: null,
@@ -970,7 +970,7 @@ export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
     if (!item || typeof item !== "object") return null;
     const id = Number(item.id);
     const title = String(item.title || "").trim();
-    const summary = String(item.summary || "").trim();
+    const summary = String(item.summary || item.title || "").trim();
     const signatureArr = Array.isArray(item.signature) ? item.signature : null;
     const signature = signatureArr
       ? signatureArr.map((t) => String(t || "").trim()).filter(Boolean)
@@ -1145,7 +1145,7 @@ export async function auditBlockIndex(blockIndex, { apiKey, language }) {
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_1");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_2");
   const text = await deepSeekAuditBlockIndex({
     apiKey: key,
     blockIndexJson: payload,
@@ -1172,7 +1172,7 @@ export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids
     .join("\n\n")
     .trim();
 
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_1");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_2");
   const mergedChunk = await deepSeekPostMergeChunk({
     apiKey: key,
     keep_id,
