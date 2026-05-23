@@ -1,10 +1,10 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260503_7";
-import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
-import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260503_7";
-import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260503_7";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260503_7";
-import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260503_7";
-import { isOfflineMode } from "./main.js?v=20260503_7";
+import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis, parseBlockIndexFromModelResponse } from "./api.js?v=20260523_1";
+import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_1";
+import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260523_1";
+import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260523_1";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260523_1";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260523_1";
+import { isOfflineMode } from "./main.js?v=20260523_1";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -21,6 +21,7 @@ import {
   initActiveSessionFromBlocksList,
   loadDefaultQuestionConfig,
   loadActiveSession,
+  coerceBlockIndexToTargetCount,
   normalizeBlockIndexArray,
   parseImportedIndexText,
   parseOfflinePackMarkdown,
@@ -39,9 +40,9 @@ import {
   ensureSessionResponseState,
   applyAssessmentResults,
   generateOfflinePack,
-} from "./session.js?v=20260503_7";
-import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260503_7";
-import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260503_7";
+} from "./session.js?v=20260523_1";
+import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260523_1";
+import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260523_1";
 
 let splitMergeSummaryEls = null;
 function ensureSplitMergeSummaryEls() {
@@ -1875,6 +1876,21 @@ export function wireStudyHandlers() {
     }
   }
 
+  function goToSessionReady(nBlocks) {
+    const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+    setFullPackEntryCta(n);
+    if (els.sessionReadyMeta) {
+      els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+    }
+    showScreen("ready");
+  }
+
+  function goToInitialAssessment() {
+    delete window.assessmentConfig;
+    setAssessmentUiDefaults();
+    showScreen("assessment");
+  }
+
   async function startStudyingNow() {
     els.startStudyingError.hidden = true;
     els.startStudyingError.textContent = "";
@@ -2601,16 +2617,28 @@ export function wireStudyHandlers() {
         language: getStudyLanguage(),
       });
 
-      const parsed = safeParseJson(blocksList);
-      const normalized = normalizeBlockIndexArray(parsed, { requireChunk: true });
-      if (!normalized || normalized.length !== nBlocks) {
+      const parsed = parseBlockIndexFromModelResponse(blocksList);
+      let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false });
+      if (!normalized) {
+        console.warn("Block split: could not parse model JSON:", blocksList?.slice?.(0, 500));
         throw new Error(
-          "DeepSeek returned an unexpected blocks JSON. Please try generating blocks again.",
+          "DeepSeek returned blocks JSON we could not parse. Please try generating blocks again.",
         );
       }
-      state.lastBlockIndex = normalized.map((b) => ({
+      const coerced = coerceBlockIndexToTargetCount(normalized, nBlocks);
+      if (!coerced) {
+        console.warn(
+          `Block split: expected ${nBlocks} blocks, got ${normalized.length}.`,
+          normalized.map((b) => b.id),
+        );
+        throw new Error(
+          `DeepSeek returned ${normalized.length} blocks but you asked for ${nBlocks}. Try again or change the block count.`,
+        );
+      }
+      const chunkFallbacks = splitMaterialIntoBlockChunks(cleanedText, nBlocks);
+      state.lastBlockIndex = coerced.map((b, i) => ({
         ...b,
-        chunk: String(b.chunk || "").trim(),
+        chunk: String(b.chunk || chunkFallbacks[i] || "").trim(),
       }));
 
       // Phase 2: audit overlap + merge chunks (conservative).
@@ -2820,12 +2848,7 @@ export function wireStudyHandlers() {
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H6',location:'src/js/study.js:2820',message:'confirm blocks after storeActiveSession',data:{storedSessionExists:!!loadActiveSession(),stateActiveSessionAfterStore:!!state.activeSession},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
-      window.assessmentConfig = { skipped: true };
-      showScreen("ready");
-      setFullPackEntryCta(nBlocks);
-      if (els.sessionReadyMeta) {
-        els.sessionReadyMeta.textContent = `Session ready. Blocks: ${nBlocks}`;
-      }
+      goToInitialAssessment();
     } catch (err) {
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
@@ -3010,7 +3033,12 @@ export function wireStudyHandlers() {
         return;
       }
       window.assessmentConfig = { skipped: true };
-      await startStudyingNow();
+      const n =
+        Number(state.activeSession?.n_blocks) ||
+        Number(state.lastNBlocks) ||
+        safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]")?.length ||
+        1;
+      goToSessionReady(n);
     });
   }
   if (els.assessmentStartBtn) {
@@ -3022,12 +3050,17 @@ export function wireStudyHandlers() {
       const maxQuestions = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
       const penalise = els.assessmentPenaliseBtn?.getAttribute("aria-pressed") === "true";
       window.assessmentConfig = { maxQuestions, penalise, skipped: false };
+      const n =
+        Number(state.activeSession?.n_blocks) ||
+        Number(state.lastNBlocks) ||
+        safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]")?.length ||
+        1;
       try {
         const rawBlockIndex = JSON.parse(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
         const questions = await generateAssessmentQuestions(rawBlockIndex, maxQuestions);
         await runAssessment(questions, penalise);
       } catch {
-        await startStudyingNow();
+        goToSessionReady(n);
       }
     });
   }

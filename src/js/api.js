@@ -1,4 +1,4 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260503_7";
+import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_1";
 
 function stripJsonFence(text) {
   return String(text || "")
@@ -8,9 +8,9 @@ function stripJsonFence(text) {
     .trim();
 }
 
-function extractJsonObjectText(text) {
+function extractBalancedJsonText(text, openChar, closeChar) {
   const raw = String(text || "").trim();
-  const start = raw.indexOf("{");
+  const start = raw.indexOf(openChar);
   if (start < 0) return raw;
 
   let depth = 0;
@@ -33,15 +33,23 @@ function extractJsonObjectText(text) {
 
     if (ch === '"') {
       inString = true;
-    } else if (ch === "{") {
+    } else if (ch === openChar) {
       depth += 1;
-    } else if (ch === "}") {
+    } else if (ch === closeChar) {
       depth -= 1;
       if (depth === 0) return raw.slice(start, i + 1);
     }
   }
 
   return raw.slice(start);
+}
+
+function extractJsonObjectText(text) {
+  return extractBalancedJsonText(text, "{", "}");
+}
+
+function extractJsonArrayText(text) {
+  return extractBalancedJsonText(text, "[", "]");
 }
 
 function escapeLatexMathBackslashes(text) {
@@ -91,9 +99,10 @@ function parseModelJsonObject(text) {
 function parseModelJsonValue(text) {
   const raw = String(text || "").trim();
   const withoutFence = stripJsonFence(raw);
+  const extractedArr = extractJsonArrayText(withoutFence);
   const extractedObj = extractJsonObjectText(withoutFence);
 
-  const candidates = [withoutFence, extractedObj, raw].filter(Boolean);
+  const candidates = [withoutFence, extractedArr, extractedObj, raw].filter(Boolean);
   const uniqueCandidates = Array.from(new Set(candidates));
 
   for (const candidate of uniqueCandidates) {
@@ -120,6 +129,21 @@ function parseModelJsonValue(text) {
   }
 
   return null;
+}
+
+function unwrapBlockIndexArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return null;
+  for (const key of ["blocks", "block_index", "blockIndex", "items", "data"]) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return null;
+}
+
+/** Parse DeepSeek block-split response into a JSON array (or null). */
+export function parseBlockIndexFromModelResponse(text) {
+  const parsed = parseModelJsonValue(text);
+  return unwrapBlockIndexArray(parsed);
 }
 
 function shuffleInPlace(arr) {
@@ -252,7 +276,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260503_7");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260523_1");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated
@@ -617,16 +641,20 @@ export async function deepSeekSplitIntoBlocks({
   studyNotes,
   language,
 }) {
-  const systemPrompt = `You are splitting a study document into blocks.
+  const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const lang = String(language || "English").trim() || "English";
+  const systemPrompt = `You are splitting a study document into exactly ${n} blocks.
 
 Rules:
+- Return EXACTLY ${n} objects with ids 1 through ${n} (no more, no fewer).
 - Each block must cover ONE distinct concept. Not one section, one concept.
-- If multiple sections of the document discuss the SAME idea (e.g. "introduction to X", "how to compute X", "examples of X"), merge them into ONE block titled after the concept.
+- If multiple sections discuss the SAME idea, merge them into ONE block titled after the concept.
 - Never create a block whose primary concept appears in another block.
 - Each block must have a unique "signature": a list of 3-5 key terms that ONLY appear as the main focus of that block, not in others.
 - The "chunk" field must include ALL source text relevant to that concept, even if it spans multiple sections.
+- Escape backslashes in JSON strings (e.g. LaTeX \\\\frac not \\frac).
 
-Return ONLY valid JSON:
+Return ONLY a JSON array (no markdown fences, no preamble):
 [{
   "id": 1,
   "title": "...",
@@ -637,10 +665,7 @@ Return ONLY valid JSON:
 
 You MUST cover the ENTIRE document. The last block must correspond to the last section. Each concept appears in exactly ONE block.
 
-Respond entirely in {language}.`
-    .split("{N}")
-    .join(String(nBlocks))
-    .replace("{language}", language);
+Respond entirely in ${lang}.`;
 
   const messages = [{ role: "system", content: systemPrompt }];
   const notes = String(studyNotes || "").trim();
@@ -650,7 +675,10 @@ Respond entirely in {language}.`
       content: `Student comments / study focus (follow these preferences when splitting):\n${notes}`,
     });
   }
-  messages.push({ role: "user", content: materialText });
+  messages.push({
+    role: "user",
+    content: `Split the following material into exactly ${n} blocks.\n\n${materialText}`,
+  });
 
   const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
     method: "POST",

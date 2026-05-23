@@ -4,10 +4,10 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260503_7";
-import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260503_7";
-import { getStudyLanguage } from "./ui.js?v=20260503_7";
-import { isOfflineMode } from "./main.js?v=20260503_7";
+} from "./config.js?v=20260523_1";
+import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_1";
+import { getStudyLanguage } from "./ui.js?v=20260523_1";
+import { isOfflineMode } from "./main.js?v=20260523_1";
 
 export const state = {
   studyMode: null,
@@ -989,6 +989,16 @@ export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
   return out;
 }
 
+/** Trim/pad block index to exactly targetCount; renumber ids 1..N. Returns null if too few blocks. */
+export function coerceBlockIndexToTargetCount(index, targetCount) {
+  const n = Math.max(1, Math.floor(Number(targetCount) || 1));
+  if (!Array.isArray(index) || !index.length) return null;
+  let rows = index.slice().sort((a, b) => a.id - b.id);
+  if (rows.length > n) rows = rows.slice(0, n);
+  if (rows.length < n) return null;
+  return rows.map((b, i) => ({ ...b, id: i + 1 }));
+}
+
 export function splitMaterialIntoBlockChunks(text, nBlocks) {
   const raw = String(text || "").trim();
   const n = Math.max(0, Math.floor(Number(nBlocks)));
@@ -1135,7 +1145,7 @@ export async function auditBlockIndex(blockIndex, { apiKey, language }) {
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260503_7");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_1");
   const text = await deepSeekAuditBlockIndex({
     apiKey: key,
     blockIndexJson: payload,
@@ -1162,7 +1172,7 @@ export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids
     .join("\n\n")
     .trim();
 
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260503_7");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_1");
   const mergedChunk = await deepSeekPostMergeChunk({
     apiKey: key,
     keep_id,

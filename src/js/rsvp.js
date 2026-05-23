@@ -1,6 +1,6 @@
-import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js?v=20260503_7";
-import { clampInt } from "./session.js?v=20260503_7";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260503_7";
+import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js?v=20260523_1";
+import { clampInt } from "./session.js?v=20260523_1";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260523_1";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string }} RsvpChunk */
 

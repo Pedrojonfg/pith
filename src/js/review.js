@@ -1,8 +1,8 @@
-import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260503_7";
-import { buildMarkdown } from "./export.js?v=20260503_7";
-import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260503_7";
-import { clampInt, getMissedTestQuestions, getStoredKey, state } from "./session.js?v=20260503_7";
-import { els, showScreen, typesetMath } from "./ui.js?v=20260503_7";
+import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260523_1";
+import { buildMarkdown } from "./export.js?v=20260523_1";
+import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260523_1";
+import { clampInt, getMissedTestQuestions, getStoredKey, state } from "./session.js?v=20260523_1";
+import { els, showScreen, typesetMath } from "./ui.js?v=20260523_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 let reviewQuestions = [];
