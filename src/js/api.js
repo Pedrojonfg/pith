@@ -462,8 +462,8 @@ Distribution: {distribution}`.replace("{maxQuestions}", String(maxQ)).replace(
     throw new Error("Model did not return a valid JSON array. Please try again.");
   }
 
-  // Step 3 — shuffle returned array before returning
-  return shuffleInPlace(arr);
+  // Step 3 — shuffle and cap to requested count
+  return shuffleInPlace(arr).slice(0, maxQ);
 }
 
 export async function generateAssessmentSynthesis(assessmentResults, blockIndex, language) {

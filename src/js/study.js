@@ -1814,23 +1814,27 @@ async function copyPlainTextToClipboard(text) {
   }
 }
 
-let assessmentRunnerEls = null;
-function ensureAssessmentRunnerEls() {
-  if (assessmentRunnerEls) return assessmentRunnerEls;
+const ASSESSMENT_SECONDS_PER_QUESTION = 12;
+const ASSESSMENT_ADVANCE_AFTER_ANSWER_MS = 1500;
 
-  const root = document.createElement("section");
-  root.id = "assessmentRunner";
-  root.className = "assessment-runner";
-  root.hidden = true;
-  root.innerHTML = `
+let assessmentRunnerEls = null;
+let assessmentFlowBusy = false;
+
+function assessmentRunnerInnerHtml() {
+  return `
     <div class="assessment-runner-inner">
+      <div id="assessmentRunnerHead" class="assessment-question-head" aria-live="polite">
+        Question 1 of 1
+      </div>
       <div class="assessment-top">
-        <span id="assessmentRunnerMeta">Question 1 of 1</span>
+        <span id="assessmentRunnerMeta">12s to answer</span>
         <span id="assessmentRunnerScore">Score: 0.00</span>
       </div>
+      <div class="assessment-bar-label">Session progress</div>
       <div class="assessment-bar-track" aria-hidden="true">
         <div id="assessmentRunnerProgress" class="assessment-bar-fill"></div>
       </div>
+      <div class="assessment-bar-label">Time for this question</div>
       <div class="assessment-bar-track assessment-timer-track" aria-hidden="true">
         <div id="assessmentRunnerTimer" class="assessment-bar-fill assessment-timer-fill"></div>
       </div>
@@ -1839,10 +1843,12 @@ function ensureAssessmentRunnerEls() {
       <div id="assessmentRunnerPenalty" class="assessment-penalty"></div>
     </div>
   `;
-  document.body.appendChild(root);
+}
 
-  const o = {
+function bindAssessmentRunnerEls(root) {
+  return {
     root,
+    head: root.querySelector("#assessmentRunnerHead"),
     meta: root.querySelector("#assessmentRunnerMeta"),
     score: root.querySelector("#assessmentRunnerScore"),
     progress: root.querySelector("#assessmentRunnerProgress"),
@@ -1851,8 +1857,20 @@ function ensureAssessmentRunnerEls() {
     options: root.querySelector("#assessmentRunnerOptions"),
     penalty: root.querySelector("#assessmentRunnerPenalty"),
   };
-  assessmentRunnerEls = o;
-  return o;
+}
+
+function ensureAssessmentRunnerEls() {
+  let root = document.getElementById("assessmentRunner");
+  if (!root) {
+    root = document.createElement("section");
+    root.id = "assessmentRunner";
+    root.className = "assessment-runner";
+    root.hidden = true;
+    root.innerHTML = assessmentRunnerInnerHtml();
+    document.body.appendChild(root);
+  }
+  assessmentRunnerEls = bindAssessmentRunnerEls(root);
+  return assessmentRunnerEls;
 }
 
 export function wireStudyHandlers() {
@@ -2173,24 +2191,8 @@ export function wireStudyHandlers() {
 
     function cleanupResultsUi() {
       o.root.hidden = true;
-      o.root.innerHTML = `
-        <div class="assessment-runner-inner">
-          <div class="assessment-top">
-            <span id="assessmentRunnerMeta">Question 1 of 1</span>
-            <span id="assessmentRunnerScore">Score: 0.00</span>
-          </div>
-          <div class="assessment-bar-track" aria-hidden="true">
-            <div id="assessmentRunnerProgress" class="assessment-bar-fill"></div>
-          </div>
-          <div class="assessment-bar-track assessment-timer-track" aria-hidden="true">
-            <div id="assessmentRunnerTimer" class="assessment-bar-fill assessment-timer-fill"></div>
-          </div>
-          <div id="assessmentRunnerQuestion" class="assessment-question"></div>
-          <div id="assessmentRunnerOptions" class="assessment-options"></div>
-          <div id="assessmentRunnerPenalty" class="assessment-penalty"></div>
-        </div>
-      `;
-      assessmentRunnerEls = null;
+      o.root.innerHTML = assessmentRunnerInnerHtml();
+      assessmentRunnerEls = bindAssessmentRunnerEls(o.root);
       document.body.classList.remove("assessment-active");
       showSidebar();
       if (sidebarToggleBtn) sidebarToggleBtn.style.display = prevToggleDisplay;
@@ -2235,9 +2237,10 @@ export function wireStudyHandlers() {
     o.root.appendChild(wrap);
   }
 
-  async function runAssessment(questions, penalise) {
+  async function runAssessment(questions, penalise, maxQuestions) {
     const o = ensureAssessmentRunnerEls();
-    const list = Array.isArray(questions) ? questions : [];
+    const cap = Math.max(1, Math.floor(Number(maxQuestions) || 0));
+    const list = (Array.isArray(questions) ? questions : []).slice(0, cap);
     const penaltyOn = Boolean(penalise);
     if (!list.length) {
       showAssessmentResults([], []);
@@ -2254,7 +2257,7 @@ export function wireStudyHandlers() {
     let timerId = null;
     let rafId = null;
     let startedAt = 0;
-    const timerMs = 15000;
+    const timerMs = ASSESSMENT_SECONDS_PER_QUESTION * 1000;
 
     function cleanup() {
       if (timerId) {
@@ -2277,10 +2280,17 @@ export function wireStudyHandlers() {
     }
 
     function renderHeader() {
-      o.meta.textContent = `Question ${currentQ + 1} of ${list.length}`;
+      if (o.head) {
+        o.head.textContent = `Question ${currentQ + 1} of ${list.length}`;
+      }
       o.score.textContent = `Score: ${formatScore(score)}`;
       const p = ((currentQ + 1) / list.length) * 100;
       o.progress.style.width = `${Math.max(0, Math.min(100, p))}%`;
+    }
+
+    function updateTimeMeta(elapsedMs) {
+      const secsLeft = Math.max(0, Math.ceil((timerMs - elapsedMs) / 1000));
+      o.meta.textContent = `${secsLeft}s to answer`;
     }
 
     function stopTimer() {
@@ -2301,6 +2311,7 @@ export function wireStudyHandlers() {
       o.timer.style.width = `${remaining * 100}%`;
       const hue = 120 * remaining; // green -> red
       o.timer.style.background = `hsl(${hue} 90% 55%)`;
+      updateTimeMeta(elapsed);
       if (ratio < 1 && !settled) rafId = requestAnimationFrame(tickTimer);
     }
 
@@ -2335,6 +2346,7 @@ export function wireStudyHandlers() {
 
       o.penalty.textContent = penaltyOn ? "Wrong answers: -0.33 pts" : "";
       startedAt = Date.now();
+      updateTimeMeta(0);
       o.timer.style.width = "100%";
       o.timer.style.background = "hsl(120 90% 55%)";
       rafId = requestAnimationFrame(tickTimer);
@@ -2380,6 +2392,7 @@ export function wireStudyHandlers() {
       }
 
       renderHeader();
+      o.meta.textContent = "Next question…";
       window.setTimeout(() => {
         currentQ += 1;
         if (currentQ >= list.length) {
@@ -2388,10 +2401,11 @@ export function wireStudyHandlers() {
           return;
         }
         renderQuestion();
-      }, 800);
+      }, ASSESSMENT_ADVANCE_AFTER_ANSWER_MS);
     }
 
     function onKeyDown(e) {
+      if (e.repeat) return;
       const letter = getLetterFromKey(e);
       if (!letter || settled) return;
       e.preventDefault();
@@ -3044,6 +3058,7 @@ export function wireStudyHandlers() {
   }
   if (els.assessmentStartBtn) {
     els.assessmentStartBtn.addEventListener("click", async () => {
+      if (assessmentFlowBusy) return;
       if (isOfflineMode()) {
         await startStudyingNow();
         return;
@@ -3056,12 +3071,39 @@ export function wireStudyHandlers() {
         Number(state.lastNBlocks) ||
         safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]")?.length ||
         1;
+
+      assessmentFlowBusy = true;
+      const prevBtnLabel = els.assessmentStartBtn.textContent;
+      els.assessmentStartBtn.disabled = true;
+      els.assessmentStartBtn.textContent = "Generating…";
+      if (els.assessmentGeneratingError) {
+        els.assessmentGeneratingError.hidden = true;
+        els.assessmentGeneratingError.textContent = "";
+      }
+      if (els.assessmentGeneratingLabel) {
+        els.assessmentGeneratingLabel.textContent =
+          "Building your personalised questions. This may take a moment.";
+      }
+      showScreen("assessmentGenerating");
+
       try {
         const rawBlockIndex = JSON.parse(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
         const questions = await generateAssessmentQuestions(rawBlockIndex, maxQuestions);
-        await runAssessment(questions, penalise);
-      } catch {
-        goToSessionReady(n);
+        await runAssessment(questions, penalise, maxQuestions);
+      } catch (err) {
+        if (els.assessmentGeneratingError) {
+          els.assessmentGeneratingError.hidden = false;
+          els.assessmentGeneratingError.textContent = err?.message
+            ? String(err.message)
+            : "Could not generate the assessment. Please try again.";
+        }
+        showScreen("assessment");
+        if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = true;
+        if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = false;
+      } finally {
+        assessmentFlowBusy = false;
+        els.assessmentStartBtn.disabled = false;
+        els.assessmentStartBtn.textContent = prevBtnLabel;
       }
     });
   }
