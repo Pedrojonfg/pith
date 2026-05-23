@@ -1,12 +1,12 @@
-import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260503_7";
-import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260503_7";
-import { exportSessionMarkdown } from "./export.js?v=20260503_7";
-import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260503_7";
-import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260503_7";
-import { getStoredKey, loadActiveSession, state } from "./session.js?v=20260503_7";
-import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260503_7";
-import { wireReviewHandlers } from "./review.js?v=20260503_7";
-import { wireStudyHandlers } from "./study.js?v=20260503_7";
+import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260523_1";
+import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_1";
+import { exportSessionMarkdown } from "./export.js?v=20260523_1";
+import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260523_1";
+import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260523_1";
+import { getStoredKey, loadActiveSession, state } from "./session.js?v=20260523_1";
+import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260523_1";
+import { wireReviewHandlers } from "./review.js?v=20260523_1";
+import { wireStudyHandlers } from "./study.js?v=20260523_1";
 
 export const isOfflineMode = () => window.offlineMode === true;
 
