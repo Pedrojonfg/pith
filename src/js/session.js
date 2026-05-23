@@ -4,10 +4,10 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260523_2";
-import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_2";
-import { getStudyLanguage } from "./ui.js?v=20260523_2";
-import { isOfflineMode } from "./main.js?v=20260523_2";
+} from "./config.js?v=20260523_3";
+import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_3";
+import { getStudyLanguage } from "./ui.js?v=20260523_3";
+import { isOfflineMode } from "./main.js?v=20260523_3";
 
 export const state = {
   studyMode: null,
@@ -963,14 +963,22 @@ export function parseOfflinePackMarkdown(text) {
   return { ok: true, value: parsed };
 }
 
-export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
+export function normalizeBlockIndexArray(arr, { requireChunk = true, lenient = false } = {}) {
   if (!Array.isArray(arr)) return null;
   const out = [];
-  for (const item of arr) {
-    if (!item || typeof item !== "object") return null;
-    const id = Number(item.id);
-    const title = String(item.title || "").trim();
-    const summary = String(item.summary || item.title || "").trim();
+  for (let i = 0; i < arr.length; i += 1) {
+    const item = arr[i];
+    if (!item || typeof item !== "object") {
+      if (lenient) continue;
+      return null;
+    }
+    let id = Number(item.id ?? item.block_id);
+    if (!Number.isFinite(id) || id <= 0) {
+      if (lenient) id = out.length + 1;
+      else return null;
+    }
+    const title = String(item.title || item.name || "").trim();
+    const summary = String(item.summary || item.description || item.title || item.name || "").trim();
     const signatureArr = Array.isArray(item.signature) ? item.signature : null;
     const signature = signatureArr
       ? signatureArr.map((t) => String(t || "").trim()).filter(Boolean)
@@ -978,13 +986,22 @@ export function normalizeBlockIndexArray(arr, { requireChunk = true } = {}) {
           .split(/[,\n;]/g)
           .map((t) => String(t || "").trim())
           .filter(Boolean);
-    const chunk = String(item.chunk || "").trim();
-    if (!Number.isFinite(id) || id <= 0) return null;
-    if (!title) return null;
-    if (!summary) return null;
-    if (requireChunk && !chunk) return null;
+    const chunk = String(item.chunk || item.text || "").trim();
+    if (!title) {
+      if (lenient) continue;
+      return null;
+    }
+    if (!summary) {
+      if (lenient) continue;
+      return null;
+    }
+    if (requireChunk && !chunk) {
+      if (lenient) continue;
+      return null;
+    }
     out.push({ id, title, summary, signature, chunk });
   }
+  if (!out.length) return null;
   out.sort((a, b) => a.id - b.id);
   return out;
 }
@@ -1145,7 +1162,7 @@ export async function auditBlockIndex(blockIndex, { apiKey, language }) {
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_2");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_3");
   const text = await deepSeekAuditBlockIndex({
     apiKey: key,
     blockIndexJson: payload,
@@ -1172,7 +1189,7 @@ export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids
     .join("\n\n")
     .trim();
 
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_2");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_3");
   const mergedChunk = await deepSeekPostMergeChunk({
     apiKey: key,
     keep_id,
