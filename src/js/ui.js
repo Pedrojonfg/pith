@@ -10,6 +10,7 @@ export const els = {
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenBlocksList: document.getElementById("screenBlocksList"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
+  screenAssessmentGenerating: document.getElementById("screenAssessmentGenerating"),
   screenSessionReady: document.getElementById("screenSessionReady"),
   screenFullPackGenerating: document.getElementById("screenFullPackGenerating"),
   screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
@@ -142,6 +143,9 @@ export const els = {
   assessmentPenaliseBtn: document.getElementById("assessmentPenaliseBtn"),
   assessmentPenaliseSubtitle: document.getElementById("assessmentPenaliseSubtitle"),
   assessmentStartBtn: document.getElementById("assessmentStartBtn"),
+  assessmentGeneratingLabel: document.getElementById("assessmentGeneratingLabel"),
+  assessmentGeneratingFill: document.getElementById("assessmentGeneratingFill"),
+  assessmentGeneratingError: document.getElementById("assessmentGeneratingError"),
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   startStudyingBtn: document.getElementById("startStudyingBtn"),
@@ -557,6 +561,7 @@ export function showScreen(which) {
   const showCreate = which === "create";
   const showBlocks = which === "blocks";
   const showAssessment = which === "assessment";
+  const showAssessmentGenerating = which === "assessmentGenerating";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
   const showBetween = which === "between";
@@ -573,6 +578,10 @@ export function showScreen(which) {
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
+  els.screenAssessmentGenerating?.setAttribute(
+    "aria-hidden",
+    String(!showAssessmentGenerating),
+  );
   els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
   els.screenFullPackGenerating.setAttribute("aria-hidden", String(!showFullPackGenerating));
   els.screenBetweenBlocks.setAttribute("aria-hidden", String(!showBetween));
