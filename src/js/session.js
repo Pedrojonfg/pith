@@ -1162,7 +1162,7 @@ export async function auditBlockIndex(blockIndex, { apiKey, language }) {
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_3");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_4");
   const text = await deepSeekAuditBlockIndex({
     apiKey: key,
     blockIndexJson: payload,
@@ -1189,13 +1189,15 @@ export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids
     .join("\n\n")
     .trim();
 
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_3");
+  const blockCount = 1 + absorbs.length;
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_4");
   const mergedChunk = await deepSeekPostMergeChunk({
     apiKey: key,
     keep_id,
     absorb_ids,
     new_title,
     concatenated_chunks,
+    block_count: blockCount,
   });
 
   return String(mergedChunk || "").trim();

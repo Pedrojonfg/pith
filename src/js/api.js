@@ -762,9 +762,9 @@ Your task:
 1. Identify ALL pairs of blocks where the primary concept overlaps.
    Overlap = the same core idea, formula, or theorem is taught in both.
 2. For each overlapping pair, recommend: MERGE or KEEP SEPARATE.
-   MERGE if: both blocks teach the same concept at the same depth.
-   KEEP SEPARATE if: one introduces and the other extends significantly.
-3. Output a merge plan:
+   MERGE only if: both blocks teach the same concept at the same depth with substantial redundant text (same examples, same formulas repeated).
+   KEEP SEPARATE if: one introduces and the other extends, deepens, or applies; blocks are sequential chapters of one theme; or overlap is thematic adjacency only.
+3. Output a merge plan (use an empty "merges" array if nothing qualifies):
 
 {
   "merges": [
@@ -779,7 +779,7 @@ Your task:
   "summary": "X blocks → Y blocks after merging"
 }
 
-Be aggressive: if in doubt, merge. Redundancy is worse than density.
+Be conservative: if in doubt, KEEP SEPARATE. Losing study depth is worse than a few overlapping blocks.
 Respond ONLY with valid JSON.`
     .replace("{blockIndexJSON}", String(blockIndexJson || "[]"))
     .replace("{language}", language);
@@ -820,26 +820,40 @@ Respond ONLY with valid JSON.`
   return content.trim();
 }
 
+const MERGE_WORDS_PER_BLOCK = 2000;
+
 export async function deepSeekPostMergeChunk({
   apiKey,
   keep_id,
   absorb_ids,
   new_title,
   concatenated_chunks,
+  block_count,
 }) {
+  const absorbList = Array.isArray(absorb_ids) ? absorb_ids : [];
+  const nBlocks = Math.max(
+    1,
+    Math.floor(Number(block_count)) || 1 + absorbList.length,
+  );
+  const maxWords = MERGE_WORDS_PER_BLOCK * nBlocks;
+  const maxTokens = Math.min(8000, Math.max(2000, maxWords * 2));
+
   const systemPrompt = `The following blocks have been merged:
 - Original blocks {absorb_ids} are absorbed into block {keep_id}
 - New title: {new_title}
+- Blocks merged: {block_count} (keep + absorbed)
 
 Here are the original chunks for all merged blocks:
 {concatenated_chunks}
 
-Return a single merged chunk: combine the source texts, remove duplicate explanations, keep all unique examples and formulas.
-Preserve verbatim source text where possible. Max 2000 words.`
+Return a single merged chunk: combine the source texts, remove duplicate explanations only, keep all unique examples and formulas.
+Preserve verbatim source text where possible. Do not summarize away unique material. Max {max_words} words.`
     .replace("{keep_id}", String(keep_id))
-    .replace("{absorb_ids}", Array.isArray(absorb_ids) ? absorb_ids.join(", ") : String(absorb_ids))
+    .replace("{absorb_ids}", absorbList.join(", "))
     .replace("{new_title}", String(new_title || ""))
-    .replace("{concatenated_chunks}", String(concatenated_chunks || ""));
+    .replace("{block_count}", String(nBlocks))
+    .replace("{concatenated_chunks}", String(concatenated_chunks || ""))
+    .replace("{max_words}", String(maxWords));
 
   const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
     method: "POST",
@@ -853,7 +867,7 @@ Preserve verbatim source text where possible. Max 2000 words.`
         { role: "system", content: systemPrompt },
       ],
       temperature: 0.2,
-      max_tokens: 2000,
+      max_tokens: maxTokens,
     }),
   });
 
