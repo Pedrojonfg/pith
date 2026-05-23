@@ -2659,6 +2659,7 @@ export function wireStudyHandlers() {
         mergeInfo = null;
       }
       state.lastBlockIndex = finalIndex;
+      state.lastNBlocks = finalIndex.length;
       window.blockIndex = finalIndex;
       window.indexWasImported = false;
 
@@ -2734,7 +2735,8 @@ export function wireStudyHandlers() {
       return;
     }
 
-    const nBlocks = Number(state.lastNBlocks);
+    const indexLen = Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex.length : 0;
+    const nBlocks = indexLen > 0 ? indexLen : Number(state.lastNBlocks);
     if (!Number.isFinite(nBlocks) || nBlocks <= 0) {
       setConfirmError("Missing blocks count from previous step. Regenerate blocks.");
       showScreen("create");
