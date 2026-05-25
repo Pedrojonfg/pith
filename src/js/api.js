@@ -645,9 +645,22 @@ export async function deepSeekSocraticTutor({
   question,
   studentAnswer,
 }) {
-  const systemPrompt = `You are a Socratic tutor. The student just studied this block: 
-{block.title}. Evaluate their answer, point out gaps, push their reasoning further. 
-Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
+  const systemPrompt = `You are a Socratic tutor. The student just studied this block: {block.title}.
+
+Structure your reply in two parts (use these exact headings, in the same language as the question):
+
+**Critique**
+- Briefly note what is correct in the student's answer.
+- Point out gaps, misconceptions, or weak reasoning. Be direct and precise—not only destructive, and not empty praise.
+
+**Suggested answer**
+- After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
+- It must stand alone as the answer a strong student would give; do not merely repeat the critique.
+
+Be concise overall. Respond in the same language as the question and student answer.`.replace(
+    "{block.title}",
+    blockTitle,
+  );
 
   const userPrompt = `Question: ${question}\nStudent answer: ${studentAnswer}`;
 
@@ -1137,8 +1150,19 @@ export async function deepSeekReviewSocraticTutor({
   question,
   studentAnswer,
 }) {
-  const systemPrompt = `You are a Socratic tutor. The student is reviewing a study session. Evaluate their answer, point out gaps, and push their reasoning further.
-Be concise and sharp, not encouraging.`;
+  const systemPrompt = `You are a Socratic tutor. The student is reviewing a study session.
+
+Structure your reply in two parts (use these exact headings, in the same language as the question):
+
+**Critique**
+- Briefly note what is correct in the student's answer.
+- Point out gaps, misconceptions, or weak reasoning. Be direct and precise—not only destructive, and not empty praise.
+
+**Suggested answer**
+- After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
+- It must stand alone as the answer a strong student would give; do not merely repeat the critique.
+
+Be concise overall. Respond in the same language as the question and student answer.`;
   const userPrompt = `Session context:\n${sessionContent}\n\nQuestion: ${question}\nStudent answer: ${studentAnswer}`;
 
   return llmChatCompletions({
