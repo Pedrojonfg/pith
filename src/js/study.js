@@ -7,13 +7,21 @@ import {
   generateAssessmentQuestions,
   generateAssessmentSynthesis,
   synthesizeAssessmentGaps,
-} from "./api.js?v=20260523_3";
-import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_3";
-import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260523_3";
-import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260523_3";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260523_3";
-import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260523_3";
-import { isOfflineMode } from "./main.js?v=20260523_3";
+} from "./api.js?v=20260525_1";
+import {
+  assertLlmKeyPresent,
+  getLlmCallingLabel,
+  getSessionLlmModel,
+  LLM_MODEL_DEEPSEEK,
+  normalizeLlmModel,
+} from "./llm.js?v=20260525_1";
+import { shuffleTestQuestionOptions, shuffleTestQuestionsInList } from "./shuffle-options.js";
+import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
+import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
+import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260525_1";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260525_1";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
+import { isOfflineMode } from "./main.js?v=20260525_1";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -53,9 +61,9 @@ import {
   gapLabelsForBlock,
   generateOfflinePack,
   mergeGapLists,
-} from "./session.js?v=20260523_3";
-import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260523_3";
-import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260523_3";
+} from "./session.js?v=20260525_1";
+import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260525_1";
+import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260525_1";
 
 let splitMergeSummaryEls = null;
 function ensureSplitMergeSummaryEls() {
@@ -382,7 +390,9 @@ function normalizeOfflineBlocks(blocks) {
       id: Number(obj.id) || i + 1,
       title: String(obj.title || "").trim() || `Block ${i + 1}`,
       explanation: String(obj.explanation || ""),
-      questions: questions.filter((q) => q && typeof q === "object"),
+      questions: shuffleTestQuestionsInList(
+        questions.filter((q) => q && typeof q === "object"),
+      ),
       concepts: Array.isArray(obj.concepts) ? obj.concepts : [],
       _config: { n_test: Math.max(0, questions.length), n_socratic: 0 },
     };
@@ -977,8 +987,8 @@ async function ensureBlockGenerated(blockIndex) {
     throw new Error("Missing offline block data.");
   }
 
-  const apiKey = getStoredKey();
-  if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
+  const llmModel = getSessionLlmModel(state.activeSession);
+  assertLlmKeyPresent(llmModel);
 
   const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
   if (!blocksListText) throw new Error("Missing confirmed blocks list.");
@@ -995,7 +1005,7 @@ async function ensureBlockGenerated(blockIndex) {
   }
 
   const blockRequest = {
-    apiKey,
+    llmModel,
     blocksListText,
     materialText: materialChunk,
     blockIndex,
@@ -1027,6 +1037,7 @@ async function ensureBlockGenerated(blockIndex) {
   if (!cleaned.title) cleaned.title = blockTitle;
   if (!cleaned.explanation) cleaned.explanation = "";
   if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
+  cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
   if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
   if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
   cleaned._config.n_test = cfg.n_test;
@@ -1097,13 +1108,29 @@ function getBlockOrderedQuestions(block) {
   return { testQs, socQs, allQs: [...testQs, ...socQs] };
 }
 
+function ensureTestQuestionShuffled(block, q) {
+  if (!q || !block || String(q.type || "").trim().toLowerCase() !== "test") return q;
+  if (q._optionsShuffled) return q;
+  const shuffled = shuffleTestQuestionOptions(q);
+  const qs = Array.isArray(block.questions) ? block.questions : null;
+  if (qs) {
+    const i = qs.indexOf(q);
+    if (i >= 0) {
+      qs[i] = shuffled;
+      if (state.activeSession) storeActiveSession(state.activeSession, { bumpRev: false });
+    }
+  }
+  return shuffled;
+}
+
 function getActiveQuestionContext() {
   const blocks = getBlocksSafe();
   const block = blocks[state.activeBlockIndex];
   const { testQs, socQs, allQs } = getBlockOrderedQuestions(block);
   const total = allQs.length;
   const globalIndex = Math.max(0, Math.floor(Number(state.activeQuestionIndex) || 0));
-  const q = allQs[globalIndex] || null;
+  const rawQ = allQs[globalIndex] || null;
+  const q = block && rawQ ? ensureTestQuestionShuffled(block, rawQ) : rawQ;
   const type = q && typeof q === "object" ? String(q.type || "") : "";
   const phase = type === "socratic" ? "Socratic" : "Test";
   const localIndex = type === "socratic" ? Math.max(0, globalIndex - testQs.length) : globalIndex;
@@ -2122,6 +2149,14 @@ export function wireStudyHandlers() {
     }
     wrap.appendChild(summary);
 
+    const actions = document.createElement("div");
+    actions.className = "row assessment-results-actions";
+    const acceptBtn = document.createElement("button");
+    acceptBtn.type = "button";
+    acceptBtn.textContent = "Accept suggestions";
+    actions.appendChild(acceptBtn);
+    wrap.appendChild(actions);
+
     const gapDetails = document.createElement("details");
     gapDetails.className = "gap-review-details";
     const gapDetailsSummary = document.createElement("summary");
@@ -2295,14 +2330,6 @@ export function wireStudyHandlers() {
         if (synthesisStatus === "error") console.warn("[gap-synthesis]", err);
         return { gaps_by_block: {} };
       });
-
-    const actions = document.createElement("div");
-    actions.className = "row";
-    const acceptBtn = document.createElement("button");
-    acceptBtn.type = "button";
-    acceptBtn.textContent = "Accept suggestions";
-    actions.appendChild(acceptBtn);
-    wrap.appendChild(actions);
 
     function resolveGapsSource(merged) {
       const hasGaps = merged && typeof merged === "object" && Object.keys(merged).length > 0;
@@ -2717,12 +2744,15 @@ export function wireStudyHandlers() {
     window.indexWasImported = false;
     if (els.importIndexLabel) els.importIndexLabel.textContent = "";
 
-    const apiKey = getStoredKey();
-    if (!apiKey) {
-      setGenerateError("Missing API key. Click “Change API key” to set it.");
-      showScreen("setup");
+    const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+    try {
+      assertLlmKeyPresent(llmModel);
+    } catch (err) {
+      setGenerateError(err?.message ? String(err.message) : String(err));
+      if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
       return;
     }
+    state.pendingLlmModel = llmModel;
 
     // Validate global question defaults for this session.
     if ((state.nTest || 0) <= 0 && (state.nSocratic || 0) <= 0) {
@@ -2746,7 +2776,7 @@ export function wireStudyHandlers() {
     }
 
     setGenerateLoading(true);
-    els.generateBlocksStatus.textContent = "Calling DeepSeek…";
+    els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
       const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
@@ -2762,7 +2792,7 @@ export function wireStudyHandlers() {
       state.lastNBlocks = nBlocks;
 
       const parsed = await deepSeekSplitIntoBlocks({
-        apiKey,
+        llmModel,
         nBlocks,
         materialText: cleanedText,
         studyNotes: String(state.studyNotes || ""),
@@ -2773,7 +2803,7 @@ export function wireStudyHandlers() {
       if (!normalized) {
         console.warn("Block split: could not normalize blocks:", parsed);
         throw new Error(
-          "DeepSeek returned blocks JSON we could not parse. Please try generating blocks again.",
+          "Model returned blocks JSON we could not parse. Please try generating blocks again.",
         );
       }
       const coerced = coerceBlockIndexToTargetCount(normalized, nBlocks);
@@ -2783,7 +2813,7 @@ export function wireStudyHandlers() {
           normalized.map((b) => b.id),
         );
         throw new Error(
-          `DeepSeek returned ${normalized.length} blocks but you asked for ${nBlocks}. Try again or change the block count.`,
+          `Model returned ${normalized.length} blocks but you asked for ${nBlocks}. Try again or change the block count.`,
         );
       }
       const chunkFallbacks = splitMaterialIntoBlockChunks(cleanedText, nBlocks);
@@ -2798,7 +2828,7 @@ export function wireStudyHandlers() {
       let mergeInfo = null;
       try {
         const r = await twoPhaseSplitMerge(state.lastBlockIndex, {
-          apiKey,
+          llmModel,
           language: getStudyLanguage(),
         });
         if (r && typeof r === "object" && Array.isArray(r.blockIndex) && r.blockIndex.length) {
@@ -2880,10 +2910,11 @@ export function wireStudyHandlers() {
       return;
     }
 
-    const apiKey = getStoredKey();
-    if (!apiKey) {
-      setConfirmError("Missing API key. Click “Change API key” to set it.");
-      showScreen("setup");
+    const llmModel = normalizeLlmModel(state.pendingLlmModel ?? LLM_MODEL_DEEPSEEK);
+    try {
+      assertLlmKeyPresent(llmModel);
+    } catch (err) {
+      setConfirmError(err?.message ? String(err.message) : String(err));
       return;
     }
 
@@ -2984,6 +3015,7 @@ export function wireStudyHandlers() {
       if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
         sessionObj._meta = {};
       }
+      sessionObj._meta.llm_model = llmModel;
       const notes = String(state.studyNotes || "").trim();
       if (notes) {
         sessionObj._meta.study_notes = notes;
@@ -3063,6 +3095,7 @@ export function wireStudyHandlers() {
         const result = await generateOfflinePack(blockIndex, htmlText, {
           language: getStudyLanguage(),
           n_test: state.activeSession.n_test,
+          llmModel: getSessionLlmModel(state.activeSession),
           updateProgress: (pct, phaseText, actionText) => {
             updateFullPackProgressUi({
               pct,
@@ -3256,10 +3289,11 @@ export function wireStudyHandlers() {
     els.socraticResponseBox.hidden = true;
     els.socraticResponseBox.textContent = "";
 
-    const apiKey = getStoredKey();
-    if (!apiKey) {
-      setSocraticError("Missing API key. Click “Change API key” to set it.");
-      showScreen("setup");
+    const llmModel = getSessionLlmModel(state.activeSession);
+    try {
+      assertLlmKeyPresent(llmModel);
+    } catch (err) {
+      setSocraticError(err?.message ? String(err.message) : String(err));
       return;
     }
 
@@ -3293,10 +3327,10 @@ export function wireStudyHandlers() {
     });
 
     setSocraticLoading(true);
-    els.socraticStatus.textContent = "Calling DeepSeek…";
+    els.socraticStatus.textContent = getLlmCallingLabel(llmModel);
     try {
       const resp = await deepSeekSocraticTutor({
-        apiKey,
+        llmModel,
         blockTitle: String(block.title || `Block ${state.activeBlockIndex + 1}`),
         question: String(q.question),
         studentAnswer: answer,
@@ -3466,12 +3500,12 @@ export function wireStudyHandlers() {
       setSummaryOverlayOpen(true);
 
       try {
-        const apiKey = getStoredKey();
-        if (!apiKey) throw new Error("Missing API key.");
+        const llmModel = getSessionLlmModel(state.activeSession);
+        assertLlmKeyPresent(llmModel);
 
         const language = getStudyLanguage();
         const userPrompt = explanations.join("\n\n");
-        const out = await deepSeekSummarySoFar({ apiKey, language, userPrompt });
+        const out = await deepSeekSummarySoFar({ llmModel, language, userPrompt });
         if (els.summaryOverlayBody) els.summaryOverlayBody.textContent = out;
         setSummaryOverlayError("");
       } catch (err) {
@@ -3521,9 +3555,8 @@ export function wireStudyHandlers() {
     els.resumeSessionBtn.addEventListener("click", async () => {
       clearResumeError();
       if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = "";
-      const apiKey = getStoredKey();
-      if (!apiKey) {
-        setResumeError('Missing API key. Click "Change API key" to set it.');
+      if (!getStoredKey()) {
+        setResumeError('Missing DeepSeek API key. Click "Change API key" to set it.');
         showScreen("setup");
         return;
       }
@@ -3556,6 +3589,7 @@ export function wireStudyHandlers() {
         }
         if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
         sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
+        assertLlmKeyPresent(getSessionLlmModel(sessionObj));
         storeActiveSession(sessionObj);
         state.activeSession = sessionObj;
         state.nTest = clampInt(sessionObj.n_test, 0, 5, state.nTest);

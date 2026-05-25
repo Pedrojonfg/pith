@@ -1,12 +1,12 @@
-import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260523_3";
-import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_3";
-import { exportSessionMarkdown } from "./export.js?v=20260523_3";
-import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260523_3";
-import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260523_3";
-import { getStoredKey, loadActiveSession, state } from "./session.js?v=20260523_3";
-import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260523_3";
-import { wireReviewHandlers } from "./review.js?v=20260523_3";
-import { wireStudyHandlers } from "./study.js?v=20260523_3";
+import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260525_1";
+import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
+import { exportSessionMarkdown } from "./export.js?v=20260525_1";
+import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260525_1";
+import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260525_1";
+import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260525_1";
+import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260525_1";
+import { wireReviewHandlers } from "./review.js?v=20260525_1";
+import { wireStudyHandlers } from "./study.js?v=20260525_1";
 
 export const isOfflineMode = () => window.offlineMode === true;
 
@@ -179,13 +179,20 @@ function bootstrap() {
     const raw = els.apiKeyInput.value || "";
     const trimmed = raw.trim();
     if (!trimmed) {
-      els.apiKeyStatus.textContent = "Please enter a key.";
+      els.apiKeyStatus.textContent = "Please enter a DeepSeek key.";
       return;
     }
     localStorage.setItem("ds_api_key", trimmed);
-    els.apiKeyStatus.textContent = "Saved.";
+    const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
+    if (geminiRaw) saveGeminiKey(geminiRaw);
+    els.apiKeyStatus.textContent = geminiRaw ? "DeepSeek and Gemini saved." : "DeepSeek saved.";
     showScreen("create");
   });
+
+  if (els.geminiApiKeyInput) {
+    const gk = getStoredGeminiKey();
+    if (gk) els.geminiApiKeyInput.value = gk;
+  }
 
   const hasStoredSession = !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
   if (hasStoredSession) {

@@ -1,8 +1,14 @@
-import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260523_3";
-import { buildMarkdown } from "./export.js?v=20260523_3";
-import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260523_3";
-import { clampInt, getMissedTestQuestions, getStoredKey, state } from "./session.js?v=20260523_3";
-import { els, showScreen, typesetMath } from "./ui.js?v=20260523_3";
+import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260525_1";
+import {
+  assertLlmKeyPresent,
+  getLlmCallingLabel,
+  getSessionLlmModel,
+} from "./llm.js?v=20260525_1";
+import { shuffleTestQuestionOptions } from "./shuffle-options.js";
+import { buildMarkdown } from "./export.js?v=20260525_1";
+import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260525_1";
+import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260525_1";
+import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 let reviewQuestions = [];
@@ -168,7 +174,8 @@ function normalizeReviewQuestion(q) {
       : reviewType === "socratic"
         ? "socratic"
         : "test";
-  return { type: safeType, question, options, answer, feedback };
+  const base = { type: safeType, question, options, answer, feedback };
+  return safeType === "test" ? shuffleTestQuestionOptions(base) : base;
 }
 
 function renderReviewQuestion() {
@@ -330,9 +337,11 @@ async function startReviewGeneration() {
   clearReviewConfigError();
   clearReviewGeneratingError();
 
-  const apiKey = getStoredKey();
-  if (!apiKey) {
-    setReviewConfigError("Missing API key.");
+  const llmModel = getSessionLlmModel(state.activeSession);
+  try {
+    assertLlmKeyPresent(llmModel);
+  } catch (err) {
+    setReviewConfigError(err?.message ? String(err.message) : String(err));
     return;
   }
 
@@ -366,7 +375,7 @@ async function startReviewGeneration() {
     els.reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
 
     const content = await deepSeekGenerateReviewBatch({
-      apiKey,
+      llmModel,
       sessionContent,
       type: reviewType,
       batchSize,
@@ -454,9 +463,11 @@ export function wireReviewHandlers() {
       return;
     }
 
-    const apiKey = getStoredKey();
-    if (!apiKey) {
-      setReviewError("Missing API key.");
+    const llmModel = getSessionLlmModel(state.activeSession);
+    try {
+      assertLlmKeyPresent(llmModel);
+    } catch (err) {
+      setReviewError(err?.message ? String(err.message) : String(err));
       return;
     }
 
@@ -466,11 +477,11 @@ export function wireReviewHandlers() {
       return;
     }
 
-    els.reviewSocraticStatus.textContent = "Calling DeepSeek…";
+    els.reviewSocraticStatus.textContent = getLlmCallingLabel(llmModel);
     els.reviewSocraticSendBtn.disabled = true;
     try {
       const resp = await deepSeekReviewSocraticTutor({
-        apiKey,
+        llmModel,
         sessionContent: reviewSessionContent,
         question: String(q.question || ""),
         studentAnswer: answer,

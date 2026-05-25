@@ -136,14 +136,14 @@
           aria-label="API Setup"
         >
           <div class="card">
-            <h1>DeepSeek API key</h1>
+            <h1>API keys</h1>
             <p>
-              Paste your DeepSeek API key to continue. It will be stored locally
-              in this browser.
+              DeepSeek is required. Add a Gemini key if you want to use Gemini 2.5
+              Flash when creating a session. Keys are stored locally in this browser.
             </p>
 
             <form id="apiKeyForm" autocomplete="off">
-              <label for="apiKeyInput">API key</label>
+              <label for="apiKeyInput">DeepSeek API key</label>
               <input
                 id="apiKeyInput"
                 name="apiKey"
@@ -154,6 +154,17 @@
                 autocomplete="off"
                 placeholder="sk-…"
                 required
+              />
+              <label for="geminiApiKeyInput" style="margin-top: 12px">Gemini API key (optional)</label>
+              <input
+                id="geminiApiKeyInput"
+                name="geminiApiKey"
+                type="password"
+                inputmode="text"
+                spellcheck="false"
+                autocapitalize="none"
+                autocomplete="off"
+                placeholder="AIza…"
               />
               <div class="row">
                 <button type="submit">Save</button>
@@ -214,6 +225,15 @@
                 tabindex="-1"
               />
               <div id="offlinePackError" class="error" hidden></div>
+
+              <div class="divider"></div>
+
+              <label for="llmModelSelect">Model</label>
+              <select id="llmModelSelect" name="llmModel" aria-label="LLM for this session">
+                <option value="deepseek" selected>DeepSeek (default)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              </select>
+              <div class="hint">Used for all API calls in this new session.</div>
 
               <div class="divider"></div>
 
@@ -904,7 +924,7 @@
       };
     </script>
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
-    <script type="module" src="src/js/main.js?v=20260523_3"></script>
+    <script type="module" src="src/js/main.js?v=20260525_1"></script>
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
