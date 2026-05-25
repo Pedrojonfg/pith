@@ -532,6 +532,204 @@ that are prerequisites for later strong ones.`;
   }
 }
 
+export const GAP_SYNTHESIS_TIMEOUT_MS = 30000;
+
+export class GapSynthesisError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "GapSynthesisError";
+    this.code = code;
+  }
+}
+
+function buildGapSynthesisUserPayload({ assessmentResults, questions, responses, blockIndex }) {
+  const perBlock =
+    assessmentResults?.perBlock && typeof assessmentResults.perBlock === "object"
+      ? assessmentResults.perBlock
+      : {};
+  const blocks = [];
+  for (const b of Array.isArray(blockIndex) ? blockIndex : []) {
+    const id = Number(b?.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const row = perBlock[String(id)] || {};
+    const classification = String(row.classification || "ok").trim() || "ok";
+    blocks.push({
+      id,
+      title: String(b?.title || "").trim(),
+      classification,
+    });
+  }
+
+  const qs = Array.isArray(questions) ? questions : [];
+  const resp = Array.isArray(responses) ? responses : [];
+  const responseRows = [];
+  for (let i = 0; i < qs.length; i += 1) {
+    const q = qs[i] || {};
+    const r = resp[i] || {};
+    const blockId = Number(r.block_id ?? q.block_id);
+    if (!Number.isFinite(blockId) || blockId <= 0) continue;
+    const skipped = Boolean(r.skipped);
+    let chosen = null;
+    if (!skipped) {
+      if (r.chosen != null && String(r.chosen).trim()) {
+        chosen = String(r.chosen).trim().toUpperCase().slice(0, 1);
+      } else if (r.correct === true) {
+        chosen = String(q.answer || "").trim().toUpperCase().slice(0, 1) || null;
+      }
+    }
+    responseRows.push({
+      block_id: blockId,
+      question: String(q.question || "").trim(),
+      chosen,
+      correct: skipped ? null : r.correct === true,
+      skipped,
+    });
+  }
+
+  return { blocks, responses: responseRows };
+}
+
+function parseGapSynthesisResponse(text) {
+  const parsed = parseModelJsonObject(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const raw = parsed.gaps_by_block ?? parsed.gapsByBlock;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return { gaps_by_block: raw, notes: parsed.notes != null ? String(parsed.notes).trim() : undefined };
+}
+
+function createLinkedAbortSignal(externalSignal, timeoutMs = GAP_SYNTHESIS_TIMEOUT_MS) {
+  if (externalSignal?.aborted) {
+    throw new GapSynthesisError("timeout", "Gap synthesis aborted.");
+  }
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) externalSignal.addEventListener("abort", onExternalAbort);
+  const timerId = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timerId);
+      if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
+    },
+  };
+}
+
+async function callGapSynthesisApi({ apiKey, userPayload, language, signal }) {
+  const lang = String(language || "English").trim() || "English";
+  const systemPrompt = `You analyse multiple-choice assessment results and infer conceptual knowledge gaps.
+
+Rules:
+- Respond in ${lang}.
+- Return ONLY a JSON object: {"gaps_by_block":{"<block_id>":[{"label":"...","evidence":"..."}]}}.
+- Infer 0–3 gaps per block that has wrong or skipped answers; use 0 gaps for strong blocks unless a clear misconception appears in responses.
+- Labels: short student-facing noun phrases (3–80 chars). Do NOT include block numbers in labels.
+- evidence: optional one short phrase tying the gap to a missed question (may be empty string).
+- Max 8 gaps total across the entire session (drop lowest-priority gaps if needed).
+- Conceptual gaps only — no arithmetic drills, no "practice calculating…" style tasks.
+- Mark each gap with "source":"synthesis" when you include source (optional).`;
+
+  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      max_tokens: 1024,
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+    }),
+    signal,
+  });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    // handled below
+  }
+
+  if (!res.ok) {
+    const apiMsg =
+      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
+    throw new GapSynthesisError("api_error", apiMsg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    throw new GapSynthesisError("api_error", "Unexpected API response (missing message content).");
+  }
+  return content.trim();
+}
+
+/**
+ * Gap synthesis (step C): structured per-block gaps from assessment responses.
+ * @returns {{ gaps_by_block: Record<string, {label:string, evidence?:string, source?:string}[]>, notes?: string }}
+ */
+export async function synthesizeAssessmentGaps({
+  assessmentResults,
+  questions,
+  responses,
+  blockIndex,
+  language,
+  signal,
+} = {}) {
+  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
+  if (!apiKey) {
+    throw new GapSynthesisError("missing_api_key", "Missing API key. Click “Change API key” to set it.");
+  }
+
+  const userPayload = buildGapSynthesisUserPayload({
+    assessmentResults,
+    questions,
+    responses,
+    blockIndex,
+  });
+
+  const { signal: linkedSignal, cleanup } = createLinkedAbortSignal(signal);
+  let lastRaw = "";
+
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (linkedSignal.aborted) {
+        throw new GapSynthesisError("timeout", "Gap synthesis timed out.");
+      }
+      try {
+        lastRaw = await callGapSynthesisApi({
+          apiKey,
+          userPayload,
+          language,
+          signal: linkedSignal,
+        });
+      } catch (err) {
+        if (err?.name === "AbortError" || linkedSignal.aborted) {
+          throw new GapSynthesisError("timeout", "Gap synthesis timed out.");
+        }
+        if (err instanceof GapSynthesisError) throw err;
+        throw new GapSynthesisError("api_error", err?.message || "Gap synthesis request failed.");
+      }
+
+      const parsed = parseGapSynthesisResponse(lastRaw);
+      if (parsed) {
+        const { normalizeGapsByBlock } = await import("./session.js?v=20260523_3");
+        const gaps_by_block = normalizeGapsByBlock(parsed.gaps_by_block);
+        const out = { gaps_by_block };
+        if (parsed.notes) out.notes = parsed.notes;
+        return out;
+      }
+    }
+
+    throw new GapSynthesisError("invalid_json", "Model did not return valid gap synthesis JSON.");
+  } finally {
+    cleanup();
+  }
+}
+
 export async function deepSeekSocraticTutor({
   apiKey,
   blockTitle,
@@ -891,23 +1089,7 @@ Preserve verbatim source text where possible. Do not summarize away unique mater
   return content.trim();
 }
 
-export async function deepSeekGenerateBlockJson({
-  apiKey,
-  blocksListText,
-  materialText,
-  blockIndex,
-  blockTitle,
-  previousComment,
-  language,
-  n_test,
-  n_socratic,
-}) {
-  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
-
-  const systemPrompt = `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
-Return a single JSON object with this schema:
-{
+const BLOCK_JSON_SCHEMA = `{
   id: number,
   title: string,
   explanation: string (markdown),
@@ -921,31 +1103,109 @@ Return a single JSON object with this schema:
   concepts: [
     { term: string, definition: string }
   ]
-}
-Respond entirely in {language}.
-Generate exactly {n_test} test questions (type: "test") and {n_socratic} socratic questions (type: "socratic") in the questions array.
+}`;
+
+const EXPLANATION_THOROUGH = `Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.`;
+
+const EXPLANATION_BRIEF_DEEP = `Write a concise deep-recap explanation of 150-220 words (not shorter, not longer).
+Structure in this order: (1) core definitions, (2) key formula or expression in LaTeX if relevant, (3) one micro-example, (4) one common pitfall.
+Do NOT re-teach the full block linearly — assume the student already saw this material.`;
+
+export function buildBlockGenerationSystemPrompt({
+  language,
+  n_test,
+  n_socratic,
+  explanation_profile = "thorough",
+  gap_focus = [],
+}) {
+  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
+  const gaps = Array.isArray(gap_focus)
+    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
+    : [];
+  const explanationSection = profile === "brief_deep" ? EXPLANATION_BRIEF_DEEP : EXPLANATION_THOROUGH;
+  const gapSection =
+    gaps.length > 0
+      ? `
+Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
+- Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
+- Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
+- If n_test + n_socratic (${nTest + nSocratic}) is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+      : "";
+
+  return `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
+Return a single JSON object with this schema:
+${BLOCK_JSON_SCHEMA}
+Respond entirely in ${String(language || "English").trim() || "English"}.
+Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
 Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly. Wrong options must reflect realistic student mistakes—not nonsense; keep options parallel in structure and length where possible.
-Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.
+${explanationSection}
+${gapSection}
 Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
 For each: the term exactly as used in the material, and a definition of max 15 words.
 Only include terms that are non-obvious or domain-specific. No common words.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
-Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`
-    .replace("{language}", language)
-    .replace("{n_test}", String(nTest))
-    .replace("{n_socratic}", String(nSocratic));
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+}
 
+export function buildBlockGenerationUserContent({
+  blocksListText,
+  materialText,
+  blockIndex,
+  blockTitle,
+  previousComment,
+  gap_focus = [],
+}) {
+  const gaps = Array.isArray(gap_focus)
+    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
+    : [];
+  const gapBlock =
+    gaps.length > 0
+      ? `\n\nLearning gaps to target (generate ≥1 question per gap):\n${gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
+      : "";
   const commentLine = previousComment
     ? `\n\nThe student had this comment after the previous block:\n${previousComment}\nTake it into account for the explanation and questions.`
     : "";
 
-  const userContent = `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${
     Number(blockIndex) + 1
-  }. ${blockTitle}\n\nSource material (verbatim chunk for this block only):\n${materialText}${commentLine}`;
+  }. ${blockTitle}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}`;
+}
+
+export async function deepSeekGenerateBlockJson({
+  apiKey,
+  blocksListText,
+  materialText,
+  blockIndex,
+  blockTitle,
+  previousComment,
+  language,
+  n_test,
+  n_socratic,
+  explanation_profile = "thorough",
+  gap_focus = [],
+}) {
+  const systemPrompt = buildBlockGenerationSystemPrompt({
+    language,
+    n_test,
+    n_socratic,
+    explanation_profile,
+    gap_focus,
+  });
+
+  const userContent = buildBlockGenerationUserContent({
+    blocksListText,
+    materialText,
+    blockIndex,
+    blockTitle,
+    previousComment,
+    gap_focus,
+  });
 
   const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
     method: "POST",

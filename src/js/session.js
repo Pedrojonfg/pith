@@ -68,11 +68,123 @@ export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
   }
 }
 
+const EXPLANATION_PROFILES = new Set(["thorough", "brief_deep"]);
+const GAPS_SOURCES = new Set(["synthesis", "user", "merged", "none"]);
+const SYNTHESIS_STATUSES = new Set(["ok", "timeout", "error", "skipped"]);
+
+export function normalizeExplanationProfile(value, fallback = "thorough") {
+  const v = String(value || "").trim();
+  if (EXPLANATION_PROFILES.has(v)) return v;
+  return EXPLANATION_PROFILES.has(fallback) ? fallback : "thorough";
+}
+
+export function normalizeGapFocus(value) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  for (const item of value) {
+    const label =
+      typeof item === "string"
+        ? item.trim()
+        : item && typeof item === "object"
+          ? String(item.label || "").trim()
+          : "";
+    if (!label) continue;
+    if (out.includes(label)) continue;
+    out.push(label);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
+export function normalizeGapsByBlock(gapsByBlock) {
+  if (!gapsByBlock || typeof gapsByBlock !== "object" || Array.isArray(gapsByBlock)) return {};
+  const out = {};
+  for (const [blockKey, entries] of Object.entries(gapsByBlock)) {
+    const key = String(blockKey).trim();
+    if (!key || !Array.isArray(entries)) continue;
+    const normalized = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const label = String(entry.label || "").trim();
+      if (label.length < 3 || label.length > 80) continue;
+      const gap = { label };
+      const source = String(entry.source || "").trim();
+      if (source === "synthesis" || source === "user") gap.source = source;
+      const fromIdx = Number(entry.from_question_index);
+      if (Number.isFinite(fromIdx) && fromIdx >= 0) gap.from_question_index = Math.floor(fromIdx);
+      normalized.push(gap);
+      if (normalized.length >= 8) break;
+    }
+    if (normalized.length) out[key] = normalized;
+  }
+  return out;
+}
+
+export function normalizeGapsSource(value, fallback = "none") {
+  const v = String(value || "").trim();
+  if (GAPS_SOURCES.has(v)) return v;
+  return GAPS_SOURCES.has(fallback) ? fallback : "none";
+}
+
+export function normalizeSynthesisStatus(value, fallback = "ok") {
+  const v = String(value || "").trim();
+  if (SYNTHESIS_STATUSES.has(v)) return v;
+  return SYNTHESIS_STATUSES.has(fallback) ? fallback : "ok";
+}
+
+export function gapLabelsForBlock(gapsByBlock, blockId) {
+  const key = String(blockId);
+  const entries = gapsByBlock && typeof gapsByBlock === "object" ? gapsByBlock[key] : null;
+  if (!Array.isArray(entries)) return [];
+  return normalizeGapFocus(entries);
+}
+
+/**
+ * Merge synthesized gaps (C) with optional per-block user edits (D).
+ * User-edited blocks replace synthesis for that block; untouched blocks keep synthesis.
+ */
+export function mergeGapLists(synthesis, userEdits) {
+  const synRaw =
+    synthesis && typeof synthesis === "object" && !Array.isArray(synthesis)
+      ? synthesis.gaps_by_block ?? synthesis.gapsByBlock ?? synthesis
+      : {};
+  const editRaw =
+    userEdits && typeof userEdits === "object" && !Array.isArray(userEdits)
+      ? userEdits.gaps_by_block ?? userEdits.gapsByBlock ?? userEdits
+      : {};
+  const merged = { ...normalizeGapsByBlock(synRaw) };
+  if (!editRaw || typeof editRaw !== "object" || Array.isArray(editRaw)) return merged;
+
+  for (const [blockKey, entries] of Object.entries(editRaw)) {
+    const key = String(blockKey).trim();
+    if (!key) continue;
+    const normalized = normalizeGapsByBlock({ [key]: Array.isArray(entries) ? entries : [] });
+    if (normalized[key]) merged[key] = normalized[key];
+    else delete merged[key];
+  }
+  return merged;
+}
+
+/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
+export function adjustQuestionBudgetForGaps(n_test, n_socratic, gapCount) {
+  const gaps = Math.max(0, Math.floor(Number(gapCount) || 0));
+  let nt = clampInt(n_test, 0, 5, 0);
+  let ns = clampInt(n_socratic, 0, 3, 0);
+  if (gaps <= nt + ns) return { n_test: nt, n_socratic: ns };
+  nt = Math.min(5, Math.max(nt, Math.ceil(gaps * 0.6)));
+  ns = Math.min(3, Math.max(ns, gaps - nt));
+  while (nt + ns > 8 && ns > 0) ns -= 1;
+  while (nt + ns > 8 && nt > 0) nt -= 1;
+  return { n_test: nt, n_socratic: ns };
+}
+
 export function resolveBlockQuestionConfig(blockIndex) {
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const defaults = {
     n_test: clampInt(session.n_test, 0, 5, clampInt(state.nTest, 0, 5, 2)),
     n_socratic: clampInt(session.n_socratic, 0, 3, clampInt(state.nSocratic, 0, 3, 1)),
+    explanation_profile: "thorough",
+    gap_focus: [],
   };
   const blocks = Array.isArray(session.blocks) ? session.blocks : [];
   const b = blocks[blockIndex];
@@ -81,6 +193,8 @@ export function resolveBlockQuestionConfig(blockIndex) {
   return {
     n_test: clampInt(cfg.n_test, 0, 5, defaults.n_test),
     n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
+    explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
+    gap_focus: normalizeGapFocus(cfg.gap_focus),
   };
 }
 
@@ -294,6 +408,32 @@ export function getBlockChunkFromIndex(blockIndex) {
   return chunk;
 }
 
+export function countExplanationWords(text) {
+  return String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+/** Dev-oriented checks per block-generation-profile contract. */
+export function warnBlockGenerationProfileMismatch(blockObj, cfg) {
+  if (!blockObj || typeof blockObj !== "object" || !cfg || typeof cfg !== "object") return;
+  const profile = String(cfg.explanation_profile || "thorough");
+  const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
+  const questions = Array.isArray(blockObj.questions) ? blockObj.questions : [];
+  if (profile === "brief_deep") {
+    const wc = countExplanationWords(blockObj.explanation);
+    if (wc > 0 && (wc < 120 || wc > 250)) {
+      console.warn(`Block generation: brief_deep explanation has ${wc} words (expected 120-250).`);
+    }
+  }
+  if (gaps.length > 0 && questions.length < gaps.length) {
+    console.warn(
+      `Block generation: ${gaps.length} gap(s) but only ${questions.length} question(s) (expected ≥${gaps.length}).`,
+    );
+  }
+}
+
 export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, previousComment } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   if (isOfflineMode()) {
@@ -307,9 +447,12 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
   if (!blocksListText) throw new Error("Missing confirmed blocks list.");
 
+  const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: clampInt(n_test, 0, 5, resolveBlockQuestionConfig(idx).n_test),
-    n_socratic: clampInt(n_socratic, 0, 3, resolveBlockQuestionConfig(idx).n_socratic),
+    n_test: clampInt(n_test, 0, 5, resolved.n_test),
+    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    explanation_profile: resolved.explanation_profile,
+    gap_focus: resolved.gap_focus,
   };
 
   const materialChunk = getBlockChunkFromIndex(idx);
@@ -328,6 +471,8 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     language: getStudyLanguage(),
     n_test: cfg.n_test,
     n_socratic: cfg.n_socratic,
+    explanation_profile: cfg.explanation_profile,
+    gap_focus: cfg.gap_focus,
   };
 
   let obj = null;
@@ -338,6 +483,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     if (!message.includes("valid JSON")) throw err;
     obj = await deepSeekGenerateBlockJson(blockRequest);
   }
+  warnBlockGenerationProfileMismatch(obj, cfg);
   return obj;
 }
 
@@ -1361,7 +1507,12 @@ export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText 
     current_block_index: 0,
     active_question_index: 0,
     blocks: Array.from({ length: n }, () => ({
-      _config: { n_test: defaults.n_test, n_socratic: defaults.n_socratic },
+      _config: {
+        n_test: defaults.n_test,
+        n_socratic: defaults.n_socratic,
+        explanation_profile: "thorough",
+        gap_focus: [],
+      },
     })),
   };
 }
@@ -1383,9 +1534,22 @@ export function applyAssessmentResults(assessmentResults) {
     assessmentResults?.perBlock && typeof assessmentResults.perBlock === "object"
       ? assessmentResults.perBlock
       : {};
+  const gapsByBlock = normalizeGapsByBlock(
+    assessmentResults?.gapsByBlock ?? assessmentResults?.gaps_by_block ?? {},
+  );
+  const gapsSource = normalizeGapsSource(
+    assessmentResults?.gapsSource ?? assessmentResults?.gaps_source,
+    Object.keys(gapsByBlock).length ? "synthesis" : "none",
+  );
+  const synthesisStatus = normalizeSynthesisStatus(
+    assessmentResults?.synthesisStatus ?? assessmentResults?.synthesis_status,
+    "ok",
+  );
   const sessionDefaults = {
     n_test: clampInt(sessionObj.n_test, 0, 5, 2),
     n_socratic: clampInt(sessionObj.n_socratic, 0, 3, 1),
+    explanation_profile: "thorough",
+    gap_focus: [],
   };
 
   const strongBlocks = [];
@@ -1396,20 +1560,38 @@ export function applyAssessmentResults(assessmentResults) {
     const blk = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
     const blockId = Number(blockIndex[i]?.id || i + 1);
     const classification = String(perBlock[String(blockId)]?.classification || "").trim();
+    const gap_focus = gapLabelsForBlock(gapsByBlock, blockId);
 
     if (classification === "strong") {
-      blk._config = { n_test: 1, n_socratic: 0 };
+      blk._config = {
+        n_test: 1,
+        n_socratic: 0,
+        explanation_profile: "brief_deep",
+        gap_focus: [],
+      };
       strongBlocks.push(blockId);
       adjusted = true;
     } else if (classification === "weak") {
-      blk._config = {
+      const bumped = {
         n_test: sessionDefaults.n_test,
         n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
+      };
+      const budget = adjustQuestionBudgetForGaps(bumped.n_test, bumped.n_socratic, gap_focus.length);
+      blk._config = {
+        n_test: budget.n_test,
+        n_socratic: budget.n_socratic,
+        explanation_profile: "thorough",
+        gap_focus,
       };
       weakBlocks.push(blockId);
       adjusted = true;
     } else {
-      blk._config = { ...sessionDefaults };
+      blk._config = {
+        n_test: sessionDefaults.n_test,
+        n_socratic: sessionDefaults.n_socratic,
+        explanation_profile: "thorough",
+        gap_focus,
+      };
     }
     blocks[i] = blk;
   }
@@ -1427,13 +1609,37 @@ export function applyAssessmentResults(assessmentResults) {
     strong_blocks: strongBlocks,
     weak_blocks: weakBlocks,
     config_adjustments_applied: adjusted,
+    gaps_by_block: gapsByBlock,
+    gaps_source: gapsSource,
+    synthesis_status: synthesisStatus,
   };
 
   sessionObj.blocks = blocks;
   storeActiveSession(sessionObj, { bumpRev: true });
   state.activeSession = sessionObj;
+  invalidatePrefetch();
 
   return { skipped: false, adjusted, strongBlocks, weakBlocks, session: sessionObj };
+}
+
+/** Stable key for prefetch cache — includes pedagogical profile (research R3). */
+export function buildBlockConfigKey(cfg) {
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  const nTest = clampInt(c.n_test, 0, 5, 2);
+  const nSoc = clampInt(c.n_socratic, 0, 3, 1);
+  const profile = normalizeExplanationProfile(c.explanation_profile, "thorough");
+  const gaps = normalizeGapFocus(c.gap_focus);
+  return `${nTest}|${nSoc}|${profile}|${gaps.join(",")}`;
+}
+
+export function invalidatePrefetch() {
+  prefetchState = {
+    blockIndex: null,
+    status: "idle",
+    data: null,
+    error: null,
+    configKey: "",
+  };
 }
 
 export let prefetchState = {
@@ -1448,14 +1654,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function triggerPrefetch(blockIndex, { n_test, n_socratic, force } = {}) {
+export function triggerPrefetch(blockIndex, opts = {}) {
   if (isOfflineMode()) return;
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: clampInt(n_test, 0, 5, resolveBlockQuestionConfig(idx).n_test),
-    n_socratic: clampInt(n_socratic, 0, 3, resolveBlockQuestionConfig(idx).n_socratic),
+    n_test: clampInt(opts.n_test, 0, 5, resolved.n_test),
+    n_socratic: clampInt(opts.n_socratic, 0, 3, resolved.n_socratic),
+    explanation_profile:
+      opts.explanation_profile != null
+        ? normalizeExplanationProfile(opts.explanation_profile, resolved.explanation_profile)
+        : resolved.explanation_profile,
+    gap_focus: opts.gap_focus != null ? normalizeGapFocus(opts.gap_focus) : resolved.gap_focus,
   };
-  const configKey = `${cfg.n_test}|${cfg.n_socratic}`;
+  const configKey = buildBlockConfigKey(cfg);
+  const force = Boolean(opts.force);
 
   const alreadyGeneratingSame =
     prefetchState.status === "generating" &&

@@ -4,8 +4,10 @@ import {
 } from "./config.js?v=20260523_3";
 import {
   buildResumePayload,
+  gapLabelsForBlock,
   getBlockResumeStatus,
   getMissedTestQuestions,
+  normalizeGapsByBlock,
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
@@ -84,6 +86,50 @@ function encodeResumeCapsule(payload) {
   return `<!-- study-session-resume:v2:${b64} -->`;
 }
 
+/** Summarize confirmed assessment gaps for the Initial Assessment export section. */
+export function formatAssessmentGapsExportSection(assessmentMeta, { titleMap = {}, nBlocks = 0 } = {}) {
+  if (!assessmentMeta || typeof assessmentMeta !== "object") return [];
+
+  const gapsByBlock = normalizeGapsByBlock(assessmentMeta.gaps_by_block || {});
+  const n = Math.max(0, Math.floor(Number(nBlocks) || 0));
+  const blockIds = new Set(Object.keys(gapsByBlock));
+  for (let bi = 0; bi < n; bi += 1) blockIds.add(String(bi + 1));
+
+  const lines = [];
+  const metaParts = [];
+  const gapsSource = String(assessmentMeta.gaps_source || "").trim();
+  const synthesisStatus = String(assessmentMeta.synthesis_status || "").trim();
+  if (gapsSource) metaParts.push(`Gaps source: ${gapsSource}`);
+  if (synthesisStatus) metaParts.push(`Gap synthesis: ${synthesisStatus}`);
+  if (metaParts.length) lines.push(metaParts.join(" · "));
+
+  lines.push("");
+  lines.push("### Knowledge gaps by block");
+
+  let anyGaps = false;
+  const sortedIds = [...blockIds].sort((a, b) => Number(a) - Number(b));
+  for (const blockId of sortedIds) {
+    const entries = Array.isArray(gapsByBlock[blockId]) ? gapsByBlock[blockId] : [];
+    const labels = gapLabelsForBlock(gapsByBlock, blockId);
+    if (!labels.length) continue;
+    anyGaps = true;
+    const title =
+      titleMap[blockId] != null && String(titleMap[blockId]).trim()
+        ? String(titleMap[blockId]).trim()
+        : `Block ${blockId}`;
+    const parts = entries.map((entry) => {
+      const label = String(entry?.label || "").trim();
+      if (!label) return "";
+      if (entry?.source === "user") return `${label} (edited)`;
+      return label;
+    }).filter(Boolean);
+    lines.push(`- **Block ${blockId} — ${title}**: ${parts.join("; ")}`);
+  }
+
+  if (!anyGaps) lines.push("- (none recorded)");
+  return lines;
+}
+
 export function buildMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   if (session === state.activeSession) {
@@ -142,6 +188,10 @@ export function buildMarkdown(session) {
     lines.push(`Strong blocks: ${strongList}`);
     lines.push(`Weak blocks: ${weakList}`);
     lines.push(`Config adjustments applied: ${adjusted}`);
+    lines.push(...formatAssessmentGapsExportSection(assessmentMeta, {
+      titleMap,
+      nBlocks: nBlocksExport,
+    }));
   }
 
   const guideHistory = Array.isArray(window?.guideHistory) ? window.guideHistory : [];

@@ -1,4 +1,13 @@
-import { deepSeekGenerateBlockJson, deepSeekSplitIntoBlocks, deepSeekSocraticTutor, deepSeekSummarySoFar, generateAssessmentQuestions, generateAssessmentSynthesis } from "./api.js?v=20260523_3";
+import {
+  deepSeekGenerateBlockJson,
+  deepSeekSplitIntoBlocks,
+  deepSeekSocraticTutor,
+  deepSeekSummarySoFar,
+  GapSynthesisError,
+  generateAssessmentQuestions,
+  generateAssessmentSynthesis,
+  synthesizeAssessmentGaps,
+} from "./api.js?v=20260523_3";
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260523_3";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260523_3";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260523_3";
@@ -26,8 +35,10 @@ import {
   parseImportedIndexText,
   parseOfflinePackMarkdown,
   prefetchState,
+  buildBlockConfigKey,
   recordResponse,
   resolveBlockQuestionConfig,
+  warnBlockGenerationProfileMismatch,
   safeParseJson,
   shouldTriggerCommentReply,
   splitMaterialIntoBlockChunks,
@@ -39,7 +50,9 @@ import {
   getPrefetchedBlock,
   ensureSessionResponseState,
   applyAssessmentResults,
+  gapLabelsForBlock,
   generateOfflinePack,
+  mergeGapLists,
 } from "./session.js?v=20260523_3";
 import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260523_3";
 import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260523_3";
@@ -990,6 +1003,8 @@ async function ensureBlockGenerated(blockIndex) {
     language: getStudyLanguage(),
     n_test: cfg.n_test,
     n_socratic: cfg.n_socratic,
+    explanation_profile: cfg.explanation_profile,
+    gap_focus: cfg.gap_focus,
   };
 
   let obj = null;
@@ -1000,6 +1015,8 @@ async function ensureBlockGenerated(blockIndex) {
     if (!message.includes("valid JSON")) throw err;
     obj = await deepSeekGenerateBlockJson(blockRequest);
   }
+
+  warnBlockGenerationProfileMismatch(obj, cfg);
 
   const cleaned =
     obj && typeof obj === "object"
@@ -1014,6 +1031,8 @@ async function ensureBlockGenerated(blockIndex) {
   if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
   cleaned._config.n_test = cfg.n_test;
   cleaned._config.n_socratic = cfg.n_socratic;
+  cleaned._config.explanation_profile = cfg.explanation_profile;
+  cleaned._config.gap_focus = cfg.gap_focus;
 
   const testCount = cleaned.questions.filter((q) => q && typeof q === "object" && q.type === "test")
     .length;
@@ -1386,11 +1405,14 @@ function withTimeout(promise, timeoutMs, label) {
 
 async function generateBlockDirect(blockIndex, { timeoutMs, n_test, n_socratic } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: n_test != null ? n_test : resolveBlockQuestionConfig(idx).n_test,
-    n_socratic: n_socratic != null ? n_socratic : resolveBlockQuestionConfig(idx).n_socratic,
+    n_test: n_test != null ? n_test : resolved.n_test,
+    n_socratic: n_socratic != null ? n_socratic : resolved.n_socratic,
+    explanation_profile: resolved.explanation_profile,
+    gap_focus: resolved.gap_focus,
   };
-  const configKey = `${clampInt(cfg.n_test, 0, 5, 2)}|${clampInt(cfg.n_socratic, 0, 3, 1)}`;
+  const configKey = buildBlockConfigKey(cfg);
   triggerPrefetch(idx, { ...cfg, force: true });
   const data = await withTimeout(
     getPrefetchedBlock(idx, { configKey }),
@@ -1496,24 +1518,16 @@ async function finishQuestions(blockIndex) {
     collapsedByDefault: concepts.length > 10,
   });
 
-  const sessionDefaults = {
-    n_test: clampInt(state.activeSession?.n_test, 0, 5, 2),
-    n_socratic: clampInt(state.activeSession?.n_socratic, 0, 3, 1),
-  };
-  let nextCfg = { ...sessionDefaults };
-  const keyOf = (c) => `${clampInt(c?.n_test, 0, 5, sessionDefaults.n_test)}|${clampInt(
-    c?.n_socratic,
-    0,
-    3,
-    sessionDefaults.n_socratic,
-  )}`;
+  const blockDefaults = resolveBlockQuestionConfig(nextIndex);
+  let nextCfg = { ...blockDefaults };
+  const keyOf = (c) => buildBlockConfigKey(c);
 
   const renderNextCfgUi = () => {
     if (o.nextTestValue) o.nextTestValue.textContent = String(nextCfg.n_test);
     if (o.nextSocValue) o.nextSocValue.textContent = String(nextCfg.n_socratic);
     if (o.nextQStatus) {
       o.nextQStatus.textContent =
-        keyOf(nextCfg) === keyOf(sessionDefaults) ? "Using session defaults" : "Custom";
+        keyOf(nextCfg) === keyOf(blockDefaults) ? "Using block profile" : "Custom";
     }
   };
 
@@ -1619,8 +1633,8 @@ async function finishQuestions(blockIndex) {
   };
 
   const bumpNext = (kind, delta) => {
-    if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, 5, sessionDefaults.n_test);
-    else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, 3, sessionDefaults.n_socratic);
+    if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, 5, blockDefaults.n_test);
+    else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, 3, blockDefaults.n_socratic);
     maybeRegeneratePrefetch();
   };
 
@@ -2038,11 +2052,10 @@ export function wireStudyHandlers() {
     )}%) · ${strongCount} strong · ${weakCount} weak blocks`;
     wrap.appendChild(h);
 
-    const synthesisPlaceholder = document.createElement("div");
-    synthesisPlaceholder.className = "hint";
-    synthesisPlaceholder.textContent = "Analysing your results...";
-    synthesisPlaceholder.style.marginTop = "4px";
-    wrap.appendChild(synthesisPlaceholder);
+    const gapStatusEl = document.createElement("div");
+    gapStatusEl.className = "hint gap-synthesis-status";
+    gapStatusEl.textContent = "Analysing gaps…";
+    wrap.appendChild(gapStatusEl);
 
     const heatmap = document.createElement("div");
     heatmap.style.display = "grid";
@@ -2073,21 +2086,23 @@ export function wireStudyHandlers() {
     }
     wrap.appendChild(heatmap);
 
+    const coachPlaceholder = document.createElement("div");
+    coachPlaceholder.className = "hint";
+    coachPlaceholder.textContent = "Analysing your results...";
+    coachPlaceholder.style.marginTop = "4px";
+    wrap.appendChild(coachPlaceholder);
+
     void generateAssessmentSynthesis(window.assessmentResults, blockIndex, getStudyLanguage()).then(
       (text) => {
-        if (!synthesisPlaceholder.isConnected) return;
+        if (!coachPlaceholder.isConnected) return;
         if (!text) {
-          synthesisPlaceholder.remove();
+          coachPlaceholder.remove();
           return;
         }
         const card = document.createElement("div");
+        card.className = "assessment-coach-card";
         card.textContent = String(text);
-        card.style.borderLeft = "3px solid var(--accent)";
-        card.style.padding = "0.75rem 1rem";
-        card.style.fontSize = "0.95rem";
-        card.style.background = "var(--panel)";
-        card.style.marginTop = "4px";
-        synthesisPlaceholder.replaceWith(card);
+        coachPlaceholder.replaceWith(card);
       },
     );
 
@@ -2097,96 +2112,209 @@ export function wireStudyHandlers() {
     if (weakCount === 0 && strongCount === 0) {
       summary.textContent = "No changes — all blocks in normal range";
     } else {
-      summary.innerHTML = `${weakCount} blocks flagged as weak → extra socratic question added<br>${strongCount} blocks flagged as strong → RSVP only, no questions`;
+      const weakLine =
+        weakCount > 0
+          ? `${weakCount} weak → thorough explanation + ≥1 question per flagged gap`
+          : "";
+      const strongLine =
+        strongCount > 0 ? `${strongCount} strong → brief recap (~150–220 words), fewer questions` : "";
+      summary.innerHTML = [weakLine, strongLine].filter(Boolean).join("<br>");
     }
     wrap.appendChild(summary);
+
+    const gapDetails = document.createElement("details");
+    gapDetails.className = "gap-review-details";
+    const gapDetailsSummary = document.createElement("summary");
+    gapDetailsSummary.textContent = "Review gaps (optional)";
+    gapDetails.appendChild(gapDetailsSummary);
+    const gapEditorRoot = document.createElement("div");
+    gapEditorRoot.className = "gap-editor-grid";
+    gapDetails.appendChild(gapEditorRoot);
+    wrap.appendChild(gapDetails);
+
+    const userEdits = {};
+    const userTouchedBlocks = new Set();
+    let synthesisDraft = {};
+    let synthesisStatus = "pending";
+
+    const gapEditors = new Map();
+
+    function syncUserEdits(blockId, labels) {
+      const key = String(blockId);
+      const normalized = labels
+        .map((l) => String(l || "").trim())
+        .filter((l) => l.length >= 3 && l.length <= 80);
+      if (!normalized.length) {
+        userEdits[key] = [];
+      } else {
+        userEdits[key] = normalized.map((label) => ({ label, source: "user" }));
+      }
+      userTouchedBlocks.add(key);
+    }
+
+    function mountGapBlockEditor(blockId, title, initialLabels) {
+      const section = document.createElement("div");
+      section.className = "gap-block-editor";
+      const heading = document.createElement("div");
+      heading.className = "gap-block-title";
+      heading.textContent = `#${blockId} ${title}`;
+      const chipsRow = document.createElement("div");
+      chipsRow.className = "gap-chips";
+      const addRow = document.createElement("div");
+      addRow.className = "gap-add-row";
+      const addInput = document.createElement("input");
+      addInput.type = "text";
+      addInput.placeholder = "Add gap label…";
+      addInput.maxLength = 80;
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.textContent = "Add";
+      addRow.append(addInput, addBtn);
+      section.append(heading, chipsRow, addRow);
+      gapEditorRoot.appendChild(section);
+
+      let labels = initialLabels.slice();
+
+      function renderChips() {
+        chipsRow.replaceChildren();
+        labels.forEach((label, idx) => {
+          const chip = document.createElement("span");
+          chip.className = "gap-chip";
+          const text = document.createElement("input");
+          text.type = "text";
+          text.value = label;
+          text.maxLength = 80;
+          text.addEventListener("change", () => {
+            labels[idx] = String(text.value || "").trim();
+            syncUserEdits(blockId, labels);
+          });
+          const rm = document.createElement("button");
+          rm.type = "button";
+          rm.className = "gap-chip-remove";
+          rm.setAttribute("aria-label", "Remove gap");
+          rm.textContent = "×";
+          rm.addEventListener("click", () => {
+            labels.splice(idx, 1);
+            syncUserEdits(blockId, labels);
+            renderChips();
+          });
+          chip.append(text, rm);
+          chipsRow.appendChild(chip);
+        });
+      }
+
+      function addLabel(raw) {
+        const label = String(raw || "").trim();
+        if (label.length < 3 || labels.length >= 8) return;
+        if (labels.includes(label)) return;
+        labels.push(label);
+        addInput.value = "";
+        syncUserEdits(blockId, labels);
+        renderChips();
+      }
+
+      addBtn.addEventListener("click", () => addLabel(addInput.value));
+      addInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          addLabel(addInput.value);
+        }
+      });
+
+      renderChips();
+      return {
+        setLabels(newLabels) {
+          labels = newLabels.slice();
+          renderChips();
+        },
+        getLabels: () => labels.slice(),
+      };
+    }
+
+    for (const row of blockRows) {
+      gapEditors.set(
+        row.id,
+        mountGapBlockEditor(row.id, row.title || `Block ${row.id}`, []),
+      );
+    }
+
+    function applySynthesisToEditors() {
+      for (const row of blockRows) {
+        const key = String(row.id);
+        if (userTouchedBlocks.has(key)) continue;
+        const editor = gapEditors.get(row.id);
+        if (!editor) continue;
+        editor.setLabels(gapLabelsForBlock(synthesisDraft, row.id));
+      }
+    }
+
+    function setGapStatusMessage(status) {
+      if (status === "ok") {
+        gapStatusEl.textContent = "Gaps ready";
+        return;
+      }
+      if (status === "timeout") {
+        gapStatusEl.textContent = "Gap analysis timed out — using block scores only";
+        return;
+      }
+      if (status === "error") {
+        gapStatusEl.textContent = "Gap analysis failed — using block scores only";
+        return;
+      }
+      if (status === "skipped") {
+        gapStatusEl.textContent = "Gap analysis skipped (no API key)";
+        return;
+      }
+      gapStatusEl.textContent = "Analysing gaps…";
+    }
+
+    const synthesisPromise = synthesizeAssessmentGaps({
+      assessmentResults: window.assessmentResults,
+      questions: qs,
+      responses: resp,
+      blockIndex,
+      language: getStudyLanguage(),
+    })
+      .then((result) => {
+        synthesisStatus = "ok";
+        synthesisDraft = result?.gaps_by_block && typeof result.gaps_by_block === "object" ? result.gaps_by_block : {};
+        setGapStatusMessage("ok");
+        applySynthesisToEditors();
+        return result;
+      })
+      .catch((err) => {
+        if (err instanceof GapSynthesisError) {
+          if (err.code === "missing_api_key") synthesisStatus = "skipped";
+          else if (err.code === "timeout") synthesisStatus = "timeout";
+          else synthesisStatus = "error";
+        } else {
+          synthesisStatus = "error";
+        }
+        synthesisDraft = {};
+        setGapStatusMessage(synthesisStatus);
+        if (synthesisStatus === "error") console.warn("[gap-synthesis]", err);
+        return { gaps_by_block: {} };
+      });
 
     const actions = document.createElement("div");
     actions.className = "row";
     const acceptBtn = document.createElement("button");
     acceptBtn.type = "button";
     acceptBtn.textContent = "Accept suggestions";
-    const customBtn = document.createElement("button");
-    customBtn.type = "button";
-    customBtn.textContent = "Customise";
     actions.appendChild(acceptBtn);
-    actions.appendChild(customBtn);
     wrap.appendChild(actions);
 
-    const customWrap = document.createElement("div");
-    customWrap.hidden = true;
-    customWrap.style.display = "grid";
-    customWrap.style.gap = "8px";
-    customWrap.style.marginTop = "8px";
-    wrap.appendChild(customWrap);
-
-    for (const row of blockRows) {
-      const line = document.createElement("div");
-      line.className = "card";
-      line.style.padding = "12px";
-      const baseCfg = resolveBlockQuestionConfig(Math.max(0, row.id - 1));
-      const title = document.createElement("div");
-      title.style.fontWeight = "600";
-      title.textContent = `#${row.id} ${row.title || `Block ${row.id}`}`;
-      const testLabel = document.createElement("label");
-      testLabel.textContent = `Test questions (${baseCfg.n_test})`;
-      const testRange = document.createElement("input");
-      testRange.type = "range";
-      testRange.min = "0";
-      testRange.max = "5";
-      testRange.step = "1";
-      testRange.value = String(baseCfg.n_test);
-      const socLabel = document.createElement("label");
-      socLabel.textContent = `Socratic questions (${baseCfg.n_socratic})`;
-      const socRange = document.createElement("input");
-      socRange.type = "range";
-      socRange.min = "0";
-      socRange.max = "3";
-      socRange.step = "1";
-      socRange.value = String(baseCfg.n_socratic);
-      testRange.addEventListener("input", () => {
-        testLabel.textContent = `Test questions (${testRange.value})`;
-      });
-      socRange.addEventListener("input", () => {
-        socLabel.textContent = `Socratic questions (${socRange.value})`;
-      });
-      line.dataset.blockId = String(row.id);
-      line.appendChild(title);
-      line.appendChild(testLabel);
-      line.appendChild(testRange);
-      line.appendChild(socLabel);
-      line.appendChild(socRange);
-      customWrap.appendChild(line);
-    }
-
-    function applySuggestedConfig(custom = false) {
-      const sessionObj = loadActiveSession();
-      if (!sessionObj || !Array.isArray(sessionObj.blocks)) return;
-      for (let i = 0; i < sessionObj.blocks.length; i += 1) {
-        const b = sessionObj.blocks[i] || {};
-        if (!b._config || typeof b._config !== "object") b._config = {};
-        const blockId = i + 1;
-        const bucket = perBlock[String(blockId)];
-        if (custom) {
-          const row = customWrap.querySelector(`[data-block-id="${blockId}"]`);
-          const ranges = row ? row.querySelectorAll("input[type=range]") : [];
-          const testV = Number(ranges[0]?.value);
-          const socV = Number(ranges[1]?.value);
-          b._config.n_test = clampInt(testV, 0, 5, resolveBlockQuestionConfig(i).n_test);
-          b._config.n_socratic = clampInt(socV, 0, 3, resolveBlockQuestionConfig(i).n_socratic);
-          continue;
-        }
-        if (!bucket || bucket.classification === "ok") continue;
-        if (bucket.classification === "weak") {
-          b._config.n_socratic = clampInt(resolveBlockQuestionConfig(i).n_socratic + 1, 0, 3, 1);
-          b._config.n_test = clampInt(resolveBlockQuestionConfig(i).n_test, 0, 5, 2);
-        }
-        if (bucket.classification === "strong") {
-          b._config.n_test = 0;
-          b._config.n_socratic = 0;
-        }
-      }
-      storeActiveSession(sessionObj);
+    function resolveGapsSource(merged) {
+      const hasGaps = merged && typeof merged === "object" && Object.keys(merged).length > 0;
+      if (!hasGaps) return "none";
+      const hadSynthesis =
+        synthesisStatus === "ok" &&
+        synthesisDraft &&
+        typeof synthesisDraft === "object" &&
+        Object.keys(synthesisDraft).length > 0;
+      if (userTouchedBlocks.size > 0 && hadSynthesis) return "merged";
+      if (userTouchedBlocks.size > 0) return "user";
+      return "synthesis";
     }
 
     function cleanupResultsUi() {
@@ -2199,39 +2327,49 @@ export function wireStudyHandlers() {
     }
 
     acceptBtn.addEventListener("click", async () => {
-      const applyResult = applyAssessmentResults(window.assessmentResults || {});
+      acceptBtn.disabled = true;
+      const prevLabel = acceptBtn.textContent;
+      acceptBtn.textContent = "Applying…";
+      try {
+        await synthesisPromise;
+        const merged = mergeGapLists({ gaps_by_block: synthesisDraft }, userEdits);
+        const gapsSource = resolveGapsSource(merged);
+        const applyResult = applyAssessmentResults({
+          ...(window.assessmentResults || {}),
+          gapsByBlock: merged,
+          gaps_by_block: merged,
+          gapsSource,
+          gaps_source: gapsSource,
+          synthesisStatus,
+          synthesis_status: synthesisStatus,
+        });
 
-      wrap.innerHTML = "";
-      const okTitle = document.createElement("h1");
-      okTitle.style.margin = "0";
-      okTitle.style.fontSize = "24px";
-      okTitle.textContent = "Session personalised. Ready to generate blocks.";
-      const okMeta = document.createElement("p");
-      okMeta.className = "subtle";
-      okMeta.style.margin = "8px 0 0";
-      okMeta.textContent = `Strong: ${applyResult.strongBlocks.length} · Weak: ${applyResult.weakBlocks.length}`;
-      const goBtn = document.createElement("button");
-      goBtn.type = "button";
-      goBtn.textContent = "Start generating →";
-      goBtn.style.marginTop = "12px";
-      wrap.appendChild(okTitle);
-      wrap.appendChild(okMeta);
-      wrap.appendChild(goBtn);
-      goBtn.addEventListener("click", async () => {
-        cleanupResultsUi();
-        await startStudyingNow();
-      });
-    });
-
-    customBtn.addEventListener("click", async () => {
-      if (customWrap.hidden) {
-        customWrap.hidden = false;
-        customBtn.textContent = "Apply custom";
-        return;
+        wrap.innerHTML = "";
+        const okTitle = document.createElement("h1");
+        okTitle.style.margin = "0";
+        okTitle.style.fontSize = "24px";
+        okTitle.textContent = "Session personalised. Ready to generate blocks.";
+        const okMeta = document.createElement("p");
+        okMeta.className = "subtle";
+        okMeta.style.margin = "8px 0 0";
+        okMeta.textContent = `Strong: ${applyResult.strongBlocks.length} · Weak: ${applyResult.weakBlocks.length}`;
+        const goBtn = document.createElement("button");
+        goBtn.type = "button";
+        goBtn.textContent = "Start generating →";
+        goBtn.style.marginTop = "12px";
+        wrap.appendChild(okTitle);
+        wrap.appendChild(okMeta);
+        wrap.appendChild(goBtn);
+        goBtn.addEventListener("click", async () => {
+          cleanupResultsUi();
+          await startStudyingNow();
+        });
+      } finally {
+        if (acceptBtn.isConnected) {
+          acceptBtn.disabled = false;
+          acceptBtn.textContent = prevLabel;
+        }
       }
-      applySuggestedConfig(true);
-      cleanupResultsUi();
-      await startStudyingNow();
     });
 
     o.root.appendChild(wrap);

@@ -692,6 +692,84 @@ body.assessment-active .guide-sidebar {
   gap: 14px;
 }
 
+.gap-review-details {
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--panel, rgba(255, 255, 255, 0.04));
+}
+
+.gap-review-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: outside;
+}
+
+.gap-editor-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.gap-block-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.gap-block-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.gap-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.gap-chip input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  min-width: 120px;
+  font-size: 14px;
+}
+
+.gap-chip-remove {
+  padding: 0 6px;
+  line-height: 1;
+  min-height: auto;
+}
+
+.gap-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.gap-add-row input {
+  flex: 1 1 180px;
+}
+
+.assessment-coach-card {
+  border-left: 3px solid var(--accent);
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  background: var(--panel);
+  margin-top: 4px;
+}
+
 .assessment-question-head {
   text-align: center;
   font-size: clamp(18px, 3vw, 22px);
