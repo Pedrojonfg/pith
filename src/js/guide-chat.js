@@ -175,7 +175,6 @@ export function refreshGuideContext() {
 
 export function buildGuidePrompt(userMessage, currentBlockIndex) {
   const ctx = window.guideContext || {};
-  const language = String(ctx.language || getStudyLanguageFromStorage() || "English");
   const sessionContext = String(ctx.sessionContext || "");
   const idx = Number.isFinite(Number(currentBlockIndex))
     ? Number(currentBlockIndex)
@@ -183,7 +182,7 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
 
   const safeUser = String(userMessage || "").trim();
   const currentBlockNote = `Student is currently on block ${idx + 1}`;
-  const systemPrompt = `You are a study guide tutor. Below is the COMPLETE context of the current study session. Answer questions about ANY topic in this session. Be concise, reference specific blocks when relevant, encourage deep thinking. Respond in ${language}.\n\nCOMPLETE SESSION CONTEXT:\n${sessionContext}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
+  const systemPrompt = `You are a study guide tutor. Below is the COMPLETE context of the current study session. Answer questions about ANY topic in this session. Be concise, reference specific blocks when relevant, encourage deep thinking. Respond in the same language as the student's latest message.\n\nCOMPLETE SESSION CONTEXT:\n${sessionContext}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
 
   return systemPrompt;
 }
