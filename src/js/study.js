@@ -19,6 +19,7 @@ import { shuffleTestQuestionOptions, shuffleTestQuestionsInList } from "./shuffl
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260525_1";
+import { clearMarkdownContainer, markdownToHtml, renderMarkdown } from "./markdown.js?v=20260525_1";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260526_2";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
@@ -956,9 +957,8 @@ function ensureGuideResponseCardVisible({ replyText } = {}) {
   subtitle.textContent = "Re: your question from the previous block";
 
   const body = document.createElement("div");
-  body.style.whiteSpace = "pre-wrap";
   body.style.marginTop = "10px";
-  body.textContent = text;
+  void renderMarkdown(body, text);
 
   card.appendChild(title);
   card.appendChild(subtitle);
@@ -1181,11 +1181,11 @@ async function startTestBlock() {
   updateStudyProgressUi();
 
   els.testFeedback.hidden = true;
-  els.testFeedback.textContent = "";
+  clearMarkdownContainer(els.testFeedback);
   els.testNextBtn.hidden = true;
   els.testNextBtn.textContent = "";
   els.testOptions.innerHTML = "";
-  els.testQuestionText.textContent = "";
+  clearMarkdownContainer(els.testQuestionText);
   els.testRsvpStatus.textContent = "";
   els.testRsvpView.hidden = true;
   els.testQaView.hidden = true;
@@ -1217,7 +1217,7 @@ async function startSocraticBlock() {
   clearSocraticError();
   els.socraticStatus.textContent = "";
   els.socraticResponseBox.hidden = true;
-  els.socraticResponseBox.textContent = "";
+  clearMarkdownContainer(els.socraticResponseBox);
   els.socraticNextQuestionBtn.hidden = true;
   els.socraticNextBlockBtn.hidden = true;
 
@@ -1245,7 +1245,7 @@ async function startSocraticBlock() {
 function renderTestQuestion() {
   clearTestError();
   els.testFeedback.hidden = true;
-  els.testFeedback.textContent = "";
+  clearMarkdownContainer(els.testFeedback);
   els.testNextBtn.hidden = true;
   els.testNextBtn.textContent = "";
 
@@ -1270,9 +1270,8 @@ function renderTestQuestion() {
   setQuestionProgressUi();
 
   const q = ctx.q;
-  els.testQuestionText.textContent = String(q?.question || "");
+  void renderMarkdown(els.testQuestionText, String(q?.question || ""));
   els.testOptions.innerHTML = "";
-  typesetMath(els.testQuestionText);
 
   const letters = ["A", "B", "C", "D"];
   for (const letter of letters) {
@@ -1280,7 +1279,7 @@ function renderTestQuestion() {
     btn.type = "button";
     btn.dataset.letter = letter;
     const optText = q?.options && q.options[letter] != null ? String(q.options[letter]) : "";
-    btn.textContent = `${letter}. ${optText}`;
+    btn.innerHTML = markdownToHtml(`${letter}. ${optText}`);
     btn.addEventListener("click", () => {
       handleTestAnswer({
         chosen: letter,
@@ -1289,8 +1288,8 @@ function renderTestQuestion() {
       });
     });
     els.testOptions.appendChild(btn);
+    void typesetMath(btn);
   }
-  typesetMath(els.testOptions);
 }
 
 function handleTestAnswer({ chosen, correct, feedback }) {
@@ -1317,8 +1316,7 @@ function handleTestAnswer({ chosen, correct, feedback }) {
   }
 
   els.testFeedback.hidden = false;
-  els.testFeedback.textContent = feedback || "";
-  typesetMath(els.testFeedback);
+  void renderMarkdown(els.testFeedback, feedback || "");
 
   const blocks = getBlocksSafe();
   const isLastGlobal = ctx.globalIndex >= ctx.total - 1;
@@ -1353,7 +1351,7 @@ function renderSocraticQuestion() {
   clearSocraticError();
   els.socraticStatus.textContent = "";
   els.socraticResponseBox.hidden = true;
-  els.socraticResponseBox.textContent = "";
+  clearMarkdownContainer(els.socraticResponseBox);
   els.socraticAnswer.value = "";
   els.socraticNextQuestionBtn.hidden = true;
   els.socraticNextBlockBtn.hidden = true;
@@ -1381,8 +1379,7 @@ function renderSocraticQuestion() {
   els.socraticHeader.textContent = "Socratic";
   els.socraticMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}: ${blockTitle}`;
   setQuestionProgressUi();
-  els.socraticQuestionText.textContent = String(q.question);
-  typesetMath(els.socraticQuestionText);
+  void renderMarkdown(els.socraticQuestionText, String(q.question));
 
   setTimeout(() => els.socraticAnswer.focus(), 0);
 }
@@ -2128,7 +2125,7 @@ export function wireStudyHandlers() {
         }
         const card = document.createElement("div");
         card.className = "assessment-coach-card";
-        card.textContent = String(text);
+        void renderMarkdown(card, String(text));
         coachPlaceholder.replaceWith(card);
       },
     );
@@ -3287,7 +3284,7 @@ export function wireStudyHandlers() {
     clearSocraticError();
     els.socraticStatus.textContent = "";
     els.socraticResponseBox.hidden = true;
-    els.socraticResponseBox.textContent = "";
+    clearMarkdownContainer(els.socraticResponseBox);
 
     const llmModel = getSessionLlmModel(state.activeSession);
     try {
@@ -3337,8 +3334,7 @@ export function wireStudyHandlers() {
       });
 
       els.socraticResponseBox.hidden = false;
-      els.socraticResponseBox.textContent = resp;
-      typesetMath(els.socraticResponseBox);
+      void renderMarkdown(els.socraticResponseBox, resp);
 
       recordResponse({
         blockIndex: state.activeBlockIndex,
@@ -3409,7 +3405,7 @@ export function wireStudyHandlers() {
   els.testRestartBlockBtn.addEventListener("click", () => {
     clearTestError();
     els.testFeedback.hidden = true;
-    els.testFeedback.textContent = "";
+    clearMarkdownContainer(els.testFeedback);
     state.activeQuestionIndex = 0;
     if (state.activeSession && typeof state.activeSession === "object") {
       state.activeSession.active_question_index = 0;
@@ -3480,7 +3476,7 @@ export function wireStudyHandlers() {
       const n = Array.isArray(explanations) ? explanations.length : 0;
       if (!n) {
         if (els.summaryOverlayTitle) els.summaryOverlayTitle.textContent = "Summary so far";
-        if (els.summaryOverlayBody) els.summaryOverlayBody.textContent = "";
+        if (els.summaryOverlayBody) clearMarkdownContainer(els.summaryOverlayBody);
         setSummaryOverlayError("No blocks studied yet.");
         setSummaryOverlayOpen(true);
         return;
@@ -3495,6 +3491,7 @@ export function wireStudyHandlers() {
       }
       if (els.summaryOverlayBody) {
         els.summaryOverlayBody.textContent = "Summarising…";
+        els.summaryOverlayBody.classList.remove("md-content");
       }
       setSummaryOverlayError("");
       setSummaryOverlayOpen(true);
@@ -3506,10 +3503,10 @@ export function wireStudyHandlers() {
         const language = getStudyLanguage();
         const userPrompt = explanations.join("\n\n");
         const out = await deepSeekSummarySoFar({ llmModel, language, userPrompt });
-        if (els.summaryOverlayBody) els.summaryOverlayBody.textContent = out;
+        if (els.summaryOverlayBody) void renderMarkdown(els.summaryOverlayBody, out);
         setSummaryOverlayError("");
       } catch (err) {
-        if (els.summaryOverlayBody) els.summaryOverlayBody.textContent = "";
+        if (els.summaryOverlayBody) clearMarkdownContainer(els.summaryOverlayBody);
         setSummaryOverlayError(err?.message || "Failed to generate summary.");
       } finally {
         els.summarySoFarBtn.disabled = false;

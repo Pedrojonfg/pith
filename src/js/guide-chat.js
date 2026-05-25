@@ -4,7 +4,7 @@ import {
   getActiveSessionLlmModel,
   llmChatCompletions,
 } from "./llm.js?v=20260525_1";
-import { typesetMath } from "./ui.js?v=20260525_1";
+import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
 
 function safeJsonParse(raw) {
@@ -51,18 +51,17 @@ function truncate(s, n) {
   return `${t.slice(0, n)}...`;
 }
 
-function looksLikeLatex(s) {
-  const t = String(s || "");
-  if (!t) return false;
-  // Quick heuristic: avoids calling MathJax for plain text.
-  return (
-    t.includes("$$") ||
-    t.includes("\\(") ||
-    t.includes("\\)") ||
-    t.includes("\\[") ||
-    t.includes("\\]") ||
-    t.includes("$")
-  );
+function paintChatHistory(history) {
+  const messagesEl = document.getElementById("chat-messages");
+  if (!messagesEl || !Array.isArray(history) || !history.length) return;
+  messagesEl.innerHTML = "";
+  for (const m of history) {
+    if (!m || typeof m !== "object") continue;
+    renderChatMessage({
+      role: String(m.role || ""),
+      content: String(m.content || ""),
+    });
+  }
 }
 
 function buildSessionContext({ activeSession, currentBlockIndex }) {
@@ -142,6 +141,7 @@ export function initGuideChat() {
     // ignore
   }
   window.guideHistory = history;
+  paintChatHistory(history);
 }
 
 export function refreshGuideContext() {
@@ -171,6 +171,7 @@ export function refreshGuideContext() {
     // ignore
   }
   window.guideHistory = history;
+  paintChatHistory(history);
 }
 
 export function buildGuidePrompt(userMessage, currentBlockIndex) {
@@ -220,18 +221,17 @@ function renderChatMessage({ role, content, isError } = {}) {
   const el = document.createElement("div");
   el.className = `chat-message ${role === "user" ? "message-user" : "message-assistant"}`;
   // Render into a fresh child so MathJax never reuses a processed node.
-  const child = document.createElement("span");
-  child.textContent = String(content || "");
+  const child = document.createElement("div");
   el.appendChild(child);
   if (isError) {
+    child.textContent = String(content || "");
     el.style.color = "rgba(248, 113, 113, 0.95)";
     el.style.background = "rgba(248, 113, 113, 0.08)";
     el.style.border = "1px solid rgba(248, 113, 113, 0.35)";
+  } else {
+    void renderMarkdown(child, content);
   }
   messagesEl.appendChild(el);
-  if (looksLikeLatex(content)) {
-    void typesetMath(child);
-  }
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 

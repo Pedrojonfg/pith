@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v7";
+const CACHE_NAME = "mylearning-v8";
 
 const STATIC_ASSETS = [
   "/",
@@ -14,12 +14,15 @@ const STATIC_ASSETS = [
   "/src/js/resume.js",
   "/src/js/ui.js",
   "/src/js/guide-chat.js",
+  "/src/js/markdown.js",
   "/src/js/dictionary.js",
   "/src/js/review.js",
   "/src/js/config.js",
   "/src/js/llm.js",
   "/manifest.json",
 ];
+
+const MARKED_URL = "https://cdn.jsdelivr.net/npm/marked@15/marked.min.js";
 
 const MATHJAX_URLS = [
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
@@ -31,7 +34,7 @@ const MATHJAX_URLS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([...STATIC_ASSETS, ...MATHJAX_URLS]).catch((err) => {
+      return cache.addAll([...STATIC_ASSETS, MARKED_URL, ...MATHJAX_URLS]).catch((err) => {
         console.warn("SW cache failed for some assets:", err);
       });
     }),

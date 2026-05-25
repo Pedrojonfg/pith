@@ -8,6 +8,7 @@ import { shuffleTestQuestionOptions } from "./shuffle-options.js";
 import { buildMarkdown } from "./export.js?v=20260525_1";
 import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260525_1";
 import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260525_1";
+import { clearMarkdownContainer, markdownToHtml, renderMarkdown } from "./markdown.js?v=20260525_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
@@ -190,19 +191,18 @@ function renderReviewQuestion() {
   els.reviewMeta.textContent = `Question ${reviewIndex + 1} of ${total}`;
   updateReviewScoreUi();
 
-  els.reviewQuestionText.textContent = String(q.question || "");
-  typesetMath(els.reviewQuestionText);
+  void renderMarkdown(els.reviewQuestionText, String(q.question || ""));
 
   els.reviewTestView.hidden = true;
   els.reviewSocraticView.hidden = true;
   els.reviewTestOptions.innerHTML = "";
   els.reviewTestFeedback.hidden = true;
-  els.reviewTestFeedback.textContent = "";
+  clearMarkdownContainer(els.reviewTestFeedback);
   els.reviewNextBtn.hidden = true;
 
   els.reviewSocraticAnswer.value = "";
   els.reviewSocraticResponseBox.hidden = true;
-  els.reviewSocraticResponseBox.textContent = "";
+  clearMarkdownContainer(els.reviewSocraticResponseBox);
   els.reviewSocraticStatus.textContent = "";
   els.reviewSocraticNextBtn.hidden = true;
 
@@ -214,7 +214,9 @@ function renderReviewQuestion() {
       const label = opts[letter] != null ? String(opts[letter]).trim() : "";
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.textContent = `${letter}. ${label || ""}`.trim();
+      btn.dataset.letter = letter;
+      btn.innerHTML = markdownToHtml(`${letter}. ${label || ""}`.trim());
+      void typesetMath(btn);
       btn.addEventListener("click", () => {
         const correct = String(q.answer || "").trim();
         const isCorrect = correct && letter === correct;
@@ -229,8 +231,7 @@ function renderReviewQuestion() {
         const all = Array.from(els.reviewTestOptions.querySelectorAll("button"));
         for (const b of all) b.disabled = true;
         for (const b of all) {
-          const t = String(b.textContent || "");
-          const l = t.slice(0, 1);
+          const l = String(b.dataset.letter || "");
           if (correct && l === correct) b.classList.add("is-correct");
           if (l === letter && !isCorrect) b.classList.add("is-wrong");
         }
@@ -242,8 +243,7 @@ function renderReviewQuestion() {
           (correct ? `Correct answer: ${correct}` : "") ||
           (isCorrect ? "Correct." : "Incorrect.");
         els.reviewTestFeedback.hidden = false;
-        els.reviewTestFeedback.textContent = fb;
-        typesetMath(els.reviewTestFeedback);
+        void renderMarkdown(els.reviewTestFeedback, fb);
 
         const isLast = reviewIndex >= total - 1;
         els.reviewNextBtn.hidden = false;
@@ -317,7 +317,7 @@ function resetReviewRun() {
   els.reviewGeneratingLabel.textContent = "Generating questions…";
   els.reviewGeneratingFill.style.width = "0%";
   els.reviewTestFeedback.hidden = true;
-  els.reviewTestFeedback.textContent = "";
+  clearMarkdownContainer(els.reviewTestFeedback);
   els.reviewSocraticResponseBox.hidden = true;
   els.reviewSocraticResponseBox.textContent = "";
   els.reviewSocraticStatus.textContent = "";
@@ -454,7 +454,7 @@ export function wireReviewHandlers() {
   els.reviewSocraticSendBtn.addEventListener("click", async () => {
     clearReviewError();
     els.reviewSocraticResponseBox.hidden = true;
-    els.reviewSocraticResponseBox.textContent = "";
+    clearMarkdownContainer(els.reviewSocraticResponseBox);
     els.reviewSocraticNextBtn.hidden = true;
 
     const q = reviewQuestions[reviewIndex];
@@ -487,8 +487,7 @@ export function wireReviewHandlers() {
         studentAnswer: answer,
       });
       els.reviewSocraticResponseBox.hidden = false;
-      els.reviewSocraticResponseBox.textContent = resp;
-      typesetMath(els.reviewSocraticResponseBox);
+      void renderMarkdown(els.reviewSocraticResponseBox, resp);
 
       reviewAnswers[reviewIndex] = {
         type: "socratic",
