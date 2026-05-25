@@ -20,7 +20,7 @@ import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcep
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260525_1";
 import { clearMarkdownContainer, markdownToHtml, renderMarkdown } from "./markdown.js?v=20260525_1";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText } from "./rsvp.js?v=20260526_2";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
 import {
@@ -3519,34 +3519,7 @@ export function wireStudyHandlers() {
     exportSessionMarkdown();
   });
 
-  els.rsvpPlayPauseBtn.addEventListener("click", () => {
-    if (rsvpState.countdownActive) return;
-    setRsvpPlayState(!rsvpState.playing);
-  });
-  els.rsvpSkipBtn.addEventListener("click", () => finishRsvp());
-  els.rsvpWpm.addEventListener("input", () => {
-    const v = Number(els.rsvpWpm.value);
-    rsvpState.wpm = Number.isFinite(v) ? v : 500;
-    els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
-    if (els.rsvpOverlay.getAttribute("aria-hidden") === "false" && rsvpState.playing) {
-      // reschedule via play toggle
-      setRsvpPlayState(true);
-    }
-    persistRsvpDefaults();
-  });
-  for (const btn of els.rsvpWpfButtons || []) {
-    btn.addEventListener("click", () => {
-      const next = Number(btn.dataset.wpf);
-      if (!Number.isFinite(next)) return;
-      setWordsPerFlash(next);
-    });
-  }
-  document.addEventListener("keydown", (e) => {
-    if (e.code !== "Space") return;
-    if (els.rsvpOverlay.getAttribute("aria-hidden") !== "false") return;
-    e.preventDefault();
-    setRsvpPlayState(!rsvpState.playing);
-  });
+  wireRsvpHandlers();
 
   if (els.resumeSessionBtn) {
     els.resumeSessionBtn.addEventListener("click", async () => {

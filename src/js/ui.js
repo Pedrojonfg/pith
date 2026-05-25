@@ -192,9 +192,15 @@ export const els = {
 
   rsvpOverlay: document.getElementById("rsvpOverlay"),
   rsvpChunk: document.getElementById("rsvpChunk"),
+  rsvpProgress: document.getElementById("rsvpProgress"),
+  rsvpProgressTrack: document.getElementById("rsvpProgressTrack"),
+  rsvpProgressFill: document.getElementById("rsvpProgressFill"),
+  rsvpProgressLabel: document.getElementById("rsvpProgressLabel"),
   rsvpWpm: document.getElementById("rsvpWpm"),
   rsvpWpmLabel: document.getElementById("rsvpWpmLabel"),
   rsvpWpfButtons: Array.from(document.querySelectorAll("[data-wpf]")),
+  rsvpComprehensionPause: document.getElementById("rsvpComprehensionPause"),
+  rsvpComprehensionEvery: document.getElementById("rsvpComprehensionEvery"),
   rsvpPlayPauseBtn: document.getElementById("rsvpPlayPauseBtn"),
   rsvpSkipBtn: document.getElementById("rsvpSkipBtn"),
 
