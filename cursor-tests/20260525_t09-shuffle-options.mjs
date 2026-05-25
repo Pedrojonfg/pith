@@ -4,6 +4,8 @@
  */
 import {
   OPTION_LETTERS,
+  normalizeTestOptions,
+  normalizeTestQuestion,
   shuffleInPlace,
   shuffleTestQuestionOptions,
   shuffleTestQuestionsInList,
@@ -29,6 +31,46 @@ const sample = {
   feedback: "Because…",
 };
 
+const lower = normalizeTestQuestion({
+  type: "test",
+  question: "Lower keys?",
+  options: { a: "one", b: "two", c: "three", d: "four" },
+  answer: "b",
+});
+assert(lower.options.A === "one" && lower.answer === "B", "lowercase option keys normalized");
+
+const fromArray = normalizeTestQuestion({
+  type: "test",
+  question: "Array options?",
+  options: ["alpha", "beta", "gamma", "delta"],
+  answer: "2",
+});
+assert(
+  fromArray.options.C === "gamma" && fromArray.answer === "C",
+  "array options and numeric answer normalized",
+);
+
+const reviewChoices = shuffleTestQuestionOptions(
+  normalizeTestQuestion({
+    type: "test",
+    question: "Review batch uses choices?",
+    choices: { a: "foo", b: "bar", c: "baz", d: "qux" },
+    answer: "b",
+  }),
+);
+assert(
+  reviewChoices.options[reviewChoices.answer] === "bar" &&
+    ["foo", "bar", "baz", "qux"].every((t) =>
+      OPTION_LETTERS.some((l) => reviewChoices.options[l] === t),
+    ),
+  "choices alias normalized (post-session review path)",
+);
+
+assert(
+  normalizeTestOptions(null) === null,
+  "normalizeTestOptions returns null for missing",
+);
+
 const shuffled = shuffleTestQuestionOptions(sample);
 assert(shuffled._optionsShuffled === true, "marks shuffled");
 assert(
@@ -39,7 +81,11 @@ const texts = OPTION_LETTERS.map((l) => shuffled.options[l]).sort().join("|");
 assert(texts === "correct|wrong1|wrong2|wrong3", "same four option texts after shuffle");
 
 const again = shuffleTestQuestionOptions(shuffled);
-assert(again === shuffled, "idempotent when already shuffled");
+assert(
+  again._optionsShuffled === true &&
+    again.options[again.answer] === shuffled.options[shuffled.answer],
+  "idempotent when already shuffled",
+);
 
 const socratic = shuffleTestQuestionOptions({ type: "socratic", question: "Why?" });
 assert(socratic.type === "socratic" && !socratic._optionsShuffled, "socratic unchanged");

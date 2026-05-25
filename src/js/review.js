@@ -4,11 +4,16 @@ import {
   getLlmCallingLabel,
   getSessionLlmModel,
 } from "./llm.js?v=20260525_1";
-import { shuffleTestQuestionOptions } from "./shuffle-options.js";
+import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
 import { buildMarkdown } from "./export.js?v=20260525_1";
 import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260525_1";
 import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260525_1";
-import { clearMarkdownContainer, markdownToHtml, renderMarkdown } from "./markdown.js?v=20260525_1";
+import {
+  clearMarkdownContainer,
+  hasMathInHtml,
+  renderMarkdown,
+  renderMcOptionHtml,
+} from "./markdown.js?v=20260525_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
@@ -165,9 +170,6 @@ function normalizeReviewQuestion(q) {
   const obj = q && typeof q === "object" ? q : {};
   const type = String(obj.type || "").trim().toLowerCase();
   const question = String(obj.question || "").trim();
-  const options = obj.options && typeof obj.options === "object" ? obj.options : null;
-  const answer = obj.answer != null ? String(obj.answer).trim() : "";
-  const feedback = obj.feedback != null ? String(obj.feedback).trim() : "";
   if (!question) return null;
   const safeType =
     type === "test" || type === "socratic"
@@ -175,8 +177,15 @@ function normalizeReviewQuestion(q) {
       : reviewType === "socratic"
         ? "socratic"
         : "test";
-  const base = { type: safeType, question, options, answer, feedback };
-  return safeType === "test" ? shuffleTestQuestionOptions(base) : base;
+  if (safeType === "socratic") {
+    return {
+      type: "socratic",
+      question,
+      feedback: obj.feedback != null ? String(obj.feedback).trim() : "",
+    };
+  }
+  // Keep full model fields (choices, option_A, etc.) — same path as session block generation.
+  return shuffleTestQuestionOptions(normalizeTestQuestion({ ...obj, type: "test", question }));
 }
 
 function renderReviewQuestion() {
@@ -208,17 +217,18 @@ function renderReviewQuestion() {
 
   if (q.type === "test") {
     els.reviewTestView.hidden = false;
-    const opts = q.options && typeof q.options === "object" ? q.options : {};
+    const qTest = normalizeTestQuestion(q);
+    const opts = qTest.options && typeof qTest.options === "object" ? qTest.options : {};
     const letters = ["A", "B", "C", "D"];
     for (const letter of letters) {
       const label = opts[letter] != null ? String(opts[letter]).trim() : "";
       const btn = document.createElement("button");
       btn.type = "button";
       btn.dataset.letter = letter;
-      btn.innerHTML = markdownToHtml(`${letter}. ${label || ""}`.trim());
-      void typesetMath(btn);
+      btn.innerHTML = renderMcOptionHtml(letter, label);
+      if (hasMathInHtml(btn.innerHTML)) void typesetMath(btn);
       btn.addEventListener("click", () => {
-        const correct = String(q.answer || "").trim();
+        const correct = String(qTest.answer || "").trim();
         const isCorrect = correct && letter === correct;
         reviewAnswers[reviewIndex] = {
           type: "test",
@@ -239,7 +249,7 @@ function renderReviewQuestion() {
         updateReviewScoreUi();
 
         const fb =
-          q.feedback ||
+          qTest.feedback ||
           (correct ? `Correct answer: ${correct}` : "") ||
           (isCorrect ? "Correct." : "Incorrect.");
         els.reviewTestFeedback.hidden = false;

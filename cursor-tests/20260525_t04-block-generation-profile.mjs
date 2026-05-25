@@ -43,11 +43,25 @@ const brief = buildBlockGenerationSystemPrompt({
   gap_focus: [],
 });
 assert(thorough.includes("Option parity"), "test questions include option parity rules");
-assert(thorough.includes("400-600 words"), "thorough asks 400-600 words");
-assert(!thorough.includes("150-220"), "thorough omits brief word band");
-assert(brief.includes("150-220 words"), "brief_deep asks 150-220 words");
-assert(brief.includes("Do NOT re-teach the full block linearly"), "brief_deep no linear re-teach");
-assert(!brief.includes("400-600"), "brief_deep omits thorough band");
+assert(thorough.includes("HOOK"), "thorough uses RSVP HOOK section");
+assert(thorough.includes("CANNOT re-read"), "thorough includes RSVP constraint");
+assert(thorough.includes("subject-verb-object"), "thorough requires SVO sentences");
+assert(thorough.includes("200-300 words"), "thorough targets 200-300 word cap");
+assert(thorough.includes("definition → concrete example → implication"), "thorough strict pedagogical order");
+assert(!thorough.includes("80-130 words"), "thorough omits brief word band");
+assert(brief.includes("Max 120 words"), "brief_deep asks max 120 words");
+assert(brief.includes("no source regurgitation"), "brief_deep no source regurgitation");
+assert(!brief.includes("200-300 words"), "brief_deep omits thorough band");
+
+const vocab = buildBlockGenerationSystemPrompt({
+  language: "English",
+  n_test: 2,
+  n_socratic: 0,
+  explanation_profile: "thorough",
+  blockTitle: "Key terms: Stokes theorem",
+});
+assert(vocab.includes("VOCABULARY block"), "vocabulary title triggers vocab prompt");
+assert(vocab.includes("6-10 terms"), "vocabulary block term count");
 
 // --- prompt: gap_focus ---
 const withGaps = buildBlockGenerationSystemPrompt({
@@ -102,7 +116,7 @@ warnBlockGenerationProfileMismatch(
   { explanation_profile: "brief_deep", gap_focus: [] },
 );
 warnBlockGenerationProfileMismatch(
-  { explanation: "x ".repeat(130), questions: [{ type: "test" }] },
+  { explanation: "x ".repeat(160), questions: [{ type: "test" }] },
   { explanation_profile: "brief_deep", gap_focus: ["G1", "G2"] },
 );
 console.warn = origWarn;
@@ -141,8 +155,8 @@ localStorage.setItem(
 await generateBlockForIndex(0);
 const system = capturedBody?.messages?.[0]?.content || "";
 const user = capturedBody?.messages?.[1]?.content || "";
-assert(system.includes("150-220"), "live call uses brief_deep system prompt for strong");
-assert(!system.includes("400-600"), "live call omits thorough band for strong");
+assert(system.includes("Max 120 words"), "live call uses brief_deep system prompt for strong");
+assert(!system.includes("200-300 words"), "live call omits thorough band for strong");
 
 resetStorage();
 state.activeSession = {
@@ -166,7 +180,7 @@ localStorage.setItem(
 await generateBlockForIndex(0);
 const system2 = capturedBody?.messages?.[0]?.content || "";
 const user2 = capturedBody?.messages?.[1]?.content || "";
-assert(system2.includes("400-600"), "weak uses thorough");
+assert(system2.includes("HOOK"), "weak uses RSVP thorough");
 assert(system2.includes("2 gap-targeted"), "weak system mentions gap count");
 assert(user2.includes("1. Gap one") && user2.includes("2. Gap two"), "weak user lists gaps");
 

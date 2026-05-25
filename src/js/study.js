@@ -15,11 +15,20 @@ import {
   LLM_MODEL_DEEPSEEK,
   normalizeLlmModel,
 } from "./llm.js?v=20260525_1";
-import { shuffleTestQuestionOptions, shuffleTestQuestionsInList } from "./shuffle-options.js";
+import {
+  normalizeTestQuestion,
+  shuffleTestQuestionOptions,
+  shuffleTestQuestionsInList,
+} from "./shuffle-options.js";
 import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { getCommentReply, setPendingComment, triggerCommentReply } from "./guide-chat.js?v=20260525_1";
-import { clearMarkdownContainer, markdownToHtml, renderMarkdown } from "./markdown.js?v=20260525_1";
+import {
+  clearMarkdownContainer,
+  hasMathInHtml,
+  renderMarkdown,
+  renderMcOptionHtml,
+} from "./markdown.js?v=20260525_1";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
@@ -1279,7 +1288,8 @@ function renderTestQuestion() {
     btn.type = "button";
     btn.dataset.letter = letter;
     const optText = q?.options && q.options[letter] != null ? String(q.options[letter]) : "";
-    btn.innerHTML = markdownToHtml(`${letter}. ${optText}`);
+    btn.innerHTML = renderMcOptionHtml(letter, optText);
+    if (hasMathInHtml(btn.innerHTML)) void typesetMath(btn);
     btn.addEventListener("click", () => {
       handleTestAnswer({
         chosen: letter,
@@ -1288,7 +1298,6 @@ function renderTestQuestion() {
       });
     });
     els.testOptions.appendChild(btn);
-    void typesetMath(btn);
   }
 }
 
@@ -2488,12 +2497,12 @@ export function wireStudyHandlers() {
       stopTimer();
       renderHeader();
 
-      const q = list[currentQ] || {};
+      const q = normalizeTestQuestion(list[currentQ] || {});
       const qText = String(q.question || "").trim();
       o.question.textContent = qText || "Untitled question";
       o.options.innerHTML = "";
 
-      const options = q && typeof q.options === "object" && q.options ? q.options : {};
+      const options = q.options && typeof q.options === "object" ? q.options : {};
       for (const key of ["A", "B", "C", "D"]) {
         const btn = document.createElement("button");
         btn.type = "button";

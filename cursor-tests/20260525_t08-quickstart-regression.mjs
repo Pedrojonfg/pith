@@ -71,8 +71,9 @@ const skipPrompt = buildBlockGenerationSystemPrompt({
   explanation_profile: cfg0.explanation_profile,
   gap_focus: cfg0.gap_focus,
 });
-assert(skipPrompt.includes("400-600 words"), "SC-004: skip path prompt is thorough (400-600w)");
-assert(!skipPrompt.includes("150-220"), "SC-004: skip path has no brief_deep band");
+assert(skipPrompt.includes("HOOK"), "SC-004: skip path prompt is RSVP thorough");
+assert(skipPrompt.includes("200-300 words"), "SC-004: skip path 200-300w cap");
+assert(!skipPrompt.includes("Max 120 words"), "SC-004: skip path has no brief_deep band");
 
 // window.assessmentConfig.skipped (UI path) — same early return
 globalThis.window = globalThis.window || {};
@@ -132,8 +133,8 @@ const strongPrompt = buildBlockGenerationSystemPrompt({
   explanation_profile: "brief_deep",
   gap_focus: [],
 });
-assert(strongPrompt.includes("150-220"), "happy path: strong RSVP band in prompt");
-assert(!strongPrompt.includes("400-600"), "happy path: strong omits thorough band");
+assert(strongPrompt.includes("Max 120 words"), "happy path: strong brief_deep band in prompt");
+assert(!strongPrompt.includes("200-300 words"), "happy path: strong omits thorough band");
 
 const weakPrompt = buildBlockGenerationSystemPrompt({
   language: "English",
@@ -142,7 +143,7 @@ const weakPrompt = buildBlockGenerationSystemPrompt({
   explanation_profile: "thorough",
   gap_focus: happy.blocks[1]._config.gap_focus,
 });
-assert(weakPrompt.includes("400-600 words"), "happy path: weak thorough");
+assert(weakPrompt.includes("HOOK"), "happy path: weak RSVP thorough");
 assert(weakPrompt.includes("Gap-focused questions"), "happy path: weak with gaps gets gap section");
 
 const strongKey = buildBlockConfigKey(happy.blocks[0]._config);

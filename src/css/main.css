@@ -734,6 +734,29 @@ body.rsvp-active {
   padding: 12px 14px;
   border-radius: 14px;
   min-height: 54px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.test-options .mc-option-key {
+  min-width: 26px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.test-options .mc-option-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.test-options .mc-option-body > :first-child {
+  margin-top: 0;
+}
+
+.test-options .mc-option-body > :last-child {
+  margin-bottom: 0;
 }
 
 .test-options button[disabled] {

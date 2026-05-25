@@ -433,8 +433,8 @@ export function warnBlockGenerationProfileMismatch(blockObj, cfg) {
   const questions = Array.isArray(blockObj.questions) ? blockObj.questions : [];
   if (profile === "brief_deep") {
     const wc = countExplanationWords(blockObj.explanation);
-    if (wc > 0 && (wc < 120 || wc > 250)) {
-      console.warn(`Block generation: brief_deep explanation has ${wc} words (expected 120-250).`);
+    if (wc > 0 && (wc < 60 || wc > 140)) {
+      console.warn(`Block generation: brief_deep explanation has ${wc} words (expected max 120).`);
     }
   }
   if (gaps.length > 0 && questions.length < gaps.length) {
