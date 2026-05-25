@@ -12,15 +12,21 @@
 
 ## Prompt fragments (system)
 
-### thorough (unchanged baseline)
+### thorough (RSVP baseline)
 
-- 400–600 words; teach; sub-concepts; examples; confusion points.
+- RSVP structure: Hook → Core definition → Technical layer → Concrete example → Contrast → Connection.
+- Subject-verb-object; ≤15 words per sentence; definition → example → implication; 200–300 words max.
+- Transform source; no linear regurgitation.
 
 ### brief_deep
 
-- 150–220 words.
-- Structure: (1) core definitions, (2) key formula/expression in LaTeX if relevant, (3) one micro-example, (4) one common pitfall.
-- Do NOT re-teach the full block linearly.
+- Max 120 words; compressed RSVP (HOOK, CORE DEFINITION, TECHNICAL LAYER, CONTRAST only).
+- Do NOT re-teach linearly from source.
+
+### vocabulary (`title` starts with `Key terms:`)
+
+- 6–10 terms; one paragraph per term (definition, why, example).
+- No Hook/Core narrative structure.
 
 ### gap_focus (appended when `gap_focus.length > 0`)
 
@@ -36,5 +42,5 @@
 
 ## Output validation (client, dev)
 
-- Log warning if strong + brief_deep explanation word count outside 120–250.
+- Log warning if strong + brief_deep explanation word count outside 60–140 (target max 120).
 - Log warning if weak block gap count exceeds generated questions count.

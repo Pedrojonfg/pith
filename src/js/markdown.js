@@ -70,3 +70,15 @@ export function clearMarkdownContainer(containerEl) {
   containerEl.textContent = "";
   containerEl.classList.remove("md-content");
 }
+
+/** MC option button markup: letter label + markdown body (avoids parsing "A." as markdown). */
+export function renderMcOptionHtml(letter, text) {
+  const key = `${String(letter || "").trim()}.`;
+  const body = markdownToHtml(String(text ?? "").trim());
+  if (!body) return `<span class="mc-option-key">${escapeHtml(key)}</span>`;
+  return `<span class="mc-option-key">${escapeHtml(key)}</span><span class="mc-option-body md-content">${body}</span>`;
+}
+
+export function hasMathInHtml(html) {
+  return /\\\(|\\\[|\$\$?/.test(String(html || ""));
+}

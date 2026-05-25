@@ -696,21 +696,34 @@ function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
   const chunkRule = compact
     ? '- Set "chunk" to "" for every block.'
     : '- Set "chunk" to "" (the app assigns source text locally; do NOT paste document text into chunk).';
-  return `You are splitting a study document into exactly ${n} blocks.
+  return `You are designing exactly ${n} study blocks for RSVP reading (one word flash at a time; the student cannot re-read).
 
-Rules:
-- Return EXACTLY ${n} objects with ids 1 through ${n} (no more, no fewer).
-- Each block must cover ONE distinct concept. Not one section, one concept.
-- If multiple sections discuss the SAME idea, merge them into ONE block titled after the concept.
-- Never create a block whose primary concept appears in another block.
-- Each block must have a unique "signature": list of 3-5 key terms for that block only.
+Design for learning—not for mirroring the document:
+- Order blocks by prerequisites (foundations before applications).
+- Do NOT copy section titles or source paragraph order when that hurts learning order.
+- Each block = ONE teachable concept OR ONE vocabulary set—not one chapter heading.
+- If several sections teach the same core idea, merge them into ONE block named after the concept.
+- Never duplicate the same primary concept in two blocks.
+
+Module + vocabulary structure:
+- Infer natural thematic modules from the material.
+- For EACH module, its FIRST block MUST be a vocabulary block:
+  - title: "Key terms: [short module name]" (exact prefix "Key terms: ")
+  - summary: one sentence stating this block lists 6-10 terms only, no narrative yet.
+  - signature: the 6-10 term strings (no other words).
+- Later blocks in that module build on those terms; each summary must note they assume the module vocabulary block.
+- Vocabulary blocks count toward the total of ${n}.
+
+Other rules:
+- Return EXACTLY ${n} objects with ids 1 through ${n}.
+- Non-vocabulary blocks: unique "signature" of 3-5 key terms for that block only.
 ${chunkRule}
 - Valid JSON only: double-quoted keys/strings, no trailing commas, no comments.
 
 Return ONLY one JSON object (no markdown, no preamble):
-{"blocks":[{"id":1,"title":"...","summary":"2-3 sentences","signature":["a","b"],"chunk":""}]}
+{"blocks":[{"id":1,"title":"Key terms: ...","summary":"...","signature":["term1"],"chunk":""}]}
 
-Cover the ENTIRE document in order. Respond entirely in ${lang}.`;
+Cover the full material. Respond entirely in ${lang}.`;
 }
 
 async function callLlmSplit({ llmModel, messages, useJsonObjectMode }) {
@@ -891,14 +904,49 @@ const BLOCK_JSON_SCHEMA = `{
   ]
 }`;
 
-const EXPLANATION_THOROUGH = `Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.`;
+const EXPLANATION_RSVP_THOROUGH = `You are writing study material optimized for RSVP reading (rapid serial visual presentation). The student reads word by word at high speed and CANNOT re-read. This imposes strict rules:
+
+STRUCTURE (mandatory, in this order—put the explanation field in the "explanation" JSON key using markdown **bold** headings exactly as listed):
+1. HOOK (1 sentence): Why does this concept exist? What problem does it solve?
+2. CORE DEFINITION (1-3 sentences): Define the concept in plain language. No Latin terms yet. No jargon. Explain it to a smart 16-year-old.
+3. TECHNICAL LAYER (2-4 sentences): Now introduce the formal/Latin terms. Each term gets its own sentence: "The Romans called this X, meaning Y."
+4. CONCRETE EXAMPLE (2-4 sentences): One specific, vivid real-world case. Not abstract. Not "for example, imagine...". A real historical instance.
+5. CONTRAST (1-3 sentences): What is this NOT? What does it get confused with?
+6. CONNECTION (1-2 sentences): How does this connect to the next concept or the bigger picture of the course?
+
+WRITING RULES (non-negotiable):
+- Short sentences: subject-verb-object. Maximum 15 words per sentence. Break any longer sentence in two. RSVP destroys long sentences with subordinate clauses.
+- One idea per sentence. Never connect two concepts with "and" or "but" in the same sentence.
+- No parentheses. No semicolons. No em-dashes.
+- Define every technical term the first time it appears. Never use a term before defining it.
+- If a concept requires knowing another concept first, teach that first (in an earlier block—not here).
+- Strict pedagogical order: definition → concrete example → implication. Never reverse (no example before definition; no implication before the example that supports it).
+- Prefer active voice. Prefer concrete nouns over abstract ones.
+- Do NOT copy source prose: no 80-word sentences, no five concepts per paragraph, no undefined vocabulary.
+- Total length: 200-300 words maximum. Dense but scannable at speed.
+- Use blank lines between sections.`;
+
+const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title starts with "Key terms:"). The student reads via RSVP and CANNOT re-read.
+
+Write ONLY definitions—no narrative, no relationships between terms yet.
+
+Format the explanation as one paragraph per term (6-10 terms):
+**TERM** — Plain-language definition. Why the term exists. One-sentence real example.
+
+WRITING RULES: subject-verb-object; max 15 words per sentence; one idea per sentence; no parentheses, semicolons, or em-dashes; define before use.
+Do not use HOOK/CORE/TECHNICAL/CONTRAST sections. Later blocks reference these terms as known.`;
+
+const EXPLANATION_BRIEF_DEEP = `Brief RSVP recap for a student who already studied this material. CANNOT re-read. Max 120 words.
+
+Use only: **HOOK** (1 sentence), **CORE DEFINITION** (1-2 sentences), **TECHNICAL LAYER** (1-2 sentences), **CONTRAST** (1 pitfall sentence).
+Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; definition before example; no source regurgitation.
+Skip CONCRETE EXAMPLE and CONNECTION unless a listed learning gap requires them.`;
 
 /** Shared MC distractor rules — reduces "correct answer stands out" cues. */
 export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone.`;
 
-const EXPLANATION_BRIEF_DEEP = `Write a concise deep-recap explanation of 150-220 words (not shorter, not longer).
-Structure in this order: (1) core definitions, (2) key formula or expression in LaTeX if relevant, (3) one micro-example, (4) one common pitfall.
-Do NOT re-teach the full block linearly — assume the student already saw this material.`;
+const QUESTION_PEDAGOGY_RULES = `Questions must test understanding (apply, discriminate, predict)—not verbatim recall of source phrasing.
+For vocabulary blocks: test term-to-meaning or meaning-to-term only; no multi-step application yet.`;
 
 export function buildBlockGenerationSystemPrompt({
   language,
@@ -906,14 +954,20 @@ export function buildBlockGenerationSystemPrompt({
   n_socratic,
   explanation_profile = "thorough",
   gap_focus = [],
+  blockTitle = "",
 }) {
   const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
+  const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
     : [];
-  const explanationSection = profile === "brief_deep" ? EXPLANATION_BRIEF_DEEP : EXPLANATION_THOROUGH;
+  const explanationSection = isVocabularyBlock
+    ? EXPLANATION_VOCABULARY_BLOCK
+    : profile === "brief_deep"
+      ? EXPLANATION_BRIEF_DEEP
+      : EXPLANATION_RSVP_THOROUGH;
   const gapSection =
     gaps.length > 0
       ? `
@@ -933,11 +987,12 @@ ${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
+${QUESTION_PEDAGOGY_RULES}
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
 ${gapSection}
-Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
-For each: the term exactly as used in the material, and a definition of max 15 words.
+Also extract key concepts for the dictionary: ${isVocabularyBlock ? "every term in this vocabulary block (6-10)." : "3-8 non-obvious domain terms introduced in the Technical layer."}
+For each: the term exactly as used, and a definition of max 15 words.
 Only include terms that are non-obvious or domain-specific. No common words.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
@@ -987,6 +1042,7 @@ export async function deepSeekGenerateBlockJson({
     n_socratic,
     explanation_profile,
     gap_focus,
+    blockTitle,
   });
 
   const userContent = buildBlockGenerationUserContent({
