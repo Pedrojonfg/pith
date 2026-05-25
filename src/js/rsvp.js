@@ -1,9 +1,14 @@
-import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js?v=20260525_1";
+import {
+  LS_RSVP_COMPREHENSION_EVERY_KEY,
+  LS_RSVP_COMPREHENSION_PAUSE_KEY,
+  LS_RSVP_DEFAULT_WPF_KEY,
+  LS_RSVP_DEFAULT_WPM_KEY,
+} from "./config.js?v=20260525_1";
 import { clampInt } from "./session.js?v=20260525_1";
 import { stripMarkdownForPlainText } from "./markdown.js?v=20260525_1";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260525_1";
 
-/** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string }} RsvpChunk */
+/** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean }} RsvpChunk */
 
 export const rsvpState = {
   /** Full explanation markdown (persisted across WPF rebuilds). */
@@ -13,13 +18,17 @@ export const rsvpState = {
   /** Index of the chunk currently on screen while the dwell timer runs. */
   displayedChunkIndex: 0,
   wpm: 500,
-  wordsPerFlash: 3,
+  wordsPerFlash: 1,
   timerId: null,
   playing: true,
   onDone: null,
   countdownActive: false,
   /** Bumped when starting / finishing RSVP or rebuilding chunks — not on pause/play. */
   playbackGen: 0,
+  comprehensionPauseEnabled: false,
+  comprehensionEveryN: 25,
+  /** Word-units shown since last comprehension pause. */
+  wordsSinceComprehensionPause: 0,
 };
 
 const LS_RSVP_CONTAINER_SIZE_KEY = "rsvp_container_size";
@@ -31,13 +40,14 @@ const RSVP_MOBILE_HEIGHT = 90;
 let rsvpContainerEl = null;
 let rsvpResizeObserver = null;
 let fontProbeEl = null;
+let rsvpHandlersWired = false;
 
 /** @typedef {{ fontSizePx: number, mathScale: number, containerWidth: number, containerHeight: number, wordsPerFlash: number, computedAt: number }} RsvpTypographyProfile */
 
 /** @type {RsvpTypographyProfile | null} */
 let typographyProfile = null;
 
-const RSVP_PROBE_WORD = "internacionalización ";
+const RSVP_PROBE_FALLBACK = "internacionalización ";
 const RSVP_MATH_FONT_SCALE = 0.85;
 const RSVP_MIN_FONT_PX = 16;
 
@@ -71,9 +81,14 @@ function persistRsvpContainerSize(width, height) {
   }
 }
 
-function buildTypographyProbe(wordsPerFlash) {
+/**
+ * @param {number} wordsPerFlash
+ * @param {string} [explanationText]
+ */
+function buildTypographyProbe(wordsPerFlash, explanationText) {
   const wpf = Math.max(1, Number(wordsPerFlash) || 1);
-  return RSVP_PROBE_WORD.repeat(wpf);
+  const word = longestWordTokenFromExplanation(explanationText);
+  return word.repeat(wpf);
 }
 
 function ensureFontProbeEl() {
@@ -115,9 +130,10 @@ function binarySearchFontSizePx(testEl, containerWidth, containerHeight) {
 /**
  * @param {HTMLElement} containerEl
  * @param {number} wordsPerFlash
+ * @param {string} [explanationText]
  * @returns {RsvpTypographyProfile | null}
  */
-function computeRsvpTypographyProfile(containerEl, wordsPerFlash) {
+function computeRsvpTypographyProfile(containerEl, wordsPerFlash, explanationText) {
   const cw = containerEl?.clientWidth ?? 0;
   const ch = containerEl?.clientHeight ?? 0;
   if (cw <= 0 || ch <= 0) return null;
@@ -125,7 +141,7 @@ function computeRsvpTypographyProfile(containerEl, wordsPerFlash) {
   const probe = ensureFontProbeEl();
   if (!probe) return null;
 
-  probe.textContent = buildTypographyProbe(wordsPerFlash);
+  probe.textContent = buildTypographyProbe(wordsPerFlash, explanationText);
   probe.style.transform = "";
   const fontSizePx = binarySearchFontSizePx(probe, cw, ch);
 
@@ -158,6 +174,7 @@ function recomputeTypographyProfile() {
   typographyProfile = computeRsvpTypographyProfile(
     rsvpContainerEl,
     rsvpState.wordsPerFlash,
+    rsvpState.sourceExplanation,
   );
   const meta = rsvpState.chunks[rsvpState.displayedChunkIndex];
   const displayEl = document.getElementById("rsvp-word-display");
@@ -222,6 +239,79 @@ window.addEventListener("resize", () => {
 export function setRsvpOverlayActive(isActive) {
   els.rsvpOverlay.setAttribute("aria-hidden", String(!isActive));
   document.body.classList.toggle("rsvp-active", isActive);
+  if (!isActive) els.rsvpOverlay?.classList.remove("rsvp-focus-mode");
+}
+
+function isRsvpOverlayOpen() {
+  return els.rsvpOverlay?.getAttribute("aria-hidden") === "false";
+}
+
+function syncRsvpFocusMode() {
+  if (!els.rsvpOverlay) return;
+  const focus =
+    isRsvpOverlayOpen() && rsvpState.playing && !rsvpState.countdownActive;
+  els.rsvpOverlay.classList.toggle("rsvp-focus-mode", focus);
+}
+
+/** @param {RsvpChunk} chunk */
+function flashWordUnits(chunk) {
+  if (!chunk || chunk.type === "math") return 1;
+  return tokenizeWords(chunk.content || "").length || 1;
+}
+
+function totalWordUnitsInBlock() {
+  let n = 0;
+  for (const c of rsvpState.chunks) n += flashWordUnits(c);
+  return Math.max(n, 1);
+}
+
+function wordUnitsThroughChunkIndex(indexInclusive) {
+  let n = 0;
+  const limit = Math.min(indexInclusive, rsvpState.chunks.length - 1);
+  for (let i = 0; i <= limit; i++) n += flashWordUnits(rsvpState.chunks[i]);
+  return n;
+}
+
+function updateRsvpProgressUi() {
+  const len = rsvpState.chunks.length;
+  if (!els.rsvpProgressLabel || !len) {
+    if (els.rsvpProgressLabel) els.rsvpProgressLabel.textContent = "—";
+    if (els.rsvpProgressFill) els.rsvpProgressFill.style.width = "0%";
+    if (els.rsvpProgressTrack) els.rsvpProgressTrack.setAttribute("aria-valuenow", "0");
+    return;
+  }
+
+  const k = Math.min(
+    Math.max(0, Number(rsvpState.displayedChunkIndex) || 0),
+    len - 1,
+  );
+  const shown = wordUnitsThroughChunkIndex(k);
+  const total = totalWordUnitsInBlock();
+  const pct = Math.round(((k + 1) / len) * 100);
+
+  els.rsvpProgressLabel.textContent = `~${shown} / ${total} palabras · flash ${k + 1}/${len}`;
+  if (els.rsvpProgressFill) els.rsvpProgressFill.style.width = `${pct}%`;
+  if (els.rsvpProgressTrack) {
+    els.rsvpProgressTrack.setAttribute("aria-valuenow", String(pct));
+    els.rsvpProgressTrack.setAttribute("aria-valuemax", "100");
+  }
+}
+
+/** @param {RsvpChunk | undefined} meta */
+function mathDwellMultiplier(meta) {
+  const raw = String(meta?.content || "").trim();
+  if (!raw) return RSVP_MATH_DWELL_MIN;
+
+  let mult = RSVP_MATH_DWELL_MIN;
+  const len = raw.length;
+  if (len > 30) mult += 0.75;
+  if (len > 60) mult += 0.75;
+  if (len > 120) mult += 1;
+  if (/\\frac|\\dfrac|\\tfrac|\\sum|\\int|\\oint|\\prod|\\lim|matrix|cases|align/i.test(raw)) {
+    mult += 1.25;
+  }
+  if (raw.startsWith("$$") || raw.startsWith("\\[")) mult += 0.5;
+  return Math.min(RSVP_MATH_DWELL_MAX, Math.max(RSVP_MATH_DWELL_MIN, mult));
 }
 
 function bumpPlaybackGen() {
@@ -233,17 +323,145 @@ export function cancelRsvpTimer() {
   rsvpState.timerId = null;
 }
 
+const RSVP_MATH_DWELL_MIN = 2;
+const RSVP_MATH_DWELL_MAX = 6;
+const RSVP_COMPREHENSION_PAUSE_MS = 900;
+const RSVP_COMPREHENSION_EVERY_DEFAULT = 25;
+const RSVP_PUNCT_STRONG_MULT = 1.5;
+const RSVP_PUNCT_WEAK_MULT = 1.25;
+const RSVP_LONG_WORD_MULT = 1.2;
+const RSVP_LONG_WORD_LETTERS = 10;
+const RSVP_NAME_OR_NUMBER_MULT = 1.3;
+const RSVP_SENTENCE_END_MULT = 1.35;
+const RSVP_PARAGRAPH_START_MS = 200;
+
+const rsvpGraphemeSegmenter =
+  typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+
 function durationMsBaseTextChunk() {
   const wpm = Math.max(1, Number(rsvpState.wpm) || 500);
   const wpf = Math.max(1, Number(rsvpState.wordsPerFlash) || 1);
   return Math.max(20, Math.round((60000 * wpf) / wpm));
 }
 
-/** @param {RsvpChunk} meta */
-function durationMsVisibleForChunk(meta) {
+/** @param {string} word */
+function wordToGraphemes(word) {
+  const s = String(word ?? "");
+  if (!s) return [];
+  if (rsvpGraphemeSegmenter) {
+    return [...rsvpGraphemeSegmenter.segment(s)].map(seg => seg.segment);
+  }
+  return [...s];
+}
+
+/** @param {string} word */
+function countLetterGraphemes(word) {
+  let n = 0;
+  for (const g of wordToGraphemes(word)) {
+    if (/\p{L}/u.test(g)) n += 1;
+  }
+  return n;
+}
+
+/** Spritz-style ORP index by letter (grapheme) count. @param {string} word */
+function getOrpLetterIndex(word) {
+  const len = countLetterGraphemes(word);
+  if (len <= 3) return 0;
+  if (len <= 6) return 1;
+  if (len <= 9) return 2;
+  return 3;
+}
+
+/** @param {string} word */
+function splitWordAtOrp(word) {
+  const graphemes = wordToGraphemes(word);
+  if (!graphemes.length) return { before: "", orp: "", after: "" };
+
+  const targetLetter = getOrpLetterIndex(word);
+  let letterIdx = 0;
+  let orpGraphemeIdx = 0;
+
+  for (let i = 0; i < graphemes.length; i++) {
+    if (!/\p{L}/u.test(graphemes[i])) continue;
+    orpGraphemeIdx = i;
+    if (letterIdx === targetLetter) break;
+    letterIdx += 1;
+  }
+
+  return {
+    before: graphemes.slice(0, orpGraphemeIdx).join(""),
+    orp: graphemes[orpGraphemeIdx] || "",
+    after: graphemes.slice(orpGraphemeIdx + 1).join(""),
+  };
+}
+
+/** @param {string} word @returns {"strong"|"weak"|null} */
+function trailingPunctuationKind(word) {
+  const w = String(word || "").trimEnd();
+  if (!w) return null;
+  const last = w[w.length - 1];
+  if (/[.!?…]/.test(last)) return "strong";
+  if (/[,;:]/.test(last)) return "weak";
+  if (last === "—" || last === "–") return "weak";
+  return null;
+}
+
+/** @param {string} word */
+function looksLikeProperName(word) {
+  const alphaStart = String(word).search(/[a-zA-ZÀ-ÿ]/);
+  if (alphaStart === -1) return false;
+  const alphaWord = String(word)
+    .slice(alphaStart)
+    .replace(/[^\p{L}]/gu, "");
+  if (alphaWord.length < 2) return false;
+  const first = alphaWord[0];
+  if (first !== first.toUpperCase()) return false;
+  if (alphaWord === alphaWord.toUpperCase()) return false;
+  return true;
+}
+
+/** Adaptive dwell for one flash (P0 timing). @param {RsvpChunk | undefined} meta */
+function dwellMsForChunk(meta) {
   const base = durationMsBaseTextChunk();
-  if (!meta || meta.type !== "math") return base;
-  return Math.round(base * 5);
+  if (!meta || meta.type === "math") {
+    return Math.round(base * mathDwellMultiplier(meta));
+  }
+
+  const words = tokenizeWords(meta.content || "");
+  if (!words.length) return base;
+
+  const lastWord = words[words.length - 1];
+  let factor = 1;
+
+  const punct = trailingPunctuationKind(lastWord);
+  if (punct === "strong") factor *= RSVP_PUNCT_STRONG_MULT;
+  else if (punct === "weak") factor *= RSVP_PUNCT_WEAK_MULT;
+
+  let maxLetters = 0;
+  for (const w of words) {
+    maxLetters = Math.max(maxLetters, countLetterGraphemes(w));
+  }
+  if (maxLetters >= RSVP_LONG_WORD_LETTERS) factor *= RSVP_LONG_WORD_MULT;
+
+  for (const w of words) {
+    if (looksLikeProperName(w) || /\d/.test(w)) {
+      factor *= RSVP_NAME_OR_NUMBER_MULT;
+      break;
+    }
+  }
+
+  let ms = Math.round(base * factor);
+
+  if (isSentenceTerminalWord(lastWord)) {
+    ms = Math.round(ms * RSVP_SENTENCE_END_MULT);
+  }
+  if (meta.paragraphStart) {
+    ms += RSVP_PARAGRAPH_START_MS;
+  }
+
+  return Math.max(20, ms);
 }
 
 function finalPauseMs() {
@@ -256,6 +474,35 @@ function tokenizeWords(text) {
   if (!raw.trim()) return [];
   // Preserve original spacing by keeping trailing whitespace with each token.
   return raw.match(/\S+\s*/g) || [];
+}
+
+/** Longest token in explanation (by letter graphemes) for typography probe. @param {string} explanationText */
+function longestWordTokenFromExplanation(explanationText) {
+  const src = String(explanationText ?? "");
+  if (!src.trim()) return RSVP_PROBE_FALLBACK;
+
+  let best = "";
+  let bestScore = 0;
+
+  for (const seg of segmentTextAndMath(src)) {
+    if (seg.type !== "text") continue;
+    const plain = stripMarkdownForPlainText(seg.raw);
+    for (const para of splitTextParagraphs(plain)) {
+      for (const word of tokenizeWords(para)) {
+        const score = countLetterGraphemes(word) || String(word).trim().length;
+        if (
+          score > bestScore ||
+          (score === bestScore && String(word).length > best.length)
+        ) {
+          best = word;
+          bestScore = score;
+        }
+      }
+    }
+  }
+
+  if (!String(best).trim()) return RSVP_PROBE_FALLBACK;
+  return String(best).endsWith(" ") ? best : `${best} `;
 }
 
 /** True when a token ends a sentence (. ? ! …), ignoring common abbreviations. */
@@ -297,28 +544,18 @@ function chunkWordsBySentence(words, wordsPerFlash) {
   return out.filter(s => String(s).trim());
 }
 
-function getORP(word) {
-  const len = String(word || "").replace(/[^a-zA-Z]/g, "").length;
-  if (len <= 1) return 0;
-  if (len <= 5) return 1;
-  if (len <= 9) return 2;
-  if (len <= 13) return 3;
-  return 4;
-}
-
 /** @param {string} word */
 function appendWordWithOrp(wordSpan, word) {
-  const raw = String(word ?? "");
-  const orpIndex = Math.min(getORP(raw), Math.max(raw.length - 1, 0));
+  const parts = splitWordAtOrp(String(word ?? ""));
   const before = document.createElement("span");
   before.className = "rsvp-before";
-  before.textContent = raw.slice(0, orpIndex);
+  before.textContent = parts.before;
   const orp = document.createElement("span");
   orp.className = "rsvp-orp";
-  orp.textContent = raw[orpIndex] || "";
+  orp.textContent = parts.orp;
   const after = document.createElement("span");
   after.className = "rsvp-after";
-  after.textContent = raw.slice(orpIndex + 1);
+  after.textContent = parts.after;
   wordSpan.append(before, orp, after);
 }
 
@@ -478,8 +715,16 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
     if (seg.type === "text") {
       const plain = stripMarkdownForPlainText(seg.raw);
       for (const para of splitTextParagraphs(plain)) {
-        for (const t of chunkWordsBySentence(tokenizeWords(para), wpf)) {
-          if (t) chunks.push({ type: "text", content: t });
+        const paraChunks = chunkWordsBySentence(tokenizeWords(para), wpf);
+        for (let i = 0; i < paraChunks.length; i++) {
+          const t = paraChunks[i];
+          if (t) {
+            chunks.push({
+              type: "text",
+              content: t,
+              paragraphStart: i === 0,
+            });
+          }
         }
       }
     } else {
@@ -493,6 +738,21 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
 
 function clearRsvpChunkEl() {
   els.rsvpChunk.innerHTML = "";
+}
+
+/** @param {HTMLElement} displayEl */
+function triggerRsvpFlashFade(displayEl) {
+  if (!displayEl) return;
+  const prefersReduced =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (prefersReduced) return;
+
+  displayEl.style.opacity = "0";
+  displayEl.style.transition = "opacity 60ms ease-out";
+  requestAnimationFrame(() => {
+    displayEl.style.opacity = "1";
+  });
 }
 
 /**
@@ -541,6 +801,7 @@ function applyChunkToDom(meta) {
     if (rsvpContainerEl) {
       centerOrpInContainer(display, rsvpContainerEl);
     }
+    triggerRsvpFlashFade(display);
     return Promise.resolve();
   }
   const mathDisplay = document.createElement("span");
@@ -553,6 +814,7 @@ function applyChunkToDom(meta) {
     if (typographyProfile) {
       applySessionFontSize(mathDisplay, typographyProfile, meta);
     }
+    triggerRsvpFlashFade(mathDisplay);
     return Promise.resolve();
   }
   const el = document.createElement("span");
@@ -562,7 +824,9 @@ function applyChunkToDom(meta) {
   if (typographyProfile) {
     applySessionFontSize(mathDisplay, typographyProfile, meta);
   }
-  return typesetMath(el);
+  return typesetMath(el).then(() => {
+    triggerRsvpFlashFade(mathDisplay);
+  });
 }
 
 /**
@@ -571,8 +835,22 @@ function applyChunkToDom(meta) {
  */
 function dwellMsAfterShowingIndex(k, len) {
   const meta = rsvpState.chunks[k];
-  const base = durationMsVisibleForChunk(meta);
-  return k === len - 1 ? base + finalPauseMs() : base;
+  let ms = dwellMsForChunk(meta);
+
+  if (rsvpState.comprehensionPauseEnabled && meta) {
+    const units = flashWordUnits(meta);
+    rsvpState.wordsSinceComprehensionPause += units;
+    const every = Math.max(
+      5,
+      Number(rsvpState.comprehensionEveryN) || RSVP_COMPREHENSION_EVERY_DEFAULT,
+    );
+    if (rsvpState.wordsSinceComprehensionPause >= every) {
+      ms += RSVP_COMPREHENSION_PAUSE_MS;
+      rsvpState.wordsSinceComprehensionPause = 0;
+    }
+  }
+
+  return k === len - 1 ? ms + finalPauseMs() : ms;
 }
 
 /**
@@ -590,6 +868,7 @@ async function showChunkByIndex(k, genCapture) {
 
   rsvpState.displayedChunkIndex = k;
   await applyChunkToDom(rsvpState.chunks[k]);
+  updateRsvpProgressUi();
 
   if (genCapture !== rsvpState.playbackGen || !rsvpState.playing) {
     return;
@@ -634,16 +913,66 @@ function setWpfUi(wpf) {
   }
 }
 
+function loadRsvpComprehensionFromStorage() {
+  try {
+    const enabled = localStorage.getItem(LS_RSVP_COMPREHENSION_PAUSE_KEY) === "1";
+    const every = clampInt(
+      localStorage.getItem(LS_RSVP_COMPREHENSION_EVERY_KEY),
+      5,
+      200,
+      RSVP_COMPREHENSION_EVERY_DEFAULT,
+    );
+    rsvpState.comprehensionPauseEnabled = enabled;
+    rsvpState.comprehensionEveryN = every;
+    if (els.rsvpComprehensionPause) els.rsvpComprehensionPause.checked = enabled;
+    if (els.rsvpComprehensionEvery) els.rsvpComprehensionEvery.value = String(every);
+  } catch {
+    // ignore
+  }
+}
+
+function persistRsvpComprehensionSettings() {
+  try {
+    localStorage.setItem(
+      LS_RSVP_COMPREHENSION_PAUSE_KEY,
+      rsvpState.comprehensionPauseEnabled ? "1" : "0",
+    );
+    localStorage.setItem(
+      LS_RSVP_COMPREHENSION_EVERY_KEY,
+      String(rsvpState.comprehensionEveryN),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function syncComprehensionFromUi() {
+  if (els.rsvpComprehensionPause) {
+    rsvpState.comprehensionPauseEnabled = !!els.rsvpComprehensionPause.checked;
+  }
+  if (els.rsvpComprehensionEvery) {
+    rsvpState.comprehensionEveryN = clampInt(
+      els.rsvpComprehensionEvery.value,
+      5,
+      200,
+      RSVP_COMPREHENSION_EVERY_DEFAULT,
+    );
+    els.rsvpComprehensionEvery.value = String(rsvpState.comprehensionEveryN);
+  }
+  persistRsvpComprehensionSettings();
+}
+
 export function loadRsvpDefaultsFromStorage() {
   const storedWpm = localStorage.getItem(LS_RSVP_DEFAULT_WPM_KEY);
   const storedWpf = localStorage.getItem(LS_RSVP_DEFAULT_WPF_KEY);
   const wpm = clampInt(storedWpm, 100, 1000, 500);
-  const wpf = clampInt(storedWpf, 1, 10, 3);
+  const wpf = clampInt(storedWpf, 1, 10, 1);
   rsvpState.wpm = wpm;
   rsvpState.wordsPerFlash = wpf;
   els.rsvpWpm.value = String(wpm);
   els.rsvpWpmLabel.textContent = String(wpm);
   setWpfUi(wpf);
+  loadRsvpComprehensionFromStorage();
 }
 
 export function persistRsvpDefaults() {
@@ -653,14 +982,122 @@ export function persistRsvpDefaults() {
   } catch {
     // ignore storage errors
   }
+  persistRsvpComprehensionSettings();
+}
+
+/**
+ * Step forward/back one flash. When playing, restarts timer from new chunk.
+ * @param {number} delta -1 | 1
+ */
+export function stepRsvpChunk(delta) {
+  if (!isRsvpOverlayOpen() || rsvpState.countdownActive) return;
+  const len = rsvpState.chunks.length;
+  if (!len) return;
+
+  const next = Math.min(
+    len - 1,
+    Math.max(0, (Number(rsvpState.displayedChunkIndex) || 0) + delta),
+  );
+  if (next === rsvpState.displayedChunkIndex) return;
+
+  cancelRsvpTimer();
+  bumpPlaybackGen();
+  rsvpState.displayedChunkIndex = next;
+
+  if (rsvpState.playing) {
+    void showChunkByIndex(next, rsvpState.playbackGen);
+    return;
+  }
+
+  void applyChunkToDom(rsvpState.chunks[next]).then(() => {
+    updateRsvpProgressUi();
+  });
+}
+
+function shouldIgnoreRsvpKeyTarget(e) {
+  const t = e.target;
+  if (!t || !(t instanceof HTMLElement)) return false;
+  if (t.tagName === "TEXTAREA") return true;
+  if (t.tagName === "INPUT") {
+    const type = String(t.getAttribute("type") || "").toLowerCase();
+    if (type !== "checkbox") return true;
+  }
+  return t.isContentEditable;
+}
+
+function onRsvpKeydown(e) {
+  if (!isRsvpOverlayOpen()) return;
+  if (shouldIgnoreRsvpKeyTarget(e)) return;
+
+  if (e.code === "Space") {
+    if (rsvpState.countdownActive) return;
+    e.preventDefault();
+    setRsvpPlayState(!rsvpState.playing);
+    return;
+  }
+  if (rsvpState.countdownActive) return;
+
+  if (e.code === "ArrowLeft") {
+    e.preventDefault();
+    stepRsvpChunk(-1);
+    return;
+  }
+  if (e.code === "ArrowRight") {
+    e.preventDefault();
+    stepRsvpChunk(1);
+    return;
+  }
+  if (e.code === "Escape") {
+    e.preventDefault();
+    finishRsvp();
+  }
+}
+
+/** Wire RSVP overlay controls and keyboard (call once from study bootstrap). */
+export function wireRsvpHandlers() {
+  if (rsvpHandlersWired) return;
+  rsvpHandlersWired = true;
+
+  els.rsvpPlayPauseBtn?.addEventListener("click", () => {
+    if (rsvpState.countdownActive) return;
+    setRsvpPlayState(!rsvpState.playing);
+  });
+  els.rsvpSkipBtn?.addEventListener("click", () => finishRsvp());
+  els.rsvpWpm?.addEventListener("input", () => {
+    const v = Number(els.rsvpWpm.value);
+    rsvpState.wpm = Number.isFinite(v) ? v : 500;
+    els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
+    if (isRsvpOverlayOpen() && rsvpState.playing && !rsvpState.countdownActive) {
+      restartPlaybackTail();
+    }
+    persistRsvpDefaults();
+  });
+  for (const btn of els.rsvpWpfButtons || []) {
+    btn.addEventListener("click", () => {
+      const next = Number(btn.dataset.wpf);
+      if (!Number.isFinite(next)) return;
+      setWordsPerFlash(next);
+    });
+  }
+  els.rsvpComprehensionPause?.addEventListener("change", () => {
+    syncComprehensionFromUi();
+    rsvpState.wordsSinceComprehensionPause = 0;
+  });
+  els.rsvpComprehensionEvery?.addEventListener("change", () => {
+    syncComprehensionFromUi();
+    rsvpState.wordsSinceComprehensionPause = 0;
+  });
+  document.addEventListener("keydown", onRsvpKeydown);
 }
 
 export function finishRsvp() {
   bumpPlaybackGen();
   cancelRsvpTimer();
   rsvpState.countdownActive = false;
+  rsvpState.wordsSinceComprehensionPause = 0;
   typographyProfile = null;
   clearRsvpChunkEl();
+  updateRsvpProgressUi();
   setRsvpOverlayActive(false);
   showSidebar();
   if (typeof rsvpState.onDone === "function") rsvpState.onDone();
@@ -681,6 +1118,7 @@ function beginPlaybackLoop() {
 export function setRsvpPlayState(nextPlaying) {
   rsvpState.playing = nextPlaying;
   els.rsvpPlayPauseBtn.textContent = rsvpState.playing ? "Pause" : "Play";
+  syncRsvpFocusMode();
   if (!rsvpState.playing) {
     cancelRsvpTimer();
     return;
@@ -760,9 +1198,11 @@ export function startRsvpForText(explanationText, onDone) {
   rsvpState.playing = false;
   rsvpState.onDone = onDone;
   rsvpState.countdownActive = true;
+  rsvpState.wordsSinceComprehensionPause = 0;
 
   hideSidebar();
   setRsvpOverlayActive(true);
+  syncRsvpFocusMode();
   ensureRsvpContainer();
 
   // Ensure the container size is adequate on first load.
@@ -782,6 +1222,7 @@ export function startRsvpForText(explanationText, onDone) {
   setWpfUi(rsvpState.wordsPerFlash);
   els.rsvpChunk.textContent = "3...";
   els.rsvpPlayPauseBtn.textContent = "Pause";
+  updateRsvpProgressUi();
 
   // Pre-render all math chunks during the 3-second countdown so the first
   // flash is always instant (no MathJax async latency mid-playback).
@@ -797,6 +1238,7 @@ export function startRsvpForText(explanationText, onDone) {
       rsvpState.playing = true;
       rsvpState.countdownActive = false;
       els.rsvpPlayPauseBtn.textContent = "Pause";
+      syncRsvpFocusMode();
       beginPlaybackLoop();
       return;
     }

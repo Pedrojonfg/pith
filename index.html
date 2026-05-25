@@ -869,6 +869,19 @@
       aria-label="RSVP reader"
     >
       <div class="rsvp-stage" role="application" aria-label="RSVP stage">
+        <div id="rsvpProgress" class="rsvp-progress" aria-live="polite">
+          <div
+            class="rsvp-progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            id="rsvpProgressTrack"
+          >
+            <div id="rsvpProgressFill" class="rsvp-progress-fill"></div>
+          </div>
+          <span id="rsvpProgressLabel" class="rsvp-progress-label">—</span>
+        </div>
         <div id="rsvpChunk" class="rsvp-chunk"></div>
       </div>
       <div class="rsvp-controls">
@@ -887,10 +900,11 @@
         </div>
         <div class="group">
           <span class="label">Words/flash</span>
+          <span class="rsvp-wpf-hint" id="rsvpWpfHint">RSVP clásico = 1 palabra</span>
           <div class="toggle" role="group" aria-label="Words per flash">
-            <button type="button" id="rsvpWpf1" data-wpf="1" aria-pressed="false">1</button>
+            <button type="button" id="rsvpWpf1" data-wpf="1" aria-pressed="true">1</button>
             <button type="button" id="rsvpWpf2" data-wpf="2" aria-pressed="false">2</button>
-            <button type="button" id="rsvpWpf3" data-wpf="3" aria-pressed="true">3</button>
+            <button type="button" id="rsvpWpf3" data-wpf="3" aria-pressed="false">3</button>
             <button type="button" id="rsvpWpf4" data-wpf="4" aria-pressed="false">4</button>
             <button type="button" id="rsvpWpf5" data-wpf="5" aria-pressed="false">5</button>
             <button type="button" id="rsvpWpf6" data-wpf="6" aria-pressed="false">6</button>
@@ -900,10 +914,29 @@
             <button type="button" id="rsvpWpf10" data-wpf="10" aria-pressed="false">10</button>
           </div>
         </div>
+        <div class="group rsvp-comprehension-group">
+          <label class="rsvp-comprehension" for="rsvpComprehensionPause">
+            <input type="checkbox" id="rsvpComprehensionPause" />
+            Pausa cada
+          </label>
+          <input
+            type="number"
+            id="rsvpComprehensionEvery"
+            min="5"
+            max="200"
+            step="5"
+            value="25"
+            aria-label="Palabras entre pausas de comprensión"
+          />
+          <span class="rsvp-comprehension-suffix">palabras</span>
+        </div>
         <div class="group">
           <button type="button" id="rsvpPlayPauseBtn">Pause</button>
           <button type="button" id="rsvpSkipBtn">Skip to questions</button>
         </div>
+        <p class="rsvp-shortcuts-hint" id="rsvpShortcutsHint">
+          Espacio · Pausa · ← → · Flash · Esc · Saltar
+        </p>
       </div>
     </div>
 
