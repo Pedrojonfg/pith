@@ -29,8 +29,16 @@ const RSVP_MOBILE_HEIGHT = 90;
 
 let rsvpContainerEl = null;
 let rsvpResizeObserver = null;
-let lastCalculatedNormalFontSize = 16;
-let lastFontSizeCalcArgs = { containerWidth: null, containerHeight: null, wordCount: null };
+let fontProbeEl = null;
+
+/** @typedef {{ fontSizePx: number, mathScale: number, containerWidth: number, containerHeight: number, wordsPerFlash: number, computedAt: number }} RsvpTypographyProfile */
+
+/** @type {RsvpTypographyProfile | null} */
+let typographyProfile = null;
+
+const RSVP_PROBE_WORD = "internacionalización ";
+const RSVP_MATH_FONT_SCALE = 0.85;
+const RSVP_MIN_FONT_PX = 16;
 
 function isRsvpMobileViewport() {
   return window.innerWidth < 600;
@@ -62,37 +70,36 @@ function persistRsvpContainerSize(width, height) {
   }
 }
 
-function calcRSVPFontSize(containerWidth, containerHeight, wordCount) {
-  const testEl = document.getElementById("rsvp-word-display");
-  if (!testEl) return;
+function buildTypographyProbe(wordsPerFlash) {
+  const wpf = Math.max(1, Number(wordsPerFlash) || 1);
+  return RSVP_PROBE_WORD.repeat(wpf);
+}
 
-  // Allow calling without args (e.g., MathJax timing callback).
-  const cw =
-    Number.isFinite(containerWidth) ? containerWidth : Number(lastFontSizeCalcArgs.containerWidth);
-  const ch =
-    Number.isFinite(containerHeight) ? containerHeight : Number(lastFontSizeCalcArgs.containerHeight);
-  const wc =
-    Number.isFinite(wordCount) ? wordCount : Number(lastFontSizeCalcArgs.wordCount);
-  void wc;
-  if (!Number.isFinite(cw) || !Number.isFinite(ch)) return;
+function ensureFontProbeEl() {
+  if (!rsvpContainerEl) return null;
+  if (fontProbeEl?.isConnected) return fontProbeEl;
+  fontProbeEl = document.createElement("span");
+  fontProbeEl.id = "rsvp-font-probe";
+  fontProbeEl.className = "rsvp-word-display";
+  fontProbeEl.setAttribute("aria-hidden", "true");
+  fontProbeEl.style.cssText =
+    "position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;white-space:pre;max-width:100%;";
+  rsvpContainerEl.appendChild(fontProbeEl);
+  return fontProbeEl;
+}
 
-  // Start higher — LaTeX and symbols need breathing room
-  let lo = 16,
-    hi = 200,
-    best = 32;
+/** @param {HTMLElement} testEl */
+function binarySearchFontSizePx(testEl, containerWidth, containerHeight) {
+  let lo = RSVP_MIN_FONT_PX;
+  let hi = 200;
+  let best = 32;
 
   for (let i = 0; i < 15; i++) {
     const mid = Math.floor((lo + hi) / 2);
-    testEl.style.fontSize = mid + "px";
-
-    // Force layout recalc
-    const scrollWidth = testEl.scrollWidth;
-    const scrollHeight = testEl.scrollHeight;
-
-    // More generous thresholds
-    // Target: use 75% of width and 60% of height (was 85% / 70%)
-    const fits = scrollWidth <= cw * 0.75 && scrollHeight <= ch * 0.6;
-
+    testEl.style.fontSize = `${mid}px`;
+    const fits =
+      testEl.scrollWidth <= containerWidth * 0.75 &&
+      testEl.scrollHeight <= containerHeight * 0.6;
     if (fits) {
       best = mid;
       lo = mid + 1;
@@ -101,33 +108,65 @@ function calcRSVPFontSize(containerWidth, containerHeight, wordCount) {
     }
   }
 
-  testEl.style.fontSize = best + "px";
-  lastCalculatedNormalFontSize = best;
+  return Math.max(RSVP_MIN_FONT_PX, best);
 }
 
-function isLatexLikeChunk(meta) {
-  const text = String(meta?.content || "");
-  return text.includes("\\") || text.includes("$");
-}
+/**
+ * @param {HTMLElement} containerEl
+ * @param {number} wordsPerFlash
+ * @returns {RsvpTypographyProfile | null}
+ */
+function computeRsvpTypographyProfile(containerEl, wordsPerFlash) {
+  const cw = containerEl?.clientWidth ?? 0;
+  const ch = containerEl?.clientHeight ?? 0;
+  if (cw <= 0 || ch <= 0) return null;
 
-function applyRsvpFontSizingForChunk(meta) {
-  const displayEl = document.getElementById("rsvp-word-display");
-  if (!displayEl || !rsvpContainerEl || !meta) return;
-  lastFontSizeCalcArgs = {
-    containerWidth: rsvpContainerEl.clientWidth,
-    containerHeight: rsvpContainerEl.clientHeight,
-    wordCount: null,
+  const probe = ensureFontProbeEl();
+  if (!probe) return null;
+
+  probe.textContent = buildTypographyProbe(wordsPerFlash);
+  probe.style.transform = "";
+  const fontSizePx = binarySearchFontSizePx(probe, cw, ch);
+
+  return {
+    fontSizePx,
+    mathScale: RSVP_MATH_FONT_SCALE,
+    containerWidth: cw,
+    containerHeight: ch,
+    wordsPerFlash: Math.max(1, Number(wordsPerFlash) || 1),
+    computedAt: Date.now(),
   };
-  if (isLatexLikeChunk(meta)) {
-    displayEl.style.fontSize = `${Math.max(8, lastCalculatedNormalFontSize * 0.6)}px`;
-    return;
+}
+
+/**
+ * @param {HTMLElement} displayEl
+ * @param {RsvpTypographyProfile} profile
+ * @param {RsvpChunk} meta
+ */
+function applySessionFontSize(displayEl, profile, meta) {
+  if (!displayEl || !profile) return;
+  if (meta.type === "math") {
+    displayEl.style.fontSize = `${Math.max(8, Math.round(profile.fontSizePx * profile.mathScale))}px`;
+  } else {
+    displayEl.style.fontSize = `${profile.fontSizePx}px`;
   }
-  const wc = String(meta.content || "")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-  lastFontSizeCalcArgs.wordCount = wc;
-  calcRSVPFontSize(lastFontSizeCalcArgs.containerWidth, lastFontSizeCalcArgs.containerHeight, wc);
+}
+
+function recomputeTypographyProfile() {
+  if (!rsvpContainerEl) return;
+  typographyProfile = computeRsvpTypographyProfile(
+    rsvpContainerEl,
+    rsvpState.wordsPerFlash,
+  );
+  const meta = rsvpState.chunks[rsvpState.displayedChunkIndex];
+  const displayEl = document.getElementById("rsvp-word-display");
+  if (!displayEl || !meta || !typographyProfile) return;
+  applySessionFontSize(displayEl, typographyProfile, meta);
+  if (meta.type === "text") {
+    centerOrpInContainer(displayEl, rsvpContainerEl);
+  } else {
+    displayEl.style.transform = "";
+  }
 }
 
 function applyRsvpContainerSizing() {
@@ -167,8 +206,7 @@ function ensureRsvpContainer() {
       if (!isRsvpMobileViewport()) {
         persistRsvpContainerSize(rsvpContainerEl.clientWidth, rsvpContainerEl.clientHeight);
       }
-      const currentMeta = rsvpState.chunks[rsvpState.displayedChunkIndex];
-      applyRsvpFontSizingForChunk(currentMeta);
+      recomputeTypographyProfile();
     });
   }
   rsvpResizeObserver.observe(rsvpContainerEl);
@@ -177,8 +215,7 @@ function ensureRsvpContainer() {
 window.addEventListener("resize", () => {
   if (!rsvpContainerEl) return;
   applyRsvpContainerSizing();
-  const currentMeta = rsvpState.chunks[rsvpState.displayedChunkIndex];
-  applyRsvpFontSizingForChunk(currentMeta);
+  recomputeTypographyProfile();
 });
 
 export function setRsvpOverlayActive(isActive) {
@@ -220,13 +257,43 @@ function tokenizeWords(text) {
   return raw.match(/\S+\s*/g) || [];
 }
 
-function chunkWords(words, wordsPerFlash) {
+/** True when a token ends a sentence (. ? ! …), ignoring common abbreviations. */
+function isSentenceTerminalWord(word) {
+  let w = String(word || "").trim();
+  if (!w) return false;
+  if (/^[A-Za-zÀ-ÿ]{1,3}\.$/.test(w)) return false;
+  w = w.replace(/[\s"'«»")\]}]+$/, "");
+  return /(?:\.{3}|[.!?…])(?:['"«»")\]}]*)$/.test(w);
+}
+
+/** Split text on blank lines so RSVP never mixes paragraphs in one flash. */
+function splitTextParagraphs(text) {
+  return String(text || "")
+    .split(/\n\s*\n/)
+    .map(p => p.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Group words up to wordsPerFlash, flushing at sentence ends (never mix sentences).
+ * Long sentences may still span multiple flashes when they exceed WPF.
+ */
+function chunkWordsBySentence(words, wordsPerFlash) {
   const wpf = Math.max(1, Number(wordsPerFlash) || 1);
+  /** @type {string[]} */
   const out = [];
-  for (let i = 0; i < words.length; i += wpf) {
-    out.push(words.slice(i, i + wpf).join(""));
+  /** @type {string[]} */
+  let buf = [];
+
+  for (const word of words) {
+    buf.push(word);
+    if (isSentenceTerminalWord(word) || buf.length >= wpf) {
+      out.push(buf.join(""));
+      buf = [];
+    }
   }
-  return out;
+  if (buf.length) out.push(buf.join(""));
+  return out.filter(s => String(s).trim());
 }
 
 function getORP(word) {
@@ -239,34 +306,56 @@ function getORP(word) {
 }
 
 /** @param {string} word */
-function renderRSVPWord(word) {
+function appendWordWithOrp(wordSpan, word) {
   const raw = String(word ?? "");
   const orpIndex = Math.min(getORP(raw), Math.max(raw.length - 1, 0));
+  const before = document.createElement("span");
+  before.className = "rsvp-before";
+  before.textContent = raw.slice(0, orpIndex);
+  const orp = document.createElement("span");
+  orp.className = "rsvp-orp";
+  orp.textContent = raw[orpIndex] || "";
+  const after = document.createElement("span");
+  after.className = "rsvp-after";
+  after.textContent = raw.slice(orpIndex + 1);
+  wordSpan.append(before, orp, after);
+}
 
-  // Preserve ALL spacing and punctuation in the final render.
-  // Don't strip anything — split only for coloring.
-  const beforeText = raw.slice(0, orpIndex);
-  const orpText = raw[orpIndex] || "";
-  const afterText = raw.slice(orpIndex + 1);
+/** @param {string} content */
+function renderRsvpTextChunk(content) {
+  const raw = String(content ?? "").trimEnd();
+  const words = tokenizeWords(raw);
+  const anchorIndex = Math.floor((words.length - 1) / 2);
 
   const display = document.createElement("span");
   display.className = "rsvp-word-display";
   display.id = "rsvp-word-display";
 
-  const before = document.createElement("span");
-  before.className = "rsvp-before";
-  before.textContent = beforeText;
+  for (let i = 0; i < words.length; i++) {
+    const wordSpan = document.createElement("span");
+    wordSpan.className = "rsvp-word";
+    if (i === anchorIndex) {
+      appendWordWithOrp(wordSpan, words[i]);
+    } else {
+      wordSpan.textContent = words[i];
+    }
+    display.appendChild(wordSpan);
+  }
 
-  const orp = document.createElement("span");
-  orp.className = "rsvp-orp";
-  orp.textContent = orpText;
-
-  const after = document.createElement("span");
-  after.className = "rsvp-after";
-  after.textContent = afterText;
-
-  display.append(before, orp, after);
   return display;
+}
+
+/** @param {HTMLElement} displayEl @param {HTMLElement} containerEl */
+function centerOrpInContainer(displayEl, containerEl) {
+  if (!displayEl || !containerEl) return;
+  displayEl.style.transform = "";
+  const orp = displayEl.querySelector(".rsvp-orp");
+  if (!orp) return;
+  const containerRect = containerEl.getBoundingClientRect();
+  const orpRect = orp.getBoundingClientRect();
+  const delta =
+    containerRect.left + containerRect.width / 2 - (orpRect.left + orpRect.width / 2);
+  displayEl.style.transform = `translateX(${delta}px)`;
 }
 
 /** True if odd number of `\` chars immediately precede `idx`. */
@@ -386,8 +475,10 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
 
   for (const seg of segmentTextAndMath(explanationText)) {
     if (seg.type === "text") {
-      for (const t of chunkWords(tokenizeWords(seg.raw), wpf)) {
-        if (t) chunks.push({ type: "text", content: t });
+      for (const para of splitTextParagraphs(seg.raw)) {
+        for (const t of chunkWordsBySentence(tokenizeWords(para), wpf)) {
+          if (t) chunks.push({ type: "text", content: t });
+        }
       }
     } else {
       const trimmed = String(seg.raw || "").trim();
@@ -436,41 +527,40 @@ async function preRenderMathChunks(chunks, genCapture) {
 function applyChunkToDom(meta) {
   clearRsvpChunkEl();
   if (!meta) return Promise.resolve();
-  if (meta.type === "text") {
-    const display = renderRSVPWord(String(meta.content || "").trimEnd());
-    els.rsvpChunk.appendChild(display);
-    applyRsvpFontSizingForChunk(meta);
-    return Promise.resolve();
+  if (!typographyProfile && rsvpContainerEl) {
+    recomputeTypographyProfile();
   }
-  // Fast path: use pre-rendered HTML (no MathJax call needed, no flicker)
-  const mathDisplay = document.createElement("span");
-  mathDisplay.id = "rsvp-word-display";
-  mathDisplay.className = "rsvp-word-display";
-  if (meta.preRenderedHtml) {
-    mathDisplay.innerHTML = meta.preRenderedHtml;
-    els.rsvpChunk.appendChild(mathDisplay);
-    applyRsvpFontSizingForChunk(meta);
-    if (window.MathJax?.typesetPromise) {
-      window.MathJax.typesetPromise().then(() => {
-        setTimeout(() => calcRSVPFontSize(), 100);
-      });
+  if (meta.type === "text") {
+    const display = renderRsvpTextChunk(String(meta.content || ""));
+    els.rsvpChunk.appendChild(display);
+    if (typographyProfile) {
+      applySessionFontSize(display, typographyProfile, meta);
+    }
+    if (rsvpContainerEl) {
+      centerOrpInContainer(display, rsvpContainerEl);
     }
     return Promise.resolve();
   }
-  // Fallback: render on-demand with a FRESH child element so MathJax always
-  // sees an unprocessed node and never skips re-rendering due to its cache.
+  const mathDisplay = document.createElement("span");
+  mathDisplay.id = "rsvp-word-display";
+  mathDisplay.className = "rsvp-word-display";
+  mathDisplay.style.transform = "";
+  if (meta.preRenderedHtml) {
+    mathDisplay.innerHTML = meta.preRenderedHtml;
+    els.rsvpChunk.appendChild(mathDisplay);
+    if (typographyProfile) {
+      applySessionFontSize(mathDisplay, typographyProfile, meta);
+    }
+    return Promise.resolve();
+  }
   const el = document.createElement("span");
   el.textContent = meta.content || "";
   mathDisplay.appendChild(el);
   els.rsvpChunk.appendChild(mathDisplay);
-  applyRsvpFontSizingForChunk(meta);
-  const p = typesetMath(el);
-  if (window.MathJax?.typesetPromise) {
-    window.MathJax.typesetPromise().then(() => {
-      setTimeout(() => calcRSVPFontSize(), 100);
-    });
+  if (typographyProfile) {
+    applySessionFontSize(mathDisplay, typographyProfile, meta);
   }
-  return p;
+  return typesetMath(el);
 }
 
 /**
@@ -567,6 +657,7 @@ export function finishRsvp() {
   bumpPlaybackGen();
   cancelRsvpTimer();
   rsvpState.countdownActive = false;
+  typographyProfile = null;
   clearRsvpChunkEl();
   setRsvpOverlayActive(false);
   showSidebar();
@@ -579,6 +670,7 @@ function beginPlaybackLoop() {
     finishRsvp();
     return;
   }
+  recomputeTypographyProfile();
   bumpPlaybackGen();
   const gen = rsvpState.playbackGen;
   void showChunkByIndex(0, gen);
@@ -635,9 +727,11 @@ export function setWordsPerFlash(nextWpf) {
     return;
   }
 
-  // Re-render math for the new chunking. The fallback in applyChunkToDom
-  // handles any chunk that hasn't finished pre-rendering yet.
   void preRenderMathChunks(rsvpState.chunks, rsvpState.playbackGen);
+
+  if (midSession) {
+    recomputeTypographyProfile();
+  }
 
   if (midSession && rsvpState.playing) {
     const gen = rsvpState.playbackGen;
@@ -678,6 +772,8 @@ export function startRsvpForText(explanationText, onDone) {
     container.style.width = "500px";
     container.style.height = "150px";
   }
+
+  recomputeTypographyProfile();
 
   els.rsvpWpm.value = String(rsvpState.wpm);
   els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
