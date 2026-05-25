@@ -109,16 +109,38 @@
       if (!raw) return [];
       return raw.split(" ").filter(Boolean);
     }
-    function chunkWords(words, wpf) {
+    function isSentenceTerminalWord(word) {
+      let w = String(word || "").trim();
+      if (!w) return false;
+      if (/^[A-Za-zÀ-ÿ]{1,3}\.$/.test(w)) return false;
+      w = w.replace(/[\s"'«»")\]}]+$/, "");
+      return /(?:\.{3}|[.!?…])(?:['"«»")\]}]*)$/.test(w);
+    }
+    function splitTextParagraphs(text) {
+      return String(text || "").split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    }
+    function chunkWordsBySentence(words, wpf) {
       const out = [];
-      for (let i = 0; i < words.length; i += wpf) out.push(words.slice(i, i + wpf).join(" "));
-      return out;
+      let buf = [];
+      for (const word of words) {
+        buf.push(word);
+        if (isSentenceTerminalWord(word) || buf.length >= wpf) {
+          out.push(buf.join(""));
+          buf = [];
+        }
+      }
+      if (buf.length) out.push(buf.join(""));
+      return out.filter(s => String(s).trim());
     }
     function buildChunksFromExplanation(text, wpf) {
       const chunks = [];
       for (const seg of segmentTextAndMath(text)) {
         if (seg.type === "text") {
-          for (const t of chunkWords(tokenizeWords(seg.raw), wpf)) if (t) chunks.push({ type: "text", content: t });
+          for (const para of splitTextParagraphs(seg.raw)) {
+            for (const t of chunkWordsBySentence(tokenizeWords(para), wpf)) {
+              if (t) chunks.push({ type: "text", content: t });
+            }
+          }
         } else {
           const t = String(seg.raw || "").trim();
           if (t) chunks.push({ type: "math", content: t });
@@ -188,9 +210,22 @@
       const chunks = buildChunksFromExplanation("one two three", 1);
       return chunks.length === 3 && chunks.every(c => c.type === "text");
     });
-    test("buildChunksFromExplanation: WPF=3 groups words", () => {
+    test("buildChunksFromExplanation: WPF=3 groups words within one sentence", () => {
       const chunks = buildChunksFromExplanation("one two three four", 3);
       return chunks.length === 2 && chunks[0].content === "one two three";
+    });
+    test("buildChunksFromExplanation: never mixes two sentences in one flash", () => {
+      const chunks = buildChunksFromExplanation("Alpha beta. Gamma delta epsilon.", 4);
+      const text = chunks.filter(c => c.type === "text").map(c => c.content);
+      return text.length === 2 && text[0].includes("Alpha") && text[0].includes("beta.") && text[1].includes("Gamma");
+    });
+    test("buildChunksFromExplanation: never mixes two paragraphs in one flash", () => {
+      const chunks = buildChunksFromExplanation("First para end.\n\nSecond para start.", 10);
+      const text = chunks.filter(c => c.type === "text").map(c => c.content);
+      return text.length === 2 && !text[0].includes("Second") && !text[1].includes("First");
+    });
+    test("isSentenceTerminalWord: period ends sentence", () => {
+      return isSentenceTerminalWord("fin.") && !isSentenceTerminalWord("Dr.");
     });
 
     // ─── Suite 2: MathJax config ────────────────────────────────────────────────

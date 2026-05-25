@@ -6,9 +6,9 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260525-llm-provider-selector/plan.md`
-- **Spec**: `specs/20260525-llm-provider-selector/spec.md`
-- **Data model**: `specs/20260525-llm-provider-selector/data-model.md`
-- **Contracts**: `specs/20260525-llm-provider-selector/contracts/`
+- **Active plan**: `specs/20260526-rsvp-reading-ux/plan.md`
+- **Spec**: `specs/20260526-rsvp-reading-ux/spec.md`
+- **Data model**: `specs/20260526-rsvp-reading-ux/data-model.md`
+- **Contracts**: `specs/20260526-rsvp-reading-ux/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->
