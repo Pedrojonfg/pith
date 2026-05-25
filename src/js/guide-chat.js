@@ -1,11 +1,11 @@
+import { LS_ACTIVE_SESSION_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260525_1";
 import {
-  DS_CHAT_COMPLETIONS_URL,
-  LS_ACTIVE_SESSION_KEY,
-  LS_KEY,
-  LS_STUDY_LANG_KEY,
-} from "./config.js?v=20260523_3";
-import { typesetMath } from "./ui.js?v=20260523_3";
-import { isOfflineMode } from "./main.js?v=20260523_3";
+  assertLlmKeyPresent,
+  getActiveSessionLlmModel,
+  llmChatCompletions,
+} from "./llm.js?v=20260525_1";
+import { typesetMath } from "./ui.js?v=20260525_1";
+import { isOfflineMode } from "./main.js?v=20260525_1";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -263,8 +263,8 @@ export async function sendGuideMessage(userText, currentBlockIndex) {
 
   setSendUiDisabled(true);
   try {
-    const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-    if (!apiKey) throw new Error("Missing API key. Please set your DeepSeek API key.");
+    const llmModel = getActiveSessionLlmModel();
+    assertLlmKeyPresent(llmModel);
 
     const systemPrompt = buildGuidePrompt(text, currentBlockIndex);
 
@@ -278,48 +278,12 @@ export async function sendGuideMessage(userText, currentBlockIndex) {
       ...msgHistory,
     ];
 
-    const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 1500,
-        messages,
-        temperature: 0.2,
-      }),
+    const assistantText = await llmChatCompletions({
+      llmModel,
+      max_tokens: 1500,
+      messages,
+      temperature: 0.2,
     });
-
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      // handled below
-    }
-
-    if (!res.ok) {
-      const apiMsg =
-        data?.error?.message ||
-        data?.message ||
-        `Request failed with status ${res.status}.`;
-      throw new Error(apiMsg);
-    }
-
-    const content =
-      (typeof data?.choices?.[0]?.message?.content === "string"
-        ? data.choices[0].message.content
-        : null) ||
-      (typeof data?.response?.content?.[0]?.text === "string"
-        ? data.response.content[0].text
-        : null) ||
-      (typeof data?.content?.[0]?.text === "string" ? data.content[0].text : null);
-
-    const assistantText = String(content || "").trim();
-    if (!assistantText) {
-      throw new Error("Unexpected API response (missing message content).");
-    }
 
     appendChatMessage("assistant", assistantText, Date.now());
     renderChatMessage({ role: "assistant", content: assistantText });
@@ -361,8 +325,8 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
     meta: meta && typeof meta === "object" ? meta : undefined,
   });
 
-  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-  if (!apiKey) throw new Error("Missing API key. Please set your DeepSeek API key.");
+  const llmModel = getActiveSessionLlmModel();
+  assertLlmKeyPresent(llmModel);
 
   const systemPrompt = buildGuidePrompt(text, currentBlockIndex);
 
@@ -373,44 +337,12 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
 
   const messages = [{ role: "system", content: systemPrompt }, ...msgHistory];
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      max_tokens: 1500,
-      messages,
-      temperature: 0.2,
-    }),
+  const assistantText = await llmChatCompletions({
+    llmModel,
+    max_tokens: 1500,
+    messages,
+    temperature: 0.2,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content =
-    (typeof data?.choices?.[0]?.message?.content === "string"
-      ? data.choices[0].message.content
-      : null) ||
-    (typeof data?.response?.content?.[0]?.text === "string"
-      ? data.response.content[0].text
-      : null) ||
-    (typeof data?.content?.[0]?.text === "string" ? data.content[0].text : null);
-
-  const assistantText = String(content || "").trim();
-  if (!assistantText) throw new Error("Unexpected API response (missing message content).");
 
   const assistantMsg = {
     role: "assistant",

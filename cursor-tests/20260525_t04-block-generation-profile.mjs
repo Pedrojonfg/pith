@@ -42,6 +42,7 @@ const brief = buildBlockGenerationSystemPrompt({
   explanation_profile: "brief_deep",
   gap_focus: [],
 });
+assert(thorough.includes("Option parity"), "test questions include option parity rules");
 assert(thorough.includes("400-600 words"), "thorough asks 400-600 words");
 assert(!thorough.includes("150-220"), "thorough omits brief word band");
 assert(brief.includes("150-220 words"), "brief_deep asks 150-220 words");

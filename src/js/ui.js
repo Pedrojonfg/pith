@@ -1,5 +1,6 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260523_3";
-import { isOfflineMode } from "./main.js?v=20260523_3";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
+import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
+import { isOfflineMode } from "./main.js?v=20260525_1";
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
@@ -24,7 +25,9 @@ export const els = {
 
   apiKeyForm: document.getElementById("apiKeyForm"),
   apiKeyInput: document.getElementById("apiKeyInput"),
+  geminiApiKeyInput: document.getElementById("geminiApiKeyInput"),
   apiKeyStatus: document.getElementById("apiKeyStatus"),
+  llmModelSelect: document.getElementById("llmModelSelect"),
 
   studyProgress: document.getElementById("studyProgress"),
   studyProgressLabel: document.getElementById("studyProgressLabel"),
@@ -396,6 +399,16 @@ function applyOfflineUiRestrictions() {
   if (els.generateFullPackBtn) {
     els.generateFullPackBtn.hidden = offline;
   }
+  const llmLabel = document.querySelector('label[for="llmModelSelect"]');
+  if (llmLabel) llmLabel.style.display = offline ? "none" : "";
+  if (els.llmModelSelect) {
+    els.llmModelSelect.hidden = offline;
+    els.llmModelSelect.disabled = offline;
+    const llmHint = els.llmModelSelect.nextElementSibling;
+    if (llmHint?.classList?.contains("hint")) {
+      llmHint.style.display = offline ? "none" : "";
+    }
+  }
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
   if (sidebarToggleBtn) {
     sidebarToggleBtn.style.display = offline ? "none" : "";
@@ -603,6 +616,10 @@ export function showScreen(which) {
   if (showSetup) {
     els.apiKeyInput.value = "";
     els.apiKeyStatus.textContent = "";
+    if (els.geminiApiKeyInput) {
+      const gk = getStoredGeminiKey();
+      els.geminiApiKeyInput.value = gk || "";
+    }
     setTimeout(() => els.apiKeyInput.focus(), 0);
   }
 

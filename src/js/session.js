@@ -4,10 +4,19 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260523_3";
-import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260523_3";
-import { getStudyLanguage } from "./ui.js?v=20260523_3";
-import { isOfflineMode } from "./main.js?v=20260523_3";
+} from "./config.js?v=20260525_1";
+import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260525_1";
+import {
+  assertLlmKeyPresent,
+  getActiveSessionLlmModel,
+  getSessionLlmModel,
+  getStoredGeminiKey,
+  saveGeminiKey,
+} from "./llm.js?v=20260525_1";
+import { getStudyLanguage } from "./ui.js?v=20260525_1";
+import { isOfflineMode } from "./main.js?v=20260525_1";
+
+export { getStoredGeminiKey, saveGeminiKey };
 
 export const state = {
   studyMode: null,
@@ -25,6 +34,7 @@ export const state = {
   activeSession: null,
   activeBlockIndex: 0,
   activeQuestionIndex: 0,
+  pendingLlmModel: null,
 };
 
 export function clampInt(n, min, max, fallback) {
@@ -441,8 +451,8 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     if (!block) throw new Error("Missing offline block.");
     return block;
   }
-  const apiKey = getStoredKey();
-  if (!apiKey) throw new Error("Missing API key. Click “Change API key” to set it.");
+  const llmModel = getSessionLlmModel(state.activeSession);
+  assertLlmKeyPresent(llmModel);
 
   const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
   if (!blocksListText) throw new Error("Missing confirmed blocks list.");
@@ -462,7 +472,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
 
   const blockTitle = getBlockTitleFromList(idx);
   const blockRequest = {
-    apiKey,
+    llmModel,
     blocksListText,
     materialText: materialChunk,
     blockIndex: idx,
@@ -511,7 +521,12 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
   updateProgress(5, "Phase 1 of 3: Parsing document", `Reading ${pages.length} pages...`);
 
   updateProgress(6, "Phase 2 of 3: Mapping blocks", "Mapping block 1 of 1...");
-  const mappedBlocks = await mapBlocksToPages(safeBlocks, pages, language);
+  const mappedBlocks = await mapBlocksToPages(
+    safeBlocks,
+    pages,
+    language,
+    config.llmModel ?? getSessionLlmModel(state.activeSession),
+  );
   updateProgress(
     20,
     "Phase 2 of 3: Mapping blocks",
@@ -556,6 +571,7 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
     const blockConfig = {
       n_test: clampInt(config.n_test, 0, 5, 2),
       n_socratic: 0,
+      llmModel: config.llmModel ?? getSessionLlmModel(state.activeSession),
     };
 
     try {
@@ -1302,15 +1318,15 @@ function buildAuditPayload(blockIndex) {
   return JSON.stringify(view, null, 2);
 }
 
-export async function auditBlockIndex(blockIndex, { apiKey, language }) {
-  const key = String(apiKey || "").trim();
-  if (!key) throw new Error("Missing API key.");
+export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApiKey, language } = {}) {
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  assertLlmKeyPresent(model);
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260523_4");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260525_1");
   const text = await deepSeekAuditBlockIndex({
-    apiKey: key,
+    llmModel: model,
     blockIndexJson: payload,
     language: lang,
   });
@@ -1319,9 +1335,12 @@ export async function auditBlockIndex(blockIndex, { apiKey, language }) {
   return normalizeAuditResult(parsed);
 }
 
-export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids, new_title }, { apiKey } = {}) {
-  const key = String(apiKey || "").trim();
-  if (!key) throw new Error("Missing API key.");
+export async function mergeChunks(
+  { keepBlock, absorbBlocks, keep_id, absorb_ids, new_title },
+  { llmModel, apiKey: _legacyApiKey } = {},
+) {
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  assertLlmKeyPresent(model);
   const keep = keepBlock && typeof keepBlock === "object" ? keepBlock : null;
   const absorbs = Array.isArray(absorbBlocks) ? absorbBlocks : [];
   if (!keep) throw new Error("Missing keepBlock for merge.");
@@ -1336,9 +1355,9 @@ export async function mergeChunks({ keepBlock, absorbBlocks, keep_id, absorb_ids
     .trim();
 
   const blockCount = 1 + absorbs.length;
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260523_4");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260525_1");
   const mergedChunk = await deepSeekPostMergeChunk({
-    apiKey: key,
+    llmModel: model,
     keep_id,
     absorb_ids,
     new_title,
@@ -1358,7 +1377,7 @@ function renumberBlockIndexSequential(blocks) {
   }));
 }
 
-export async function twoPhaseSplitMerge(blockIndex, { apiKey, language } = {}) {
+export async function twoPhaseSplitMerge(blockIndex, { llmModel, apiKey: _legacyApiKey, language } = {}) {
   const original = Array.isArray(blockIndex) ? blockIndex.slice() : [];
   const originalN = original.length;
   if (!originalN) {
@@ -1369,7 +1388,7 @@ export async function twoPhaseSplitMerge(blockIndex, { apiKey, language } = {}) 
     };
   }
 
-  const auditResult = await auditBlockIndex(original, { apiKey, language });
+  const auditResult = await auditBlockIndex(original, { llmModel, language });
   const merges = Array.isArray(auditResult?.merges) ? auditResult.merges : [];
   if (!merges.length) {
     return {
@@ -1419,7 +1438,7 @@ export async function twoPhaseSplitMerge(blockIndex, { apiKey, language } = {}) 
         absorb_ids: absorbs.map((b) => Number(b.id)),
         new_title: desiredTitle || beforeKeepTitle,
       },
-      { apiKey },
+      { llmModel },
     );
 
     byId.set(keepId, {

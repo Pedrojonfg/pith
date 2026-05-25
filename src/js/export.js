@@ -1,7 +1,7 @@
 import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260523_3";
+} from "./config.js?v=20260525_1";
 import {
   buildResumePayload,
   gapLabelsForBlock,
@@ -11,8 +11,8 @@ import {
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
-} from "./session.js?v=20260523_3";
-import { isOfflineMode } from "./main.js?v=20260523_3";
+} from "./session.js?v=20260525_1";
+import { isOfflineMode } from "./main.js?v=20260525_1";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();

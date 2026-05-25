@@ -682,14 +682,29 @@ body.assessment-active .guide-sidebar {
   z-index: 60;
   background: var(--bg);
   padding: 28px 16px;
-  display: grid;
-  place-items: center;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .assessment-runner-inner {
   width: min(920px, 100%);
   display: grid;
   gap: 14px;
+  padding-bottom: 28px;
+}
+
+.assessment-results-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: 4px;
+  padding: 12px 0 4px;
+  background: linear-gradient(to top, var(--bg) 85%, transparent);
+  border-top: 1px solid var(--border);
 }
 
 .gap-review-details {

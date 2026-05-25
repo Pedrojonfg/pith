@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v6";
+const CACHE_NAME = "mylearning-v7";
 
 const STATIC_ASSETS = [
   "/",
@@ -17,6 +17,7 @@ const STATIC_ASSETS = [
   "/src/js/dictionary.js",
   "/src/js/review.js",
   "/src/js/config.js",
+  "/src/js/llm.js",
   "/manifest.json",
 ];
 
@@ -50,7 +51,11 @@ self.addEventListener("activate", (event) => {
 });
 
 function isApiRequest(url) {
-  return url.hostname === "api.anthropic.com" || url.hostname === "api.deepseek.com";
+  return (
+    url.hostname === "api.anthropic.com" ||
+    url.hostname === "api.deepseek.com" ||
+    url.hostname === "generativelanguage.googleapis.com"
+  );
 }
 
 function isStaticAsset(url) {

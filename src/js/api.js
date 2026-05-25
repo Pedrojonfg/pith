@@ -1,4 +1,14 @@
-import { DS_CHAT_COMPLETIONS_URL, LS_KEY } from "./config.js?v=20260523_3";
+import {
+  getActiveSessionLlmModel,
+  getApiKeyForLlmModel,
+  llmChatCompletions,
+  normalizeLlmModel,
+} from "./llm.js?v=20260525_1";
+import { shuffleInPlace, shuffleTestQuestionsInList } from "./shuffle-options.js";
+
+function resolveLlmModelArg(llmModel) {
+  return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
+}
 
 function stripJsonFence(text) {
   return String(text || "")
@@ -136,17 +146,6 @@ export function parseBlockIndexFromModelResponse(text) {
   return unwrapBlockIndexArray(parsed);
 }
 
-function shuffleInPlace(arr) {
-  const a = Array.isArray(arr) ? arr : [];
-  for (let i = a.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = a[i];
-    a[i] = a[j];
-    a[j] = tmp;
-  }
-  return a;
-}
-
 function normalizePageRange(rawStart, rawEnd, totalPages) {
   const maxPage = Math.max(1, Math.floor(Number(totalPages) || 1));
   let start = Math.floor(Number(rawStart));
@@ -158,11 +157,8 @@ function normalizePageRange(rawStart, rawEnd, totalPages) {
   return { startPage: start, endPage: end };
 }
 
-export async function mapBlocksToPages(blockIndex, extractedPages, language) {
-  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-  if (!apiKey) {
-    throw new Error("Missing API key. Click “Change API key” to set it.");
-  }
+export async function mapBlocksToPages(blockIndex, extractedPages, language, llmModel) {
+  const model = resolveLlmModelArg(llmModel);
 
   const safeBlocks = Array.isArray(blockIndex) ? blockIndex : [];
   const safePages = Array.isArray(extractedPages) ? extractedPages : [];
@@ -217,42 +213,17 @@ Respond in {language}.`
       })),
     );
 
-    const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 800,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.2,
-      }),
+    const content = await llmChatCompletions({
+      llmModel: model,
+      max_tokens: 800,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.2,
     });
 
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      // ignore JSON parse error; handled below
-    }
-
-    if (!res.ok) {
-      const apiMsg =
-        data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-      throw new Error(apiMsg);
-    }
-
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== "string") {
-      throw new Error("Unexpected API response (missing message content).");
-    }
-
-    const rawMap = parseModelJsonValue(content.trim());
+    const rawMap = parseModelJsonValue(content);
     if (!Array.isArray(rawMap)) {
       throw new Error("Model did not return a valid JSON array for block-page mapping.");
     }
@@ -266,7 +237,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260523_3");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260525_1");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated
@@ -333,11 +304,8 @@ Respond in {language}.`
   });
 }
 
-export async function generateAssessmentQuestions(blockIndex, maxQuestions) {
-  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-  if (!apiKey) {
-    throw new Error("Missing API key. Click “Change API key” to set it.");
-  }
+export async function generateAssessmentQuestions(blockIndex, maxQuestions, llmModel) {
+  const model = resolveLlmModelArg(llmModel);
 
   const blocks = Array.isArray(blockIndex) ? blockIndex : [];
   const maxQ = Math.max(1, Math.floor(Number(maxQuestions) || 0));
@@ -399,6 +367,7 @@ export async function generateAssessmentQuestions(blockIndex, maxQuestions) {
 from this study index. Rules:
 - Conceptual only. No arithmetic. Answerable in under 10 seconds.
 - 4 options (A/B/C/D), one correct answer.
+- ${MC_OPTION_PARITY_RULES}
 - Questions must test recognition and understanding, not computation.
 - Cover ALL blocks proportionally. 
   Distribution: {block_id: n_questions, ...}
@@ -421,55 +390,30 @@ Distribution: {distribution}`.replace("{maxQuestions}", String(maxQ)).replace(
     selected.map((b) => ({ id: b.id, title: b.title, summary: b.summary })),
   );
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-    }),
+  const content = await llmChatCompletions({
+    llmModel: model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.2,
   });
 
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-
-  const raw = content.trim();
-  const arr = parseModelJsonValue(raw);
+  const arr = parseModelJsonValue(content);
   if (!Array.isArray(arr)) {
-    console.warn("Invalid assessment JSON response:", raw);
+    console.warn("Invalid assessment JSON response:", content);
     throw new Error("Model did not return a valid JSON array. Please try again.");
   }
 
-  // Step 3 — shuffle and cap to requested count
-  return shuffleInPlace(arr).slice(0, maxQ);
+  // Step 3 — shuffle question order, permute options, cap to requested count
+  const capped = shuffleInPlace(Array.isArray(arr) ? [...arr] : []).slice(0, maxQ);
+  return shuffleTestQuestionsInList(capped);
 }
 
-export async function generateAssessmentSynthesis(assessmentResults, blockIndex, language) {
+export async function generateAssessmentSynthesis(assessmentResults, blockIndex, language, llmModel) {
   try {
-    const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-    if (!apiKey) return null;
+    const model = resolveLlmModelArg(llmModel);
+    if (!getApiKeyForLlmModel(model)) return null;
 
     const safeResults =
       assessmentResults && typeof assessmentResults === "object" ? assessmentResults : {};
@@ -499,34 +443,15 @@ Give a concrete study recommendation: what to prioritise,
 whether to skim or skip strong blocks, and flag any weak blocks
 that are prerequisites for later strong ones.`;
 
-    const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        max_tokens: 300,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.2,
-      }),
+    return await llmChatCompletions({
+      llmModel: model,
+      max_tokens: 300,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.2,
     });
-
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      // ignore
-    }
-    if (!res.ok) return null;
-
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== "string") return null;
-    return content.trim();
   } catch {
     return null;
   }
@@ -614,7 +539,7 @@ function createLinkedAbortSignal(externalSignal, timeoutMs = GAP_SYNTHESIS_TIMEO
   };
 }
 
-async function callGapSynthesisApi({ apiKey, userPayload, language, signal }) {
+async function callGapSynthesisApi({ llmModel, userPayload, language, signal }) {
   const lang = String(language || "English").trim() || "English";
   const systemPrompt = `You analyse multiple-choice assessment results and infer conceptual knowledge gaps.
 
@@ -628,14 +553,9 @@ Rules:
 - Conceptual gaps only — no arithmetic drills, no "practice calculating…" style tasks.
 - Mark each gap with "source":"synthesis" when you include source (optional).`;
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
+  try {
+    return await llmChatCompletions({
+      llmModel,
       max_tokens: 1024,
       temperature: 0.2,
       response_format: { type: "json_object" },
@@ -643,28 +563,11 @@ Rules:
         { role: "system", content: systemPrompt },
         { role: "user", content: JSON.stringify(userPayload) },
       ],
-    }),
-    signal,
-  });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // handled below
+      signal,
+    });
+  } catch (err) {
+    throw new GapSynthesisError("api_error", err?.message || "Gap synthesis request failed.");
   }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new GapSynthesisError("api_error", apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new GapSynthesisError("api_error", "Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
 /**
@@ -679,9 +582,14 @@ export async function synthesizeAssessmentGaps({
   language,
   signal,
 } = {}) {
-  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-  if (!apiKey) {
-    throw new GapSynthesisError("missing_api_key", "Missing API key. Click “Change API key” to set it.");
+  const model = resolveLlmModelArg();
+  if (!getApiKeyForLlmModel(model)) {
+    throw new GapSynthesisError(
+      "missing_api_key",
+      model === "gemini-2.5-flash"
+        ? "Missing Gemini API key. Open API setup to add it."
+        : "Missing DeepSeek API key. Open API setup to add it.",
+    );
   }
 
   const userPayload = buildGapSynthesisUserPayload({
@@ -701,7 +609,7 @@ export async function synthesizeAssessmentGaps({
       }
       try {
         lastRaw = await callGapSynthesisApi({
-          apiKey,
+          llmModel: model,
           userPayload,
           language,
           signal: linkedSignal,
@@ -716,7 +624,7 @@ export async function synthesizeAssessmentGaps({
 
       const parsed = parseGapSynthesisResponse(lastRaw);
       if (parsed) {
-        const { normalizeGapsByBlock } = await import("./session.js?v=20260523_3");
+        const { normalizeGapsByBlock } = await import("./session.js?v=20260525_1");
         const gaps_by_block = normalizeGapsByBlock(parsed.gaps_by_block);
         const out = { gaps_by_block };
         if (parsed.notes) out.notes = parsed.notes;
@@ -731,7 +639,8 @@ export async function synthesizeAssessmentGaps({
 }
 
 export async function deepSeekSocraticTutor({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   blockTitle,
   question,
   studentAnswer,
@@ -742,43 +651,17 @@ Be concise and sharp, not encouraging.`.replace("{block.title}", blockTitle);
 
   const userPrompt = `Question: ${question}\nStudent answer: ${studentAnswer}`;
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-    }),
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.2,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
-export async function deepSeekSummarySoFar({ apiKey, language, userPrompt }) {
+export async function deepSeekSummarySoFar({ llmModel, apiKey: _legacyApiKey, language, userPrompt }) {
   const systemPrompt = `You are a study assistant. Summarize the key concepts, arguments, 
 and facts covered so far in this study session. Structure it as:
 - One short paragraph of overall context
@@ -786,40 +669,14 @@ and facts covered so far in this study session. Structure it as:
 - A bullet list of key terms introduced
 Be concise. Respond in {language}.`.replace("{language}", language);
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-    }),
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.2,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
 function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
@@ -843,54 +700,24 @@ Return ONLY one JSON object (no markdown, no preamble):
 Cover the ENTIRE document in order. Respond entirely in ${lang}.`;
 }
 
-async function callDeepSeekSplit({ apiKey, messages, useJsonObjectMode }) {
-  const body = {
-    model: "deepseek-chat",
+async function callLlmSplit({ llmModel, messages, useJsonObjectMode }) {
+  return llmChatCompletions({
+    llmModel,
     messages,
     temperature: 0.2,
-  };
-  if (useJsonObjectMode) {
-    body.response_format = { type: "json_object" };
-  }
-
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+    response_format: useJsonObjectMode ? { type: "json_object" } : undefined,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    const err = new Error(apiMsg);
-    err.status = res.status;
-    throw err;
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
 export async function deepSeekSplitIntoBlocks({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   nBlocks,
   materialText,
   studyNotes,
   language,
 }) {
+  const model = resolveLlmModelArg(llmModel);
   const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || "English").trim() || "English";
   const notes = String(studyNotes || "").trim();
@@ -920,15 +747,15 @@ export async function deepSeekSplitIntoBlocks({
   let lastRaw = "";
   for (const attempt of attempts) {
     try {
-      lastRaw = await callDeepSeekSplit({
-        apiKey,
+      lastRaw = await callLlmSplit({
+        llmModel: model,
         messages: buildMessages(attempt.compact),
         useJsonObjectMode: attempt.useJsonObjectMode,
       });
     } catch (err) {
       if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
-        lastRaw = await callDeepSeekSplit({
-          apiKey,
+        lastRaw = await callLlmSplit({
+          llmModel: model,
           messages: buildMessages(attempt.compact),
           useJsonObjectMode: false,
         });
@@ -946,11 +773,12 @@ export async function deepSeekSplitIntoBlocks({
 
   console.warn("Block split: all parse attempts failed:", lastRaw.slice(0, 800));
   throw new Error(
-    "DeepSeek returned blocks JSON we could not parse. Please try generating blocks again.",
+    "Model returned blocks JSON we could not parse. Please try generating blocks again.",
   );
 }
 
-export async function deepSeekAuditBlockIndex({ apiKey, blockIndexJson, language }) {
+export async function deepSeekAuditBlockIndex({ llmModel, apiKey: _legacyApiKey, blockIndexJson, language }) {
+  const model = resolveLlmModelArg(llmModel);
   const systemPrompt = `You are auditing a study session block index for conceptual overlap.
 
 Here is the block index (id, title, summary, signature):
@@ -982,46 +810,19 @@ Respond ONLY with valid JSON.`
     .replace("{blockIndexJSON}", String(blockIndexJson || "[]"))
     .replace("{language}", language);
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: 2000,
-    }),
+  return llmChatCompletions({
+    llmModel: model,
+    messages: [{ role: "system", content: systemPrompt }],
+    temperature: 0.2,
+    max_tokens: 2000,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
 const MERGE_WORDS_PER_BLOCK = 2000;
 
 export async function deepSeekPostMergeChunk({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   keep_id,
   absorb_ids,
   new_title,
@@ -1053,40 +854,12 @@ Preserve verbatim source text where possible. Do not summarize away unique mater
     .replace("{concatenated_chunks}", String(concatenated_chunks || ""))
     .replace("{max_words}", String(maxWords));
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-      ],
-      temperature: 0.2,
-      max_tokens: maxTokens,
-    }),
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [{ role: "system", content: systemPrompt }],
+    temperature: 0.2,
+    max_tokens: maxTokens,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
 const BLOCK_JSON_SCHEMA = `{
@@ -1106,6 +879,9 @@ const BLOCK_JSON_SCHEMA = `{
 }`;
 
 const EXPLANATION_THOROUGH = `Write a thorough, detailed explanation of at least 400-600 words. Cover all sub-concepts, include examples, and anticipate common points of confusion. Do not summarize — teach.`;
+
+/** Shared MC distractor rules — reduces "correct answer stands out" cues. */
+export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone.`;
 
 const EXPLANATION_BRIEF_DEEP = `Write a concise deep-recap explanation of 150-220 words (not shorter, not longer).
 Structure in this order: (1) core definitions, (2) key formula or expression in LaTeX if relevant, (3) one micro-example, (4) one common pitfall.
@@ -1140,10 +916,11 @@ ${BLOCK_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
 Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
 Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
+${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
-When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly. Wrong options must reflect realistic student mistakes—not nonsense; keep options parallel in structure and length where possible.
+When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
 ${gapSection}
 Also extract 3-8 key concepts, terms, names, or methods introduced in this block.
@@ -1178,7 +955,8 @@ export function buildBlockGenerationUserContent({
 }
 
 export async function deepSeekGenerateBlockJson({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   blocksListText,
   materialText,
   blockIndex,
@@ -1207,42 +985,16 @@ export async function deepSeekGenerateBlockJson({
     gap_focus,
   });
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      temperature: 0.2,
-    }),
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.2,
   });
 
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-
-  const raw = content.trim();
   const blockObj = parseModelJsonObject(raw);
   if (!blockObj || typeof blockObj !== "object" || Array.isArray(blockObj)) {
     console.warn("Invalid block JSON response:", raw);
@@ -1252,10 +1004,6 @@ export async function deepSeekGenerateBlockJson({
 }
 
 export async function generateBlockFromChunk(block, chunk, config = {}, language = "English") {
-  const apiKey = String(localStorage.getItem(LS_KEY) || "").trim();
-  if (!apiKey) {
-    throw new Error("Missing API key. Click “Change API key” to set it.");
-  }
   const safeBlock = block && typeof block === "object" ? block : {};
   const id = Math.max(1, Math.floor(Number(safeBlock.id) || 1));
   const title = String(safeBlock.title || `Block ${id}`).trim() || `Block ${id}`;
@@ -1267,7 +1015,7 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
   const blocksListText = `${id}. ${title}`;
   const sourceLine = `Source: block ${id} '${title}' from ${source}`;
   const blockObj = await deepSeekGenerateBlockJson({
-    apiKey,
+    llmModel: config.llmModel,
     blocksListText,
     materialText: `${sourceLine}\n\n${materialText}`,
     blockIndex: id - 1,
@@ -1294,9 +1042,9 @@ export async function generateAllBlocks(blockIndex, config = {}) {
   const results = Array.from({ length: total }, () => null);
   const n_test = Math.max(0, Math.min(5, Math.round(Number(config.n_test))));
   const n_socratic = Math.max(0, Math.min(3, Math.round(Number(config.n_socratic))));
-  const getApiKey = config.getApiKey;
   const blocksListText = String(config.blocksListText || "");
   const language = String(config.language || "English");
+  const llmModel = resolveLlmModelArg(config.llmModel);
   const signal = config.signal;
   const onProgress = typeof config.onProgress === "function" ? config.onProgress : null;
   const onWarning = typeof config.onWarning === "function" ? config.onWarning : null;
@@ -1307,14 +1055,12 @@ export async function generateAllBlocks(blockIndex, config = {}) {
     const row = items[i] && typeof items[i] === "object" ? items[i] : {};
     const title = String(row.title || `Block ${i + 1}`);
     const materialText = String(row.chunk || "");
-    const apiKey = typeof getApiKey === "function" ? String(getApiKey() || "") : String(config.apiKey || "");
-    if (!apiKey) throw new Error("Missing API key.");
     let block = null;
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         block = await deepSeekGenerateBlockJson({
-          apiKey,
+          llmModel,
           blocksListText,
           materialText,
           blockIndex: i,
@@ -1347,7 +1093,8 @@ export async function generateAllBlocks(blockIndex, config = {}) {
 }
 
 export async function deepSeekGenerateReviewBatch({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   sessionContent,
   type,
   batchSize,
@@ -1359,8 +1106,13 @@ export async function deepSeekGenerateReviewBatch({
         ? "test"
         : "socratic";
 
+  const testParity =
+    type === "test" || type === "both"
+      ? `\nFor each test question: 4 options (A/B/C/D), one correct answer, brief feedback.\n${MC_OPTION_PARITY_RULES}\n`
+      : "";
+
   const systemPrompt = `You are a review examiner. Based on this study session content, generate exactly {batch_size} {type} questions that test retention across the ENTIRE session, not just one block. Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
-Return ONLY valid JSON array:
+${testParity}Return ONLY valid JSON array:
 [{type, question, options?, answer?, feedback?}]
 No preamble, no backticks.`
     .split("{batch_size}")
@@ -1368,45 +1120,19 @@ No preamble, no backticks.`
     .split("{type}")
     .join(String(typeWord));
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: String(sessionContent || "") },
-      ],
-      temperature: 0.2,
-    }),
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: String(sessionContent || "") },
+    ],
+    temperature: 0.2,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-
-  return content.trim();
 }
 
 export async function deepSeekReviewSocraticTutor({
-  apiKey,
+  llmModel,
+  apiKey: _legacyApiKey,
   sessionContent,
   question,
   studentAnswer,
@@ -1415,39 +1141,13 @@ export async function deepSeekReviewSocraticTutor({
 Be concise and sharp, not encouraging.`;
   const userPrompt = `Session context:\n${sessionContent}\n\nQuestion: ${question}\nStudent answer: ${studentAnswer}`;
 
-  const res = await fetch(DS_CHAT_COMPLETIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0.2,
-    }),
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.2,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // ignore JSON parse error; handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    throw new Error(apiMsg);
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    throw new Error("Unexpected API response (missing message content).");
-  }
-  return content.trim();
 }
 
