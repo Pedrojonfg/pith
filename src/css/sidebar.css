@@ -65,6 +65,10 @@
   white-space: pre-wrap;
 }
 
+.chat-message .md-content {
+  white-space: normal;
+}
+
 .message-user {
   background: #7dd3fc;
   color: #000;

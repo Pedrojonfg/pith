@@ -1,5 +1,6 @@
 import { LS_RSVP_DEFAULT_WPF_KEY, LS_RSVP_DEFAULT_WPM_KEY } from "./config.js?v=20260525_1";
 import { clampInt } from "./session.js?v=20260525_1";
+import { stripMarkdownForPlainText } from "./markdown.js?v=20260525_1";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260525_1";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string }} RsvpChunk */
@@ -475,7 +476,8 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
 
   for (const seg of segmentTextAndMath(explanationText)) {
     if (seg.type === "text") {
-      for (const para of splitTextParagraphs(seg.raw)) {
+      const plain = stripMarkdownForPlainText(seg.raw);
+      for (const para of splitTextParagraphs(plain)) {
         for (const t of chunkWordsBySentence(tokenizeWords(para), wpf)) {
           if (t) chunks.push({ type: "text", content: t });
         }

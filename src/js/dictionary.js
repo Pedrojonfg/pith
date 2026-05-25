@@ -1,6 +1,7 @@
 import { LS_SESSION_CONCEPTS_KEY } from "./config.js?v=20260525_1";
 import { state, getBlocksSafe } from "./session.js?v=20260525_1";
-import { els, typesetMath } from "./ui.js?v=20260525_1";
+import { renderMarkdown } from "./markdown.js?v=20260525_1";
+import { els } from "./ui.js?v=20260525_1";
 
 function loadSessionConcepts() {
   try {
@@ -97,8 +98,8 @@ export function renderConceptDictionaryInto({ listEl, defEl, concepts }) {
       b.setAttribute("aria-pressed", String(b.dataset.key === selectedKey));
     }
     const c = arr.find((x) => x.term.toLowerCase() === selectedKey);
-    defEl.textContent = c ? String(c.definition || "") : "";
-    typesetMath(defEl);
+    if (c) void renderMarkdown(defEl, String(c.definition || ""));
+    else defEl.textContent = "";
   };
 
   for (const c of arr) {
