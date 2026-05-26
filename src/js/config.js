@@ -11,6 +11,8 @@ export const LS_RSVP_COMPREHENSION_EVERY_KEY = "rsvp_comprehension_every";
 export const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
 export const LS_SESSION_CONCEPTS_KEY = "session_concepts";
 export const LS_SESSION_CONCEPTS_BY_BLOCK_KEY = "session_concepts_by_block";
+export const LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY =
+  "session_concept_highlights_by_block";
 export const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
 export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 

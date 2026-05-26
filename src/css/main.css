@@ -485,6 +485,22 @@ textarea:focus {
   word-break: normal;
   overflow: hidden;
 }
+.rsvp-block-title {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
+  max-width: 42%;
+  font-size: 11px;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--fg) 55%, transparent);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  user-select: none;
+}
 .rsvp-word-display {
   display: inline-flex;
   align-items: center;
@@ -850,6 +866,18 @@ body.rsvp-active {
 }
 .dict-item[aria-pressed="true"] {
   background: rgba(255, 255, 255, 0.12);
+}
+.dict-item--new {
+  background: rgba(34, 197, 94, 0.16);
+}
+.dict-item--new[aria-pressed="true"] {
+  background: rgba(34, 197, 94, 0.28);
+}
+.dict-item--updated {
+  background: rgba(234, 179, 8, 0.18);
+}
+.dict-item--updated[aria-pressed="true"] {
+  background: rgba(234, 179, 8, 0.3);
 }
 .dict-definition {
   border: 1px solid var(--border);

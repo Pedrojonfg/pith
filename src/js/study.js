@@ -22,6 +22,7 @@ import {
 import {
   commitSessionConceptsForBlock,
   renderDictionary,
+  getConceptHighlightsForBlock,
   getSortedSessionConcepts,
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
@@ -35,7 +36,7 @@ import {
   renderMarkdown,
   renderMcOptionHtml,
 } from "./markdown.js?v=20260525_1";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
 import {
@@ -740,11 +741,16 @@ function refreshUiOnPrefetchReady() {
   const o = transitionOverlayEls;
   if (!o || o.wrap.getAttribute("aria-hidden") !== "false") return;
   const concepts = getSortedSessionConcepts();
+  const finishedIdx =
+    typeof o.finishedBlockIndex === "number" ? o.finishedBlockIndex : state.activeBlockIndex;
+  const { newKeys, updatedKeys } = getConceptHighlightsForBlock(finishedIdx);
   renderDictionary({
     containerEl: o.dictionaryWrap,
     title: `Conceptos hasta ahora (${concepts.length} términos)`,
     concepts,
     collapsedByDefault: true,
+    newTermKeys: newKeys,
+    updatedTermKeys: updatedKeys,
   });
 }
 
@@ -1187,6 +1193,7 @@ function beginRsvpForCurrentBlock({ onDone }) {
     els.testError.textContent = msg;
     return;
   }
+  setRsvpBlockTitle(getBlockTitleSafe(state.activeBlockIndex));
   startRsvpForText(block.explanation || "", onDone);
 }
 
@@ -1522,12 +1529,17 @@ async function finishQuestions(blockIndex) {
   const nextIndex = idx + 1;
   o.title.textContent = `Continuar al bloque ${nextIndex + 1} de ${total}`;
 
+  o.finishedBlockIndex = idx;
+
   const concepts = getSortedSessionConcepts();
+  const { newKeys, updatedKeys } = getConceptHighlightsForBlock(idx);
   renderDictionary({
     containerEl: o.dictionaryWrap,
     title: `Conceptos hasta ahora (${concepts.length} términos)`,
     concepts,
     collapsedByDefault: true,
+    newTermKeys: newKeys,
+    updatedTermKeys: updatedKeys,
   });
 
   const blockDefaults = resolveBlockQuestionConfig(nextIndex);
