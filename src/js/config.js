@@ -14,6 +14,7 @@ export const LS_SESSION_CONCEPTS_BY_BLOCK_KEY = "session_concepts_by_block";
 export const LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY =
   "session_concept_highlights_by_block";
 export const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
+export const LS_REVIEW_SESSION_RESULTS_KEY = "review_session_results";
 export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 
 /** Maximum test (MCQ) questions per study block. */

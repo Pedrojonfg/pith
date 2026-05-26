@@ -2,6 +2,7 @@ import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPTS_KEY,
+  LS_REVIEW_SESSION_RESULTS_KEY,
 } from "./config.js?v=20260525_1";
 import {
   buildResumePayload,
@@ -289,7 +290,80 @@ export function buildMarkdown(session) {
       if (m.feedback) lines.push(`  - Feedback: ${m.feedback}`);
     }
   }
-  lines.push("");
+
+  // If the user ran a review, include the latest results for THIS active session.
+  // Review runs store their summary in localStorage, since they live outside the normal session object.
+  const sessionId = String(safe?._meta?.session_id || "");
+  const sessionRev = Number(safe?._meta?.rev || 0);
+  const reviewResults = (() => {
+    try {
+      const raw = localStorage.getItem(LS_REVIEW_SESSION_RESULTS_KEY);
+      if (!raw || !raw.trim()) return null;
+      const obj = JSON.parse(raw);
+      if (!obj || typeof obj !== "object") return null;
+      const rid = String(obj.session_id || "");
+      const rrev = Number(obj.rev || 0);
+      if (!rid || !sessionId) return null;
+      if (rid !== sessionId) return null;
+      if (!Number.isFinite(sessionRev) || !Number.isFinite(rrev)) return null;
+      if (rrev !== sessionRev) return null;
+      return obj;
+    } catch {
+      return null;
+    }
+  })();
+
+  if (reviewResults && typeof reviewResults === "object") {
+    const formatTs = (ts) => {
+      const n = Number(ts);
+      if (!Number.isFinite(n) || n <= 0) return "";
+      const d = new Date(n);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toISOString().replace("T", " ").slice(0, 19);
+    };
+
+    const reviewedAt = formatTs(reviewResults.reviewed_at);
+    const rt = String(reviewResults.reviewType || "").trim();
+    const testQuestions = Number(reviewResults.testQuestions || 0);
+    const correct = Number(reviewResults.correct || 0);
+    const pct = Number(reviewResults.pct || 0);
+    const socraticQuestions = Number(reviewResults.socraticQuestions || 0);
+    const wrong = Array.isArray(reviewResults.wrong) ? reviewResults.wrong : [];
+
+    lines.push("");
+    lines.push("## Review results");
+    if (reviewedAt || rt) {
+      lines.push(`Last review: ${reviewedAt || "(unknown)"}${rt ? ` • Type: ${rt}` : ""}`);
+    } else {
+      lines.push("Last review: (unknown)");
+    }
+
+    if (testQuestions > 0) {
+      lines.push(`Score: ${correct} / ${testQuestions} correct (${pct}%)`);
+    } else {
+      lines.push("Score: (no test questions in this review run)");
+    }
+
+    lines.push(`Socratic questions completed: ${socraticQuestions}`);
+
+    if (wrong.length) {
+      lines.push("");
+      lines.push("Wrong answers (test):");
+      const cap = Math.min(40, wrong.length);
+      for (let i = 0; i < cap; i += 1) {
+        const w = wrong[i] && typeof wrong[i] === "object" ? wrong[i] : {};
+        const q = String(w.question || "").trim() || `Q${i + 1}`;
+        const userAns = String(w.user || "").trim() || "(blank)";
+        const correctAns = String(w.correct || "").trim() || "(unknown)";
+        lines.push(`- ${q}`);
+        lines.push(`  - Your answer: ${userAns}`);
+        lines.push(`  - Correct: ${correctAns}`);
+      }
+    }
+    lines.push("");
+  } else {
+    lines.push("");
+  }
 
   lines.push("## Session Plan");
   lines.push("");

@@ -1257,9 +1257,13 @@ export function buildBlockGenerationSystemPrompt({
   explanation_profile = "thorough",
   gap_focus = [],
   blockTitle = "",
+  blockIndex = 0,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const totalQuestions = nTest + nSocratic;
+  const connectionSlotReserved = totalQuestions > 0 ? 1 : 0;
+  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
   const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
   const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
   const gaps = Array.isArray(gap_focus)
@@ -1276,8 +1280,12 @@ export function buildBlockGenerationSystemPrompt({
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
 - Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
 - Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
-- If n_test + n_socratic (${nTest + nSocratic}) is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.
+- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
       : "";
+
+  const blockNo = Number(blockIndex) + 1;
+  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
 
   return `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
 Return a single JSON object with this schema:
@@ -1289,6 +1297,14 @@ ${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
+Connection question (required):
+- If ${totalQuestions} == 0, generate no questions at all.
+- Otherwise generate exactly ONE connection question.
+- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
+- If block number is 1 (${blockNoSafe}), connect to the course arc/prerequisites rather than a previous block.
+Placement rule:
+- If n_socratic > 0, make the connection question the FIRST socratic question.
+- Else if n_test > 0, make the connection question the FIRST test question.
 ${QUESTION_PEDAGOGY_RULES}
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
@@ -1343,9 +1359,13 @@ export function buildQuestionsOnlySystemPrompt({
   n_socratic,
   gap_focus = [],
   blockTitle = "",
+  blockIndex = 0,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const totalQuestions = nTest + nSocratic;
+  const connectionSlotReserved = totalQuestions > 0 ? 1 : 0;
+  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
     : [];
@@ -1355,8 +1375,12 @@ export function buildQuestionsOnlySystemPrompt({
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
 - Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
 - Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
-- If n_test + n_socratic (${nTest + nSocratic}) is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.
+- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
       : "";
+
+  const blockNo = Number(blockIndex) + 1;
+  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
 
   return `You will receive a FIXED block explanation and source material. Generate ONLY new questions — do NOT modify, rewrite, or return the explanation or title.
 Return a single JSON object with this schema:
@@ -1368,6 +1392,14 @@ ${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
+Connection question (required):
+- If ${totalQuestions} == 0, generate no questions at all.
+- Otherwise generate exactly ONE connection question.
+- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
+- If block number is 1 (${blockNoSafe}), connect to the course arc/prerequisites rather than a previous block.
+Placement rule:
+- If n_socratic > 0, make the connection question the FIRST socratic question.
+- Else if n_test > 0, make the connection question the FIRST test question.
 ${QUESTION_PEDAGOGY_RULES}
 Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
@@ -1383,10 +1415,18 @@ export function buildQuestionsOnlyUserContent({
   explanation,
   materialText,
   gap_focus = [],
+  previousBlocksTitles = [],
 }) {
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
     : [];
+  const prevTitles = Array.isArray(previousBlocksTitles) ? previousBlocksTitles : [];
+  const prevBlockSection =
+    prevTitles.length > 0
+      ? `\n\nPrevious blocks (titles, in order):\n${prevTitles.map((t, i) => `${i + 1}. ${t}`).join(
+          "\n",
+        )}`
+      : `\n\nPrevious blocks: none (this is block 1).`;
   const gapBlock =
     gaps.length > 0
       ? `\n\nLearning gaps to target (generate ≥1 question per gap):\n${gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
@@ -1398,7 +1438,7 @@ FIXED EXPLANATION (do not rewrite this explanation; generate questions that test
 ${fixedExplanation}
 
 Source material (verbatim chunk for grounding):
-${String(materialText || "").trim()}${gapBlock}`;
+${String(materialText || "").trim()}${gapBlock}${prevBlockSection}`;
 }
 
 export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
@@ -1427,9 +1467,11 @@ export async function deepSeekRegenerateBlockQuestions({
   n_test,
   n_socratic,
   blockTitle,
+  blockIndex = 0,
   explanation,
   materialText,
   gap_focus = [],
+  previousBlocksTitles = [],
 }) {
   const systemPrompt = buildQuestionsOnlySystemPrompt({
     language,
@@ -1437,12 +1479,14 @@ export async function deepSeekRegenerateBlockQuestions({
     n_socratic,
     gap_focus,
     blockTitle,
+    blockIndex,
   });
   const userContent = buildQuestionsOnlyUserContent({
     blockTitle,
     explanation,
     materialText,
     gap_focus,
+    previousBlocksTitles,
   });
 
   const raw = await llmChatCompletions({
@@ -1491,6 +1535,7 @@ export async function deepSeekGenerateBlockJson({
     explanation_profile,
     gap_focus,
     blockTitle,
+    blockIndex,
   });
 
   const userContent = buildBlockGenerationUserContent({
@@ -1628,7 +1673,17 @@ export async function deepSeekGenerateReviewBatch({
       ? `\nFor each test question: 4 options (A/B/C/D), one correct answer, brief feedback.\n${MC_OPTION_PARITY_RULES}\n`
       : "";
 
-  const systemPrompt = `You are a review examiner. Based on this study session content, generate exactly {batch_size} {type} questions that test retention across the ENTIRE session, not just one block. Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
+  const systemPrompt = `You are a review examiner. Based on this study session content, generate exactly {batch_size} {type} questions that test retention across the ENTIRE session, not just one block.
+
+Rules:
+- Questions MUST be new: do NOT copy, paraphrase, or trivially tweak any existing questions from the session, missed-question summaries, or chat history.
+- Prefer questions that connect MULTIPLE blocks: comparisons, pre/post relationships, big-picture cause-effect, and how ideas build on each other.
+- Only a minority of questions should stay strictly within a single block; most should require recalling how concepts relate across the course arc.
+- Re-use concepts and facts, but change the angle, scenario, or granularity so that the student cannot answer by remembering a past question template.
+- Avoid asking for mechanical recall of wording; focus on understanding, discrimination between close concepts, and transfer to new situations.
+
+Now generate the review:
+Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
 ${testParity}Return ONLY valid JSON array:
 [{type, question, options?, answer?, feedback?}]
 No preamble, no backticks.`
