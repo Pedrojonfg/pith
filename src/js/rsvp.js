@@ -469,11 +469,53 @@ function finalPauseMs() {
   return Math.min(1000, Math.max(520, Math.round(b * 1.15)));
 }
 
+/** Letter–hyphen–letter compounds (not numeric ranges like 3-5). */
+const RSVP_HYPHEN_BREAK_RE = /(?<=\p{L})-(?=\p{L})/u;
+
+/**
+ * Split internal hyphens into RSVP units; hyphen stays on the leading part.
+ * @param {string} token Whitespace token (trailing spaces preserved on the last part).
+ * @returns {string[]}
+ */
+function splitHyphenatedToken(token) {
+  const raw = String(token ?? "");
+  if (!raw || !RSVP_HYPHEN_BREAK_RE.test(raw.replace(/\s+$/, ""))) return [raw];
+
+  const trailing = raw.match(/\s+$/)?.[0] || "";
+  const core = trailing ? raw.slice(0, -trailing.length) : raw;
+  const parts = core.split(RSVP_HYPHEN_BREAK_RE);
+  if (parts.length <= 1) return [raw];
+
+  /** @type {string[]} */
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i < parts.length - 1) {
+      out.push(`${parts[i]}-`);
+    } else {
+      out.push(parts[i] + trailing);
+    }
+  }
+  return out;
+}
+
+/** @param {string[]} words */
+function expandHyphenatedWords(words) {
+  /** @type {string[]} */
+  const out = [];
+  for (const w of words) {
+    const parts = splitHyphenatedToken(w);
+    if (parts.length <= 1) out.push(w);
+    else out.push(...parts);
+  }
+  return out;
+}
+
 function tokenizeWords(text) {
   const raw = String(text || "");
   if (!raw.trim()) return [];
   // Preserve original spacing by keeping trailing whitespace with each token.
-  return raw.match(/\S+\s*/g) || [];
+  const words = raw.match(/\S+\s*/g) || [];
+  return expandHyphenatedWords(words);
 }
 
 /** Longest token in explanation (by letter graphemes) for typography probe. @param {string} explanationText */
