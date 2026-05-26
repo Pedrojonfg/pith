@@ -44,6 +44,31 @@ export function normalizeConcepts(concepts) {
   return incoming.map(normalizeConceptEntry).filter(Boolean);
 }
 
+/** Drop all session dictionary data (new session / new material). */
+export function clearSessionConceptStorage() {
+  try {
+    localStorage.removeItem(LS_SESSION_CONCEPTS_KEY);
+    localStorage.removeItem(LS_SESSION_CONCEPTS_BY_BLOCK_KEY);
+    localStorage.removeItem(LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/** After resume import: replace storage with payload + per-block concepts. */
+export function restoreSessionConceptStorage({ sessionConcepts, blocks } = {}) {
+  clearSessionConceptStorage();
+  const legacy = normalizeConcepts(sessionConcepts);
+  if (legacy.length) saveSessionConcepts(legacy);
+  const arr = Array.isArray(blocks) ? blocks : [];
+  for (let i = 0; i < arr.length; i += 1) {
+    const b = arr[i];
+    if (b && typeof b === "object" && Array.isArray(b.concepts) && b.concepts.length) {
+      setBlockConcepts(i, b.concepts);
+    }
+  }
+}
+
 export function loadConceptsByBlock() {
   try {
     const raw = localStorage.getItem(LS_SESSION_CONCEPTS_BY_BLOCK_KEY);

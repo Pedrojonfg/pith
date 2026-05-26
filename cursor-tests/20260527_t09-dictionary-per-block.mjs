@@ -8,9 +8,11 @@ import {
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
 } from "../src/js/config.js";
 import {
+  clearSessionConceptStorage,
   commitSessionConceptsForBlock,
   getSortedSessionConcepts,
   loadConceptsByBlock,
+  restoreSessionConceptStorage,
   setBlockConcepts,
   syncConceptsFromBlock,
 } from "../src/js/dictionary.js";
@@ -102,6 +104,32 @@ setBlockConcepts(1, [{ term: "KeyCheck", definition: "x" }]);
 assert(
   JSON.parse(localStorage.getItem(LS_SESSION_CONCEPTS_BY_BLOCK_KEY) || "{}")["1"]?.[0]?.term === "KeyCheck",
   "storage keys are stringified block indices",
+);
+
+// --- clearSessionConceptStorage drops stale session dictionary ---
+resetStorage();
+setBlockConcepts(0, [{ term: "Stale", definition: "old session" }]);
+clearSessionConceptStorage();
+assert(getSortedSessionConcepts().length === 0, "clearSessionConceptStorage empties aggregate");
+
+// --- restoreSessionConceptStorage replaces prior session data ---
+resetStorage();
+setBlockConcepts(0, [{ term: "Stale", definition: "x" }]);
+restoreSessionConceptStorage({
+  sessionConcepts: [{ term: "Resumed", definition: "from md" }],
+  blocks: [{ concepts: [{ term: "BlockTerm", definition: "from block" }] }],
+});
+assert(
+  getSortedSessionConcepts().some((c) => c.term === "Resumed"),
+  "restore includes legacy session_concepts",
+);
+assert(
+  getSortedSessionConcepts().some((c) => c.term === "BlockTerm"),
+  "restore includes per-block concepts",
+);
+assert(
+  !getSortedSessionConcepts().some((c) => c.term === "Stale"),
+  "restore does not keep pre-restore stale terms",
 );
 
 console.log(`\nT09 dictionary per-block: ${passed} passed, ${failed} failed`);
