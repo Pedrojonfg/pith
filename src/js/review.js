@@ -6,7 +6,10 @@ import {
 } from "./llm.js?v=20260525_1";
 import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
 import { buildMarkdown } from "./export.js?v=20260525_1";
-import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260525_1";
+import {
+  LS_REVIEW_SESSION_MD_KEY,
+  LS_REVIEW_SESSION_RESULTS_KEY,
+} from "./config.js?v=20260525_1";
 import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260527_1";
 import {
   clearMarkdownContainer,
@@ -65,16 +68,18 @@ function getReviewQuestionCount() {
 }
 
 function getSessionMarkdownForReview() {
+  if (state.activeSession) {
+    const md = buildMarkdown(state.activeSession);
+    try {
+      localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
+    } catch {
+      // ignore
+    }
+    return md;
+  }
   const stored = localStorage.getItem(LS_REVIEW_SESSION_MD_KEY);
   if (stored && stored.trim()) return stored;
-  if (!state.activeSession) return "";
-  const md = buildMarkdown(state.activeSession);
-  try {
-    localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
-  } catch {
-    // ignore
-  }
-  return md;
+  return "";
 }
 
 function extractSessionContentFromMarkdown(md) {
@@ -94,7 +99,7 @@ function extractSessionContentFromMarkdown(md) {
 function buildSessionContentForReview() {
   const md = getSessionMarkdownForReview();
   const parsed = extractSessionContentFromMarkdown(md);
-  const base =
+  const baseExplanations =
     parsed ||
     (() => {
       const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
@@ -104,6 +109,17 @@ function buildSessionContentForReview() {
         .join("\n\n")
         .trim();
     })();
+
+  const outlineLines = [];
+  const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
+  if (blocks.length) {
+    outlineLines.push("SESSION OUTLINE (blocks in order):");
+    for (let i = 0; i < blocks.length; i += 1) {
+      const b = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
+      const title = String(b.title || "").trim() || `Block ${i + 1}`;
+      outlineLines.push(`- Block ${i + 1}: ${title}`);
+    }
+  }
 
   const extras = [];
 
@@ -134,7 +150,10 @@ function buildSessionContentForReview() {
     extras.push(`SIDEBAR NOTES:\n${userNotes.map((t) => `- ${t}`).join("\n")}`);
   }
 
-  const out = [base, ...extras].filter(Boolean).join("\n\n").trim();
+  const out = [outlineLines.join("\n").trim(), baseExplanations, ...extras]
+    .filter((section) => section && String(section).trim())
+    .join("\n\n")
+    .trim();
   return out;
 }
 
@@ -271,17 +290,17 @@ function renderReviewQuestion() {
 function showReviewSummary() {
   const total = reviewQuestions.length;
   const hasAnyTest = reviewQuestions.some((q) => q && q.type === "test");
+  const wrong = [];
+  const scoredTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
+  const pct = scoredTotal ? Math.round((reviewCorrect / scoredTotal) * 100) : 0;
+  const socraticTotal = reviewQuestions.filter((q) => q && q.type === "socratic").length;
 
   if (!hasAnyTest) {
     els.reviewSummaryMeta.textContent = `Completed ${total} Socratic questions.`;
     els.reviewWrongList.hidden = true;
     els.reviewWrongList.textContent = "";
   } else {
-    const scoredTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
-    const pct = scoredTotal ? Math.round((reviewCorrect / scoredTotal) * 100) : 0;
     els.reviewSummaryMeta.textContent = `${reviewCorrect} / ${scoredTotal} correct (${pct}%)`;
-
-    const wrong = [];
     for (let i = 0; i < reviewQuestions.length; i += 1) {
       const q = reviewQuestions[i];
       if (!q || q.type !== "test") continue;
@@ -309,6 +328,57 @@ function showReviewSummary() {
       els.reviewWrongList.hidden = true;
       els.reviewWrongList.textContent = "";
     }
+  }
+
+  // Persist review results so the main session markdown export can include them.
+  try {
+    const sessionId = String(state.activeSession?._meta?.session_id || "");
+    const rev = Number(state.activeSession?._meta?.rev || 0);
+    const safeWrong = Array.isArray(wrong) ? wrong : [];
+
+    const socraticAnswers = [];
+    if (Array.isArray(reviewQuestions) && Array.isArray(reviewAnswers)) {
+      for (let i = 0; i < reviewQuestions.length; i += 1) {
+        const q = reviewQuestions[i];
+        const a = reviewAnswers[i];
+        if (!q || q.type !== "socratic") continue;
+        if (!a || typeof a !== "object") continue;
+        socraticAnswers.push({
+          question: String(q.question || ""),
+          user_answer: String(a.user_answer || ""),
+        });
+        if (socraticAnswers.length >= 30) break;
+      }
+    }
+
+    localStorage.setItem(
+      LS_REVIEW_SESSION_RESULTS_KEY,
+      JSON.stringify({
+        session_id: sessionId || null,
+        rev: Number.isFinite(rev) ? rev : null,
+        reviewed_at: Date.now(),
+        reviewType,
+        totalQuestions: total,
+        testQuestions: hasAnyTest ? scoredTotal : 0,
+        correct: hasAnyTest ? reviewCorrect : 0,
+        pct: hasAnyTest ? pct : 0,
+        socraticQuestions: socraticTotal,
+        wrong: safeWrong,
+        socraticAnswers,
+      }),
+    );
+
+    // Keep the cached session markdown in sync too (used as review context).
+    if (state.activeSession) {
+      try {
+        const md = buildMarkdown(state.activeSession);
+        localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
+      } catch {
+        // ignore
+      }
+    }
+  } catch {
+    // ignore
   }
 
   showScreen("reviewSummary");

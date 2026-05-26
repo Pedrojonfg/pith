@@ -183,14 +183,32 @@ export function mergeGapLists(synthesis, userEdits) {
   return merged;
 }
 
-/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
+/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total).
+ * Reserve 1 slot for the required connection question.
+ */
 export function adjustQuestionBudgetForGaps(n_test, n_socratic, gapCount) {
   const gaps = Math.max(0, Math.floor(Number(gapCount) || 0));
   let nt = clampInt(n_test, 0, MAX_N_TEST, 0);
   let ns = clampInt(n_socratic, 0, 3, 0);
-  if (gaps <= nt + ns) return { n_test: nt, n_socratic: ns };
-  nt = Math.min(MAX_N_TEST, Math.max(nt, Math.ceil(gaps * 0.6)));
-  ns = Math.min(3, Math.max(ns, gaps - nt));
+  const reservedConnectionSlot = 1;
+  const availableForGaps = Math.max(0, nt + ns - reservedConnectionSlot);
+  if (gaps <= availableForGaps) return { n_test: nt, n_socratic: ns };
+
+  const targetTotal = Math.min(8, gaps + reservedConnectionSlot);
+
+  // Prefer test questions for breadth; socratic is capped at 3 by UI/prompt contract.
+  nt = Math.min(MAX_N_TEST, Math.max(nt, Math.ceil(targetTotal * 0.6)));
+  ns = targetTotal - nt;
+  if (ns > 3) {
+    ns = 3;
+    nt = targetTotal - ns;
+  }
+  if (ns < 0) {
+    ns = 0;
+    nt = targetTotal;
+  }
+
+  // Final safety cap.
   while (nt + ns > 8 && ns > 0) ns -= 1;
   while (nt + ns > 8 && nt > 0) nt -= 1;
   return { n_test: nt, n_socratic: ns };
@@ -590,15 +608,24 @@ export async function generateQuestionsOnlyForIndex(
   const llmModel = getSessionLlmModel(state.activeSession);
   assertLlmKeyPresent(llmModel);
 
+  const titlesById = parseBlockTitlesFromList(String(state.activeSession?.blocks_list_text || ""));
+  const previousBlocksTitles = [];
+  for (let id = 1; id <= idx; id += 1) {
+    const t = titlesById[String(id)];
+    if (t) previousBlocksTitles.push(t);
+  }
+
   const request = {
     llmModel,
     language: getStudyLanguage(),
     n_test: cfg.n_test,
     n_socratic: cfg.n_socratic,
     blockTitle,
+    blockIndex: idx,
     explanation,
     materialText: materialChunk,
     gap_focus: cfg.gap_focus,
+    previousBlocksTitles,
   };
 
   let response = null;
