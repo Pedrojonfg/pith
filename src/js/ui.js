@@ -117,6 +117,10 @@ export const els = {
   nSocraticMinusBtn: document.getElementById("nSocraticMinusBtn"),
   nSocraticPlusBtn: document.getElementById("nSocraticPlusBtn"),
   nSocraticValue: document.getElementById("nSocraticValue"),
+  connectionQuestionsToggleBtn: document.getElementById("connectionQuestionsToggleBtn"),
+  connectionQuestionsToggleSubtitle: document.getElementById(
+    "connectionQuestionsToggleSubtitle",
+  ),
   questionsPreviewLabel: document.getElementById("questionsPreviewLabel"),
   generateBlocksBtn: document.getElementById("generateBlocksBtn"),
   generateBlocksStatus: document.getElementById("generateBlocksStatus"),

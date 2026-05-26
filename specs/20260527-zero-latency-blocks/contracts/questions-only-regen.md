@@ -22,9 +22,12 @@ deepSeekRegenerateBlockQuestions({
   n_test,
   n_socratic,
   blockTitle,
+  blockIndex,            // 0-based index; used to decide connection guidance for blocks 2..N
+  include_connection_questions = true,
   explanation,      // fixed — model must NOT rewrite
   materialText,     // chunk for grounding
   gap_focus = [],
+  previousBlocksTitles // array of titles for blocks earlier in the session
 })
 ```
 
@@ -34,6 +37,11 @@ deepSeekRegenerateBlockQuestions({
 
 - MUST NOT modify or return `explanation` or `title`
 - Generate exactly `n_test` test + `n_socratic` socratic questions
+- MUST include exactly ONE "connection question" per block ONLY when:
+  - `include_connection_questions` is enabled, AND
+  - this is block 2..N (i.e., `blockIndex + 1 >= 2`).
+  When disabled, or for block 1, MUST NOT include any connection question.
+- The connection question must be included within the total `n_test + n_socratic` questions.
 - Reuse `MC_OPTION_PARITY_RULES`, `QUESTION_PEDAGOGY_RULES`, gap_focus section from full prompt
 - Questions MUST be consistent with the provided explanation (test understanding of that text + material)
 - LaTeX / JSON escaping rules same as full block generation
