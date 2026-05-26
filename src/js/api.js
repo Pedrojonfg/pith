@@ -1,5 +1,12 @@
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import {
+  buildParagraphFormatOpts,
+  enforceExplanationParagraphs,
+  explanationParagraphHardRule,
+  getMinExplanationParagraphs,
+  hasValidExplanationParagraphs,
+} from "./explanationParagraphs.js?v=20260527_1";
+import {
   getActiveSessionLlmModel,
   getApiKeyForLlmModel,
   llmChatCompletions,
@@ -1288,11 +1295,13 @@ export function buildBlockGenerationSystemPrompt({
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
     : [];
+  const paragraphOpts = buildParagraphFormatOpts(blockTitle, profile);
+  const paragraphRule = explanationParagraphHardRule(paragraphOpts);
   const explanationSection = isVocabularyBlock
-    ? EXPLANATION_VOCABULARY_BLOCK
+    ? `${EXPLANATION_VOCABULARY_BLOCK}\n${paragraphRule}`
     : profile === "brief_deep"
-      ? EXPLANATION_BRIEF_DEEP
-      : EXPLANATION_RSVP_THOROUGH;
+      ? `${EXPLANATION_BRIEF_DEEP}\n${paragraphRule}`
+      : `${EXPLANATION_RSVP_THOROUGH}\n${paragraphRule}`;
   const blockNo = Number(blockIndex) + 1;
   const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
   const connectionEnabled = include_connection_questions !== false;
@@ -1603,10 +1612,39 @@ export async function deepSeekGenerateBlockJson({
     temperature: 0.2,
   });
 
-  const blockObj = parseModelJsonObject(raw);
-  if (!blockObj || typeof blockObj !== "object" || Array.isArray(blockObj)) {
-    console.warn("Invalid block JSON response:", raw);
-    throw new Error("Model did not return valid JSON for the block. Please try again.");
+  const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
+
+  const parseAndEnforceBlock = (responseText) => {
+    const obj = parseModelJsonObject(responseText);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      console.warn("Invalid block JSON response:", responseText);
+      throw new Error("Model did not return valid JSON for the block. Please try again.");
+    }
+    if (typeof obj.explanation === "string") {
+      obj.explanation = enforceExplanationParagraphs(obj.explanation, paragraphOpts);
+    }
+    return obj;
+  };
+
+  let blockObj = parseAndEnforceBlock(raw);
+  if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
+    const min = getMinExplanationParagraphs(paragraphOpts);
+    const retryHint =
+      `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs ` +
+      `separated by one blank line each (double newline). A single paragraph is invalid.`;
+    const rawRetry = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(llmModel),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent + retryHint },
+      ],
+      temperature: 0.2,
+    });
+    blockObj = parseAndEnforceBlock(rawRetry);
+    if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
+      console.warn("Block explanation still lacks required paragraph breaks after retry.");
+    }
   }
   return blockObj;
 }
@@ -1638,8 +1676,12 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
     n_socratic: 0,
     include_connection_questions,
   });
+  const paragraphOpts = buildParagraphFormatOpts(title, "thorough");
   return {
-    explanation: String(blockObj?.explanation || ""),
+    explanation: enforceExplanationParagraphs(
+      String(blockObj?.explanation || ""),
+      paragraphOpts,
+    ),
     questions: Array.isArray(blockObj?.questions) ? blockObj.questions : [],
     concepts: Array.isArray(blockObj?.concepts) ? blockObj.concepts : [],
   };

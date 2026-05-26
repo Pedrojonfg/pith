@@ -83,6 +83,7 @@ import {
   setOnPrefetchReady,
   getPrefetchedBlock,
   hasGeneratedBlockContent,
+  normalizeBlockJson,
   ensureSessionResponseState,
   applyAssessmentResults,
   gapLabelsForBlock,
@@ -1125,22 +1126,8 @@ async function ensureBlockGenerated(blockIndex) {
 
   warnBlockGenerationProfileMismatch(obj, cfg);
 
-  const cleaned =
-    obj && typeof obj === "object"
-      ? obj
-      : { id: blockIndex + 1, title: blockTitle, explanation: "", questions: [] };
-
-  if (cleaned.id == null) cleaned.id = blockIndex + 1;
-  if (!cleaned.title) cleaned.title = blockTitle;
-  if (!cleaned.explanation) cleaned.explanation = "";
-  if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
+  const cleaned = normalizeBlockJson(obj, cfg, blockIndex);
   cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
-  if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
-  if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
-  cleaned._config.n_test = cfg.n_test;
-  cleaned._config.n_socratic = cfg.n_socratic;
-  cleaned._config.explanation_profile = cfg.explanation_profile;
-  cleaned._config.gap_focus = cfg.gap_focus;
 
   const testCount = cleaned.questions.filter((q) => q && typeof q === "object" && q.type === "test")
     .length;
@@ -1723,15 +1710,7 @@ async function finishQuestions(blockIndex) {
   const persistNextBlock = (data, cfg) => {
     if (!state.activeSession || typeof state.activeSession !== "object") return;
     if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
-    const cleaned =
-      data && typeof data === "object"
-        ? { ...data }
-        : { id: nextIndex + 1, title: getBlockTitleSafe(nextIndex), explanation: "", questions: [] };
-    if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
-    cleaned._config.n_test = cfg.n_test;
-    cleaned._config.n_socratic = cfg.n_socratic;
-    cleaned._config.explanation_profile = cfg.explanation_profile;
-    cleaned._config.gap_focus = cfg.gap_focus;
+    const cleaned = normalizeBlockJson(data, cfg, nextIndex);
     if (Array.isArray(cleaned.questions)) {
       cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
     }
