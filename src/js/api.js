@@ -1,3 +1,4 @@
+import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import {
   getActiveSessionLlmModel,
   getApiKeyForLlmModel,
@@ -1257,7 +1258,7 @@ export function buildBlockGenerationSystemPrompt({
   gap_focus = [],
   blockTitle = "",
 }) {
-  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
   const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
@@ -1343,7 +1344,7 @@ export function buildQuestionsOnlySystemPrompt({
   gap_focus = [],
   blockTitle = "",
 }) {
-  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
@@ -1403,7 +1404,7 @@ ${String(materialText || "").trim()}${gapBlock}`;
 export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
   if (!responseObj || typeof responseObj !== "object" || !cfg || typeof cfg !== "object") return;
   const questions = Array.isArray(responseObj.questions) ? responseObj.questions : [];
-  const nTest = Math.max(0, Math.min(5, Math.round(Number(cfg.n_test))));
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(cfg.n_test))));
   const nSoc = Math.max(0, Math.min(3, Math.round(Number(cfg.n_socratic))));
   const expected = nTest + nSoc;
   if (expected > 0 && questions.length !== expected) {
@@ -1524,7 +1525,7 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
   const id = Math.max(1, Math.floor(Number(safeBlock.id) || 1));
   const title = String(safeBlock.title || `Block ${id}`).trim() || `Block ${id}`;
   const source = String(safeBlock.source || "unknown").trim() || "unknown";
-  const nTest = Math.max(0, Math.min(5, Math.round(Number(config.n_test))));
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(config.n_test))));
   const lang = String(language || "English").trim() || "English";
   const materialText = String(chunk || "").trim();
 
@@ -1556,7 +1557,7 @@ export async function generateAllBlocks(blockIndex, config = {}) {
   const items = Array.isArray(blockIndex) ? blockIndex : [];
   const total = items.length;
   const results = Array.from({ length: total }, () => null);
-  const n_test = Math.max(0, Math.min(5, Math.round(Number(config.n_test))));
+  const n_test = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(config.n_test))));
   const n_socratic = Math.max(0, Math.min(3, Math.round(Number(config.n_socratic))));
   const blocksListText = String(config.blocksListText || "");
   const language = String(config.language || "English");

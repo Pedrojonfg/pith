@@ -7,7 +7,7 @@ import {
 import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
 import { buildMarkdown } from "./export.js?v=20260525_1";
 import { LS_REVIEW_SESSION_MD_KEY } from "./config.js?v=20260525_1";
-import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260525_1";
+import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260527_1";
 import {
   clearMarkdownContainer,
   hasMathInHtml,

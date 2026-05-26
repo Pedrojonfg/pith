@@ -4,6 +4,7 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
+  MAX_N_TEST,
 } from "./config.js?v=20260527_1";
 import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
 import {
@@ -65,7 +66,7 @@ export function loadDefaultQuestionConfig() {
   try {
     const raw = localStorage.getItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY);
     const obj = raw ? JSON.parse(raw) : null;
-    const n_test = clampInt(obj?.n_test, 0, 5, 2);
+    const n_test = clampInt(obj?.n_test, 0, MAX_N_TEST, 2);
     const n_socratic = clampInt(obj?.n_socratic, 0, 3, 1);
     return { n_test, n_socratic };
   } catch {
@@ -76,7 +77,7 @@ export function loadDefaultQuestionConfig() {
 export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
   try {
     const safe = {
-      n_test: clampInt(n_test, 0, 5, 2),
+      n_test: clampInt(n_test, 0, MAX_N_TEST, 2),
       n_socratic: clampInt(n_socratic, 0, 3, 1),
     };
     localStorage.setItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY, JSON.stringify(safe));
@@ -185,10 +186,10 @@ export function mergeGapLists(synthesis, userEdits) {
 /** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
 export function adjustQuestionBudgetForGaps(n_test, n_socratic, gapCount) {
   const gaps = Math.max(0, Math.floor(Number(gapCount) || 0));
-  let nt = clampInt(n_test, 0, 5, 0);
+  let nt = clampInt(n_test, 0, MAX_N_TEST, 0);
   let ns = clampInt(n_socratic, 0, 3, 0);
   if (gaps <= nt + ns) return { n_test: nt, n_socratic: ns };
-  nt = Math.min(5, Math.max(nt, Math.ceil(gaps * 0.6)));
+  nt = Math.min(MAX_N_TEST, Math.max(nt, Math.ceil(gaps * 0.6)));
   ns = Math.min(3, Math.max(ns, gaps - nt));
   while (nt + ns > 8 && ns > 0) ns -= 1;
   while (nt + ns > 8 && nt > 0) nt -= 1;
@@ -198,7 +199,7 @@ export function adjustQuestionBudgetForGaps(n_test, n_socratic, gapCount) {
 export function resolveBlockQuestionConfig(blockIndex) {
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const defaults = {
-    n_test: clampInt(session.n_test, 0, 5, clampInt(state.nTest, 0, 5, 2)),
+    n_test: clampInt(session.n_test, 0, MAX_N_TEST, clampInt(state.nTest, 0, MAX_N_TEST, 2)),
     n_socratic: clampInt(session.n_socratic, 0, 3, clampInt(state.nSocratic, 0, 3, 1)),
     explanation_profile: "thorough",
     gap_focus: [],
@@ -208,7 +209,7 @@ export function resolveBlockQuestionConfig(blockIndex) {
   const cfg = b && typeof b === "object" && b._config && typeof b._config === "object" ? b._config : null;
   if (!cfg) return defaults;
   return {
-    n_test: clampInt(cfg.n_test, 0, 5, defaults.n_test),
+    n_test: clampInt(cfg.n_test, 0, MAX_N_TEST, defaults.n_test),
     n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
     explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
     gap_focus: normalizeGapFocus(cfg.gap_focus),
@@ -466,7 +467,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
 
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: clampInt(n_test, 0, 5, resolved.n_test),
+    n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
     n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
@@ -574,7 +575,7 @@ export async function generateQuestionsOnlyForIndex(
 
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: clampInt(n_test, 0, 5, resolved.n_test),
+    n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
     n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
@@ -703,7 +704,7 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
     if (!chunk.trim()) chunk = String(block.chunk || "").trim().slice(0, 12000);
 
     const blockConfig = {
-      n_test: clampInt(config.n_test, 0, 5, 2),
+      n_test: clampInt(config.n_test, 0, MAX_N_TEST, 2),
       n_socratic: 0,
       llmModel: config.llmModel ?? getSessionLlmModel(state.activeSession),
     };
@@ -923,7 +924,7 @@ export function buildResumePayload(session, { activeBlockIndex, activeQuestionIn
     format_version: RESUME_FORMAT_VERSION,
     exported_at: new Date().toISOString(),
     n_blocks: n,
-    n_test: clampInt(safe.n_test, 0, 5, 2),
+    n_test: clampInt(safe.n_test, 0, MAX_N_TEST, 2),
     n_socratic: clampInt(safe.n_socratic, 0, 3, 1),
     current_block_index: clampInt(Number(safe.current_block_index) || 0, 0, n - 1, 0),
     active_block_index: abi,
@@ -961,7 +962,7 @@ export function normalizeResumePayload(raw) {
         ? { n_test: 2, n_socratic: 0 }
         : { n_test: 0, n_socratic: 1 }
       : { n_test: 2, n_socratic: 1 };
-  const n_test = clampInt(raw.n_test, 0, 5, defaultsFromV1.n_test);
+  const n_test = clampInt(raw.n_test, 0, MAX_N_TEST, defaultsFromV1.n_test);
   const n_socratic = clampInt(raw.n_socratic, 0, 3, defaultsFromV1.n_socratic);
 
   let blocksPlan = Array.isArray(raw.blocks_plan) ? raw.blocks_plan : [];
@@ -2029,7 +2030,7 @@ export function applyAssessmentResults(assessmentResults) {
     "ok",
   );
   const sessionDefaults = {
-    n_test: clampInt(sessionObj.n_test, 0, 5, 2),
+    n_test: clampInt(sessionObj.n_test, 0, MAX_N_TEST, 2),
     n_socratic: clampInt(sessionObj.n_socratic, 0, 3, 1),
     explanation_profile: "thorough",
     gap_focus: [],
@@ -2108,7 +2109,7 @@ export function applyAssessmentResults(assessmentResults) {
 /** Stable key for prefetch cache — includes pedagogical profile (research R3). */
 export function buildBlockConfigKey(cfg) {
   const c = cfg && typeof cfg === "object" ? cfg : {};
-  const nTest = clampInt(c.n_test, 0, 5, 2);
+  const nTest = clampInt(c.n_test, 0, MAX_N_TEST, 2);
   const nSoc = clampInt(c.n_socratic, 0, 3, 1);
   const profile = normalizeExplanationProfile(c.explanation_profile, "thorough");
   const gaps = normalizeGapFocus(c.gap_focus);
@@ -2136,7 +2137,7 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
   if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
   if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
   if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
-  cleaned._config.n_test = clampInt(c.n_test, 0, 5, 2);
+  cleaned._config.n_test = clampInt(c.n_test, 0, MAX_N_TEST, 2);
   cleaned._config.n_socratic = clampInt(c.n_socratic, 0, 3, 1);
   cleaned._config.explanation_profile = normalizeExplanationProfile(
     c.explanation_profile,
@@ -2213,7 +2214,7 @@ export function triggerPrefetch(blockIndex, opts = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
-    n_test: clampInt(opts.n_test, 0, 5, resolved.n_test),
+    n_test: clampInt(opts.n_test, 0, MAX_N_TEST, resolved.n_test),
     n_socratic: clampInt(opts.n_socratic, 0, 3, resolved.n_socratic),
     explanation_profile:
       opts.explanation_profile != null

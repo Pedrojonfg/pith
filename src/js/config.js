@@ -14,6 +14,9 @@ export const LS_SESSION_CONCEPTS_BY_BLOCK_KEY = "session_concepts_by_block";
 export const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
 export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 
+/** Maximum test (MCQ) questions per study block. */
+export const MAX_N_TEST = 10;
+
 export const DS_CHAT_COMPLETIONS_URL =
   "https://api.deepseek.com/v1/chat/completions";
 
