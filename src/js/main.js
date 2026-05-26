@@ -11,7 +11,14 @@ import {
   sendGuideMessage,
 } from "./guide-chat.js?v=20260526_1";
 import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260527_1";
-import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260525_1";
+import {
+  closeBlockReadSidebar,
+  initLanguageUi,
+  els,
+  showScreen,
+  toggleBlockReadSidebar,
+  toggleSidebar,
+} from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { wireStudyHandlers } from "./study.js?v=20260527_1";
 
@@ -159,6 +166,15 @@ function bootstrap() {
     sidebarCloseBtn.addEventListener("click", () => {
       sidebar.classList.add("collapsed");
     });
+  }
+
+  const blockReadToggleBtn = document.getElementById("block-read-toggle-btn");
+  const blockReadCloseBtn = document.getElementById("block-read-close-btn");
+  if (blockReadToggleBtn) {
+    blockReadToggleBtn.addEventListener("click", toggleBlockReadSidebar);
+  }
+  if (blockReadCloseBtn) {
+    blockReadCloseBtn.addEventListener("click", closeBlockReadSidebar);
   }
 
   const guideSendBtn = document.getElementById("guide-send-btn");

@@ -918,6 +918,12 @@ body.assessment-active .sidebar-toggle {
 body.assessment-active .guide-sidebar {
   display: none !important;
 }
+body.assessment-active .block-read-toggle {
+  display: none !important;
+}
+body.assessment-active .block-read-sidebar {
+  display: none !important;
+}
 
 .assessment-runner {
   position: fixed;

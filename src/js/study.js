@@ -89,7 +89,21 @@ import {
   generateOfflinePack,
   mergeGapLists,
 } from "./session.js?v=20260527_1";
-import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260525_1";
+import {
+  els,
+  enableUnifiedMaterialUpload,
+  getStudyLanguage,
+  hideSidebar,
+  setBlockReadContentProvider,
+  setBlockReadSidebarAvailable,
+  setFullPackEntryCta,
+  setOfflinePackButtonVisibility,
+  setPrefetchIndicator,
+  showScreen,
+  showSidebar,
+  typesetMath,
+  updateFullPackProgressUi,
+} from "./ui.js?v=20260525_1";
 import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260525_1";
 
 let splitMergeSummaryEls = null;
@@ -1243,6 +1257,7 @@ function setTestMeta() {
 function showTestQuestions() {
   els.testRsvpView.hidden = true;
   els.testQaView.hidden = false;
+  setBlockReadSidebarAvailable(true);
 }
 
 function beginRsvpForCurrentBlock({ onDone }) {
@@ -1255,6 +1270,7 @@ function beginRsvpForCurrentBlock({ onDone }) {
     els.testError.textContent = msg;
     return;
   }
+  setBlockReadSidebarAvailable(false);
   setRsvpBlockTitle(getBlockTitleSafe(state.activeBlockIndex));
   startRsvpForText(block.explanation || "", onDone);
 }
@@ -1343,6 +1359,7 @@ function renderTestQuestion() {
     // If test questions are exhausted, jump to Socratic (or finish block).
     if (ctx.type === "socratic") {
       showScreen("socratic");
+      setBlockReadSidebarAvailable(true);
       renderSocraticQuestion();
       return;
     }
@@ -1419,6 +1436,7 @@ function handleTestAnswer({ chosen, correct, feedback }) {
       const nextCtx = getActiveQuestionContext();
       if (nextCtx.type === "socratic") {
         showScreen("socratic");
+        setBlockReadSidebarAvailable(true);
         renderSocraticQuestion();
       } else {
         renderTestQuestion();
@@ -1566,6 +1584,7 @@ function showQuestions(blockIndex) {
   }
   if (socQs.length) {
     showScreen("socratic");
+    setBlockReadSidebarAvailable(true);
     renderSocraticQuestion();
     return;
   }
@@ -1574,6 +1593,7 @@ function showQuestions(blockIndex) {
 }
 
 async function finishQuestions(blockIndex) {
+  setBlockReadSidebarAvailable(false);
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const total = Math.max(1, getTotalBlocksSafe());
   if (idx >= total - 1) {
@@ -2011,6 +2031,14 @@ function ensureAssessmentRunnerEls() {
 }
 
 export function wireStudyHandlers() {
+  setBlockReadContentProvider(() => {
+    const blocks = getBlocksSafe();
+    const block = blocks[state.activeBlockIndex];
+    return {
+      title: getBlockTitleSafe(state.activeBlockIndex),
+      explanation: String(block?.explanation || ""),
+    };
+  });
   const defaults = loadDefaultQuestionConfig();
   state.nTest = clampInt(defaults.n_test, 0, MAX_N_TEST, 2);
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
