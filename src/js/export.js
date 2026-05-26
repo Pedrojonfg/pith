@@ -554,7 +554,11 @@ export function buildOfflinePack(activeSession, blockIndex) {
       failed_blocks: failedBlocks,
       offline_pack: true,
     },
-    config: { n_test: safe.n_test, language: safe.language },
+    config: {
+      n_test: safe.n_test,
+      language: safe.language,
+      include_connection_questions: safe.include_connection_questions,
+    },
     blocks: results,
   };
 

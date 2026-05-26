@@ -39,6 +39,11 @@ function resetToNewSession() {
   state.activeSession = null;
   state.activeBlockIndex = 0;
   state.activeQuestionIndex = 0;
+  state.includeConnectionQuestions = true;
+  if (els.connectionQuestionsToggleBtn) {
+    els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", "true");
+    if (els.connectionQuestionsToggleSubtitle) els.connectionQuestionsToggleSubtitle.hidden = true;
+  }
 
   if (els.fileInput) els.fileInput.value = "";
   if (els.blocksFilterInput) els.blocksFilterInput.value = "";

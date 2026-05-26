@@ -25,6 +25,11 @@
 - Q: ¿Write-through del bloque prefetched a `session.blocks` al `ready`? → A: **Sí** — persistir el JSON completo en `session.blocks[N+1]` cuando el prefetch pasa a `ready` (además de fusionar `concepts` en el diccionario).
 - Q: ¿Alcance del export antes de terminar la sesión (manual / tab close)? → A: Incluir **todos** los bloques con contenido generado en `session.blocks` (estudiados o solo prefetched vía write-through), más el diccionario unificado.
 - Q: Si el prefetch se invalida o regenera (nueva `configKey`), ¿qué pasa con `concepts` ya fusionados? → A: **Reemplazar** solo los `concepts` atribuibles al índice de bloque invalidado/regenerado; el resto del diccionario acumulado se conserva.
+- Q: Para cada bloque, ¿cómo generar el “sneak peek” de transición sin subir demasiado tokens? → A: **Derivarlo del `explanation`** del bloque N+1 (extracto recortado a ≤4 frases) y asegurar que el `explanation` enfatiza explícitamente la conexión con el bloque anterior.
+- Q: ¿Cuándo aparece el sneak peek y qué pasa si N+1 aún no está `ready`? → A: Mostrar sneak peek **solo cuando** `prefetch.status === 'ready'`; si no, placeholder (“Preparando siguiente bloque…”).
+- Q: ¿De dónde exactamente se recorta el sneak peek del `explanation`? → A: Tomar **las primeras 4 frases** del `explanation` (normalizando whitespace).
+- Q: ¿Qué hacer si el `explanation` no trae conexiones suficientes? → A: Aceptar “lo que haya” y mejorar el prompt/contrato para que futuros `explanation` ya vengan conectados (sin llamada LLM extra).
+- Q: ¿Dónde se renderiza el sneak peek en la transición? → A: En la vista por defecto, **encima** del diccionario colapsado (siempre visible).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -56,7 +61,7 @@ Como estudiante que no quiere cambiar nada antes del siguiente bloque (~99% de c
 **Acceptance Scenarios**:
 
 1. **Given** prefetch listo y config sin cambios, **When** pulso el CTA principal (Siguiente bloque), **Then** cierro la transición y abro RSVP del bloque N+1 sin espera de generación post-clic.
-2. **Given** la transición por defecto, **When** la abro, **Then** veo CTA principal + acción secundaria Adjust, diccionario en sección colapsada, e indicador de prefetch; no hay textarea de dudas ni controles de preguntas hasta elegir Adjust.
+2. **Given** la transición por defecto, **When** la abro, **Then** veo sneak peek (o placeholder), CTA principal + acción secundaria Adjust, diccionario en sección colapsada, e indicador de prefetch; no hay textarea de dudas ni controles de preguntas hasta elegir Adjust.
 3. **Given** prefetch aún en curso al abrir la transición, **When** veo el camino rápido, **Then** el botón Skip/Next está deshabilitado y el indicador muestra generación en curso; al pasar a `ready`, el botón se habilita.
 4. **Given** prefetch `ready`, **When** pulso Skip, **Then** la transición cierra y el RSVP del bloque N+1 abre en &lt;500ms percibidos (sin espera post-clic).
 
@@ -108,6 +113,23 @@ Como estudiante, quiero que el diccionario de conceptos y el export `.md` reflej
 
 ---
 
+### User Story 6 - Sneak peek del siguiente bloque (Priority: P2)
+
+Como estudiante que acaba de terminar el bloque N, quiero ver en la pantalla de transición una introducción breve al bloque N+1 (especialmente cómo conecta con lo anterior), para orientarme antes de continuar sin coste extra de tokens.
+
+**Why this priority**: Mejora la continuidad pedagógica en el momento de mayor fricción (transición); depende del prefetch `ready` y del prompt de `explanation`.
+
+**Independent Test**: Completar bloque 1; esperar prefetch `ready` de bloque 2; abrir transición; verificar sneak peek encima del diccionario con ≤4 frases derivadas del `explanation` de bloque 2.
+
+**Acceptance Scenarios**:
+
+1. **Given** transición tras bloque N (N+1 existe), **When** prefetch de N+1 está `ready`, **Then** veo sneak peek encima del diccionario colapsado con las primeras 4 frases del `explanation` de N+1.
+2. **Given** prefetch de N+1 aún `generating`, **When** abro la transición, **Then** veo placeholder “Preparando siguiente bloque…” en lugar del sneak peek (sin texto parcial).
+3. **Given** prefetch pasa a `ready` con overlay abierto, **When** el write-through completa, **Then** el sneak peek se actualiza sin recargar la página.
+4. **Given** bloque N+1 es el primero de la sesión (N=0), **When** prefetch `ready`, **Then** el sneak peek muestra las primeras 4 frases (sin exigir conexión previa).
+
+---
+
 ### Edge Cases
 
 - Prefetch falla (API, timeout): camino rápido muestra error y ofrece reintento o Make changes.
@@ -118,6 +140,8 @@ Como estudiante, quiero que el diccionario de conceptos y el export `.md` reflej
 - Offline / sin API key: prefetch no arranca; transición degrada con mensaje claro.
 - Usuario acelera mucho (RSVP skip): puede llegar a transición antes de que termine prefetch; el botón rápido queda deshabilitado con indicador hasta `ready` (sin segundo flujo de espera post-clic).
 - Prefetch invalidado (`configKey` distinta o regen): reemplazar en el diccionario solo los `concepts` del índice de bloque afectado; términos de otros bloques permanecen; write-through de `session.blocks[idx]` se actualiza con el bloque vigente.
+- `explanation` vacía o &lt;4 frases tras prefetch `ready`: sneak peek muestra el texto disponible (0–3 frases); no llamada LLM extra.
+- Regen parcial (solo preguntas): sneak peek no cambia (misma `explanation`).
 
 ## Requirements *(mandatory)*
 
@@ -127,6 +151,9 @@ Como estudiante, quiero que el diccionario de conceptos y el export `.md` reflej
 - **FR-002**: La pantalla de transición tras el bloque N DEBE mostrar por defecto: CTA principal (camino rápido), acción secundaria Adjust (Make changes), diccionario **colapsado** (`<details>` o equivalente), e indicador de estado de prefetch en la misma vista.
 - **FR-002a**: Los controles de ajuste de preguntas y regeneración solo se revelan tras elegir **Ajustar siguiente bloque** (no en la vista por defecto).
 - **FR-002b**: El CTA del camino rápido DEBE etiquetarse **Siguiente bloque** (no "Skip"); el secundario **Ajustar siguiente bloque**.
+- **FR-002c**: En la pantalla de transición del bloque N, el sistema DEBE mostrar un “sneak peek” breve del bloque N+1 (≤4 frases) **encima** del diccionario colapsado, presentando la introducción y **cómo conecta** con lo visto en N; el contenido DEBE derivarse del `explanation` del bloque N+1 tomando las **primeras 4 frases** (normalización local de whitespace), sin llamada API adicional.
+- **FR-002d**: El sneak peek DEBE mostrarse solo cuando el prefetch de N+1 está `ready`; si no, DEBE mostrarse placeholder (“Preparando siguiente bloque…”).
+- **FR-002e**: El prompt/contrato de generación de `explanation` DEBE exigir énfasis explícito en la conexión con el bloque anterior (sin segunda llamada LLM para reescribir el sneak peek).
 - **FR-003**: El camino rápido DEBE usar el bloque prefetched cuando `configKey` coincide; NO DEBE exigir comentarios ni textarea de dudas.
 - **FR-003a**: En el camino rápido, el CTA principal DEBE estar **deshabilitado** mientras `prefetch.status !== 'ready'` para la `configKey` esperada; DEBE mostrarse indicador de progreso (barra o punto) sin permitir clic prematuro.
 - **FR-004**: El camino de ajuste DEBE permitir modificar `n_test` y `n_socratic` del bloque N+1 y regenerar cuando la config difiera del prefetch.
@@ -160,6 +187,7 @@ Como estudiante, quiero que el diccionario de conceptos y el export `.md` reflej
 - **SC-004**: Regresión: estudio bloque a bloque, export .md, y sidebar guía siguen funcionando.
 - **SC-005**: Tras prefetch `ready` del bloque 2 durante estudio del bloque 1, el diccionario muestra ≥1 término nuevo antes de pulsar **Siguiente bloque**; el export manual incluye esos términos en **Concept Dictionary**.
 - **SC-006**: Export mid-session (tras bloque 1 con prefetch de bloque 2 `ready`): el `.md` contiene `## Block 2` con texto de explicación no vacío y ≥1 fila en **Concept Dictionary** procedente del bloque 2.
+- **SC-007**: Tras prefetch `ready` de N+1, la transición del bloque N muestra sneak peek con ≤4 frases derivadas del `explanation`; si prefetch no `ready`, muestra placeholder “Preparando siguiente bloque…”.
 
 ## Assumptions
 

@@ -1,6 +1,6 @@
 # Research: Zero-Latency Block Transitions
 
-**Feature**: `20260527-zero-latency-blocks` | **Date**: 2026-05-27
+**Feature**: `20260527-zero-latency-blocks` | **Date**: 2026-05-27 (rev. 2026-05-26)
 
 ## R1 — Prefetch ya existe pero la UX no cumple el spec
 
@@ -99,3 +99,31 @@
 **Decision**: Callback `onPrefetchReady` registrado desde `study.js` para `updateDictionaryButtonVisibility` y re-render del diccionario en overlay si está abierto.
 
 **Rationale**: FR-009; sin polling; evento alineado con write-through.
+
+## R12 — Sneak peek: derivación local sin tokens extra (clarificación 2026-05-26)
+
+**Decision**: `extractSneakPeek(explanation)` — primeras 4 frases del `explanation` del bloque N+1; mostrar solo cuando prefetch `ready`; placeholder mientras genera.
+
+**Rationale**: FR-002c–FR-002d; cero llamadas API adicionales; alineado con write-through (explanation ya en `session.blocks[N+1]`).
+
+**Alternatives considered**:
+| Opción | Descartada porque |
+|--------|-------------------|
+| Campo `sneakPeek` en JSON del modelo | Tokens de salida extra por bloque |
+| Llamada LLM dedicada al sneak peek | Coste multiplicado por N bloques |
+| Streaming parcial en transición | Complejidad UX; texto incompleto confunde |
+
+## R13 — Conexión entre bloques en las primeras frases (prompt)
+
+**Decision**: Reforzar el párrafo **Hook** (y opcionalmente Core) para bloques ≥2: la primera frase debe enlazar con el bloque anterior. El párrafo Connection al final del `explanation` no entra en el sneak peek (solo primeras 4 frases).
+
+**Rationale**: El recorte toma Hook + Core + inicio de Technical; la conexión pedagógica debe aparecer **al inicio**, no solo en el párrafo 6. Sin esto, el sneak peek no cumple el objetivo de “cómo conecta con lo anterior”.
+
+**Implementation**: Condicional en `buildBlockGenerationSystemPrompt` cuando `blockIndex >= 1`; enriquecer user content con título del bloque N en la lista confirmada.
+
+**Alternatives considered**:
+| Opción | Descartada porque |
+|--------|-------------------|
+| Recortar párrafo Connection en lugar de primeras 4 frases | Contradice clarificación 3A |
+| Heurística local que prepone frase de conexión | Frágil; no sustituye contenido pedagógico real |
+| Segunda pasada LLM | Rechazado explícitamente (clarificación 4A) |

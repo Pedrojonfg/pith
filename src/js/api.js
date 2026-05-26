@@ -1258,12 +1258,11 @@ export function buildBlockGenerationSystemPrompt({
   gap_focus = [],
   blockTitle = "",
   blockIndex = 0,
+  include_connection_questions = true,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
-  const connectionSlotReserved = totalQuestions > 0 ? 1 : 0;
-  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
   const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
   const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
   const gaps = Array.isArray(gap_focus)
@@ -1274,18 +1273,34 @@ export function buildBlockGenerationSystemPrompt({
     : profile === "brief_deep"
       ? EXPLANATION_BRIEF_DEEP
       : EXPLANATION_RSVP_THOROUGH;
+  const blockNo = Number(blockIndex) + 1;
+  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
+  const connectionEnabled = include_connection_questions !== false;
+  const requireConnection = connectionEnabled && blockNoSafe > 1;
+  const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
+  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
+
   const gapSection =
     gaps.length > 0
       ? `
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
 - Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
 - Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
-- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.
-- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+${requireConnection ? `- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.` : `- Connection questions are NOT required for this block.`}
+${requireConnection ? `- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).` : ``}`
       : "";
 
-  const blockNo = Number(blockIndex) + 1;
-  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
+  const connectionSection = requireConnection
+    ? `Connection question (required):
+- If ${totalQuestions} == 0, generate no questions at all.
+- Otherwise generate exactly ONE connection question.
+- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
+Placement rule:
+- If n_socratic > 0, make the connection question the FIRST socratic question.
+- Else if n_test > 0, make the connection question the FIRST test question.`
+    : `Connection question:
+- Not required for this block (block 1 only, or when the option is disabled).
+- Do NOT generate any connection question.`;
 
   return `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
 Return a single JSON object with this schema:
@@ -1297,14 +1312,7 @@ ${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
-Connection question (required):
-- If ${totalQuestions} == 0, generate no questions at all.
-- Otherwise generate exactly ONE connection question.
-- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
-- If block number is 1 (${blockNoSafe}), connect to the course arc/prerequisites rather than a previous block.
-Placement rule:
-- If n_socratic > 0, make the connection question the FIRST socratic question.
-- Else if n_test > 0, make the connection question the FIRST test question.
+${connectionSection}
 ${QUESTION_PEDAGOGY_RULES}
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
@@ -1360,27 +1368,42 @@ export function buildQuestionsOnlySystemPrompt({
   gap_focus = [],
   blockTitle = "",
   blockIndex = 0,
+  include_connection_questions = true,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
-  const connectionSlotReserved = totalQuestions > 0 ? 1 : 0;
-  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
     : [];
+  const blockNo = Number(blockIndex) + 1;
+  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
+  const connectionEnabled = include_connection_questions !== false;
+  const requireConnection = connectionEnabled && blockNoSafe > 1;
+  const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
+  const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
+
   const gapSection =
     gaps.length > 0
       ? `
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
 - Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
 - Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
-- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.
-- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+${requireConnection ? `- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.` : `- Connection questions are NOT required for this block.`}
+${requireConnection ? `- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).` : ``}`
       : "";
 
-  const blockNo = Number(blockIndex) + 1;
-  const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
+  const connectionSection = requireConnection
+    ? `Connection question (required):
+- If ${totalQuestions} == 0, generate no questions at all.
+- Otherwise generate exactly ONE connection question.
+- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
+Placement rule:
+- If n_socratic > 0, make the connection question the FIRST socratic question.
+- Else if n_test > 0, make the connection question the FIRST test question.`
+    : `Connection question:
+- Not required for this block (block 1 only, or when the option is disabled).
+- Do NOT generate any connection question.`;
 
   return `You will receive a FIXED block explanation and source material. Generate ONLY new questions — do NOT modify, rewrite, or return the explanation or title.
 Return a single JSON object with this schema:
@@ -1392,14 +1415,7 @@ ${MC_OPTION_PARITY_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
-Connection question (required):
-- If ${totalQuestions} == 0, generate no questions at all.
-- Otherwise generate exactly ONE connection question.
-- Connection question must ask the student to relate THIS block's concept to earlier blocks in the confirmed list.
-- If block number is 1 (${blockNoSafe}), connect to the course arc/prerequisites rather than a previous block.
-Placement rule:
-- If n_socratic > 0, make the connection question the FIRST socratic question.
-- Else if n_test > 0, make the connection question the FIRST test question.
+${connectionSection}
 ${QUESTION_PEDAGOGY_RULES}
 Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
@@ -1468,6 +1484,7 @@ export async function deepSeekRegenerateBlockQuestions({
   n_socratic,
   blockTitle,
   blockIndex = 0,
+  include_connection_questions = true,
   explanation,
   materialText,
   gap_focus = [],
@@ -1480,6 +1497,7 @@ export async function deepSeekRegenerateBlockQuestions({
     gap_focus,
     blockTitle,
     blockIndex,
+    include_connection_questions,
   });
   const userContent = buildQuestionsOnlyUserContent({
     blockTitle,
@@ -1527,6 +1545,7 @@ export async function deepSeekGenerateBlockJson({
   n_socratic,
   explanation_profile = "thorough",
   gap_focus = [],
+  include_connection_questions = true,
 }) {
   const systemPrompt = buildBlockGenerationSystemPrompt({
     language,
@@ -1536,6 +1555,7 @@ export async function deepSeekGenerateBlockJson({
     gap_focus,
     blockTitle,
     blockIndex,
+    include_connection_questions,
   });
 
   const userContent = buildBlockGenerationUserContent({
@@ -1573,6 +1593,10 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(config.n_test))));
   const lang = String(language || "English").trim() || "English";
   const materialText = String(chunk || "").trim();
+  const include_connection_questions =
+    config.include_connection_questions !== false && config.include_connection_questions != null
+      ? Boolean(config.include_connection_questions)
+      : true;
 
   const blocksListText = `${id}. ${title}`;
   const sourceLine = `Source: block ${id} '${title}' from ${source}`;
@@ -1586,6 +1610,7 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
     language: lang,
     n_test: nTest,
     n_socratic: 0,
+    include_connection_questions,
   });
   return {
     explanation: String(blockObj?.explanation || ""),

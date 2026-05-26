@@ -32,6 +32,7 @@ export const state = {
   studyNotes: "",
   nTest: 2,
   nSocratic: 1,
+  includeConnectionQuestions: true,
   nextBlockQuestionOverride: null, // { blockIndex, n_test, n_socratic, _touched }
   lastNBlocks: 0,
   lastUploadedFileNames: [],
@@ -183,14 +184,17 @@ export function mergeGapLists(synthesis, userEdits) {
   return merged;
 }
 
-/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total).
- * Reserve 1 slot for the required connection question.
- */
-export function adjustQuestionBudgetForGaps(n_test, n_socratic, gapCount) {
+/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
+export function adjustQuestionBudgetForGaps(
+  n_test,
+  n_socratic,
+  gapCount,
+  reserveConnectionSlot = false,
+) {
   const gaps = Math.max(0, Math.floor(Number(gapCount) || 0));
   let nt = clampInt(n_test, 0, MAX_N_TEST, 0);
   let ns = clampInt(n_socratic, 0, 3, 0);
-  const reservedConnectionSlot = 1;
+  const reservedConnectionSlot = reserveConnectionSlot ? 1 : 0;
   const availableForGaps = Math.max(0, nt + ns - reservedConnectionSlot);
   if (gaps <= availableForGaps) return { n_test: nt, n_socratic: ns };
 
@@ -221,6 +225,7 @@ export function resolveBlockQuestionConfig(blockIndex) {
     n_socratic: clampInt(session.n_socratic, 0, 3, clampInt(state.nSocratic, 0, 3, 1)),
     explanation_profile: "thorough",
     gap_focus: [],
+    include_connection_questions: session.include_connection_questions !== false,
   };
   const blocks = Array.isArray(session.blocks) ? session.blocks : [];
   const b = blocks[blockIndex];
@@ -231,6 +236,8 @@ export function resolveBlockQuestionConfig(blockIndex) {
     n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
     explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
     gap_focus: normalizeGapFocus(cfg.gap_focus),
+    include_connection_questions:
+      cfg.include_connection_questions != null ? Boolean(cfg.include_connection_questions) : defaults.include_connection_questions,
   };
 }
 
@@ -489,6 +496,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
+    include_connection_questions: resolved.include_connection_questions,
   };
 
   const materialChunk = getBlockChunkFromIndex(idx);
@@ -509,6 +517,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     n_socratic: cfg.n_socratic,
     explanation_profile: cfg.explanation_profile,
     gap_focus: cfg.gap_focus,
+    include_connection_questions: cfg.include_connection_questions,
   };
 
   let obj = null;
@@ -622,6 +631,7 @@ export async function generateQuestionsOnlyForIndex(
     n_socratic: cfg.n_socratic,
     blockTitle,
     blockIndex: idx,
+    include_connection_questions: cfg.include_connection_questions,
     explanation,
     materialText: materialChunk,
     gap_focus: cfg.gap_focus,
@@ -734,6 +744,10 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
       n_test: clampInt(config.n_test, 0, MAX_N_TEST, 2),
       n_socratic: 0,
       llmModel: config.llmModel ?? getSessionLlmModel(state.activeSession),
+      include_connection_questions:
+        config.include_connection_questions !== false && config.include_connection_questions != null
+          ? Boolean(config.include_connection_questions)
+          : true,
     };
 
     try {
@@ -2007,13 +2021,19 @@ export function getBlockTitleSafe(blockIndex) {
   return t || getBlockTitleFromList(blockIndex);
 }
 
-export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText }) {
+export function initActiveSessionFromBlocksList({
+  mode,
+  nBlocks,
+  blocksListText,
+  includeConnectionQuestions = true,
+}) {
   const n = Math.max(1, Number(nBlocks) || 1);
   const defaults = loadDefaultQuestionConfig();
   return {
     n_blocks: n,
     n_test: defaults.n_test,
     n_socratic: defaults.n_socratic,
+    include_connection_questions: Boolean(includeConnectionQuestions),
     blocks_list_text: String(blocksListText || ""),
     current_block_index: 0,
     active_question_index: 0,
@@ -2023,6 +2043,7 @@ export function initActiveSessionFromBlocksList({ mode, nBlocks, blocksListText 
         n_socratic: defaults.n_socratic,
         explanation_profile: "thorough",
         gap_focus: [],
+        include_connection_questions: Boolean(includeConnectionQuestions),
       },
     })),
   };
@@ -2062,6 +2083,7 @@ export function applyAssessmentResults(assessmentResults) {
     explanation_profile: "thorough",
     gap_focus: [],
   };
+  const includeConnection = sessionObj.include_connection_questions !== false;
 
   const strongBlocks = [];
   const weakBlocks = [];
@@ -2079,6 +2101,7 @@ export function applyAssessmentResults(assessmentResults) {
         n_socratic: 0,
         explanation_profile: "brief_deep",
         gap_focus: [],
+        include_connection_questions: includeConnection,
       };
       strongBlocks.push(blockId);
       adjusted = true;
@@ -2087,12 +2110,20 @@ export function applyAssessmentResults(assessmentResults) {
         n_test: sessionDefaults.n_test,
         n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
       };
-      const budget = adjustQuestionBudgetForGaps(bumped.n_test, bumped.n_socratic, gap_focus.length);
+      const reserveConnectionSlot =
+        includeConnection && blockId > 1 && bumped.n_test + bumped.n_socratic > 0;
+      const budget = adjustQuestionBudgetForGaps(
+        bumped.n_test,
+        bumped.n_socratic,
+        gap_focus.length,
+        reserveConnectionSlot,
+      );
       blk._config = {
         n_test: budget.n_test,
         n_socratic: budget.n_socratic,
         explanation_profile: "thorough",
         gap_focus,
+        include_connection_questions: includeConnection,
       };
       weakBlocks.push(blockId);
       adjusted = true;
@@ -2102,6 +2133,7 @@ export function applyAssessmentResults(assessmentResults) {
         n_socratic: sessionDefaults.n_socratic,
         explanation_profile: "thorough",
         gap_focus,
+        include_connection_questions: includeConnection,
       };
     }
     blocks[i] = blk;
@@ -2140,7 +2172,8 @@ export function buildBlockConfigKey(cfg) {
   const nSoc = clampInt(c.n_socratic, 0, 3, 1);
   const profile = normalizeExplanationProfile(c.explanation_profile, "thorough");
   const gaps = normalizeGapFocus(c.gap_focus);
-  return `${nTest}|${nSoc}|${profile}|${gaps.join(",")}`;
+  const includeConn = c.include_connection_questions !== false;
+  return `${includeConn ? "1" : "0"}|${nTest}|${nSoc}|${profile}|${gaps.join(",")}`;
 }
 
 export function hasGeneratedBlockContent(block) {
@@ -2171,6 +2204,7 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
     "thorough",
   );
   cleaned._config.gap_focus = normalizeGapFocus(c.gap_focus);
+  cleaned._config.include_connection_questions = c.include_connection_questions !== false;
   return cleaned;
 }
 
@@ -2243,6 +2277,7 @@ export function triggerPrefetch(blockIndex, opts = {}) {
   const cfg = {
     n_test: clampInt(opts.n_test, 0, MAX_N_TEST, resolved.n_test),
     n_socratic: clampInt(opts.n_socratic, 0, 3, resolved.n_socratic),
+    include_connection_questions: resolved.include_connection_questions,
     explanation_profile:
       opts.explanation_profile != null
         ? normalizeExplanationProfile(opts.explanation_profile, resolved.explanation_profile)

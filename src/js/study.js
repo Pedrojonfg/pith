@@ -1036,6 +1036,7 @@ async function ensureBlockGenerated(blockIndex) {
     n_socratic: cfg.n_socratic,
     explanation_profile: cfg.explanation_profile,
     gap_focus: cfg.gap_focus,
+    include_connection_questions: cfg.include_connection_questions,
   };
 
   let obj = null;
@@ -1944,6 +1945,15 @@ export function wireStudyHandlers() {
   state.nTest = clampInt(defaults.n_test, 0, MAX_N_TEST, 2);
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
   renderQuestionConfigUi();
+
+  // Connection questions are enabled by default (bloques 2..N).
+  if (els.connectionQuestionsToggleBtn) {
+    const next = state.includeConnectionQuestions !== false;
+    els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", String(next));
+    if (els.connectionQuestionsToggleSubtitle) {
+      els.connectionQuestionsToggleSubtitle.hidden = next;
+    }
+  }
 
   function setAssessmentUiDefaults() {
     if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = false;
@@ -2865,13 +2875,19 @@ export function wireStudyHandlers() {
         const sessionObj = initActiveSessionFromBlocksList({
           nBlocks: offlineBlocks.length,
           blocksListText: confirmedBlocksListText,
+          includeConnectionQuestions:
+            pack?.config?.include_connection_questions != null ? Boolean(pack.config.include_connection_questions) : true,
         });
         sessionObj.n_test = clampInt(pack?.config?.n_test, 0, MAX_N_TEST, 2);
         sessionObj.n_socratic = 0;
         sessionObj.language = String(pack?.config?.language || getStudyLanguage()).trim() || "English";
         sessionObj.blocks = offlineBlocks.map((b) => ({
           ...b,
-          _config: { n_test: sessionObj.n_test, n_socratic: 0 },
+          _config: {
+            n_test: sessionObj.n_test,
+            n_socratic: 0,
+            include_connection_questions: sessionObj.include_connection_questions,
+          },
         }));
         sessionObj._meta = pack.meta && typeof pack.meta === "object" ? pack.meta : {};
         sessionObj.current_block_index = 0;
@@ -2985,6 +3001,7 @@ export function wireStudyHandlers() {
       const sessionObj = initActiveSessionFromBlocksList({
         nBlocks,
         blocksListText: confirmedBlocksListText,
+        includeConnectionQuestions: state.includeConnectionQuestions,
       });
       sessionObj.n_test = clampInt(state.nTest, 0, MAX_N_TEST, 2);
       sessionObj.n_socratic = clampInt(state.nSocratic, 0, 3, 1);
@@ -2997,6 +3014,7 @@ export function wireStudyHandlers() {
           }
           sessionObj.blocks[i]._config.n_test = sessionObj.n_test;
           sessionObj.blocks[i]._config.n_socratic = sessionObj.n_socratic;
+          sessionObj.blocks[i]._config.include_connection_questions = sessionObj.include_connection_questions;
         }
       }
       if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
@@ -3082,6 +3100,7 @@ export function wireStudyHandlers() {
         const result = await generateOfflinePack(blockIndex, htmlText, {
           language: getStudyLanguage(),
           n_test: state.activeSession.n_test,
+          include_connection_questions: state.activeSession.include_connection_questions,
           llmModel: getSessionLlmModel(state.activeSession),
           updateProgress: (pct, phaseText, actionText) => {
             updateFullPackProgressUi({
@@ -3186,6 +3205,18 @@ export function wireStudyHandlers() {
       const next = !pressed;
       els.assessmentPenaliseBtn.setAttribute("aria-pressed", String(next));
       if (els.assessmentPenaliseSubtitle) els.assessmentPenaliseSubtitle.hidden = !next;
+    });
+  }
+
+  if (els.connectionQuestionsToggleBtn) {
+    els.connectionQuestionsToggleBtn.addEventListener("click", () => {
+      const pressed = els.connectionQuestionsToggleBtn.getAttribute("aria-pressed") === "true";
+      const next = !pressed;
+      state.includeConnectionQuestions = next;
+      els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", String(next));
+      if (els.connectionQuestionsToggleSubtitle) {
+        els.connectionQuestionsToggleSubtitle.hidden = next;
+      }
     });
   }
   if (els.assessmentTakeBtn) {
