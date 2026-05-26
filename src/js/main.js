@@ -3,10 +3,10 @@ import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
 import { exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260526_2";
 import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260525_1";
-import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260525_1";
+import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260527_1";
 import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
-import { wireStudyHandlers } from "./study.js?v=20260525_1";
+import { wireStudyHandlers } from "./study.js?v=20260527_1";
 
 export const isOfflineMode = () => window.offlineMode === true;
 
