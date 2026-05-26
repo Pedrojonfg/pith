@@ -54,6 +54,13 @@
 3. Open downloaded `.md`.
 4. **Expect**: Section `## Block 2:` with non-empty explanation; **Concept Dictionary** table includes block-2 terms.
 
+## 9. Sneak peek en transición (SC-007)
+
+1. Durante el estudio de block `N`, termina las preguntas y espera a que se abra el transition overlay.
+2. En la vista sobre el diccionario, **expect**: aparece `Preparando siguiente bloque…` mientras el prefetch del bloque `N+1` está generando.
+3. Cuando pase a `ready` (indicador `Listo ✓` en el overlay), **expect**: el texto se reemplaza por un sneak peek derivado del `explanation` del bloque `N+1` (≤4 frases, como un único párrafo).
+4. En `Ajustar siguiente bloque`, **expect**: el sneak peek sigue visible (no se oculta en el panel de controles).
+
 ## Pass criteria
 
 | ID | Check | Manual (2026-05-26) |
@@ -65,5 +72,6 @@
 | FR-007 | Adjust counts only → explanation preserved | ✓ unit (`questions_only` + merge keeps `explanation`) |
 | SC-005 | Dictionary shows prefetch concepts before next block | ✓ automated (`20260527_t03-prefetch-write-through.mjs`, `20260527_t11-ui-refresh-prefetch-ready.mjs`); manual §7 optional for live API |
 | SC-006 | Mid-session export includes block 2 + dictionary | ✓ automated (`20260527_t04-export-concepts-union.mjs`, `20260527_t10-export-concept-union.mjs`); manual §8 optional for live API |
+| SC-007 | Sneak peek placeholder then preview in transition overlay | ✓ manual (placeholder en generating; luego primeras ≤4 frases del `explanation` del bloque N+1) |
 
 **Automated**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` (T01–T04, T09–T11, validate-t12).

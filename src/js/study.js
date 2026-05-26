@@ -20,13 +20,16 @@ import {
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
 import {
+  clearSessionConceptStorage,
   commitSessionConceptsForBlock,
   renderDictionary,
   getConceptHighlightsForBlock,
   getSortedSessionConcepts,
+  restoreSessionConceptStorage,
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
-} from "./dictionary.js?v=20260527_1";
+} from "./dictionary.js?v=20260526_1";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { triggerCommentReply } from "./guide-chat.js?v=20260525_1";
@@ -83,7 +86,7 @@ import {
   mergeGapLists,
 } from "./session.js?v=20260527_1";
 import { els, enableUnifiedMaterialUpload, getStudyLanguage, hideSidebar, setFullPackEntryCta, setOfflinePackButtonVisibility, setPrefetchIndicator, showScreen, showSidebar, typesetMath, updateFullPackProgressUi } from "./ui.js?v=20260525_1";
-import { LS_BLOCK_INDEX_KEY, LS_SESSION_CONCEPTS_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260525_1";
+import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260525_1";
 
 let splitMergeSummaryEls = null;
 function ensureSplitMergeSummaryEls() {
@@ -752,6 +755,41 @@ function refreshUiOnPrefetchReady() {
     newTermKeys: newKeys,
     updatedTermKeys: updatedKeys,
   });
+  renderTransitionSneakPeek(o, finishedIdx);
+}
+
+function renderTransitionSneakPeek(o, finishedIdx) {
+  if (!o?.sneakPeekWrap || !o?.sneakPeekText) return;
+  if (!Number.isFinite(finishedIdx)) return;
+
+  const nextIndex = finishedIdx + 1;
+  const expectedKey = String(o.expectedPrefetchConfigKey || "");
+  const isReady =
+    prefetchState?.blockIndex === nextIndex &&
+    prefetchState?.status === "ready" &&
+    String(prefetchState?.configKey || "") === expectedKey;
+
+  const placeholder = "Preparando siguiente bloque…";
+
+  if (!isReady) {
+    o.sneakPeekWrap.hidden = false;
+    o.sneakPeekText.className = "hint";
+    o.sneakPeekText.textContent = placeholder;
+    return;
+  }
+
+  const nextBlock = getBlock(nextIndex);
+  const explanation = String(prefetchState?.data?.explanation || nextBlock?.explanation || "").trim();
+  const sneak = extractSneakPeek(explanation, 4);
+  if (!sneak) {
+    o.sneakPeekWrap.hidden = true;
+    o.sneakPeekText.textContent = "";
+    return;
+  }
+
+  o.sneakPeekWrap.hidden = false;
+  o.sneakPeekText.className = "";
+  o.sneakPeekText.textContent = sneak;
 }
 
 function getOrCreateTransitionOverlay() {
@@ -785,6 +823,22 @@ function getOrCreateTransitionOverlay() {
 
   const divider = document.createElement("div");
   divider.className = "divider";
+
+  const sneakPeekWrap = document.createElement("div");
+  sneakPeekWrap.id = "sneakPeekWrap";
+
+  const sneakPeekLabel = document.createElement("div");
+  sneakPeekLabel.className = "hint";
+  sneakPeekLabel.textContent = "Siguiente bloque";
+
+  const sneakPeekText = document.createElement("div");
+  sneakPeekText.className = "hint";
+  sneakPeekText.style.lineHeight = "1.5";
+  sneakPeekText.style.marginBottom = "10px";
+  sneakPeekText.textContent = "Preparando siguiente bloque…";
+
+  sneakPeekWrap.appendChild(sneakPeekLabel);
+  sneakPeekWrap.appendChild(sneakPeekText);
 
   const dictionaryWrap = document.createElement("div");
 
@@ -961,6 +1015,7 @@ function getOrCreateTransitionOverlay() {
 
   card.appendChild(header);
   card.appendChild(divider);
+  card.appendChild(sneakPeekWrap);
   card.appendChild(dictionaryWrap);
   card.appendChild(divider.cloneNode(true));
   card.appendChild(defaultActions);
@@ -975,6 +1030,8 @@ function getOrCreateTransitionOverlay() {
     wrap,
     title,
     dictionaryWrap,
+    sneakPeekWrap,
+    sneakPeekText,
     view: "default",
     defaultActions,
     adjustWrap,
@@ -1547,6 +1604,7 @@ async function finishQuestions(blockIndex) {
   let nextCfg = { ...blockDefaults };
   const keyOf = (c) => buildBlockConfigKey(c);
   let fastPathConfigKey = keyOf(blockDefaults);
+  o.expectedPrefetchConfigKey = fastPathConfigKey;
   let overlayPollTimer = null;
 
   const renderNextCfgUi = () => {
@@ -1592,27 +1650,31 @@ async function finishQuestions(blockIndex) {
     prefetchState.configKey === key;
 
   const syncPrefetchUi = () => {
-    if (isPrefetchReadyForKey(fastPathConfigKey)) {
+    if (isPrefetchReadyForKey(o.expectedPrefetchConfigKey)) {
       setPrefetchIndicator("ready");
       setStatusReady();
       if (o.continueBtn) o.continueBtn.disabled = false;
+      renderTransitionSneakPeek(o, idx);
       return;
     }
     if (prefetchState.blockIndex === nextIndex && prefetchState.status === "failed") {
       setPrefetchIndicator("failed");
       setStatusFailed();
       if (o.continueBtn) o.continueBtn.disabled = true;
+      renderTransitionSneakPeek(o, idx);
       return;
     }
     if (prefetchState.blockIndex === nextIndex && prefetchState.status === "generating") {
       setPrefetchIndicator("generating");
       setStatusPreparing();
       if (o.continueBtn) o.continueBtn.disabled = true;
+      renderTransitionSneakPeek(o, idx);
       return;
     }
     setPrefetchIndicator("generating");
     setStatusPreparing();
     if (o.continueBtn) o.continueBtn.disabled = true;
+    renderTransitionSneakPeek(o, idx);
   };
 
   syncPrefetchUi();
@@ -1676,6 +1738,9 @@ async function finishQuestions(blockIndex) {
     const currentKey = prefetchState.blockIndex === nextIndex ? String(prefetchState.configKey || "") : "";
     if (currentKey && currentKey === targetKey && prefetchState.status === "ready") return;
 
+    fastPathConfigKey = targetKey;
+    o.expectedPrefetchConfigKey = targetKey;
+
     setPrefetchIndicator("generating");
     setStatusPreparing();
     o.statusBarText.textContent = "Regenerando siguiente bloque…";
@@ -1710,6 +1775,7 @@ async function finishQuestions(blockIndex) {
       o.error.textContent = "";
       nextCfg = { ...blockDefaults };
       fastPathConfigKey = keyOf(blockDefaults);
+      o.expectedPrefetchConfigKey = fastPathConfigKey;
       renderNextCfgUi();
       setTransitionOverlayView("default");
       syncPrefetchUi();
@@ -2775,6 +2841,7 @@ export function wireStudyHandlers() {
     state.lastBlockIndex = null;
     window.indexWasImported = false;
     if (els.importIndexLabel) els.importIndexLabel.textContent = "";
+    clearSessionConceptStorage();
 
     const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
     try {
@@ -2892,6 +2959,7 @@ export function wireStudyHandlers() {
         sessionObj._meta = pack.meta && typeof pack.meta === "object" ? pack.meta : {};
         sessionObj.current_block_index = 0;
         sessionObj.active_question_index = 0;
+        clearSessionConceptStorage();
         state.activeSession = sessionObj;
         state.activeBlockIndex = 0;
         state.activeQuestionIndex = 0;
@@ -2997,6 +3065,7 @@ export function wireStudyHandlers() {
 
       localStorage.setItem("block_index", JSON.stringify(merged));
       const confirmedBlocksListText = blocksListTextFromBlockIndex(merged);
+      clearSessionConceptStorage();
 
       const sessionObj = initActiveSessionFromBlocksList({
         nBlocks,
@@ -3575,11 +3644,10 @@ export function wireStudyHandlers() {
           buildSessionFromResumePayload(rawPayload);
         const blockIdxArr = buildBlockIndexFromResumePayload(rawPayload, cleanedText);
         localStorage.setItem(LS_BLOCK_INDEX_KEY, JSON.stringify(blockIdxArr));
-        try {
-          localStorage.setItem(LS_SESSION_CONCEPTS_KEY, JSON.stringify(session_concepts || []));
-        } catch {
-          // ignore
-        }
+        restoreSessionConceptStorage({
+          sessionConcepts: session_concepts,
+          blocks: sessionObj.blocks,
+        });
         if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
         sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
         assertLlmKeyPresent(getSessionLlmModel(sessionObj));

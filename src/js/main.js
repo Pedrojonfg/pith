@@ -1,5 +1,8 @@
 import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260525_1";
-import { updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
+import {
+  clearSessionConceptStorage,
+  updateDictionaryButtonVisibility,
+} from "./dictionary.js?v=20260526_1";
 import { exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260526_2";
 import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260525_1";
@@ -60,6 +63,7 @@ function resetToNewSession() {
 
   clearActiveSessionStorage();
   clearBlockIndexStorage();
+  clearSessionConceptStorage();
   showScreen(getStoredKey() ? "create" : "setup");
   updateDictionaryButtonVisibility();
 }

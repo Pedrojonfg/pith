@@ -1212,6 +1212,10 @@ CONTENT STRUCTURE (mandatory drafting order—never expose these step names in t
 5. Contrast — 1-3 sentences: what this is NOT; common confusions.
 6. Connection — 1-2 sentences: link to the next concept or the course arc.
 
+When this block is not first, add a bridge from the previous block (the previous block title or its key concept).
+That bridge goes in the very first Hook sentence (first sentence of the first paragraph) and uses the provided previous title.
+This keeps the connection visible even when only four sentences are previewed (the sneak preview never reaches the final Connection paragraph).
+
 OUTPUT FORMAT (explanation field):
 - Continuous prose only. Never print section names or headings (no HOOK, CORE, EXAMPLE, CONTRAST, ALL-CAPS labels, or markdown **bold** section titles).
 - One paragraph per structure step above, in order. Put exactly one blank line between paragraphs so the RSVP reader inserts a short pause—this marks subsections; visible labels distract at speed.
@@ -1241,8 +1245,24 @@ Do not use section labels or headings. Later blocks reference these terms as kno
 const EXPLANATION_BRIEF_DEEP = `Brief RSVP recap for a student who already studied this material. CANNOT re-read. Max 120 words.
 
 Cover only: hook (1 sentence), core definition (1-2 sentences), technical layer (1-2 sentences), contrast (1 pitfall sentence). Omit concrete example and connection unless a listed learning gap requires them.
+When this block is not first, the first Hook sentence (first sentence of the first paragraph) must explicitly state how it builds on the previous block title or key concept.
+That bridge sentence must come first so a four-sentence preview still shows the connection before the later Connection paragraph.
 Same output rules as thorough: flowing prose, no section labels or headings, one blank line between paragraphs for subsection pauses.
 Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; definition before example; no source regurgitation.`;
+
+function getPreviousBlockTitleFromList(blocksListText, blockNumber) {
+  const targetNo = Math.floor(Number(blockNumber));
+  if (!Number.isFinite(targetNo) || targetNo <= 0) return "";
+  const lines = String(blocksListText || "").split(/\r?\n/);
+  for (const line of lines) {
+    const match = line.match(/^\s*(\d+)\.\s*(.+)\s*$/);
+    if (!match) continue;
+    const n = Number(match[1]);
+    if (!Number.isFinite(n) || n !== targetNo) continue;
+    return match[2].trim();
+  }
+  return "";
+}
 
 /** Shared MC distractor rules — reduces "correct answer stands out" cues. */
 export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone.`;
@@ -1343,9 +1363,15 @@ export function buildBlockGenerationUserContent({
     ? `\n\nThe student had this comment after the previous block:\n${previousComment}\nTake it into account for the explanation and questions.`
     : "";
 
-  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${
-    Number(blockIndex) + 1
-  }. ${blockTitle}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}`;
+  const blockNoRaw = Number(blockIndex) + 1;
+  const blockNo = Number.isFinite(blockNoRaw) && blockNoRaw > 0 ? blockNoRaw : 1;
+  const previousTitle =
+    blockNo > 1 ? getPreviousBlockTitleFromList(blocksListText, blockNo - 1) : "";
+  const previousBlockLine = previousTitle
+    ? `\nPrevious block title: ${previousTitle}\nUse this title to write the bridge in the very first Hook sentence (first sentence of the first paragraph) so it appears in the sneak preview (first <=4 sentences).`
+    : "";
+
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}`;
 }
 
 const QUESTIONS_ONLY_JSON_SCHEMA = `{
