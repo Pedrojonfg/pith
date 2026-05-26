@@ -104,10 +104,35 @@
       }
       return out;
     }
+    const RSVP_HYPHEN_BREAK_RE = /(?<=\p{L})-(?=\p{L})/u;
+    function splitHyphenatedToken(token) {
+      const raw = String(token ?? "");
+      if (!raw || !RSVP_HYPHEN_BREAK_RE.test(raw.replace(/\s+$/, ""))) return [raw];
+      const trailing = raw.match(/\s+$/)?.[0] || "";
+      const core = trailing ? raw.slice(0, -trailing.length) : raw;
+      const parts = core.split(RSVP_HYPHEN_BREAK_RE);
+      if (parts.length <= 1) return [raw];
+      const out = [];
+      for (let i = 0; i < parts.length; i++) {
+        if (i < parts.length - 1) out.push(`${parts[i]}-`);
+        else out.push(parts[i] + trailing);
+      }
+      return out;
+    }
+    function expandHyphenatedWords(words) {
+      const out = [];
+      for (const w of words) {
+        const parts = splitHyphenatedToken(w);
+        if (parts.length <= 1) out.push(w);
+        else out.push(...parts);
+      }
+      return out;
+    }
     function tokenizeWords(text) {
-      const raw = String(text || "").replace(/\s+/g, " ").trim();
-      if (!raw) return [];
-      return raw.split(" ").filter(Boolean);
+      const raw = String(text || "");
+      if (!raw.trim()) return [];
+      const words = raw.match(/\S+\s*/g) || [];
+      return expandHyphenatedWords(words);
     }
     function isSentenceTerminalWord(word) {
       let w = String(word || "").trim();
@@ -209,6 +234,30 @@
     test("buildChunksFromExplanation: WPF=1 splits text into individual words", () => {
       const chunks = buildChunksFromExplanation("one two three", 1);
       return chunks.length === 3 && chunks.every(c => c.type === "text");
+    });
+    test("tokenizeWords: hyphenated compounds become separate RSVP units", () => {
+      const parts = tokenizeWords("es ontológico-temporal hoy");
+      return (
+        parts.length === 4 &&
+        parts[0] === "es " &&
+        parts[1] === "ontológico-" &&
+        parts[2] === "temporal " &&
+        parts[3] === "hoy"
+      );
+    });
+    test("buildChunksFromExplanation: WPF=1 flashes each hyphen segment", () => {
+      const chunks = buildChunksFromExplanation("foo bar-baz qux", 1);
+      const text = chunks.filter(c => c.type === "text").map(c => c.content);
+      return (
+        text.length === 4 &&
+        text[0] === "foo " &&
+        text[1] === "bar-" &&
+        text[2] === "baz " &&
+        text[3] === "qux"
+      );
+    });
+    test("tokenizeWords: numeric ranges are not split on hyphen", () => {
+      return tokenizeWords("entre 3-5 años").join("|") === "entre |3-5 |años";
     });
     test("buildChunksFromExplanation: WPF=3 groups words within one sentence", () => {
       const chunks = buildChunksFromExplanation("one two three four", 3);
@@ -435,9 +484,9 @@
 
       const out = document.getElementById("output");
       const suites = {
-        "Suite 1: Parser (segmentTextAndMath / buildChunksFromExplanation)": results.slice(0, 11),
-        "Suite 2: MathJax config": results.slice(11, 15),
-        "Suite 3: MathJax rendering": results.slice(15),
+        "Suite 1: Parser (segmentTextAndMath / buildChunksFromExplanation)": results.slice(0, 17),
+        "Suite 2: MathJax config": results.slice(17, 21),
+        "Suite 3: MathJax rendering": results.slice(21),
       };
 
       let totalPass = 0, totalFail = 0;
