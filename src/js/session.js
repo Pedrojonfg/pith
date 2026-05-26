@@ -5,7 +5,13 @@ import {
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
 } from "./config.js?v=20260525_1";
-import { deepSeekGenerateBlockJson, generateBlockFromChunk, mapBlocksToPages } from "./api.js?v=20260525_1";
+import {
+  deepSeekGenerateBlockJson,
+  deepSeekRegenerateBlockQuestions,
+  generateBlockFromChunk,
+  mapBlocksToPages,
+  warnQuestionsOnlyCountMismatch,
+} from "./api.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
@@ -495,6 +501,133 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   }
   warnBlockGenerationProfileMismatch(obj, cfg);
   return obj;
+}
+
+/**
+ * Client regen mode for transition overlay (see data-model.md).
+ * @returns {"consume_prefetch"|"questions_only"|"full_block"}
+ */
+export function resolveRegenMode(nextCfg, prefetchedBlock, opts = {}) {
+  const cfg = nextCfg && typeof nextCfg === "object" ? nextCfg : {};
+  const expectedKey = buildBlockConfigKey(cfg);
+  const prefetchReady = Boolean(opts.prefetchReady);
+  const prefetchConfigKey = String(opts.prefetchConfigKey || "");
+
+  if (
+    prefetchReady &&
+    prefetchConfigKey &&
+    prefetchConfigKey === expectedKey &&
+    prefetchedBlock &&
+    typeof prefetchedBlock === "object"
+  ) {
+    return "consume_prefetch";
+  }
+
+  const explanation = String(prefetchedBlock?.explanation || "").trim();
+  if (!prefetchedBlock || !explanation) {
+    return "full_block";
+  }
+
+  const baseCfg =
+    prefetchedBlock._config && typeof prefetchedBlock._config === "object"
+      ? prefetchedBlock._config
+      : opts.baseCfg && typeof opts.baseCfg === "object"
+        ? opts.baseCfg
+        : null;
+
+  if (!baseCfg) {
+    return "full_block";
+  }
+
+  const nextProfile = normalizeExplanationProfile(
+    cfg.explanation_profile,
+    baseCfg.explanation_profile,
+  );
+  const baseProfile = normalizeExplanationProfile(baseCfg.explanation_profile, "thorough");
+  const nextGaps = normalizeGapFocus(cfg.gap_focus).join("\0");
+  const baseGaps = normalizeGapFocus(baseCfg.gap_focus).join("\0");
+
+  if (nextProfile !== baseProfile || nextGaps !== baseGaps) {
+    return "full_block";
+  }
+
+  return "questions_only";
+}
+
+export async function generateQuestionsOnlyForIndex(
+  blockIndex,
+  { n_test, n_socratic, baseBlock } = {},
+) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (isOfflineMode()) {
+    const block = getBlock(idx);
+    if (!block) throw new Error("Missing offline block.");
+    return block;
+  }
+
+  const base = baseBlock && typeof baseBlock === "object" ? baseBlock : {};
+  const explanation = String(base.explanation || "").trim();
+  if (!explanation) {
+    throw new Error("Cannot regenerate questions only without a non-empty explanation.");
+  }
+
+  const resolved = resolveBlockQuestionConfig(idx);
+  const cfg = {
+    n_test: clampInt(n_test, 0, 5, resolved.n_test),
+    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    explanation_profile: resolved.explanation_profile,
+    gap_focus: resolved.gap_focus,
+  };
+
+  const materialChunk = getBlockChunkFromIndex(idx);
+  if (!materialChunk) {
+    throw new Error("Missing block chunk for this session. Please regenerate blocks.");
+  }
+
+  const blockTitle = String(base.title || getBlockTitleFromList(idx)).trim() || getBlockTitleFromList(idx);
+  const llmModel = getSessionLlmModel(state.activeSession);
+  assertLlmKeyPresent(llmModel);
+
+  const request = {
+    llmModel,
+    language: getStudyLanguage(),
+    n_test: cfg.n_test,
+    n_socratic: cfg.n_socratic,
+    blockTitle,
+    explanation,
+    materialText: materialChunk,
+    gap_focus: cfg.gap_focus,
+  };
+
+  let response = null;
+  try {
+    response = await deepSeekRegenerateBlockQuestions(request);
+  } catch (err) {
+    const message = err?.message ? String(err.message) : String(err);
+    if (!message.includes("valid JSON")) throw err;
+    response = await deepSeekRegenerateBlockQuestions(request);
+  }
+  warnQuestionsOnlyCountMismatch(response, cfg);
+
+  const merged = {
+    ...base,
+    id: base.id != null ? base.id : idx + 1,
+    title: base.title || blockTitle,
+    explanation,
+    questions: Array.isArray(response?.questions) ? response.questions : [],
+    concepts:
+      Array.isArray(response?.concepts) && response.concepts.length
+        ? response.concepts
+        : Array.isArray(base.concepts)
+          ? base.concepts
+          : [],
+  };
+  if (!merged._config || typeof merged._config !== "object") merged._config = {};
+  merged._config.n_test = cfg.n_test;
+  merged._config.n_socratic = cfg.n_socratic;
+  merged._config.explanation_profile = cfg.explanation_profile;
+  merged._config.gap_focus = cfg.gap_focus;
+  return merged;
 }
 
 export async function generateOfflinePack(blockIndex, htmlText, config = {}) {

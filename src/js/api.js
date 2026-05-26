@@ -1323,6 +1323,152 @@ export function buildBlockGenerationUserContent({
   }. ${blockTitle}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}`;
 }
 
+const QUESTIONS_ONLY_JSON_SCHEMA = `{
+  questions: [{
+    type: "test" | "socratic",
+    question: string,
+    options?: { A, B, C, D },
+    answer?: string,
+    feedback?: string
+  }],
+  concepts?: [
+    { term: string, definition: string }
+  ]
+}`;
+
+export function buildQuestionsOnlySystemPrompt({
+  language,
+  n_test,
+  n_socratic,
+  gap_focus = [],
+  blockTitle = "",
+}) {
+  const nTest = Math.max(0, Math.min(5, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const gaps = Array.isArray(gap_focus)
+    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
+    : [];
+  const gapSection =
+    gaps.length > 0
+      ? `
+Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
+- Generate at least one question per gap (test or socratic) — ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
+- Each gap-targeted question must focus on that gap: application, discrimination, or common errors — not generic recall.
+- If n_test + n_socratic (${nTest + nSocratic}) is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).`
+      : "";
+
+  return `You will receive a FIXED block explanation and source material. Generate ONLY new questions — do NOT modify, rewrite, or return the explanation or title.
+Return a single JSON object with this schema:
+${QUESTIONS_ONLY_JSON_SCHEMA}
+Respond entirely in ${String(language || "English").trim() || "English"}.
+Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
+Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
+${MC_OPTION_PARITY_RULES}
+Socratic questions: open-ended, no options, no correct answer field.
+Order: all test questions first, then all socratic questions.
+If n_test=0 or n_socratic=0, omit that type entirely.
+${QUESTION_PEDAGOGY_RULES}
+Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
+When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
+${gapSection}
+Optionally extract key concepts for the dictionary (3-8 terms) in concepts[] if new terms appear in your questions; omit concepts if none.
+Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
+MUST NOT include "explanation", "title", or "id" fields in the response.
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+}
+
+export function buildQuestionsOnlyUserContent({
+  blockTitle,
+  explanation,
+  materialText,
+  gap_focus = [],
+}) {
+  const gaps = Array.isArray(gap_focus)
+    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
+    : [];
+  const gapBlock =
+    gaps.length > 0
+      ? `\n\nLearning gaps to target (generate ≥1 question per gap):\n${gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
+      : "";
+  const fixedExplanation = String(explanation || "").trim();
+  return `Block title: ${String(blockTitle || "").trim() || "Untitled"}
+
+FIXED EXPLANATION (do not rewrite this explanation; generate questions that test understanding of it):
+${fixedExplanation}
+
+Source material (verbatim chunk for grounding):
+${String(materialText || "").trim()}${gapBlock}`;
+}
+
+export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
+  if (!responseObj || typeof responseObj !== "object" || !cfg || typeof cfg !== "object") return;
+  const questions = Array.isArray(responseObj.questions) ? responseObj.questions : [];
+  const nTest = Math.max(0, Math.min(5, Math.round(Number(cfg.n_test))));
+  const nSoc = Math.max(0, Math.min(3, Math.round(Number(cfg.n_socratic))));
+  const expected = nTest + nSoc;
+  if (expected > 0 && questions.length !== expected) {
+    console.warn(
+      `Questions-only regen: expected ${expected} question(s) (${nTest} test, ${nSoc} socratic), got ${questions.length}.`,
+    );
+  }
+  const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
+  if (gaps.length > 0 && questions.length < gaps.length) {
+    console.warn(
+      `Questions-only regen: ${gaps.length} gap(s) but only ${questions.length} question(s) (expected ≥${gaps.length}).`,
+    );
+  }
+}
+
+export async function deepSeekRegenerateBlockQuestions({
+  llmModel,
+  apiKey: _legacyApiKey,
+  language,
+  n_test,
+  n_socratic,
+  blockTitle,
+  explanation,
+  materialText,
+  gap_focus = [],
+}) {
+  const systemPrompt = buildQuestionsOnlySystemPrompt({
+    language,
+    n_test,
+    n_socratic,
+    gap_focus,
+    blockTitle,
+  });
+  const userContent = buildQuestionsOnlyUserContent({
+    blockTitle,
+    explanation,
+    materialText,
+    gap_focus,
+  });
+
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.2,
+  });
+
+  const obj = parseModelJsonObject(raw);
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    console.warn("Invalid questions-only JSON response:", raw);
+    throw new Error("Model did not return valid JSON for questions. Please try again.");
+  }
+  if (Object.prototype.hasOwnProperty.call(obj, "explanation")) {
+    console.warn("Questions-only regen returned forbidden explanation field — ignoring it.");
+    delete obj.explanation;
+  }
+  if (Object.prototype.hasOwnProperty.call(obj, "title")) {
+    delete obj.title;
+  }
+  return obj;
+}
+
 export async function deepSeekGenerateBlockJson({
   llmModel,
   apiKey: _legacyApiKey,

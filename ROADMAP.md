@@ -1,179 +1,172 @@
-# ROADMAP — Block Split Deduplication
+# ROADMAP — Zero-Latency Block Transitions
 
-**Spec**: `specs/20260526-block-split-dedup/spec.md`  
-**Plan**: `specs/20260526-block-split-dedup/plan.md`  
-**Branch**: `20260526-block-split-dedup`
+**Spec**: `specs/20260527-zero-latency-blocks/spec.md`  
+**Plan**: `specs/20260527-zero-latency-blocks/plan.md`  
+**Branch**: `20260527-zero-latency-blocks`
 
 ## Tareas
 
 | ID | Descripción | Dep. | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | API fase 1: prompt + `deepSeekConceptInventory` + parser | — | M | [ ] |
-| T02 | API fase 2: prompt pack + `deepSeekPackConceptsToBlocks` + parser | T01 | M | [ ] |
-| T03 | `twoPhaseConceptSplit` en `session.js` + fallback monofásico | T02 | M | [ ] |
-| T04 | Dedup determinista (`findDeterministicDuplicateMerges` + apply) | T03 | M | [ ] |
-| T05 | Wire `study.js`: progreso, M vs N, quitar `twoPhaseSplitMerge` | T04 | M | [ ] |
-| T06 | Test `cursor-tests/20260526_t01-deterministic-dedup.mjs` | T04 | S | [x] |
-| T07 | Regresión manual `quickstart.md` | T05, T06 | S | [ ] |
+| T01 | API regen solo preguntas (`deepSeekRegenerateBlockQuestions`) | — | M | [x] |
+| T02 | `session.js`: `generateQuestionsOnlyForIndex` + merge | T01 | M | [x] |
+| T03 | Overlay transición: vista default vs Adjust + etiquetas ES | T02 | L | [x] |
+| T04 | Camino rápido: CTA deshabilitado + consumo prefetch sin espera post-clic | T03 | M | [x] |
+| T05 | Camino Adjust: regen parcial vs completa | T02, T03 | M | [x] |
+| T06 | Quitar tarjeta guía inline en `finishRSVP` | — | S | [x] |
+| T07 | Tests `cursor-tests` + regresión `quickstart.md` | T04, T05, T06 | M | [x] |
 
 ## Grafo de dependencias
 
 ```text
-T01 → T02 → T03 → T04 → T05 → T07
-                    T04 → T06 ↗
+T01 → T02 → T03 → T04 → T07
+          ↘     ↘ T05 ↗
+T06 (independiente, paralelo desde inicio)
 ```
 
-**Paralelo posible** (tras T04): **T06** y comienzo de pruebas manuales de T07 mientras se pulen mensajes en T05.
+**Paralelo posible**:
+- **T06** en cualquier momento (no bloquea T01–T05).
+- Tras **T03**: **T04** y **T05** pueden repartirse si dos agentes coordinan el mismo `study.js` (mejor en serie).
 
 ## Orden de ejecución recomendado
 
-1. **T01** (inventario conceptos)  
-2. **T02** (empaquetado + overview bloque 1)  
-3. **T03** (orquestador + fallback)  
-4. **T04** (dedup determinista)  
-5. **T05** (UI)  
-6. En paralelo: **T06** + checklist **T07**
+1. **T01** → **T02** (API + session)  
+2. **T06** (rápido, en paralelo si quieres)  
+3. **T03** → **T04** → **T05** (overlay + flujos)  
+4. **T07** (cerrar)
+
+**Antes de producción**: bump `?v=` en imports (`study.js`, `session.js`, `api.js`) como patrón `20260525_1`.
 
 ---
 
-## PROMPT T01 — API fase 1 (inventario de conceptos)
+## PROMPT T01 — API questions-only
 
-Implementa la **fase 1** del split en dos fases según el feature **Block Split Deduplication**.
+Implementa la **regeneración solo de preguntas** según el feature **Zero-Latency Block Transitions**.
 
-**Contexto**: Lee `specs/20260526-block-split-dedup/contracts/two-phase-split-api.md`, `research.md` R2, y el patrón de reintentos en `deepSeekSplitIntoBlocks` (`src/js/api.js`).
-
-**Archivos a tocar**:
-- `src/js/api.js` (principal)
-
-**Tareas**:
-1. `buildConceptInventoryPrompt(lang)` — JSON `{ concepts: [...] }` con `id`, `order`, `title`, `scope_one_line`, `module?`, `prerequisite_ids?`.
-2. `parseConceptInventoryFromModelResponse(text)` — tolerante (fences, objeto/array); reutiliza helpers existentes.
-3. `export async function deepSeekConceptInventory({ llmModel, materialText, studyNotes, language })` — 3 intentos como split actual; `response_format: json_object`.
-
-**Criterio de éxito**: Con material de prueba en consola, la función devuelve array ≥5 conceptos con `order` creciente; parse no lanza con JSON válido del modelo.
-
-**ROADMAP**: T01. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T02 — API fase 2 (empaquetar conceptos → bloques)
-
-Implementa la **fase 2** del split: empaquetar inventario en índice de bloques.
-
-**Contexto**: Contrato en `specs/20260526-block-split-dedup/contracts/two-phase-split-api.md`. Clarificaciones: bloque 1 = overview global dentro de N; Key terms por módulo; si conceptos > N fusionar; si < N devolver menos sin padding.
+**Contexto**: Lee `specs/20260527-zero-latency-blocks/contracts/questions-only-regen.md` y el patrón de `buildBlockGenerationSystemPrompt` / `deepSeekGenerateBlockJson` en `src/js/api.js`.
 
 **Archivos**:
 - `src/js/api.js`
 
 **Tareas**:
-1. `buildConceptPackPrompt(n, lang, inventoryJson)`.
-2. `deepSeekPackConceptsToBlocks({ llmModel, inventory, nBlocks, studyNotes, language })` → `{ blocks, pack_meta }`.
-3. Parser que valida: bloque 1 overview; `concept_ids` únicos; `pack_meta.final_block_count`.
+1. `QUESTIONS_ONLY_JSON_SCHEMA` y `buildQuestionsOnlySystemPrompt({ language, n_test, n_socratic, gap_focus, blockTitle })`.
+2. `buildQuestionsOnlyUserContent({ blockTitle, explanation, materialText, gap_focus })` — incluye explicación fija con “do not rewrite”.
+3. `export async function deepSeekRegenerateBlockQuestions(...)` — `response_format: json_object`, 1 retry en parse error.
+4. Exportar builders para tests si hace falta.
 
-**Criterio de éxito**: Mock inventory de 10 conceptos + N=8 devuelve 8 bloques con título overview en id 1 y `pack_meta` documentando merges si aplica.
+**Criterio de éxito**: Llamada de prueba (mock o consola) devuelve `questions.length === n_test + n_socratic`; el prompt de sistema prohíbe devolver `explanation`.
+
+**ROADMAP**: T01. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## PROMPT T02 — Session merge questions-only
+
+**Contexto**: Contrato `questions-only-regen.md`, `generateBlockForIndex` en `src/js/session.js`.
+
+**Archivos**:
+- `src/js/session.js`
+
+**Tareas**:
+1. `export async function generateQuestionsOnlyForIndex(blockIndex, { n_test, n_socratic, baseBlock })` — merge sobre `baseBlock`.
+2. Helper `resolveRegenMode(nextCfg, prefetchedBlock)` → `consume_prefetch` | `questions_only` | `full_block` según `data-model.md`.
+3. Exportar `resolveRegenMode` para tests.
+
+**Criterio de éxito**: Con bloque mock con `explanation` fija, cambiar solo `n_test` devuelve mismo `explanation` y distinto `questions.length`.
 
 **ROADMAP**: T02 (requiere T01). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Orquestador `twoPhaseConceptSplit`
+## PROMPT T03 — Transition overlay UX
 
-Conecta fase 1 + fase 2 y asignación local de chunks.
-
-**Contexto**: `specs/20260526-block-split-dedup/data-model.md`, `plan.md` WP3, `research.md` R4/R6.
+**Contexto**: `specs/20260527-zero-latency-blocks/contracts/transition-overlay-ux.md` y clarificaciones en `spec.md` (Siguiente bloque / Ajustar siguiente bloque).
 
 **Archivos**:
-- `src/js/session.js`
+- `src/js/study.js` (principal)
 
 **Tareas**:
-1. `export async function twoPhaseConceptSplit(material, nBlocks, { llmModel, studyNotes, language })`.
-2. Tras pack: `normalizeBlockIndexArray` + respetar `pack_meta.final_block_count` (no forzar pad a N).
-3. `splitMaterialIntoBlockChunks(material, finalCount)` para `chunk`.
-4. Fallback a `deepSeekSplitIntoBlocks` si fase 1/2 fallan → `{ pipeline: "fallback_mono" }`.
-5. Devolver `{ blockIndex, splitRunMeta }`.
+1. Refactor `getOrCreateTransitionOverlay`: botón **Ajustar siguiente bloque**, estado `view` default|adjust.
+2. Vista default: diccionario colapsado, sin textarea guía, sin steppers de preguntas.
+3. Vista adjust: revelar steppers + Confirmar + Volver.
+4. Etiquetas ES en botones (FR-002b).
 
-**Criterio de éxito**: Llamada end-to-end desde consola (o test mínimo) devuelve índice con chunks no vacíos y `splitRunMeta.requested_n` / `final_n`.
+**Criterio de éxito**: Al terminar bloque, overlay muestra dos acciones y diccionario colapsado; no hay textarea de comentarios en vista default.
 
-**ROADMAP**: T03. Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T03 (requiere T02). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Dedup determinista
+## PROMPT T04 — Camino rápido (0s post-clic)
 
-Sustituye el audit LLM por fusión determinista según firmas/títulos.
-
-**Contexto**: `specs/20260526-block-split-dedup/contracts/deterministic-dedup.md`. Mantén `mergeChunks` para texto fusionado.
-
-**Archivos**:
-- `src/js/session.js`
-
-**Tareas**:
-1. `normalizeSignatureTerms`, `signatureOverlapCount`, `normalizeBlockTitle`.
-2. `findDeterministicDuplicateMerges(blockIndex)` — umbral ≥3 términos o título idéntico.
-3. `applyDeterministicDedup(blockIndex, { llmModel })` — aplica merges + `renumberBlockIndexSequential`.
-4. Integrar en `twoPhaseConceptSplit` como último paso (antes de return).
-5. **No** llamar `auditBlockIndex` / `twoPhaseSplitMerge` desde el flujo nuevo.
-
-**Criterio de éxito**: Índice sintético con dos bloques compartiendo 3+ términos en signature → un solo bloque tras apply; par con overlap 2 → sin merge.
-
-**ROADMAP**: T04. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T05 — UI y wire en study.js
-
-Integra el pipeline en “Generate blocks”.
-
-**Contexto**: `study.js` ~2790–2855 hoy usa `deepSeekSplitIntoBlocks` + `twoPhaseSplitMerge`. Sustituir por `twoPhaseConceptSplit`. `quickstart.md` §1–3.
+**Contexto**: FR-003a, research R2. Prefetch ya en `startBlock`.
 
 **Archivos**:
 - `src/js/study.js`
 
 **Tareas**:
-1. Reemplazar split + audit por `twoPhaseConceptSplit`.
-2. Status: “Inventariando conceptos…” → “Empaquetando N bloques…” → “Comprobando duplicados…”.
-3. `renderSplitMergeSummary`: mensaje `Pediste N; el material sustentó M bloques` si M < N; filas dedup.
-4. `state.lastNBlocks = finalIndex.length`.
-5. Import JSON: sin two-phase (guard existente).
+1. **Siguiente bloque** `disabled` hasta `prefetchState.ready` + `configKey` match.
+2. `onclick` camino rápido: si `ready`, `getPrefetchedBlock` → persist session → `startBlock` sin loop “Finishing up…”.
+3. Sincronizar barra overlay con `setPrefetchIndicator`.
+4. Eliminar `setPendingComment` desde overlay.
 
-**Criterio de éxito**: Generar bloques en browser muestra overview en bloque 1 y summary M vs N cuando aplique; sin llamada a audit LLM (verificar red o logs).
+**Criterio de éxito**: Con prefetch ready, un clic abre RSVP siguiente bloque sin espera visible de generación; botón deshabilitado mientras generating.
 
-**ROADMAP**: T05. Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T04 (requiere T03). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Test automatizado dedup
+## PROMPT T05 — Camino Adjust (regen parcial)
 
-**Contexto**: `contracts/deterministic-dedup.md` casos de prueba.
+**Contexto**: `resolveRegenMode`, `generateQuestionsOnlyForIndex`, `generateBlockDirect`.
 
 **Archivos**:
-- `cursor-tests/20260526_t01-deterministic-dedup.mjs` (nuevo)
-- `cursor-tests/loader.mjs` si hace falta importar funciones de `session.js`
+- `src/js/study.js`
+- `src/js/session.js` (si falta wiring)
 
 **Tareas**:
-1. Importar `findDeterministicDuplicateMerges` (export para test si necesario).
-2. Assert merge cuando overlap ≥3; no merge cuando overlap = 2.
-3. Assert título duplicado merge.
+1. Confirmar en Adjust: si `questions_only` → API parcial; si `full_block` → `generateBlockDirect`; si config igual y ready → consume prefetch.
+2. Tras regen parcial, persistir bloque y actualizar prefetch slot/key.
+3. Mantener `maybeRegeneratePrefetch` al cambiar steppers en Adjust.
 
-**Criterio de éxito**: `node cursor-tests/20260526_t01-deterministic-dedup.mjs` exit 0.
+**Criterio de éxito**: quickstart §4 — subir `n_test` conserva texto RSVP; bajar sin explanation en cache hace full regen.
 
-**ROADMAP**: T06 (paralelo tras T04). Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T05 (requiere T03, T02). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Regresión manual
+## PROMPT T06 — Quitar tarjeta guía inline
 
-Valida el feature completo según quickstart.
+**Contexto**: FR-005a; sidebar es canal único.
 
-**Contexto**: `specs/20260526-block-split-dedup/quickstart.md` — todos los apartados.
+**Archivos**:
+- `src/js/study.js` (`finishRSVP`, `ensureGuideResponseCardVisible` usage)
 
 **Tareas**:
-1. Happy path PDF denso N=15.
-2. Material corto N=20 → mensaje M < N.
-3. Import JSON sin re-split.
-4. Anotar si SC-001 (menos repetición) se cumple vs build anterior.
+1. Eliminar llamada a `ensureGuideResponseCardVisible` en `finishRSVP` (y lógica `lastConsumedPendingGuideReplyTs` si queda muerta).
+2. No romper `triggerCommentReply` desde sidebar / `startBlock`.
 
-**Criterio de éxito**: Tabla quickstart Pass criteria toda ✓; sin regresión en confirm → study.
+**Criterio de éxito**: Tras comentario en sidebar y terminar RSVP, no aparece tarjeta inline; historial sidebar intacto.
+
+**ROADMAP**: T06 (independiente). Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## PROMPT T07 — Tests + quickstart manual
+
+**Contexto**: `specs/20260527-zero-latency-blocks/quickstart.md`
+
+**Archivos**:
+- `cursor-tests/20260527_t01-questions-only-regen.mjs` (nuevo)
+- `cursor-tests/20260527_t02-transition-regen-mode.mjs` (nuevo)
+- Reusar patrones de `20260525_t06-prefetch-config-key.mjs`
+
+**Tareas**:
+1. Test `resolveRegenMode` matrix (counts only → questions_only; profile change → full_block).
+2. Test merge conserva `explanation`.
+3. Ejecutar quickstart manual y anotar SC-001/SC-003.
+
+**Criterio de éxito**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` exit 0; quickstart Pass table ✓.
 
 **ROADMAP**: T07. Ejecuta `/validate` antes de cerrar este mensaje.
 
@@ -181,14 +174,12 @@ Valida el feature completo según quickstart.
 
 ## Instrucción de ejecución
 
-**Lanzar primero**: PROMPT **T01** (un chat).
+**Lanzar primero**: **T01** (un chat).
 
-**Después, en serie**: T02 → T03 → T04 → T05.
+**En serie**: T02 → T03 → T04 → T05.
 
-**En paralelo cuando T04 esté hecho**: abre chat con **T06** mientras otro agente hace **T05**, o T06 justo después de T04.
+**En paralelo cuando quieras**: **T06** (no toca overlay).
 
-**Cerrar con**: **T07** manual en tu máquina.
-
-**Antes de producción**: bump `?v=` en imports si el service worker cachea JS viejo (patrón `20260523_2` en el repo).
+**Cerrar con**: **T07**.
 
 **Siguiente comando Spec Kit**: `/speckit-tasks` si quieres `tasks.md` formal además de este ROADMAP.
