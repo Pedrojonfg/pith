@@ -26,6 +26,7 @@ import {
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
 } from "./dictionary.js?v=20260527_1";
+import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { triggerCommentReply } from "./guide-chat.js?v=20260525_1";
 import {
@@ -329,7 +330,7 @@ function renderBlockIndexEditor(blocks, { readOnly = false } = {}) {
 
 function setQuestionPreviewLabel(nTest, nSocratic) {
   if (!els.questionsPreviewLabel) return;
-  const t = Math.max(0, Math.min(5, Math.round(Number(nTest) || 0)));
+  const t = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(nTest) || 0)));
   const s = Math.max(0, Math.min(3, Math.round(Number(nSocratic) || 0)));
   const total = t + s;
   els.questionsPreviewLabel.textContent = total
@@ -345,7 +346,7 @@ function renderQuestionConfigUi() {
 
 function bumpQuestionCount(kind, delta) {
   if (kind === "test") {
-    state.nTest = clampInt(state.nTest + delta, 0, 5, 2);
+    state.nTest = clampInt(state.nTest + delta, 0, MAX_N_TEST, 2);
   } else {
     state.nSocratic = clampInt(state.nSocratic + delta, 0, 3, 1);
   }
@@ -1670,7 +1671,7 @@ async function finishQuestions(blockIndex) {
   };
 
   const bumpNext = (kind, delta) => {
-    if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, 5, blockDefaults.n_test);
+    if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, MAX_N_TEST, blockDefaults.n_test);
     else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, 3, blockDefaults.n_socratic);
     maybeRegeneratePrefetch();
   };
@@ -1927,11 +1928,8 @@ function ensureAssessmentRunnerEls() {
 }
 
 export function wireStudyHandlers() {
-  // #region agent log
-  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H4',location:'src/js/study.js:1858',message:'wireStudyHandlers refs',data:{hasImportIndexBtn:!!els.importIndexBtn,hasImportIndexFile:!!els.importIndexFile,hasLoadOfflinePackBtn:!!els.loadOfflinePackBtn},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const defaults = loadDefaultQuestionConfig();
-  state.nTest = clampInt(defaults.n_test, 0, 5, 2);
+  state.nTest = clampInt(defaults.n_test, 0, MAX_N_TEST, 2);
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
   renderQuestionConfigUi();
 
@@ -1975,7 +1973,7 @@ export function wireStudyHandlers() {
       return;
     }
     ensureSessionResponseState();
-    state.nTest = clampInt(state.activeSession?.n_test, 0, 5, state.nTest);
+    state.nTest = clampInt(state.activeSession?.n_test, 0, MAX_N_TEST, state.nTest);
     state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
     state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
     const savedQ = state.activeSession?.active_question_index;
@@ -2856,7 +2854,7 @@ export function wireStudyHandlers() {
           nBlocks: offlineBlocks.length,
           blocksListText: confirmedBlocksListText,
         });
-        sessionObj.n_test = clampInt(pack?.config?.n_test, 0, 5, 2);
+        sessionObj.n_test = clampInt(pack?.config?.n_test, 0, MAX_N_TEST, 2);
         sessionObj.n_socratic = 0;
         sessionObj.language = String(pack?.config?.language || getStudyLanguage()).trim() || "English";
         sessionObj.blocks = offlineBlocks.map((b) => ({
@@ -2976,7 +2974,7 @@ export function wireStudyHandlers() {
         nBlocks,
         blocksListText: confirmedBlocksListText,
       });
-      sessionObj.n_test = clampInt(state.nTest, 0, 5, 2);
+      sessionObj.n_test = clampInt(state.nTest, 0, MAX_N_TEST, 2);
       sessionObj.n_socratic = clampInt(state.nSocratic, 0, 3, 1);
       if (Array.isArray(sessionObj.blocks)) {
         for (let i = 0; i < sessionObj.blocks.length; i += 1) {
@@ -3542,7 +3540,7 @@ export function wireStudyHandlers() {
         assertLlmKeyPresent(getSessionLlmModel(sessionObj));
         storeActiveSession(sessionObj);
         state.activeSession = sessionObj;
-        state.nTest = clampInt(sessionObj.n_test, 0, 5, state.nTest);
+        state.nTest = clampInt(sessionObj.n_test, 0, MAX_N_TEST, state.nTest);
         state.nSocratic = clampInt(sessionObj.n_socratic, 0, 3, state.nSocratic);
         state.originalMaterialText = cleanedText;
         state.lastCleanedMaterialText = cleanedText;

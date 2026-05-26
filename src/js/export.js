@@ -13,7 +13,7 @@ import {
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
-} from "./session.js?v=20260525_1";
+} from "./session.js?v=20260527_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
 
 function sanitizeFilenameStem(name) {
