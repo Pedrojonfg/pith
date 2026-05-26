@@ -125,6 +125,10 @@ function saveBlockHighlights(blockIndex, { newKeys, updatedKeys }) {
 
 function getConceptsPriorToBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  // For the first block, everything is "new" relative to prior study.
+  // Avoid falling back to legacy session_concepts here since those are often
+  // committed from the same block (which would suppress highlights).
+  if (idx === 0) return [];
   const map = loadConceptsByBlock();
   const lists = [];
   for (const k of Object.keys(map).sort((a, b) => {

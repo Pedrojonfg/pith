@@ -10,6 +10,7 @@ import {
 import {
   clearSessionConceptStorage,
   commitSessionConceptsForBlock,
+  getConceptHighlightsForBlock,
   getSortedSessionConcepts,
   loadConceptsByBlock,
   restoreSessionConceptStorage,
@@ -50,6 +51,11 @@ assert(
   "blocks 0 and 1 both present after block 1 replace",
 );
 assert(loadConceptsByBlock()["0"]?.[0]?.term === "Alpha", "block 0 entry preserved");
+
+// --- Highlights: block 0 should mark all terms as new ---
+const h0 = getConceptHighlightsForBlock(0);
+assert(h0.newKeys.has("alpha"), "block 0 highlights Alpha as new");
+assert(!h0.newKeys.has("beta"), "block 0 does not highlight terms not in block");
 
 // --- syncConceptsFromBlock alias ---
 resetStorage();
