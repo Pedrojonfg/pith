@@ -14,13 +14,13 @@
 
 ### thorough (RSVP baseline)
 
-- RSVP structure: Hook → Core definition → Technical layer → Concrete example → Contrast → Connection.
+- Internal structure: hook → core → technical → example → contrast → connection (six paragraphs; blank line between each; no visible section labels).
 - Subject-verb-object; ≤15 words per sentence; definition → example → implication; 200–300 words max.
 - Transform source; no linear regurgitation.
 
 ### brief_deep
 
-- Max 120 words; compressed RSVP (HOOK, CORE DEFINITION, TECHNICAL LAYER, CONTRAST only).
+- Max 120 words; compressed structure (hook, core, technical, contrast only); same prose-only output rules.
 - Do NOT re-teach linearly from source.
 
 ### vocabulary (`title` starts with `Key terms:`)
