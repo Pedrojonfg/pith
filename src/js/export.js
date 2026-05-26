@@ -1,5 +1,6 @@
 import {
   LS_LAST_EXPORT_STATE_KEY,
+  LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPTS_KEY,
 } from "./config.js?v=20260525_1";
 import {
@@ -7,6 +8,7 @@ import {
   gapLabelsForBlock,
   getBlockResumeStatus,
   getMissedTestQuestions,
+  hasGeneratedBlockContent,
   normalizeGapsByBlock,
   parseBlockTitlesFromList,
   state,
@@ -128,6 +130,67 @@ export function formatAssessmentGapsExportSection(assessmentMeta, { titleMap = {
 
   if (!anyGaps) lines.push("- (none recorded)");
   return lines;
+}
+
+function normalizeExportConceptEntry(c) {
+  const obj = c && typeof c === "object" ? c : {};
+  const term = String(obj.term || "").trim();
+  const definition = String(obj.definition || "").trim();
+  if (!term) return null;
+  return { term, definition };
+}
+
+function pickBetterExportConcept(existing, incoming) {
+  const aDef = String(existing.definition || "").trim();
+  const bDef = String(incoming.definition || "").trim();
+  if (!aDef && bDef) return incoming;
+  if (aDef && !bDef) return existing;
+  if (bDef.length > aDef.length) return incoming;
+  return existing;
+}
+
+/** Union session_concepts + concepts_by_block + blocks[].concepts for export table. */
+export function collectExportConcepts(session) {
+  const map = new Map();
+
+  const addConcept = (c) => {
+    const entry = normalizeExportConceptEntry(c);
+    if (!entry) return;
+    const key = entry.term.toLowerCase();
+    if (!map.has(key)) map.set(key, entry);
+    else map.set(key, pickBetterExportConcept(map.get(key), entry));
+  };
+
+  try {
+    const raw = localStorage.getItem(LS_SESSION_CONCEPTS_KEY);
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr)) for (const c of arr) addConcept(c);
+  } catch {
+    // ignore
+  }
+
+  try {
+    const raw = localStorage.getItem(LS_SESSION_CONCEPTS_BY_BLOCK_KEY);
+    const obj = raw ? JSON.parse(raw) : null;
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      for (const arr of Object.values(obj)) {
+        if (Array.isArray(arr)) for (const c of arr) addConcept(c);
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const blocks = Array.isArray(session?.blocks) ? session.blocks : [];
+  for (const b of blocks) {
+    if (!b || typeof b !== "object") continue;
+    const concepts = Array.isArray(b.concepts) ? b.concepts : [];
+    for (const c of concepts) addConcept(c);
+  }
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.term.localeCompare(b.term, undefined, { sensitivity: "base" }),
+  );
 }
 
 export function buildMarkdown(session) {
@@ -257,6 +320,7 @@ export function buildMarkdown(session) {
 
   for (let bi = 0; bi < nBlocksExport; bi += 1) {
     const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : {};
+    if (!hasGeneratedBlockContent(b)) continue;
     const fallbackTitle = titleMap[String(bi + 1)]
       ? String(titleMap[String(bi + 1)])
       : `Block ${bi + 1}`;
@@ -299,33 +363,17 @@ export function buildMarkdown(session) {
     lines.push("");
   }
 
-  try {
-    const raw = localStorage.getItem(LS_SESSION_CONCEPTS_KEY);
-    const arr = raw ? JSON.parse(raw) : null;
-    const concepts = Array.isArray(arr) ? arr : [];
-    const cleaned = concepts
-      .map((c) => (c && typeof c === "object" ? c : null))
-      .filter(Boolean)
-      .map((c) => ({
-        term: String(c.term || "").trim(),
-        definition: String(c.definition || "").trim(),
-      }))
-      .filter((c) => c.term);
-
-    if (cleaned.length) {
-      cleaned.sort((a, b) => a.term.localeCompare(b.term, undefined, { sensitivity: "base" }));
-      lines.push("## Concept Dictionary");
-      lines.push("| Term | Definition |");
-      lines.push("|------|------------|");
-      for (const c of cleaned) {
-        const t = c.term.replace(/\|/g, "\\|");
-        const d = (c.definition || "").replace(/\|/g, "\\|");
-        lines.push(`| ${t} | ${d} |`);
-      }
-      lines.push("");
+  const exportConcepts = collectExportConcepts(safe);
+  if (exportConcepts.length) {
+    lines.push("## Concept Dictionary");
+    lines.push("| Term | Definition |");
+    lines.push("|------|------------|");
+    for (const c of exportConcepts) {
+      const t = c.term.replace(/\|/g, "\\|");
+      const d = (c.definition || "").replace(/\|/g, "\\|");
+      lines.push(`| ${t} | ${d} |`);
     }
-  } catch {
-    // ignore dictionary export errors
+    lines.push("");
   }
 
   const formatHHMM = (ts) => {

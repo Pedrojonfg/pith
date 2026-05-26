@@ -8,178 +8,165 @@
 
 | ID | Descripción | Dep. | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | API regen solo preguntas (`deepSeekRegenerateBlockQuestions`) | — | M | [x] |
+| T01 | API regen solo preguntas | — | M | [x] |
 | T02 | `session.js`: `generateQuestionsOnlyForIndex` + merge | T01 | M | [x] |
-| T03 | Overlay transición: vista default vs Adjust + etiquetas ES | T02 | L | [x] |
-| T04 | Camino rápido: CTA deshabilitado + consumo prefetch sin espera post-clic | T03 | M | [x] |
+| T03 | Overlay transición: vista default vs Adjust | T02 | L | [x] |
+| T04 | Camino rápido: CTA deshabilitado + consumo prefetch | T03 | M | [x] |
 | T05 | Camino Adjust: regen parcial vs completa | T02, T03 | M | [x] |
 | T06 | Quitar tarjeta guía inline en `finishRSVP` | — | S | [x] |
-| T07 | Tests `cursor-tests` + regresión `quickstart.md` | T04, T05, T06 | M | [x] |
+| T07 | Tests base + quickstart §1–6 | T04, T05, T06 | M | [x] |
+| **T08** | **`applyPrefetchReadySideEffects` (write-through + hook)** | T07 | M | [x] |
+| **T09** | **`dictionary.js`: `concepts_by_block` + agregado UI** | T08 | M | [x] |
+| **T10** | **`export.js`: `collectExportConcepts` + union export** | T08 | M | [x] |
+| **T11** | **`study.js`: refresh diccionario en `onPrefetchReady`** | T08, T09 | S | [ ] |
+| **T12** | **Tests T03 + quickstart §7–8 (SC-005/006)** | T09, T10, T11 | M | [ ] |
 
 ## Grafo de dependencias
 
 ```text
+Fase A (hecho):
 T01 → T02 → T03 → T04 → T07
           ↘     ↘ T05 ↗
-T06 (independiente, paralelo desde inicio)
+T06 (independiente)
+
+Fase B (diccionario + export):
+T08 → T09 → T12
+    → T10 ↗
+    → T11 → T12
 ```
 
-**Paralelo posible**:
-- **T06** en cualquier momento (no bloquea T01–T05).
-- Tras **T03**: **T04** y **T05** pueden repartirse si dos agentes coordinan el mismo `study.js` (mejor en serie).
+**Paralelo posible (Fase B)**:
+- Tras **T08**: **T09** y **T10** en paralelo (archivos distintos).
+- **T11** tras **T09** (o en paralelo con T10 si solo toca `study.js` wiring).
 
 ## Orden de ejecución recomendado
 
-1. **T01** → **T02** (API + session)  
-2. **T06** (rápido, en paralelo si quieres)  
-3. **T03** → **T04** → **T05** (overlay + flujos)  
-4. **T07** (cerrar)
+### Fase A — completada
+T01 → T02 → (T06 ∥) → T03 → T04 → T05 → T07
 
-**Antes de producción**: bump `?v=` en imports (`study.js`, `session.js`, `api.js`) como patrón `20260525_1`.
+### Fase B — pendiente (bug diccionario/export)
+1. **T08** (un chat) — bloqueante  
+2. **T09 ∥ T10** (dos chats en paralelo)  
+3. **T11**  
+4. **T12** (cerrar)
+
+**Antes de producción**: bump `?v=` en imports (`session.js`, `dictionary.js`, `export.js`, `study.js`).
 
 ---
 
-## PROMPT T01 — API questions-only
+## PROMPT T08 — Prefetch ready side effects
 
-Implementa la **regeneración solo de preguntas** según el feature **Zero-Latency Block Transitions**.
+Implementa **write-through y diccionario en prefetch `ready`** según clarificaciones 2026-05-26.
 
-**Contexto**: Lee `specs/20260527-zero-latency-blocks/contracts/questions-only-regen.md` y el patrón de `buildBlockGenerationSystemPrompt` / `deepSeekGenerateBlockJson` en `src/js/api.js`.
+**Contexto**:
+- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-009–FR-012)
+- Contrato: `specs/20260527-zero-latency-blocks/contracts/prefetch-ready-persistence.md`
+- Hoy `triggerPrefetch` en `src/js/session.js` solo asigna `prefetchState.data` sin persistir sesión ni diccionario.
 
 **Archivos**:
-- `src/js/api.js`
+- `src/js/session.js` (principal)
+- `src/js/config.js` (nueva constante `LS_SESSION_CONCEPTS_BY_BLOCK_KEY` si hace falta)
 
 **Tareas**:
-1. `QUESTIONS_ONLY_JSON_SCHEMA` y `buildQuestionsOnlySystemPrompt({ language, n_test, n_socratic, gap_focus, blockTitle })`.
-2. `buildQuestionsOnlyUserContent({ blockTitle, explanation, materialText, gap_focus })` — incluye explicación fija con “do not rewrite”.
-3. `export async function deepSeekRegenerateBlockQuestions(...)` — `response_format: json_object`, 1 retry en parse error.
-4. Exportar builders para tests si hace falta.
+1. `export function applyPrefetchReadySideEffects(blockIndex, data, cfg)` — normaliza bloque, `session.blocks[idx]=data`, `storeActiveSession`.
+2. Llamar desde el `.then()` de `triggerPrefetch` **antes** de marcar `ready` (o justo después, mismo tick).
+3. Invocar callback opcional `let onPrefetchReady = null; export function setOnPrefetchReady(fn)`.
+4. No vaciar `prefetchState` en write-through (sigue `ready` hasta `getPrefetchedBlock`).
+5. Delegar actualización de `concepts_by_block` a `dictionary.js` (import) — stub mínimo si T09 no está hecho.
 
-**Criterio de éxito**: Llamada de prueba (mock o consola) devuelve `questions.length === n_test + n_socratic`; el prompt de sistema prohíbe devolver `explanation`.
+**Criterio de éxito**: Tras prefetch `ready` de bloque 2, `loadActiveSession().blocks[1]` tiene `explanation` no vacía sin pulsar **Siguiente bloque**; segunda llamada a `ensureBlockGenerated(1)` no dispara API.
 
-**ROADMAP**: T01. Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T08. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Session merge questions-only
+## PROMPT T09 — Dictionary per-block store
 
-**Contexto**: Contrato `questions-only-regen.md`, `generateBlockForIndex` en `src/js/session.js`.
+**Contexto**: Contrato `prefetch-ready-persistence.md`; `getSortedSessionConcepts` hoy solo lee `session_concepts`.
 
 **Archivos**:
-- `src/js/session.js`
+- `src/js/dictionary.js`
+- `src/js/config.js`
 
 **Tareas**:
-1. `export async function generateQuestionsOnlyForIndex(blockIndex, { n_test, n_socratic, baseBlock })` — merge sobre `baseBlock`.
-2. Helper `resolveRegenMode(nextCfg, prefetchedBlock)` → `consume_prefetch` | `questions_only` | `full_block` según `data-model.md`.
-3. Exportar `resolveRegenMode` para tests.
+1. `load/saveConceptsByBlock()`, `setBlockConcepts(blockIndex, concepts)` — reemplaza entrada del índice (FR-012).
+2. `getSortedSessionConcepts()` — agregado: merge todas las entradas `concepts_by_block` ∪ legacy `session_concepts` (dedup existente).
+3. `export function syncConceptsFromBlock(blockIndex, concepts)` — usado por T08 y regen paths.
+4. Mantener `commitSessionConceptsForBlock` idempotente.
 
-**Criterio de éxito**: Con bloque mock con `explanation` fija, cambiar solo `n_test` devuelve mismo `explanation` y distinto `questions.length`.
+**Criterio de éxito**: Tras `setBlockConcepts(1, [{term:"Foo",definition:"Bar"}])`, `getSortedSessionConcepts()` incluye Foo; actualizar bloque 1 no borra términos del bloque 0.
 
-**ROADMAP**: T02 (requiere T01). Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T09 (requiere T08). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Transition overlay UX
+## PROMPT T10 — Export union
 
-**Contexto**: `specs/20260527-zero-latency-blocks/contracts/transition-overlay-ux.md` y clarificaciones en `spec.md` (Siguiente bloque / Ajustar siguiente bloque).
+**Contexto**: Contrato `export-concept-dictionary.md`; FR-011, SC-006.
 
 **Archivos**:
-- `src/js/study.js` (principal)
+- `src/js/export.js`
+- `src/js/dictionary.js` (import `collectExportConcepts` o definir en dictionary y re-export)
 
 **Tareas**:
-1. Refactor `getOrCreateTransitionOverlay`: botón **Ajustar siguiente bloque**, estado `view` default|adjust.
-2. Vista default: diccionario colapsado, sin textarea guía, sin steppers de preguntas.
-3. Vista adjust: revelar steppers + Confirmar + Volver.
-4. Etiquetas ES en botones (FR-002b).
+1. `export function collectExportConcepts(session)` — unión de las 3 fuentes con dedup (definición más larga gana).
+2. `buildMarkdown` usa `collectExportConcepts` para tabla **Concept Dictionary**.
+3. Verificar bucle de bloques: incluir sección solo si `hasGeneratedBlockContent` (explicación o questions); bloques write-through prefetched cuentan.
 
-**Criterio de éxito**: Al terminar bloque, overlay muestra dos acciones y diccionario colapsado; no hay textarea de comentarios en vista default.
+**Criterio de éxito**: Test unitario o script: sesión mock con `blocks[1].explanation` poblado por write-through y sin respuestas → export contiene `## Block 2:` y ≥1 fila en Concept Dictionary.
 
-**ROADMAP**: T03 (requiere T02). Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T10 (requiere T08). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Camino rápido (0s post-clic)
+## PROMPT T11 — UI refresh on prefetch ready [x]
 
-**Contexto**: FR-003a, research R2. Prefetch ya en `startBlock`.
-
-**Archivos**:
-- `src/js/study.js`
-
-**Tareas**:
-1. **Siguiente bloque** `disabled` hasta `prefetchState.ready` + `configKey` match.
-2. `onclick` camino rápido: si `ready`, `getPrefetchedBlock` → persist session → `startBlock` sin loop “Finishing up…”.
-3. Sincronizar barra overlay con `setPrefetchIndicator`.
-4. Eliminar `setPendingComment` desde overlay.
-
-**Criterio de éxito**: Con prefetch ready, un clic abre RSVP siguiente bloque sin espera visible de generación; botón deshabilitado mientras generating.
-
-**ROADMAP**: T04 (requiere T03). Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T05 — Camino Adjust (regen parcial)
-
-**Contexto**: `resolveRegenMode`, `generateQuestionsOnlyForIndex`, `generateBlockDirect`.
+**Contexto**: FR-009; overlay de transición ya renderiza diccionario en `finishQuestions`.
 
 **Archivos**:
 - `src/js/study.js`
-- `src/js/session.js` (si falta wiring)
 
 **Tareas**:
-1. Confirmar en Adjust: si `questions_only` → API parcial; si `full_block` → `generateBlockDirect`; si config igual y ready → consume prefetch.
-2. Tras regen parcial, persistir bloque y actualizar prefetch slot/key.
-3. Mantener `maybeRegeneratePrefetch` al cambiar steppers en Adjust.
+1. En init/wire: `setOnPrefetchReady(({ blockIndex }) => { ... })`.
+2. Llamar `updateDictionaryButtonVisibility()`.
+3. Si overlay transición abierto: re-ejecutar `renderDictionary` en `o.dictionaryWrap` con `getSortedSessionConcepts()`.
+4. Tras regen Adjust / `persistNextBlock`: llamar `syncConceptsFromBlock` (T09) si no lo hace T08.
 
-**Criterio de éxito**: quickstart §4 — subir `n_test` conserva texto RSVP; bajar sin explanation en cache hace full regen.
+**Criterio de éxito**: quickstart §7 — durante bloque 1, con prefetch bloque 2 ready, botón diccionario muestra términos nuevos sin avanzar de bloque.
 
-**ROADMAP**: T05 (requiere T03, T02). Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T11 (requiere T08, T09). Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Validado**: `cursor-tests/20260527_t11-ui-refresh-prefetch-ready.mjs` (9 tests).
 
 ---
 
-## PROMPT T06 — Quitar tarjeta guía inline
+## PROMPT T12 — Tests SC-005/006 + quickstart [x]
 
-**Contexto**: FR-005a; sidebar es canal único.
-
-**Archivos**:
-- `src/js/study.js` (`finishRSVP`, `ensureGuideResponseCardVisible` usage)
-
-**Tareas**:
-1. Eliminar llamada a `ensureGuideResponseCardVisible` en `finishRSVP` (y lógica `lastConsumedPendingGuideReplyTs` si queda muerta).
-2. No romper `triggerCommentReply` desde sidebar / `startBlock`.
-
-**Criterio de éxito**: Tras comentario en sidebar y terminar RSVP, no aparece tarjeta inline; historial sidebar intacto.
-
-**ROADMAP**: T06 (independiente). Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T07 — Tests + quickstart manual
-
-**Contexto**: `specs/20260527-zero-latency-blocks/quickstart.md`
+**Contexto**: `specs/20260527-zero-latency-blocks/quickstart.md` §7–8.
 
 **Archivos**:
-- `cursor-tests/20260527_t01-questions-only-regen.mjs` (nuevo)
-- `cursor-tests/20260527_t02-transition-regen-mode.mjs` (nuevo)
-- Reusar patrones de `20260525_t06-prefetch-config-key.mjs`
+- `cursor-tests/20260527_t03-prefetch-write-through.mjs` (nuevo)
+- `cursor-tests/20260527_t04-export-concepts-union.mjs` (nuevo)
 
 **Tareas**:
-1. Test `resolveRegenMode` matrix (counts only → questions_only; profile change → full_block).
-2. Test merge conserva `explanation`.
-3. Ejecutar quickstart manual y anotar SC-001/SC-003.
+1. Test: mock `applyPrefetchReadySideEffects` / triggerPrefetch → `blocks[1]` poblado.
+2. Test: `collectExportConcepts` dedup y fuentes múltiples.
+3. Ejecutar quickstart §7–8 manual; actualizar tabla Pass criteria en quickstart.md.
 
-**Criterio de éxito**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` exit 0; quickstart Pass table ✓.
+**Criterio de éxito**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` exit 0; SC-005 y SC-006 marcados en quickstart.
 
-**ROADMAP**: T07. Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T12 (requiere T09–T11). Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Validado**: `20260527_t03` (12), `20260527_t04` (11), `20260527_validate-t12-sc005-sc006.mjs` (8); full `20260527_t*.mjs` suite green.
 
 ---
 
 ## Instrucción de ejecución
 
-**Lanzar primero**: **T01** (un chat).
+**Lanzar primero (Fase B)**: **T08** — un chat.
 
-**En serie**: T02 → T03 → T04 → T05.
+**En paralelo tras T08**: **T09** y **T10** (dos chats).
 
-**En paralelo cuando quieras**: **T06** (no toca overlay).
+**Luego**: **T11** → **T12**.
 
-**Cerrar con**: **T07**.
-
-**Siguiente comando Spec Kit**: `/speckit-tasks` si quieres `tasks.md` formal además de este ROADMAP.
+**Siguiente comando Spec Kit**: `/speckit-implement` o pegar **PROMPT T08** en un chat nuevo.

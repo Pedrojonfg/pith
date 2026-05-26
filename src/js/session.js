@@ -4,7 +4,8 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
-} from "./config.js?v=20260525_1";
+} from "./config.js?v=20260527_1";
+import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
 import {
   deepSeekGenerateBlockJson,
   deepSeekRegenerateBlockQuestions,
@@ -2114,6 +2115,77 @@ export function buildBlockConfigKey(cfg) {
   return `${nTest}|${nSoc}|${profile}|${gaps.join(",")}`;
 }
 
+export function hasGeneratedBlockContent(block) {
+  if (!block || typeof block !== "object") return false;
+  if (String(block.explanation || "").trim()) return true;
+  const questions = Array.isArray(block.questions) ? block.questions : [];
+  return questions.length > 0;
+}
+
+export function normalizeBlockJson(data, cfg, blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  const blockTitle = getBlockTitleFromList(idx);
+  const cleaned =
+    data && typeof data === "object"
+      ? { ...data }
+      : { id: idx + 1, title: blockTitle, explanation: "", questions: [] };
+  if (cleaned.id == null) cleaned.id = idx + 1;
+  if (!cleaned.title) cleaned.title = blockTitle;
+  if (!cleaned.explanation) cleaned.explanation = "";
+  if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
+  if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
+  if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
+  cleaned._config.n_test = clampInt(c.n_test, 0, 5, 2);
+  cleaned._config.n_socratic = clampInt(c.n_socratic, 0, 3, 1);
+  cleaned._config.explanation_profile = normalizeExplanationProfile(
+    c.explanation_profile,
+    "thorough",
+  );
+  cleaned._config.gap_focus = normalizeGapFocus(c.gap_focus);
+  return cleaned;
+}
+
+let onPrefetchReady = null;
+
+export function setOnPrefetchReady(fn) {
+  onPrefetchReady = typeof fn === "function" ? fn : null;
+}
+
+export function applyPrefetchReadySideEffects(blockIndex, data, cfg) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (!state.activeSession || typeof state.activeSession !== "object") return;
+
+  const normalized = normalizeBlockJson(data, cfg, idx);
+
+  try {
+    if (!Array.isArray(state.activeSession.blocks)) {
+      state.activeSession.blocks = [];
+    }
+    while (state.activeSession.blocks.length <= idx) {
+      state.activeSession.blocks.push({});
+    }
+    state.activeSession.blocks[idx] = normalized;
+    storeActiveSession(state.activeSession, { bumpRev: true });
+  } catch (err) {
+    console.warn("applyPrefetchReadySideEffects: session write-through failed", err);
+  }
+
+  try {
+    syncConceptsFromBlock(idx, normalized.concepts);
+  } catch (err) {
+    console.warn("applyPrefetchReadySideEffects: concepts_by_block update failed", err);
+  }
+
+  if (typeof onPrefetchReady === "function") {
+    try {
+      onPrefetchReady({ blockIndex: idx });
+    } catch (err) {
+      console.warn("applyPrefetchReadySideEffects: onPrefetchReady failed", err);
+    }
+  }
+}
+
 export function invalidatePrefetch() {
   prefetchState = {
     blockIndex: null,
@@ -2176,6 +2248,7 @@ export function triggerPrefetch(blockIndex, opts = {}) {
     .then((result) => {
       if (prefetchState.blockIndex !== idx) return;
       if (prefetchState.configKey !== configKey) return;
+      applyPrefetchReadySideEffects(idx, result, cfg);
       prefetchState.status = "ready";
       prefetchState.data = result;
     })
