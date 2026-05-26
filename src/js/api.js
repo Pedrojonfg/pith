@@ -906,13 +906,18 @@ const BLOCK_JSON_SCHEMA = `{
 
 const EXPLANATION_RSVP_THOROUGH = `You are writing study material optimized for RSVP reading (rapid serial visual presentation). The student reads word by word at high speed and CANNOT re-read. This imposes strict rules:
 
-STRUCTURE (mandatory, in this order—put the explanation field in the "explanation" JSON key using markdown **bold** headings exactly as listed):
-1. HOOK (1 sentence): Why does this concept exist? What problem does it solve?
-2. CORE DEFINITION (1-3 sentences): Define the concept in plain language. No Latin terms yet. No jargon. Explain it to a smart 16-year-old.
-3. TECHNICAL LAYER (2-4 sentences): Now introduce the formal/Latin terms. Each term gets its own sentence: "The Romans called this X, meaning Y."
-4. CONCRETE EXAMPLE (2-4 sentences): One specific, vivid real-world case. Not abstract. Not "for example, imagine...". A real historical instance.
-5. CONTRAST (1-3 sentences): What is this NOT? What does it get confused with?
-6. CONNECTION (1-2 sentences): How does this connect to the next concept or the bigger picture of the course?
+CONTENT STRUCTURE (mandatory drafting order—never expose these step names in the explanation text):
+1. Hook — 1 sentence: why this concept exists; what problem it solves.
+2. Core definition — 1-3 sentences: plain language; no Latin yet; no jargon; explain to a smart 16-year-old.
+3. Technical layer — 2-4 sentences: formal/Latin terms; each term in its own sentence (e.g. "The Romans called this X, meaning Y.").
+4. Concrete example — 2-4 sentences: one specific vivid real-world case; not "imagine..."; a real instance.
+5. Contrast — 1-3 sentences: what this is NOT; common confusions.
+6. Connection — 1-2 sentences: link to the next concept or the course arc.
+
+OUTPUT FORMAT (explanation field):
+- Continuous prose only. Never print section names or headings (no HOOK, CORE, EXAMPLE, CONTRAST, ALL-CAPS labels, or markdown **bold** section titles).
+- One paragraph per structure step above, in order. Put exactly one blank line between paragraphs so the RSVP reader inserts a short pause—this marks subsections; visible labels distract at speed.
+- Each paragraph uses short flowing sentences; a step may use 2-3 sentences but stays one paragraph.
 
 WRITING RULES (non-negotiable):
 - Short sentences: subject-verb-object. Maximum 15 words per sentence. Break any longer sentence in two. RSVP destroys long sentences with subordinate clauses.
@@ -923,8 +928,7 @@ WRITING RULES (non-negotiable):
 - Strict pedagogical order: definition → concrete example → implication. Never reverse (no example before definition; no implication before the example that supports it).
 - Prefer active voice. Prefer concrete nouns over abstract ones.
 - Do NOT copy source prose: no 80-word sentences, no five concepts per paragraph, no undefined vocabulary.
-- Total length: 200-300 words maximum. Dense but scannable at speed.
-- Use blank lines between sections.`;
+- Total length: 200-300 words maximum. Dense but scannable at speed.`;
 
 const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title starts with "Key terms:"). The student reads via RSVP and CANNOT re-read.
 
@@ -934,13 +938,13 @@ Format the explanation as one paragraph per term (6-10 terms):
 **TERM** — Plain-language definition. Why the term exists. One-sentence real example.
 
 WRITING RULES: subject-verb-object; max 15 words per sentence; one idea per sentence; no parentheses, semicolons, or em-dashes; define before use.
-Do not use HOOK/CORE/TECHNICAL/CONTRAST sections. Later blocks reference these terms as known.`;
+Do not use section labels or headings. Later blocks reference these terms as known.`;
 
 const EXPLANATION_BRIEF_DEEP = `Brief RSVP recap for a student who already studied this material. CANNOT re-read. Max 120 words.
 
-Use only: **HOOK** (1 sentence), **CORE DEFINITION** (1-2 sentences), **TECHNICAL LAYER** (1-2 sentences), **CONTRAST** (1 pitfall sentence).
-Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; definition before example; no source regurgitation.
-Skip CONCRETE EXAMPLE and CONNECTION unless a listed learning gap requires them.`;
+Cover only: hook (1 sentence), core definition (1-2 sentences), technical layer (1-2 sentences), contrast (1 pitfall sentence). Omit concrete example and connection unless a listed learning gap requires them.
+Same output rules as thorough: flowing prose, no section labels or headings, one blank line between paragraphs for subsection pauses.
+Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; definition before example; no source regurgitation.`;
 
 /** Shared MC distractor rules — reduces "correct answer stands out" cues. */
 export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone.`;

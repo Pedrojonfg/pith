@@ -43,7 +43,8 @@ const brief = buildBlockGenerationSystemPrompt({
   gap_focus: [],
 });
 assert(thorough.includes("Option parity"), "test questions include option parity rules");
-assert(thorough.includes("HOOK"), "thorough uses RSVP HOOK section");
+assert(thorough.includes("Never print section names"), "thorough forbids visible section labels");
+assert(thorough.includes("blank line between paragraphs"), "thorough uses blank-line subsection pauses");
 assert(thorough.includes("CANNOT re-read"), "thorough includes RSVP constraint");
 assert(thorough.includes("subject-verb-object"), "thorough requires SVO sentences");
 assert(thorough.includes("200-300 words"), "thorough targets 200-300 word cap");
@@ -180,7 +181,7 @@ localStorage.setItem(
 await generateBlockForIndex(0);
 const system2 = capturedBody?.messages?.[0]?.content || "";
 const user2 = capturedBody?.messages?.[1]?.content || "";
-assert(system2.includes("HOOK"), "weak uses RSVP thorough");
+assert(system2.includes("Never print section names"), "weak uses RSVP thorough (no labels)");
 assert(system2.includes("2 gap-targeted"), "weak system mentions gap count");
 assert(user2.includes("1. Gap one") && user2.includes("2. Gap two"), "weak user lists gaps");
 

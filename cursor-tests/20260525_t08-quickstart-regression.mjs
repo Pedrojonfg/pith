@@ -71,7 +71,7 @@ const skipPrompt = buildBlockGenerationSystemPrompt({
   explanation_profile: cfg0.explanation_profile,
   gap_focus: cfg0.gap_focus,
 });
-assert(skipPrompt.includes("HOOK"), "SC-004: skip path prompt is RSVP thorough");
+assert(skipPrompt.includes("Never print section names"), "SC-004: skip path prompt is RSVP thorough");
 assert(skipPrompt.includes("200-300 words"), "SC-004: skip path 200-300w cap");
 assert(!skipPrompt.includes("Max 120 words"), "SC-004: skip path has no brief_deep band");
 
@@ -143,7 +143,7 @@ const weakPrompt = buildBlockGenerationSystemPrompt({
   explanation_profile: "thorough",
   gap_focus: happy.blocks[1]._config.gap_focus,
 });
-assert(weakPrompt.includes("HOOK"), "happy path: weak RSVP thorough");
+assert(weakPrompt.includes("blank line between paragraphs"), "happy path: weak RSVP thorough");
 assert(weakPrompt.includes("Gap-focused questions"), "happy path: weak with gaps gets gap section");
 
 const strongKey = buildBlockConfigKey(happy.blocks[0]._config);
