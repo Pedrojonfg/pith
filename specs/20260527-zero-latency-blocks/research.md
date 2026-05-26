@@ -63,3 +63,39 @@
 **Decision**: Tras regen parcial exitosa, actualizar `prefetchState` o escribir bloque en `session.blocks[idx]` y tratar como `ready` con nueva key; `maybeRegeneratePrefetch` en Adjust sigue usando `buildBlockConfigKey`.
 
 **Rationale**: Evita SC-003 violación (doble full gen).
+
+## R8 — Write-through en prefetch `ready` (clarificación 2026-05-26)
+
+**Decision**: En el `.then()` de `triggerPrefetch`, persistir bloque completo en `session.blocks[idx]` + `storeActiveSession`; mantener `prefetchState` en `ready` hasta consumo.
+
+**Rationale**: FR-010; `ensureBlockGenerated` evita API duplicada; export mid-session incluye `## Block N+1` antes de estudiarlo.
+
+**Alternatives considered**:
+| Opción | Descartada porque |
+|--------|-------------------|
+| Solo slot en memoria hasta transición | Export y diccionario no ven el bloque; bug reportado |
+| Consumir slot al escribir sesión | Rompe camino rápido que espera `getPrefetchedBlock` |
+
+## R9 — Diccionario paralelo al estudio
+
+**Decision**: `session_concepts_by_block` en `localStorage`; al `ready` actualizar entrada `idx`; agregado para UI = merge de todas las entradas + legacy `session_concepts`.
+
+**Rationale**: FR-009, FR-012 (reemplazo por índice sin vaciar diccionario global). Re-merge por bloque es más simple que índice inverso término→bloque.
+
+**Alternatives considered**:
+| Opción | Descartada porque |
+|--------|-------------------|
+| Solo `commitSessionConceptsForBlock` al terminar bloque | No muestra términos del prefetch hasta estudiar N+1 |
+| Vaciar y reconstruir todo el diccionario | Pierde términos de otros bloques en regen |
+
+## R10 — Export Concept Dictionary
+
+**Decision**: `collectExportConcepts(session)` — unión de `session_concepts`, `concepts_by_block`, y `blocks[].concepts` con dedup (definición más completa gana).
+
+**Rationale**: FR-011; tolera rutas legacy y write-through parcial.
+
+## R11 — UI refresh en `ready`
+
+**Decision**: Callback `onPrefetchReady` registrado desde `study.js` para `updateDictionaryButtonVisibility` y re-render del diccionario en overlay si está abierto.
+
+**Rationale**: FR-009; sin polling; evento alineado con write-through.

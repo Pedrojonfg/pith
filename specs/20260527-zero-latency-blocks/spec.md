@@ -18,6 +18,14 @@
 - Q: ¿Qué se muestra por defecto en la pantalla de transición (antes de Make changes)? → A: **Dos botones** (CTA principal deshabilitado hasta `ready` + secundario Adjust) **+ diccionario colapsado** + indicador de prefetch en la misma pantalla.
 - Q: Etiquetas del CTA principal y del camino de ajuste → A: Principal **Siguiente bloque** · Secundario **Ajustar siguiente bloque**.
 
+### Session 2026-05-26
+
+- Q: ¿Cuándo los `concepts` del bloque prefetched (N+1) deben entrar al diccionario de sesión? → A: En cuanto el prefetch de N+1 pasa a **`ready`** (paralelo al estudio del bloque N); fusión en `session_concepts` sin esperar a terminar el bloque N+1.
+- Q: ¿Fuente del **Concept Dictionary** en el export `.md`? → A: **Unión** de `session_concepts` y todos los `session.blocks[].concepts` al exportar (dedup por término; definición más completa gana).
+- Q: ¿Write-through del bloque prefetched a `session.blocks` al `ready`? → A: **Sí** — persistir el JSON completo en `session.blocks[N+1]` cuando el prefetch pasa a `ready` (además de fusionar `concepts` en el diccionario).
+- Q: ¿Alcance del export antes de terminar la sesión (manual / tab close)? → A: Incluir **todos** los bloques con contenido generado en `session.blocks` (estudiados o solo prefetched vía write-through), más el diccionario unificado.
+- Q: Si el prefetch se invalida o regenera (nueva `configKey`), ¿qué pasa con `concepts` ya fusionados? → A: **Reemplazar** solo los `concepts` atribuibles al índice de bloque invalidado/regenerado; el resto del diccionario acumulado se conserva.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Prefetch durante el estudio del bloque actual (Priority: P1)
@@ -33,6 +41,7 @@ Como estudiante en el bloque N, quiero que el bloque N+1 se genere en segundo pl
 1. **Given** sesión con bloques pendientes de generar, **When** entro al bloque N (RSVP), **Then** el sistema dispara prefetch del bloque N+1 con la configuración por defecto (mismo número de preguntas que el perfil del bloque N+1).
 2. **Given** prefetch de N+1 en curso, **When** completo preguntas del bloque N, **Then** no se inicia una segunda generación idéntica salvo cambio de configuración.
 3. **Given** prefetch de N+1 completado con éxito, **When** elijo el camino rápido al siguiente bloque, **Then** paso al bloque N+1 sin llamada API adicional de generación completa.
+4. **Given** prefetch de N+1 alcanza `ready` mientras estudio el bloque N, **When** abro el diccionario (botón u overlay de transición), **Then** veo los términos de `concepts` del prefetch fusionados en el diccionario acumulado (sin esperar a estudiar el bloque N+1).
 
 ---
 
@@ -83,6 +92,22 @@ Como estudiante con dudas durante el estudio, quiero usar la sidebar/guía en lu
 
 ---
 
+### User Story 5 - Diccionario y export en paralelo al prefetch (Priority: P1)
+
+Como estudiante, quiero que el diccionario de conceptos y el export `.md` reflejen el material ya generado en segundo plano, sin esperar a estudiar cada bloque, para repasar durante y después de la sesión.
+
+**Why this priority**: Sin esto, el prefetch solo acelera RSVP pero no el repaso ni el diccionario — el bug reportado en paralelo al flujo de estudio.
+
+**Independent Test**: Durante bloque 1, esperar prefetch `ready` de bloque 2; abrir diccionario y exportar `.md` antes de **Siguiente bloque**; verificar términos del bloque 2 y sección `## Block 2` con explicación en el archivo.
+
+**Acceptance Scenarios**:
+
+1. **Given** prefetch de bloque 2 en `ready`, **When** exporto manualmente sin haber abierto bloque 2, **Then** el `.md` incluye `## Block 2` con explicación/preguntas del write-through y **Concept Dictionary** con términos del bloque 2.
+2. **Given** regen de bloque 2 con nueva `configKey`, **When** el nuevo bloque llega, **Then** los términos del bloque 2 en el diccionario se sustituyen por los nuevos; términos de otros bloques no se borran.
+3. **Given** bloque 3 aún sin generar, **When** exporto tras bloque 1, **Then** el plan de sesión lista bloque 3 pero su sección de contenido queda vacía o omitida según plantilla existente (sin inventar texto).
+
+---
+
 ### Edge Cases
 
 - Prefetch falla (API, timeout): camino rápido muestra error y ofrece reintento o Make changes.
@@ -92,6 +117,7 @@ Como estudiante con dudas durante el estudio, quiero usar la sidebar/guía en lu
 - Bloque N+1 ya importado/generado en confirm: no regenerar en prefetch.
 - Offline / sin API key: prefetch no arranca; transición degrada con mensaje claro.
 - Usuario acelera mucho (RSVP skip): puede llegar a transición antes de que termine prefetch; el botón rápido queda deshabilitado con indicador hasta `ready` (sin segundo flujo de espera post-clic).
+- Prefetch invalidado (`configKey` distinta o regen): reemplazar en el diccionario solo los `concepts` del índice de bloque afectado; términos de otros bloques permanecen; write-through de `session.blocks[idx]` se actualiza con el bloque vigente.
 
 ## Requirements *(mandatory)*
 
@@ -109,12 +135,20 @@ Como estudiante con dudas durante el estudio, quiero usar la sidebar/guía en lu
 - **FR-006**: El indicador de prefetch (p. ej. punto en barra de progreso) DEBE reflejar idle / generating / ready / failed sin bloquear la lectura.
 - **FR-007**: Si en Make changes solo cambian `n_test` y/o `n_socratic` y existe prefetch con `explanation` válida, el sistema DEBE conservar `explanation` (y metadatos de bloque no pedagógicos) y DEBE regenerar solo `questions` mediante llamada API acotada (no regen del cuerpo RSVP).
 - **FR-008**: Si cambian factores que afectan la explicación (`explanation_profile`, `gap_focus`, o no hay `explanation` en prefetch), el sistema DEBE regenerar el bloque completo.
+- **FR-009**: Cuando el prefetch de N+1 pasa a `ready`, el sistema DEBE fusionar `prefetch.data.concepts` en el diccionario de sesión (`session_concepts`) y DEBE refrescar la UI del diccionario si está visible (botón flotante, overlay de transición).
+- **FR-009a**: Al fusionar concepts en prefetch `ready`, el sistema DEBE seguir haciendo `commitSessionConceptsForBlock` al terminar cada bloque estudiado (doble vía idempotente: mismos términos no se duplican).
+- **FR-010**: Cuando el prefetch de índice `idx` pasa a `ready`, el sistema DEBE hacer **write-through** del bloque completo a `session.blocks[idx]` y `storeActiveSession` (sin consumir aún el slot de prefetch para el camino rápido).
+- **FR-010a**: `ensureBlockGenerated(idx)` DEBE reutilizar `session.blocks[idx]` si ya tiene contenido generado (p. ej. por write-through), sin llamada API duplicada.
+- **FR-011**: `buildMarkdown` / export DEBE construir **Concept Dictionary** como unión de `session_concepts` y todos los `blocks[].concepts` (dedup case-insensitive por término; preferir definición no vacía más larga).
+- **FR-011a**: Export manual y `beforeunload` DEBEN incluir secciones de bloque para todo índice con `explanation` o `questions` en `session.blocks`, aunque el usuario no haya respondido preguntas de ese bloque.
+- **FR-012**: Al invalidar o regenerar el bloque `idx`, el sistema DEBE reemplazar en el diccionario solo los términos procedentes de `blocks[idx].concepts` (vía metadata de índice o re-merge tras write-through), sin vaciar el diccionario global.
 
 ### Key Entities
 
 - **Prefetch slot**: `{ blockIndex, status, configKey, data, error }` — una generación en vuelo o lista para el siguiente índice.
 - **Block config key**: firma de `n_test`, `n_socratic`, `explanation_profile`, `gap_focus` usada para cachear prefetch.
 - **Transition choice**: `fast` | `adjust` — elección del usuario al cerrar un bloque.
+- **Session concepts store**: `session_concepts` en `localStorage` — diccionario acumulado; se alimenta en prefetch `ready`, al terminar bloque, y se deduplica en export con `blocks[].concepts`.
 
 ## Success Criteria *(mandatory)*
 
@@ -124,6 +158,8 @@ Como estudiante con dudas durante el estudio, quiero usar la sidebar/guía en lu
 - **SC-002**: En camino rápido, 0 campos de texto obligatorios entre bloques.
 - **SC-003**: No se duplica la llamada API de generación completa cuando prefetch ready y config sin cambios.
 - **SC-004**: Regresión: estudio bloque a bloque, export .md, y sidebar guía siguen funcionando.
+- **SC-005**: Tras prefetch `ready` del bloque 2 durante estudio del bloque 1, el diccionario muestra ≥1 término nuevo antes de pulsar **Siguiente bloque**; el export manual incluye esos términos en **Concept Dictionary**.
+- **SC-006**: Export mid-session (tras bloque 1 con prefetch de bloque 2 `ready`): el `.md` contiene `## Block 2` con texto de explicación no vacío y ≥1 fila en **Concept Dictionary** procedente del bloque 2.
 
 ## Assumptions
 
@@ -131,3 +167,5 @@ Como estudiante con dudas durante el estudio, quiero usar la sidebar/guía en lu
 - La pantalla `betweenBlocks` en `index.html` está obsoleta; la transición canónica es el overlay dinámico (`transitionOverlay`).
 - Regen parcial (solo `questions`) aplica cuando el prefetch ya incluye `explanation`; requiere contrato/prompt API que acepte explicación fija + nueva cuenta de preguntas.
 - Un solo prefetch adelantado (N+1) es suficiente para v1.
+- Write-through en `ready` no sustituye el consumo del slot en camino rápido: `getPrefetchedBlock` puede seguir devolviendo datos ya persistidos en sesión.
+- FR-012 puede implementarse re-fusionando `concepts` del bloque `idx` tras cada write-through/regen (suficiente para v1 sin índice inverso término→bloque).

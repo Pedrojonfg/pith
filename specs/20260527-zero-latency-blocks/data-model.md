@@ -14,9 +14,9 @@
 
 **Transitions**:
 - `idle` → `generating`: `triggerPrefetch(idx, cfg)`
-- `generating` → `ready`: `generateBlockForIndex` resuelve
+- `generating` → `ready`: `generateBlockForIndex` resuelve → **write-through** a `session.blocks[idx]` + `session_concepts_by_block[idx]` + agregado UI
 - `generating` → `failed`: error API
-- `ready` → `idle`: `getPrefetchedBlock` consume (camino rápido)
+- `ready` → `idle`: `getPrefetchedBlock` consume (camino rápido; datos ya en sesión si hubo write-through)
 - Cualquier → `idle`: `invalidatePrefetch()` (p. ej. tras assessment)
 
 ## UI: Transition overlay state
@@ -41,9 +41,32 @@ Invariantes tras regen parcial:
 
 ## Session persistence
 
-Al consumir prefetch o confirmar Adjust:
-- `state.activeSession.blocks[nextIndex] = blockData`
+Al pasar prefetch a `ready` (write-through, ver FR-010):
+- `state.activeSession.blocks[idx] = prefetch.data` (bloque completo)
+- Actualizar `session_concepts_by_block[idx]` (`localStorage`); agregado UI vía `dictionary.js`
 - `storeActiveSession(..., { bumpRev: true })`
+- El slot `prefetchState` permanece `ready` hasta consumo en transición
+
+Al consumir prefetch o confirmar Adjust (si el bloque cambió tras Adjust):
+- `state.activeSession.blocks[nextIndex] = blockData` (puede ser no-op si write-through ya igual)
+- `storeActiveSession(..., { bumpRev: true })`
+- Regen/invalidación: reemplazar en diccionario solo `concepts` del índice `idx` afectado (FR-012)
+
+## Session concepts (dictionary)
+
+| Store | Key | Shape | Notes |
+|-------|-----|-------|-------|
+| Legacy aggregate | `session_concepts` | `Concept[]` | Commits al terminar bloque; backward compat |
+| Per-block | `session_concepts_by_block` | `Record<string, Concept[]>` | Keys = block index strings; replaced on prefetch ready / regen |
+
+**Aggregate for UI** = merge(all `concepts_by_block` values) ∪ `session_concepts` (dedup por término).
+
+## Export (Concept Dictionary)
+
+Ver [contracts/export-concept-dictionary.md](./contracts/export-concept-dictionary.md).
+
+- `collectExportConcepts`: unión `session_concepts` + `concepts_by_block` + `blocks[].concepts`
+- Secciones `## Block k` iff `hasGeneratedBlockContent(blocks[k])` (incl. write-through prefetched)
 
 ## Regen mode (lógica cliente)
 

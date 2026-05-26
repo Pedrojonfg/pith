@@ -19,7 +19,13 @@ import {
   shuffleTestQuestionOptions,
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
-import { commitSessionConceptsForBlock, renderDictionary, getSortedSessionConcepts, updateDictionaryButtonVisibility } from "./dictionary.js?v=20260525_1";
+import {
+  commitSessionConceptsForBlock,
+  renderDictionary,
+  getSortedSessionConcepts,
+  syncConceptsFromBlock,
+  updateDictionaryButtonVisibility,
+} from "./dictionary.js?v=20260527_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { triggerCommentReply } from "./guide-chat.js?v=20260525_1";
 import {
@@ -65,7 +71,9 @@ import {
   state,
   storeActiveSession,
   triggerPrefetch,
+  setOnPrefetchReady,
   getPrefetchedBlock,
+  hasGeneratedBlockContent,
   ensureSessionResponseState,
   applyAssessmentResults,
   gapLabelsForBlock,
@@ -735,6 +743,19 @@ function setTransitionOverlayOpen(isOpen) {
   }
 }
 
+function refreshUiOnPrefetchReady() {
+  updateDictionaryButtonVisibility();
+  const o = transitionOverlayEls;
+  if (!o || o.wrap.getAttribute("aria-hidden") !== "false") return;
+  const concepts = getSortedSessionConcepts();
+  renderDictionary({
+    containerEl: o.dictionaryWrap,
+    title: `Conceptos hasta ahora (${concepts.length} términos)`,
+    concepts,
+    collapsedByDefault: true,
+  });
+}
+
 function getOrCreateTransitionOverlay() {
   if (transitionOverlayEls) return transitionOverlayEls;
 
@@ -984,13 +1005,7 @@ function getOrCreateTransitionOverlay() {
 
 async function ensureBlockGenerated(blockIndex) {
   const existing = getBlock(blockIndex);
-  const looksGenerated =
-    existing &&
-    typeof existing === "object" &&
-    (typeof existing.explanation === "string" ||
-      Array.isArray(existing.questions) ||
-      Array.isArray(existing.concepts));
-  if (looksGenerated) return existing;
+  if (hasGeneratedBlockContent(existing)) return existing;
   if (isOfflineMode()) {
     throw new Error("Missing offline block data.");
   }
@@ -1631,6 +1646,14 @@ async function finishQuestions(blockIndex) {
     }
     state.activeSession.blocks[nextIndex] = cleaned;
     storeActiveSession(state.activeSession, { bumpRev: true });
+    try {
+      syncConceptsFromBlock(
+        nextIndex,
+        Array.isArray(cleaned.concepts) ? cleaned.concepts : [],
+      );
+    } catch {
+      // ignore
+    }
     return cleaned;
   };
 
@@ -3559,6 +3582,10 @@ export function wireStudyHandlers() {
       }
     });
   }
+
+  setOnPrefetchReady(() => {
+    refreshUiOnPrefetchReady();
+  });
 
   syncOfflinePackButtonVisibility();
   updateDictionaryButtonVisibility();
