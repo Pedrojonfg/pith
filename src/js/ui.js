@@ -1,6 +1,10 @@
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
 import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
+import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
+
+/** @type {null | (() => { title?: string, explanation?: string })} */
+let blockReadContentProvider = null;
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
@@ -519,6 +523,47 @@ export function toggleSidebar() {
   sidebar.classList.toggle("collapsed");
 }
 
+export function setBlockReadContentProvider(provider) {
+  blockReadContentProvider = typeof provider === "function" ? provider : null;
+}
+
+export function closeBlockReadSidebar() {
+  const sidebar = document.getElementById("block-read-sidebar");
+  if (sidebar) sidebar.classList.add("collapsed");
+}
+
+export function refreshBlockReadSidebarContent() {
+  const body = document.getElementById("block-read-body");
+  const titleEl = document.getElementById("block-read-title");
+  if (!body || !blockReadContentProvider) return;
+  const { title, explanation } = blockReadContentProvider();
+  if (titleEl) titleEl.textContent = title ? String(title) : "Block text";
+  void renderMarkdown(body, String(explanation || ""));
+  void typesetMath(body);
+}
+
+export function toggleBlockReadSidebar() {
+  const sidebar = document.getElementById("block-read-sidebar");
+  if (!sidebar || sidebar.hidden) return;
+  const willOpen = sidebar.classList.contains("collapsed");
+  sidebar.classList.toggle("collapsed");
+  if (willOpen) refreshBlockReadSidebarContent();
+}
+
+export function setBlockReadSidebarAvailable(available) {
+  const btn = document.getElementById("block-read-toggle-btn");
+  const sidebar = document.getElementById("block-read-sidebar");
+  if (!btn || !sidebar) return;
+  if (!available) {
+    btn.hidden = true;
+    sidebar.hidden = true;
+    closeBlockReadSidebar();
+    return;
+  }
+  btn.hidden = false;
+  sidebar.hidden = false;
+}
+
 export function hideSidebar() {
   const sidebar = document.getElementById("guide-sidebar");
   const toggleBtn = document.getElementById("sidebar-toggle-btn");
@@ -621,6 +666,11 @@ export function showScreen(which) {
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
+  if (!showTest && !showSocratic) {
+    setBlockReadSidebarAvailable(false);
+  } else if (showTest && els.testQaView?.hidden) {
+    setBlockReadSidebarAvailable(false);
+  }
   applyOfflineUiRestrictions();
 
   if (showSetup) {
