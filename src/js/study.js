@@ -675,15 +675,6 @@ function showSessionComplete() {
   showScreen("complete");
 }
 
-function hasGeneratedBlockContent(block) {
-  return !!(
-    block &&
-    typeof block === "object" &&
-    typeof block.explanation === "string" &&
-    Array.isArray(block.questions)
-  );
-}
-
 function areAllBlocksGenerated(sessionObj) {
   const safe = sessionObj && typeof sessionObj === "object" ? sessionObj : {};
   const blocks = Array.isArray(safe.blocks) ? safe.blocks : [];
