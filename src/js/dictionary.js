@@ -1,6 +1,7 @@
 import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
+  LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY,
 } from "./config.js?v=20260527_1";
 import { state, getBlocksSafe } from "./session.js?v=20260527_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
@@ -12,6 +13,30 @@ function normalizeConceptEntry(c) {
   const definition = String(obj.definition || "").trim();
   if (!term) return null;
   return { term, definition };
+}
+
+function normalizeDefText(definition) {
+  return String(definition || "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function shouldReplaceConcept(prev, next) {
+  const pd = normalizeDefText(prev.definition);
+  const nd = normalizeDefText(next.definition);
+  if (!nd) return false;
+  if (!pd) return true;
+  if (nd !== pd) return true;
+  return nd.length > pd.length;
+}
+
+function conceptsListEqual(a, b) {
+  const norm = (list) =>
+    [...list]
+      .map((c) => `${c.term.toLowerCase()}\0${normalizeDefText(c.definition)}`)
+      .sort()
+      .join("\n");
+  return norm(a) === norm(b);
 }
 
 export function normalizeConcepts(concepts) {
@@ -41,12 +66,85 @@ export function saveConceptsByBlock(map) {
   }
 }
 
+function loadHighlightsByBlock() {
+  try {
+    const raw = localStorage.getItem(LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY);
+    if (!raw || !raw.trim()) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHighlightsByBlock(map) {
+  try {
+    localStorage.setItem(
+      LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY,
+      JSON.stringify(map && typeof map === "object" && !Array.isArray(map) ? map : {}),
+    );
+  } catch {
+    // ignore
+  }
+}
+
+function saveBlockHighlights(blockIndex, { newKeys, updatedKeys }) {
+  const key = String(Math.max(0, Math.floor(Number(blockIndex) || 0)));
+  const map = loadHighlightsByBlock();
+  map[key] = {
+    new: Array.isArray(newKeys) ? newKeys : [],
+    updated: Array.isArray(updatedKeys) ? updatedKeys : [],
+  };
+  saveHighlightsByBlock(map);
+}
+
+function getConceptsPriorToBlock(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const map = loadConceptsByBlock();
+  const lists = [];
+  for (const k of Object.keys(map).sort((a, b) => {
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb)) return na - nb;
+    return a.localeCompare(b);
+  })) {
+    const n = Number(k);
+    if (Number.isFinite(n) && n < idx && Array.isArray(map[k])) lists.push(map[k]);
+  }
+  if (lists.length) return dedupeConcepts(lists);
+  return normalizeConcepts(loadSessionConcepts());
+}
+
+function computeConceptHighlights(incoming, priorBlock, priorEarlier) {
+  const priorByTerm = new Map();
+  for (const c of priorEarlier) priorByTerm.set(c.term.toLowerCase(), c.definition);
+  const newKeys = [];
+  const updatedKeys = [];
+  for (const c of incoming) {
+    const k = c.term.toLowerCase();
+    const inPriorBlock = priorBlock.find((x) => x.term.toLowerCase() === k);
+    const priorDef = inPriorBlock ? inPriorBlock.definition : priorByTerm.get(k);
+    if (priorDef === undefined) newKeys.push(k);
+    else if (normalizeDefText(priorDef) !== normalizeDefText(c.definition)) updatedKeys.push(k);
+  }
+  return { newKeys, updatedKeys };
+}
+
 /** Replace per-block concepts (FR-012). Other block indices unchanged. */
 export function setBlockConcepts(blockIndex, concepts) {
-  const key = String(Math.max(0, Math.floor(Number(blockIndex) || 0)));
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const key = String(idx);
   const map = loadConceptsByBlock();
-  map[key] = normalizeConcepts(concepts);
+  const incoming = normalizeConcepts(concepts);
+  const priorBlock = normalizeConcepts(map[key]);
+  const changed = !conceptsListEqual(incoming, priorBlock);
+  map[key] = incoming;
   saveConceptsByBlock(map);
+  if (changed) {
+    const priorEarlier = getConceptsPriorToBlock(idx);
+    const { newKeys, updatedKeys } = computeConceptHighlights(incoming, priorBlock, priorEarlier);
+    saveBlockHighlights(idx, { newKeys, updatedKeys });
+  }
 }
 
 /** Prefetch ready, regen, and adjust paths (T08). */
@@ -93,7 +191,7 @@ function dedupeConcepts(lists) {
       if (!map.has(key)) map.set(key, c);
       else {
         const prev = map.get(key);
-        if (prev && !prev.definition && c.definition) map.set(key, c);
+        if (prev && shouldReplaceConcept(prev, c)) map.set(key, c);
       }
     }
   }
@@ -136,15 +234,64 @@ export function commitSessionConceptsForBlock(blockIndex) {
 export function getSortedSessionConcepts() {
   const fromBlocks = flattenConceptsByBlock();
   const legacy = loadSessionConcepts();
-  return dedupeConcepts([fromBlocks, legacy]);
+  return dedupeConcepts([legacy, fromBlocks]);
 }
 
-export function renderConceptDictionaryInto({ listEl, defEl, concepts }) {
+/** Concepts attributed to one block (concepts_by_block, else block JSON). */
+export function getConceptsForBlock(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const key = String(idx);
+  const map = loadConceptsByBlock();
+  const fromStore = map[key];
+  if (Array.isArray(fromStore) && fromStore.length) {
+    return normalizeConcepts(fromStore);
+  }
+  const blocks = getBlocksSafe();
+  const b = blocks[idx];
+  if (b && typeof b === "object" && Array.isArray(b.concepts) && b.concepts.length) {
+    return normalizeConcepts(b.concepts);
+  }
+  return [];
+}
+
+export function getConceptHighlightsForBlock(blockIndex) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const key = String(idx);
+  const entry = loadHighlightsByBlock()[key];
+  if (entry && typeof entry === "object") {
+    return {
+      newKeys: new Set(Array.isArray(entry.new) ? entry.new : []),
+      updatedKeys: new Set(Array.isArray(entry.updated) ? entry.updated : []),
+    };
+  }
+  const incoming = getConceptsForBlock(idx);
+  const priorEarlier = getConceptsPriorToBlock(idx);
+  const { newKeys, updatedKeys } = computeConceptHighlights(incoming, [], priorEarlier);
+  return { newKeys: new Set(newKeys), updatedKeys: new Set(updatedKeys) };
+}
+
+export function getNewConceptTermKeysForBlock(blockIndex) {
+  return getConceptHighlightsForBlock(blockIndex).newKeys;
+}
+
+export function renderConceptDictionaryInto({ listEl, defEl, concepts, newTermKeys, updatedTermKeys }) {
   if (!listEl || !defEl) return;
   listEl.innerHTML = "";
   defEl.textContent = "Select a term to see its definition.";
 
   const arr = Array.isArray(concepts) ? concepts : [];
+  const toKeySet = (keys) =>
+    keys instanceof Set
+      ? keys
+      : new Set(
+          (Array.isArray(keys) ? keys : []).map((t) =>
+            String(t || "")
+              .trim()
+              .toLowerCase(),
+          ),
+        );
+  const newKeys = toKeySet(newTermKeys);
+  const updatedKeys = toKeySet(updatedTermKeys);
   if (!arr.length) {
     const empty = document.createElement("div");
     empty.className = "hint";
@@ -169,9 +316,12 @@ export function renderConceptDictionaryInto({ listEl, defEl, concepts }) {
   for (const c of arr) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "dict-item";
-    btn.textContent = c.term;
     const key = c.term.toLowerCase();
+    let className = "dict-item";
+    if (updatedKeys.has(key)) className += " dict-item--updated";
+    if (newKeys.has(key)) className = "dict-item dict-item--new";
+    btn.className = className;
+    btn.textContent = c.term;
     btn.dataset.key = key;
     btn.setAttribute("aria-pressed", "false");
     btn.addEventListener("click", () => setSelected(key));
@@ -187,6 +337,8 @@ export function renderDictionary({
   title,
   concepts,
   collapsedByDefault,
+  newTermKeys,
+  updatedTermKeys,
 } = {}) {
   if (!containerEl) return;
   containerEl.innerHTML = "";
@@ -221,7 +373,7 @@ export function renderDictionary({
   details.appendChild(panel);
   containerEl.appendChild(details);
 
-  renderConceptDictionaryInto({ listEl, defEl, concepts: arr });
+  renderConceptDictionaryInto({ listEl, defEl, concepts: arr, newTermKeys, updatedTermKeys });
 }
 
 export function setDictionaryOverlayOpen(isOpen) {

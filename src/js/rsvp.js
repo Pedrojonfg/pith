@@ -29,6 +29,7 @@ export const rsvpState = {
   comprehensionEveryN: 25,
   /** Word-units shown since last comprehension pause. */
   wordsSinceComprehensionPause: 0,
+  currentBlockTitle: "",
 };
 
 const LS_RSVP_CONTAINER_SIZE_KEY = "rsvp_container_size";
@@ -40,6 +41,7 @@ const RSVP_MOBILE_HEIGHT = 90;
 let rsvpContainerEl = null;
 let rsvpResizeObserver = null;
 let fontProbeEl = null;
+let rsvpBlockTitleEl = null;
 let rsvpHandlersWired = false;
 
 /** @typedef {{ fontSizePx: number, mathScale: number, containerWidth: number, containerHeight: number, wordsPerFlash: number, computedAt: number }} RsvpTypographyProfile */
@@ -228,6 +230,38 @@ function ensureRsvpContainer() {
     });
   }
   rsvpResizeObserver.observe(rsvpContainerEl);
+  ensureRsvpBlockTitleEl();
+  syncRsvpBlockTitleUi();
+}
+
+function ensureRsvpBlockTitleEl() {
+  if (!rsvpContainerEl) return null;
+  if (rsvpBlockTitleEl?.isConnected) return rsvpBlockTitleEl;
+  const existing = rsvpContainerEl.querySelector("#rsvpBlockTitle");
+  if (existing) {
+    rsvpBlockTitleEl = existing;
+    return existing;
+  }
+  const el = document.createElement("div");
+  el.id = "rsvpBlockTitle";
+  el.className = "rsvp-block-title";
+  el.setAttribute("aria-live", "polite");
+  rsvpContainerEl.appendChild(el);
+  rsvpBlockTitleEl = el;
+  return el;
+}
+
+function syncRsvpBlockTitleUi() {
+  const el = ensureRsvpBlockTitleEl();
+  if (!el) return;
+  const title = String(rsvpState.currentBlockTitle || "").trim();
+  el.textContent = title;
+  el.hidden = !title;
+  if (title) {
+    el.setAttribute("title", title);
+  } else {
+    el.removeAttribute("title");
+  }
 }
 
 window.addEventListener("resize", () => {
@@ -240,6 +274,11 @@ export function setRsvpOverlayActive(isActive) {
   els.rsvpOverlay.setAttribute("aria-hidden", String(!isActive));
   document.body.classList.toggle("rsvp-active", isActive);
   if (!isActive) els.rsvpOverlay?.classList.remove("rsvp-focus-mode");
+}
+
+export function setRsvpBlockTitle(title) {
+  rsvpState.currentBlockTitle = String(title || "").trim();
+  syncRsvpBlockTitleUi();
 }
 
 function isRsvpOverlayOpen() {
@@ -1246,6 +1285,7 @@ export function startRsvpForText(explanationText, onDone) {
   setRsvpOverlayActive(true);
   syncRsvpFocusMode();
   ensureRsvpContainer();
+  syncRsvpBlockTitleUi();
 
   // Ensure the container size is adequate on first load.
   const container =
