@@ -21,6 +21,7 @@ import {
   getStoredGeminiKey,
   saveGeminiKey,
 } from "./llm.js?v=20260525_1";
+import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
 
@@ -284,10 +285,26 @@ export function getBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   if (isOfflineMode()) {
     const blocks = Array.isArray(window?.offlinePack?.blocks) ? window.offlinePack.blocks : [];
-    return blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+    const block = blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+    return applyExplanationParagraphEnforcementToBlock(block, idx);
   }
   const blocks = getBlocksSafe();
-  return blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+  const block = blocks[idx] && typeof blocks[idx] === "object" ? blocks[idx] : null;
+  return applyExplanationParagraphEnforcementToBlock(block, idx);
+}
+
+function applyExplanationParagraphEnforcementToBlock(block, blockIndex) {
+  if (!block || typeof block !== "object") return null;
+  const raw = String(block.explanation || "").trim();
+  if (!raw || raw.startsWith("[Generation failed")) return block;
+  const cfg = block._config && typeof block._config === "object" ? block._config : {};
+  const paragraphOpts = buildParagraphFormatOpts(
+    block.title || getBlockTitleFromList(blockIndex),
+    cfg.explanation_profile,
+  );
+  const fixed = enforceExplanationParagraphs(raw, paragraphOpts);
+  if (fixed === raw) return block;
+  return { ...block, explanation: fixed };
 }
 
 export function shouldTriggerCommentReply() {
@@ -531,7 +548,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     obj = await deepSeekGenerateBlockJson(blockRequest);
   }
   warnBlockGenerationProfileMismatch(obj, cfg);
-  return obj;
+  return normalizeBlockJson(obj, cfg, idx);
 }
 
 /**
@@ -2196,6 +2213,11 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
   if (cleaned.id == null) cleaned.id = idx + 1;
   if (!cleaned.title) cleaned.title = blockTitle;
   if (!cleaned.explanation) cleaned.explanation = "";
+  const paragraphOpts = buildParagraphFormatOpts(
+    cleaned.title || blockTitle,
+    normalizeExplanationProfile(c.explanation_profile, "thorough"),
+  );
+  cleaned.explanation = enforceExplanationParagraphs(cleaned.explanation, paragraphOpts);
   if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
   if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
   if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
