@@ -3399,15 +3399,17 @@ export function wireStudyHandlers() {
     });
   });
 
-  els.dictionaryBtn.addEventListener("click", () => {
-    const concepts = getSortedSessionConcepts();
-    renderConceptDictionaryInto({
-      listEl: els.dictionaryOverlayList,
-      defEl: els.dictionaryOverlayDef,
-      concepts,
+  if (els.dictionaryBtn) {
+    els.dictionaryBtn.addEventListener("click", () => {
+      const concepts = getSortedSessionConcepts();
+      renderConceptDictionaryInto({
+        listEl: els.dictionaryOverlayList,
+        defEl: els.dictionaryOverlayDef,
+        concepts,
+      });
+      setDictionaryOverlayOpen(true);
     });
-    setDictionaryOverlayOpen(true);
-  });
+  }
   els.dictionaryCloseBtn.addEventListener("click", () => {
     setDictionaryOverlayOpen(false);
   });
