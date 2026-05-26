@@ -32,7 +32,11 @@ import {
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
-import { triggerCommentReply } from "./guide-chat.js?v=20260525_1";
+import {
+  clearGuideChatStorage,
+  refreshGuideContext,
+  triggerCommentReply,
+} from "./guide-chat.js?v=20260526_1";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
@@ -2842,6 +2846,7 @@ export function wireStudyHandlers() {
     window.indexWasImported = false;
     if (els.importIndexLabel) els.importIndexLabel.textContent = "";
     clearSessionConceptStorage();
+    clearGuideChatStorage({ removeAllStored: true });
 
     const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
     try {
@@ -2960,12 +2965,14 @@ export function wireStudyHandlers() {
         sessionObj.current_block_index = 0;
         sessionObj.active_question_index = 0;
         clearSessionConceptStorage();
+        clearGuideChatStorage({ removeAllStored: true });
         state.activeSession = sessionObj;
         state.activeBlockIndex = 0;
         state.activeQuestionIndex = 0;
         state.nTest = sessionObj.n_test;
         state.nSocratic = 0;
         storeActiveSession(sessionObj);
+        refreshGuideContext();
         window.assessmentConfig = { skipped: true };
         showScreen("ready");
         setFullPackEntryCta(offlineBlocks.length);
@@ -3066,6 +3073,7 @@ export function wireStudyHandlers() {
       localStorage.setItem("block_index", JSON.stringify(merged));
       const confirmedBlocksListText = blocksListTextFromBlockIndex(merged);
       clearSessionConceptStorage();
+      clearGuideChatStorage({ removeAllStored: true });
 
       const sessionObj = initActiveSessionFromBlocksList({
         nBlocks,
@@ -3104,6 +3112,7 @@ export function wireStudyHandlers() {
       // #endregion
       storeActiveSession(sessionObj);
       state.activeSession = sessionObj;
+      refreshGuideContext();
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H6',location:'src/js/study.js:2820',message:'confirm blocks after storeActiveSession',data:{storedSessionExists:!!loadActiveSession(),stateActiveSessionAfterStore:!!state.activeSession},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
@@ -3651,6 +3660,7 @@ export function wireStudyHandlers() {
         if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
         sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
         assertLlmKeyPresent(getSessionLlmModel(sessionObj));
+        clearGuideChatStorage();
         storeActiveSession(sessionObj);
         state.activeSession = sessionObj;
         state.nTest = clampInt(sessionObj.n_test, 0, MAX_N_TEST, state.nTest);

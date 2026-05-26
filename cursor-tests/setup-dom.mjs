@@ -6,6 +6,13 @@ globalThis.window.offlineMode = false;
 globalThis.window.assessmentConfig = undefined;
 
 globalThis.localStorage = {
+  get length() {
+    return store.size;
+  },
+  key(index) {
+    const keys = [...store.keys()];
+    return keys[index] ?? null;
+  },
   getItem(key) {
     return store.has(key) ? store.get(key) : null;
   },

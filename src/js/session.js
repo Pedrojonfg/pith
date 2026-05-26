@@ -241,19 +241,24 @@ export function resolveBlockQuestionConfig(blockIndex) {
   };
 }
 
+function newSessionId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
 export function storeActiveSession(sessionObj, { bumpRev } = {}) {
-  if (bumpRev && sessionObj && typeof sessionObj === "object") {
+  if (sessionObj && typeof sessionObj === "object") {
     if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
       sessionObj._meta = {};
     }
     if (!sessionObj._meta.session_id) {
-      sessionObj._meta.session_id =
-        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-          ? crypto.randomUUID()
-          : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+      sessionObj._meta.session_id = newSessionId();
     }
-    const prev = Number(sessionObj._meta.rev || 0);
-    sessionObj._meta.rev = Number.isFinite(prev) && prev >= 0 ? prev + 1 : 1;
+    if (bumpRev) {
+      const prev = Number(sessionObj._meta.rev || 0);
+      sessionObj._meta.rev = Number.isFinite(prev) && prev >= 0 ? prev + 1 : 1;
+    }
   }
   localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(sessionObj));
 }
@@ -320,10 +325,7 @@ export function ensureSessionResponseState() {
     state.activeSession._meta = {};
   }
   if (!state.activeSession._meta.session_id) {
-    state.activeSession._meta.session_id =
-      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    state.activeSession._meta.session_id = newSessionId();
   }
   if (state.activeSession._meta.rev == null) {
     state.activeSession._meta.rev = 0;
