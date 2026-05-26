@@ -5,7 +5,11 @@ import {
 } from "./dictionary.js?v=20260526_1";
 import { exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260526_2";
-import { initGuideChat, sendGuideMessage } from "./guide-chat.js?v=20260525_1";
+import {
+  clearGuideChatStorage,
+  initGuideChat,
+  sendGuideMessage,
+} from "./guide-chat.js?v=20260526_1";
 import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260527_1";
 import { initLanguageUi, els, showScreen, toggleSidebar } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
@@ -64,6 +68,7 @@ function resetToNewSession() {
   clearActiveSessionStorage();
   clearBlockIndexStorage();
   clearSessionConceptStorage();
+  clearGuideChatStorage({ removeAllStored: true });
   showScreen(getStoredKey() ? "create" : "setup");
   updateDictionaryButtonVisibility();
 }

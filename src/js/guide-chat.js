@@ -17,9 +17,12 @@ function safeJsonParse(raw) {
   }
 }
 
+const GUIDE_CHAT_KEY_PREFIX = "guide_chat_";
+const PENDING_COMMENT_KEY = "pending_comment";
+
 window.pendingComment = null;
 try {
-  const raw = localStorage.getItem("pending_comment");
+  const raw = localStorage.getItem(PENDING_COMMENT_KEY);
   const parsed = safeJsonParse(raw);
   if (parsed && typeof parsed === "object" && typeof parsed.text === "string") {
     window.pendingComment = parsed;
@@ -53,8 +56,9 @@ function truncate(s, n) {
 
 function paintChatHistory(history) {
   const messagesEl = document.getElementById("chat-messages");
-  if (!messagesEl || !Array.isArray(history) || !history.length) return;
+  if (!messagesEl) return;
   messagesEl.innerHTML = "";
+  if (!Array.isArray(history) || !history.length) return;
   for (const m of history) {
     if (!m || typeof m !== "object") continue;
     renderChatMessage({
@@ -62,6 +66,32 @@ function paintChatHistory(history) {
       content: String(m.content || ""),
     });
   }
+}
+
+/** Clear sidebar chat memory/storage (new session / new material). */
+export function clearGuideChatStorage({ sessionId, removeAllStored = false } = {}) {
+  window.guideHistory = [];
+  window.pendingComment = null;
+  try {
+    localStorage.removeItem(PENDING_COMMENT_KEY);
+  } catch {
+    // ignore
+  }
+  try {
+    if (removeAllStored) {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith(GUIDE_CHAT_KEY_PREFIX)) keys.push(k);
+      }
+      for (const k of keys) localStorage.removeItem(k);
+    } else if (sessionId) {
+      localStorage.removeItem(`${GUIDE_CHAT_KEY_PREFIX}${sessionId}`);
+    }
+  } catch {
+    // ignore
+  }
+  paintChatHistory([]);
 }
 
 function buildSessionContext({ activeSession, currentBlockIndex }) {
@@ -112,6 +142,10 @@ export function initGuideChat() {
   }
   if (toggleBtn) toggleBtn.style.display = "";
   const activeSession = getActiveSessionFromStorage();
+  if (!activeSession) {
+    clearGuideChatStorage();
+    return;
+  }
   const language = getStudyLanguageFromStorage();
 
   const currentBlockIndex = Number(activeSession?.current_block_index) || 0;
@@ -132,7 +166,7 @@ export function initGuideChat() {
 
   let history = [];
   try {
-    const raw = localStorage.getItem(`guide_chat_${sessionId}`);
+    const raw = localStorage.getItem(`${GUIDE_CHAT_KEY_PREFIX}${sessionId}`);
     if (raw && raw.trim()) {
       const parsed = safeJsonParse(raw);
       if (Array.isArray(parsed)) history = parsed;
@@ -162,7 +196,7 @@ export function refreshGuideContext() {
   };
   let history = [];
   try {
-    const raw = localStorage.getItem(`guide_chat_${sessionId}`);
+    const raw = localStorage.getItem(`${GUIDE_CHAT_KEY_PREFIX}${sessionId}`);
     if (raw && raw.trim()) {
       const parsed = safeJsonParse(raw);
       if (Array.isArray(parsed)) history = parsed;
@@ -203,7 +237,7 @@ export function appendChatMessage(role, content, timestamp) {
 
   const sessionId =
     String(window.guideContext?.sessionId || "").trim() || "unknown_session";
-  const key = `guide_chat_${sessionId}`;
+  const key = `${GUIDE_CHAT_KEY_PREFIX}${sessionId}`;
   try {
     localStorage.setItem(key, JSON.stringify(window.guideHistory));
   } catch {
@@ -306,7 +340,7 @@ export function setPendingComment(text) {
   const pending = { text: t, blockIndex, timestamp: Date.now() };
   window.pendingComment = pending;
   try {
-    localStorage.setItem("pending_comment", JSON.stringify(pending));
+    localStorage.setItem(PENDING_COMMENT_KEY, JSON.stringify(pending));
   } catch {
     // ignore
   }
@@ -353,7 +387,7 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
 
   const sessionId =
     String(window.guideContext?.sessionId || "").trim() || "unknown_session";
-  const key = `guide_chat_${sessionId}`;
+  const key = `${GUIDE_CHAT_KEY_PREFIX}${sessionId}`;
   try {
     localStorage.setItem(key, JSON.stringify(window.guideHistory));
   } catch {
@@ -387,7 +421,7 @@ export function triggerCommentReply() {
     } finally {
       window.pendingComment = null;
       try {
-        localStorage.removeItem("pending_comment");
+        localStorage.removeItem(PENDING_COMMENT_KEY);
       } catch {
         // ignore
       }
