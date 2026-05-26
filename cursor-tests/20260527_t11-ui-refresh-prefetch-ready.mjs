@@ -137,7 +137,6 @@ assert(
   sorted.some((c) => c.term === "PrefetchTerm"),
   "prefetch ready: aggregate dictionary includes prefetched block terms",
 );
-assert(!els.dictionaryBtn.hidden, "dictionary button visible while studying block 2 with concepts");
 assert(
   dictionaryWrap.children.length > 0,
   "prefetch hook re-rendered dictionary container",

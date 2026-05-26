@@ -9,6 +9,7 @@ import {
   shuffleInPlace,
   shuffleTestQuestionOptions,
   shuffleTestQuestionsInList,
+  stripOptionLetterPrefix,
 } from "../src/js/shuffle-options.js";
 
 let passed = 0;
@@ -69,6 +70,24 @@ assert(
 assert(
   normalizeTestOptions(null) === null,
   "normalizeTestOptions returns null for missing",
+);
+
+assert(stripOptionLetterPrefix("C. Imperativo categórico.") === "Imperativo categórico.", "strips letter-dot prefix");
+const prefixed = normalizeTestQuestion({
+  type: "test",
+  question: "Pick one",
+  options: {
+    A: "C. Imperativo categórico.",
+    B: "D. Juicio reflexionante.",
+    C: "B. Voluntad general.",
+    D: "A. Razón autónoma.",
+  },
+  answer: "A",
+});
+assert(
+  prefixed.options.A === "Imperativo categórico." &&
+    prefixed.options.D === "Razón autónoma.",
+  "normalize strips echoed option letters (review MC display)",
 );
 
 const shuffled = shuffleTestQuestionOptions(sample);

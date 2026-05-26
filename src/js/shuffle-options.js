@@ -2,6 +2,20 @@
 
 export const OPTION_LETTERS = ["A", "B", "C", "D"];
 
+/** Strip model echo like "B. answer text" — UI renders the letter separately. */
+export function stripOptionLetterPrefix(text) {
+  const s = String(text ?? "").trim();
+  if (!s) return "";
+  return s
+    .replace(/^\([A-Da-d]\)\s*/, "")
+    .replace(/^[A-Da-d][.)]\s*/, "")
+    .trim();
+}
+
+function cleanOptionText(text) {
+  return stripOptionLetterPrefix(String(text ?? "").trim());
+}
+
 function randomIndex(maxExclusive) {
   if (maxExclusive <= 1) return 0;
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
@@ -50,7 +64,7 @@ export function normalizeTestOptions(raw) {
 
   const fromTexts = (texts) => {
     if (!Array.isArray(texts) || texts.length < 4) return null;
-    const slice = texts.slice(0, 4).map((t) => String(t ?? "").trim());
+    const slice = texts.slice(0, 4).map((t) => cleanOptionText(t));
     if (!slice.every(Boolean)) return null;
     const out = {};
     for (let i = 0; i < 4; i += 1) out[OPTION_LETTERS[i]] = slice[i];
@@ -86,7 +100,7 @@ export function normalizeTestOptions(raw) {
       }
     }
     if (text) {
-      out[letter] = text;
+      out[letter] = cleanOptionText(text);
       filled += 1;
     }
   }
@@ -143,7 +157,7 @@ export function normalizeTestQuestion(question) {
         }
       }
       if (!text) ok = false;
-      else fromRoot[letter] = text;
+      else fromRoot[letter] = cleanOptionText(text);
     }
     if (ok) normalized = fromRoot;
   }
