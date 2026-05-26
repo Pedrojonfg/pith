@@ -803,6 +803,303 @@ export async function deepSeekSplitIntoBlocks({
   );
 }
 
+const OVERVIEW_TITLE_RE = /^(overview|mapa del curso|course map)/i;
+
+export function buildConceptInventoryPrompt(lang) {
+  const language = String(lang || "English").trim() || "English";
+  return `You are extracting an ordered inventory of teachable concepts from study material.
+
+Rules:
+- One concept = one teachable idea sized for RSVP (single pass, no re-read).
+- Order by learning prerequisites (foundations before applications).
+- Do NOT paste document text or long quotes in the output.
+- Each concept: stable id (c1, c2, …), order (1-based, strictly increasing), title, scope_one_line.
+- Optional: module (thematic label), prerequisite_ids (array of other concept ids).
+- Return enough concepts to cover the material (typically at least 5 for substantial texts).
+
+Output JSON only (no markdown, no preamble):
+{"concepts":[{"id":"c1","order":1,"title":"Short concept name","scope_one_line":"What this concept covers","module":"Optional module","prerequisite_ids":[]}]}
+
+Respond entirely in ${language}.`;
+}
+
+/** @returns {import('./session.js').ConceptInventoryItem[] | null} */
+export function parseConceptInventoryFromModelResponse(text) {
+  const parsed = parseModelJsonValue(text);
+  let concepts = null;
+  if (Array.isArray(parsed)) concepts = parsed;
+  else if (parsed && typeof parsed === "object" && Array.isArray(parsed.concepts)) {
+    concepts = parsed.concepts;
+  }
+  if (!concepts?.length) return null;
+
+  const out = [];
+  const seenIds = new Set();
+  for (const item of concepts) {
+    if (!item || typeof item !== "object") continue;
+    const id = String(item.id || "").trim();
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
+    let order = Number(item.order);
+    if (!Number.isFinite(order) || order <= 0) order = out.length + 1;
+    const title = String(item.title || "").trim();
+    const scope_one_line = String(item.scope_one_line || item.scope || "").trim();
+    if (!title || !scope_one_line) continue;
+    const row = { id, order, title, scope_one_line };
+    const moduleName = String(item.module || "").trim();
+    if (moduleName) row.module = moduleName;
+    if (Array.isArray(item.prerequisite_ids)) {
+      row.prerequisite_ids = item.prerequisite_ids
+        .map((x) => String(x || "").trim())
+        .filter(Boolean);
+    }
+    out.push(row);
+  }
+  if (!out.length) return null;
+  out.sort((a, b) => a.order - b.order);
+  return out;
+}
+
+export async function deepSeekConceptInventory({
+  llmModel,
+  apiKey: _legacyApiKey,
+  materialText,
+  studyNotes,
+  language,
+}) {
+  const model = resolveLlmModelArg(llmModel);
+  const lang = String(language || "English").trim() || "English";
+  const notes = String(studyNotes || "").trim();
+  const material = String(materialText || "").trim();
+
+  function buildMessages(compact) {
+    const system = buildConceptInventoryPrompt(lang);
+    const messages = [{ role: "system", content: compact ? `${system}\n\nBe concise. Valid JSON only.` : system }];
+    if (notes) {
+      messages.push({
+        role: "user",
+        content: `Student comments / study focus:\n${notes}`,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: compact
+        ? `Extract concepts from this material:\n\n${material.slice(0, 120000)}`
+        : `Extract the ordered concept inventory from this material:\n\n${material}`,
+    });
+    return messages;
+  }
+
+  const attempts = [
+    { compact: false, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: false },
+  ];
+
+  let lastRaw = "";
+  for (const attempt of attempts) {
+    try {
+      lastRaw = await callLlmSplit({
+        llmModel: model,
+        messages: buildMessages(attempt.compact),
+        useJsonObjectMode: attempt.useJsonObjectMode,
+      });
+    } catch (err) {
+      if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+        lastRaw = await callLlmSplit({
+          llmModel: model,
+          messages: buildMessages(attempt.compact),
+          useJsonObjectMode: false,
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    const concepts = parseConceptInventoryFromModelResponse(lastRaw);
+    if (Array.isArray(concepts) && concepts.length) {
+      return concepts;
+    }
+    console.warn("Concept inventory: parse failed, trying next attempt…", lastRaw.slice(0, 400));
+  }
+
+  console.warn("Concept inventory: all parse attempts failed:", lastRaw.slice(0, 800));
+  throw new Error(
+    "Model returned concept inventory JSON we could not parse. Please try generating blocks again.",
+  );
+}
+
+export function buildConceptPackPrompt(n, lang, inventoryJson) {
+  const targetN = Math.max(1, Math.floor(Number(n) || 1));
+  const language = String(lang || "English").trim() || "English";
+  const inventory = String(inventoryJson || "[]");
+  return `You are packaging a concept inventory into exactly ${targetN} study blocks for RSVP reading.
+
+Input: concept inventory JSON (ordered teachable concepts).
+Target block count N = ${targetN}.
+
+Rules:
+1. Block id 1 MUST be a global course overview (title starts with "Overview:", "Mapa del curso:", or "Course map:"). It counts toward N. concept_ids may be [].
+2. For EACH module in the inventory: the first block for that module MUST be vocabulary: title "Key terms: [module name]", 6-10 terms in signature, concept_ids for that vocab concept only.
+3. Never assign the same concept_id to two blocks.
+4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have exactly ${targetN} blocks. Record merges in pack_meta.merges.
+5. If fewer than N blocks are justified: set pack_meta.final_block_count to the actual count (no padding).
+6. Every block: summary, signature (3-10 strings), chunk "" (always empty).
+
+Output JSON only:
+{"blocks":[{"id":1,"title":"Overview: ...","summary":"...","signature":["term1"],"concept_ids":[],"chunk":""}],"pack_meta":{"target_n":${targetN},"final_block_count":12,"merges":[{"concept_ids":["c5","c6"],"block_title":"..."}]}}
+
+Concept inventory:
+${inventory}
+
+Respond entirely in ${language}.`;
+}
+
+function isOverviewBlockTitle(title) {
+  return OVERVIEW_TITLE_RE.test(String(title || "").trim());
+}
+
+/** @returns {{ blocks: object[], pack_meta: object } | null} */
+export function parseConceptPackFromModelResponse(text, { targetN } = {}) {
+  const parsed = parseModelJsonValue(text);
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const blocksRaw = unwrapBlockIndexArray(parsed);
+  if (!Array.isArray(blocksRaw) || !blocksRaw.length) return null;
+
+  const packMetaRaw = parsed.pack_meta && typeof parsed.pack_meta === "object" ? parsed.pack_meta : {};
+  const target_n = Math.max(
+    1,
+    Math.floor(Number(packMetaRaw.target_n ?? targetN) || Number(targetN) || blocksRaw.length),
+  );
+  let final_block_count = Math.floor(Number(packMetaRaw.final_block_count));
+  if (!Number.isFinite(final_block_count) || final_block_count <= 0) {
+    final_block_count = blocksRaw.length;
+  }
+
+  const blockOne = blocksRaw.find((b) => Number(b?.id) === 1) ?? blocksRaw[0];
+  if (!blockOne || !isOverviewBlockTitle(blockOne.title)) return null;
+
+  const seenConceptIds = new Set();
+  for (const block of blocksRaw) {
+    const ids = Array.isArray(block.concept_ids) ? block.concept_ids : [];
+    for (const cid of ids) {
+      const s = String(cid || "").trim();
+      if (!s) continue;
+      if (seenConceptIds.has(s)) return null;
+      seenConceptIds.add(s);
+    }
+  }
+
+  const blocks = blocksRaw.map((b) => {
+    const signatureArr = Array.isArray(b.signature) ? b.signature : [];
+    const signature = signatureArr.map((t) => String(t || "").trim()).filter(Boolean);
+    const concept_ids = Array.isArray(b.concept_ids)
+      ? b.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
+      : [];
+    return {
+      id: Number(b.id),
+      title: String(b.title || "").trim(),
+      summary: String(b.summary || b.description || b.title || "").trim(),
+      signature,
+      chunk: "",
+      concept_ids,
+    };
+  });
+
+  const merges = Array.isArray(packMetaRaw.merges)
+    ? packMetaRaw.merges
+        .filter((m) => m && typeof m === "object")
+        .map((m) => ({
+          concept_ids: Array.isArray(m.concept_ids)
+            ? m.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
+            : [],
+          block_title: String(m.block_title || "").trim(),
+        }))
+        .filter((m) => m.concept_ids.length)
+    : [];
+
+  const pack_meta = {
+    target_n,
+    final_block_count: Math.min(final_block_count, blocks.length),
+    merges,
+  };
+
+  return { blocks, pack_meta };
+}
+
+export async function deepSeekPackConceptsToBlocks({
+  llmModel,
+  apiKey: _legacyApiKey,
+  inventory,
+  nBlocks,
+  studyNotes,
+  language,
+}) {
+  const model = resolveLlmModelArg(llmModel);
+  const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const lang = String(language || "English").trim() || "English";
+  const notes = String(studyNotes || "").trim();
+  const inventoryJson = JSON.stringify(Array.isArray(inventory) ? inventory : []);
+
+  function buildMessages(compact) {
+    const messages = [
+      { role: "system", content: buildConceptPackPrompt(n, lang, inventoryJson) },
+    ];
+    if (notes) {
+      messages.push({
+        role: "user",
+        content: `Student comments / study focus:\n${notes}`,
+      });
+    }
+    if (compact) {
+      messages.push({
+        role: "user",
+        content: `Pack concepts into ${n} blocks. JSON only.`,
+      });
+    }
+    return messages;
+  }
+
+  const attempts = [
+    { compact: false, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: false },
+  ];
+
+  let lastRaw = "";
+  for (const attempt of attempts) {
+    try {
+      lastRaw = await callLlmSplit({
+        llmModel: model,
+        messages: buildMessages(attempt.compact),
+        useJsonObjectMode: attempt.useJsonObjectMode,
+      });
+    } catch (err) {
+      if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+        lastRaw = await callLlmSplit({
+          llmModel: model,
+          messages: buildMessages(attempt.compact),
+          useJsonObjectMode: false,
+        });
+      } else {
+        throw err;
+      }
+    }
+
+    const packed = parseConceptPackFromModelResponse(lastRaw, { targetN: n });
+    if (packed?.blocks?.length) {
+      return packed;
+    }
+    console.warn("Concept pack: parse failed, trying next attempt…", lastRaw.slice(0, 400));
+  }
+
+  console.warn("Concept pack: all parse attempts failed:", lastRaw.slice(0, 800));
+  throw new Error(
+    "Model returned concept pack JSON we could not parse. Please try generating blocks again.",
+  );
+}
+
 export async function deepSeekAuditBlockIndex({ llmModel, apiKey: _legacyApiKey, blockIndexJson, language }) {
   const model = resolveLlmModelArg(llmModel);
   const systemPrompt = `You are auditing a study session block index for conceptual overlap.

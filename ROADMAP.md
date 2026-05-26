@@ -1,211 +1,194 @@
-# ROADMAP — Assessment-Informed Block Content
+# ROADMAP — Block Split Deduplication
 
-**Spec**: `specs/20260523-assessment-informed-blocks/spec.md`  
-**Plan**: `specs/20260523-assessment-informed-blocks/plan.md`  
-**Branch**: `20260523-assessment-informed-blocks`
+**Spec**: `specs/20260526-block-split-dedup/spec.md`  
+**Plan**: `specs/20260526-block-split-dedup/plan.md`  
+**Branch**: `20260526-block-split-dedup`
 
 ## Tareas
 
 | ID | Descripción | Dep. | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | Modelo de datos: `_meta.assessment.gaps_*`, `_config.explanation_profile`, `_config.gap_focus` | — | S | [ ] |
-| T02 | API `synthesizeAssessmentGaps` + timeout 30s + contrato JSON | T01 | M | [x] |
-| T03 | `resolveBlockQuestionConfig` + `applyAssessmentResults` con perfiles y budget gaps | T01 | M | [ ] |
-| T04 | Prompts `deepSeekGenerateBlockJson` (thorough / brief_deep / gap_focus) | T01 | M | [x] |
-| T05 | UI resultados assessment: C en paralelo + editor D opcional + accept merge | T02, T03 | L | [ ] |
-| T06 | Prefetch `configKey` y generación de bloques con perfil | T03, T04 | M | [x] |
-| T07 | Export `.md` con lagunas y perfiles | T03 | S | [x] |
-| T08 | Regresión manual según `quickstart.md` | T05, T06, T07 | S | [x] |
+| T01 | API fase 1: prompt + `deepSeekConceptInventory` + parser | — | M | [ ] |
+| T02 | API fase 2: prompt pack + `deepSeekPackConceptsToBlocks` + parser | T01 | M | [ ] |
+| T03 | `twoPhaseConceptSplit` en `session.js` + fallback monofásico | T02 | M | [ ] |
+| T04 | Dedup determinista (`findDeterministicDuplicateMerges` + apply) | T03 | M | [ ] |
+| T05 | Wire `study.js`: progreso, M vs N, quitar `twoPhaseSplitMerge` | T04 | M | [ ] |
+| T06 | Test `cursor-tests/20260526_t01-deterministic-dedup.mjs` | T04 | S | [x] |
+| T07 | Regresión manual `quickstart.md` | T05, T06 | S | [ ] |
 
 ## Grafo de dependencias
 
 ```text
-T01 → T02 → T05 → T08
-T01 → T03 → T05
-T01 → T04 → T06 → T08
-T03 → T06
-T03 → T07 → T08
+T01 → T02 → T03 → T04 → T05 → T07
+                    T04 → T06 ↗
 ```
 
-**Paralelo posible** (tras T01):
-
-- **Hilo A**: T02 → T05  
-- **Hilo B**: T03 + T04 en paralelo → T06  
-
-T07 puede hacerse en paralelo con T06 tras T03.
+**Paralelo posible** (tras T04): **T06** y comienzo de pruebas manuales de T07 mientras se pulen mensajes en T05.
 
 ## Orden de ejecución recomendado
 
-1. **T01** (fundación schema)  
-2. En paralelo: **T02** + **T03** + **T04**  
-3. **T05** (UI — bloqueante para prueba E2E)  
-4. En paralelo: **T06** + **T07**  
-5. **T08** (validación)
+1. **T01** (inventario conceptos)  
+2. **T02** (empaquetado + overview bloque 1)  
+3. **T03** (orquestador + fallback)  
+4. **T04** (dedup determinista)  
+5. **T05** (UI)  
+6. En paralelo: **T06** + checklist **T07**
 
 ---
 
-## PROMPT T01 — Schema y tipos en sesión
+## PROMPT T01 — API fase 1 (inventario de conceptos)
 
-Implementa el modelo de datos del feature **Assessment-Informed Block Content**.
+Implementa la **fase 1** del split en dos fases según el feature **Block Split Deduplication**.
 
-**Contexto**: Lee `specs/20260523-assessment-informed-blocks/data-model.md` y `contracts/`. El proyecto es una app vanilla JS en `src/js/session.js` con `applyAssessmentResults`, `resolveBlockQuestionConfig`, `storeActiveSession`.
+**Contexto**: Lee `specs/20260526-block-split-dedup/contracts/two-phase-split-api.md`, `research.md` R2, y el patrón de reintentos en `deepSeekSplitIntoBlocks` (`src/js/api.js`).
 
 **Archivos a tocar**:
-- `src/js/session.js` (principal)
-- Comentario breve en `specs/20260523-assessment-informed-blocks/data-model.md` solo si ajustas nombres de campos
+- `src/js/api.js` (principal)
 
 **Tareas**:
-1. Extender `resolveBlockQuestionConfig(blockIndex)` para devolver `{ n_test, n_socratic, explanation_profile, gap_focus }` con defaults seguros.
-2. Preparar `applyAssessmentResults` para aceptar `gapsByBlock` y escribir `_meta.assessment.gaps_by_block`, `gaps_source`, `synthesis_status`.
-3. Sin cambiar aún UI ni API DeepSeek.
+1. `buildConceptInventoryPrompt(lang)` — JSON `{ concepts: [...] }` con `id`, `order`, `title`, `scope_one_line`, `module?`, `prerequisite_ids?`.
+2. `parseConceptInventoryFromModelResponse(text)` — tolerante (fences, objeto/array); reutiliza helpers existentes.
+3. `export async function deepSeekConceptInventory({ llmModel, materialText, studyNotes, language })` — 3 intentos como split actual; `response_format: json_object`.
 
-**Criterio de éxito**: Con sesión mock en localStorage, `resolveBlockQuestionConfig(0)` devuelve los cuatro campos; `applyAssessmentResults` persiste gaps y perfiles strong→`brief_deep`, weak→`thorough`.
+**Criterio de éxito**: Con material de prueba en consola, la función devuelve array ≥5 conceptos con `order` creciente; parse no lanza con JSON válido del modelo.
 
-**ROADMAP**: `ROADMAP.md` T01. Ejecuta `/validate` antes de cerrar este mensaje.
+**ROADMAP**: T01. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Gap synthesis API (paso C)
+## PROMPT T02 — API fase 2 (empaquetar conceptos → bloques)
 
-Añade la llamada DeepSeek de síntesis de lagunas según `specs/20260523-assessment-informed-blocks/contracts/gap-synthesis.md`.
+Implementa la **fase 2** del split: empaquetar inventario en índice de bloques.
 
-**Contexto**: Existe `generateAssessmentSynthesis` (texto coach, 3 frases) — **no reutilizar** para gaps; crear función nueva.
+**Contexto**: Contrato en `specs/20260526-block-split-dedup/contracts/two-phase-split-api.md`. Clarificaciones: bloque 1 = overview global dentro de N; Key terms por módulo; si conceptos > N fusionar; si < N devolver menos sin padding.
 
 **Archivos**:
 - `src/js/api.js`
 
 **Tareas**:
-1. `export async function synthesizeAssessmentGaps({ assessmentResults, questions, responses, blockIndex, language, signal })`.
-2. `response_format: json_object`, `max_tokens: 1024`, prompt según contrato.
-3. Exportar helper `mergeGapLists(synthesis, userEdits)` si encaja en `api.js` o `session.js`.
+1. `buildConceptPackPrompt(n, lang, inventoryJson)`.
+2. `deepSeekPackConceptsToBlocks({ llmModel, inventory, nBlocks, studyNotes, language })` → `{ blocks, pack_meta }`.
+3. Parser que valida: bloque 1 overview; `concept_ids` únicos; `pack_meta.final_block_count`.
 
-**Criterio de éxito**: Llamada manual desde consola con respuestas mock devuelve `gaps_by_block` parseable; timeout/abort devuelve error controlado.
+**Criterio de éxito**: Mock inventory de 10 conceptos + N=8 devuelve 8 bloques con título overview en id 1 y `pack_meta` documentando merges si aplica.
 
-**ROADMAP**: T02. Ejecuta `/validate` antes de cerrar. ✅ Validado `cursor-tests/20260525_t02-gap-synthesis-api.mjs` (11 tests).
+**ROADMAP**: T02 (requiere T01). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — applyAssessmentResults con perfiles pedagógicos
+## PROMPT T03 — Orquestador `twoPhaseConceptSplit`
 
-Conecta clasificación strong/weak/ok + gaps al `_config` de cada bloque.
+Conecta fase 1 + fase 2 y asignación local de chunks.
+
+**Contexto**: `specs/20260526-block-split-dedup/data-model.md`, `plan.md` WP3, `research.md` R4/R6.
 
 **Archivos**:
 - `src/js/session.js`
 
-**Depende de**: T01.
-
 **Tareas**:
-1. strong → `explanation_profile: "brief_deep"`, `n_test: 1`, `n_socratic: 0`.
-2. weak → `thorough`; subir `n_socratic` +1 (cap 3); si `gap_focus.length` > suma preguntas, aplicar regla R8 del `research.md`.
-3. ok → defaults + `gap_focus` si hay gaps para ese bloque.
-4. Unificar con `study.js` (eliminar divergencia `applySuggestedConfig` strong 0/0 vs session 1/0 cuando toques T05).
+1. `export async function twoPhaseConceptSplit(material, nBlocks, { llmModel, studyNotes, language })`.
+2. Tras pack: `normalizeBlockIndexArray` + respetar `pack_meta.final_block_count` (no forzar pad a N).
+3. `splitMaterialIntoBlockChunks(material, finalCount)` para `chunk`.
+4. Fallback a `deepSeekSplitIntoBlocks` si fase 1/2 fallan → `{ pipeline: "fallback_mono" }`.
+5. Devolver `{ blockIndex, splitRunMeta }`.
 
-**Criterio de éxito**: Tras `applyAssessmentResults` con gaps mock, `loadActiveSession().blocks[i]._config` refleja perfiles correctos.
+**Criterio de éxito**: Llamada end-to-end desde consola (o test mínimo) devuelve índice con chunks no vacíos y `splitRunMeta.requested_n` / `final_n`.
 
-**ROADMAP**: T03. Ejecuta `/validate` antes de cerrar.
+**ROADMAP**: T03. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Prompts de generación por perfil
+## PROMPT T04 — Dedup determinista
 
-Parametriza `deepSeekGenerateBlockJson` según `contracts/block-generation-profile.md`.
+Sustituye el audit LLM por fusión determinista según firmas/títulos.
+
+**Contexto**: `specs/20260526-block-split-dedup/contracts/deterministic-dedup.md`. Mantén `mergeChunks` para texto fusionado.
 
 **Archivos**:
-- `src/js/api.js`
-- Llamadas en `src/js/session.js` (`generateBlockForIndex`, prefetch)
-
-**Depende de**: T01.
+- `src/js/session.js`
 
 **Tareas**:
-1. Añadir params `explanation_profile`, `gap_focus`.
-2. Ramas de prompt thorough vs brief_deep (150–220 palabras).
-3. Bloque gap_focus: ≥1 pregunta por laguna.
-4. Pasar valores desde `resolveBlockQuestionConfig`.
+1. `normalizeSignatureTerms`, `signatureOverlapCount`, `normalizeBlockTitle`.
+2. `findDeterministicDuplicateMerges(blockIndex)` — umbral ≥3 términos o título idéntico.
+3. `applyDeterministicDedup(blockIndex, { llmModel })` — aplica merges + `renumberBlockIndexSequential`.
+4. Integrar en `twoPhaseConceptSplit` como último paso (antes de return).
+5. **No** llamar `auditBlockIndex` / `twoPhaseSplitMerge` desde el flujo nuevo.
 
-**Criterio de éxito**: Generar un bloque strong en dev produce explicación visiblemente más corta que weak; weak con 2 gaps pide ≥2 preguntas alineadas en el JSON.
+**Criterio de éxito**: Índice sintético con dos bloques compartiendo 3+ términos en signature → un solo bloque tras apply; par con overlap 2 → sin merge.
 
-**ROADMAP**: T04. Ejecuta `/validate` antes de cerrar.
+**ROADMAP**: T04. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — UI resultados: C paralelo + editor D
+## PROMPT T05 — UI y wire en study.js
 
-Refactoriza `showAssessmentResults` en `study.js` según spec FR-002–004.
+Integra el pipeline en “Generate blocks”.
+
+**Contexto**: `study.js` ~2790–2855 hoy usa `deepSeekSplitIntoBlocks` + `twoPhaseSplitMerge`. Sustituir por `twoPhaseConceptSplit`. `quickstart.md` §1–3.
 
 **Archivos**:
 - `src/js/study.js`
-- `src/css/main.css` (solo si hace falta estilo para `<details>` gap editor)
-
-**Depende de**: T02, T03.
 
 **Tareas**:
-1. Al montar resultados, lanzar `synthesizeAssessmentGaps` (no esperar para pintar heatmap).
-2. Panel colapsable “Review gaps (optional)” por bloque: chips editables.
-3. Accept: esperar C (max 30s) → merge gaps → `applyAssessmentResults` → flujo actual start.
-4. Mantener coach synthesis como texto opcional si ya existe.
+1. Reemplazar split + audit por `twoPhaseConceptSplit`.
+2. Status: “Inventariando conceptos…” → “Empaquetando N bloques…” → “Comprobando duplicados…”.
+3. `renderSplitMergeSummary`: mensaje `Pediste N; el material sustentó M bloques` si M < N; filas dedup.
+4. `state.lastNBlocks = finalIndex.length`.
+5. Import JSON: sin two-phase (guard existente).
 
-**Criterio de éxito**: Quickstart happy path en `specs/.../quickstart.md` pasos 1–4 sin pantalla extra.
+**Criterio de éxito**: Generar bloques en browser muestra overview en bloque 1 y summary M vs N cuando aplique; sin llamada a audit LLM (verificar red o logs).
 
-**ROADMAP**: T05. Ejecuta `/validate` antes de cerrar.
+**ROADMAP**: T05. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Prefetch y configKey con perfil
+## PROMPT T06 — Test automatizado dedup
 
-Evita bloques generados con prompt obsoleto tras assessment.
+**Contexto**: `contracts/deterministic-dedup.md` casos de prueba.
 
 **Archivos**:
-- `src/js/session.js` (`triggerPrefetch`, `getPrefetchedBlock`)
-- `src/js/study.js` (`generateBlockDirect`, `finishQuestions` next-block UI si aplica)
-
-**Depende de**: T03, T04.
+- `cursor-tests/20260526_t01-deterministic-dedup.mjs` (nuevo)
+- `cursor-tests/loader.mjs` si hace falta importar funciones de `session.js`
 
 **Tareas**:
-1. Incluir `explanation_profile` y `gap_focus` en `configKey`.
-2. Invalidar prefetch previo si el perfil cambia tras accept.
+1. Importar `findDeterministicDuplicateMerges` (export para test si necesario).
+2. Assert merge cuando overlap ≥3; no merge cuando overlap = 2.
+3. Assert título duplicado merge.
 
-**Criterio de éxito**: Tras accept con weak+gaps, el primer bloque generado usa prompt thorough + gap_focus sin regenerar manualmente.
+**Criterio de éxito**: `node cursor-tests/20260526_t01-deterministic-dedup.mjs` exit 0.
 
-**ROADMAP**: T06. Ejecuta `/validate` antes de cerrar.
-
----
-
-## PROMPT T07 — Export markdown
-
-**Archivos**: `src/js/export.js`
-
-**Depende de**: T03.
-
-**Tareas**: Sección Initial Assessment ampliada con `gaps_by_block` resumido por bloque.
-
-**Criterio de éxito**: Export incluye lagunas tras assessment con edición.
-
-**ROADMAP**: T07. Ejecuta `/validate` antes de cerrar.
+**ROADMAP**: T06 (paralelo tras T04). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Regresión
+## PROMPT T07 — Regresión manual
 
-Ejecuta `specs/20260523-assessment-informed-blocks/quickstart.md` completo (happy path + skip assessment + timeout).
+Valida el feature completo según quickstart.
 
-Documenta hallazgos en un comentario breve en el PR o en `deep-dives/` si hay bugs.
+**Contexto**: `specs/20260526-block-split-dedup/quickstart.md` — todos los apartados.
 
-**Criterio de éxito**: SC-004 skip path sin regresión; SC-001 percibido ≤30s en red normal.
+**Tareas**:
+1. Happy path PDF denso N=15.
+2. Material corto N=20 → mensaje M < N.
+3. Import JSON sin re-split.
+4. Anotar si SC-001 (menos repetición) se cumple vs build anterior.
 
-**ROADMAP**: T08. Ejecuta `/validate` antes de cerrar.
+**Criterio de éxito**: Tabla quickstart Pass criteria toda ✓; sin regresión en confirm → study.
+
+**ROADMAP**: T07. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## Instrucción de ejecución (método Pedro)
+## Instrucción de ejecución
 
-**Lanzar primero**: PROMPT **T01** (solo).
+**Lanzar primero**: PROMPT **T01** (un chat).
 
-**En paralelo cuando T01 termine**: abrir 2 chats con **T02**, **T03**, **T04** (tres prompts paralelos).
+**Después, en serie**: T02 → T03 → T04 → T05.
 
-**Esperar** a que T02+T03 estén listos → **T05**.
+**En paralelo cuando T04 esté hecho**: abre chat con **T06** mientras otro agente hace **T05**, o T06 justo después de T04.
 
-**En paralelo**: **T06** + **T07** tras T03+T04.
+**Cerrar con**: **T07** manual en tu máquina.
 
-**Cerrar con**: **T08**.
+**Antes de producción**: bump `?v=` en imports si el service worker cachea JS viejo (patrón `20260523_2` en el repo).
 
-Tiempo mínimo estimado: 2–3 sesiones de agente (T05 es la más grande).
+**Siguiente comando Spec Kit**: `/speckit-tasks` si quieres `tasks.md` formal además de este ROADMAP.

@@ -1318,6 +1318,336 @@ function buildAuditPayload(blockIndex) {
   return JSON.stringify(view, null, 2);
 }
 
+/** Trim block index to pack_meta.final_block_count; renumber 1..M. No padding if fewer blocks. */
+export function applyPackMetaCount(index, packMeta) {
+  if (!Array.isArray(index) || !index.length) return index;
+  const finalCount = Math.floor(Number(packMeta?.final_block_count));
+  if (!Number.isFinite(finalCount) || finalCount <= 0) return index;
+  const sorted = index.slice().sort((a, b) => Number(a.id) - Number(b.id));
+  if (sorted.length <= finalCount) return sorted;
+  return sorted.slice(0, finalCount).map((b, i) => ({ ...b, id: i + 1 }));
+}
+
+export function normalizeSignatureTerms(signature) {
+  const raw = Array.isArray(signature)
+    ? signature
+    : String(signature || "")
+        .split(/[,\n;]/g)
+        .map((t) => String(t || "").trim())
+        .filter(Boolean);
+  const out = new Set();
+  for (const term of raw) {
+    const n = String(term || "").trim().toLowerCase();
+    if (n) out.add(n);
+  }
+  return out;
+}
+
+export function signatureOverlapCount(sigA, sigB) {
+  const a = normalizeSignatureTerms(sigA);
+  const b = normalizeSignatureTerms(sigB);
+  let count = 0;
+  for (const t of a) {
+    if (b.has(t)) count += 1;
+  }
+  return count;
+}
+
+export function normalizeBlockTitle(title) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/^key terms:\s*/i, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isOverviewBlockEntry(block) {
+  const id = Number(block?.id);
+  const title = String(block?.title || "").trim();
+  return id === 1 || /^(overview|mapa del curso|course map)/i.test(title);
+}
+
+function isKeyTermsBlockEntry(block) {
+  return /^key terms:/i.test(String(block?.title || "").trim());
+}
+
+function shouldSkipDedupPair(blockA, blockB) {
+  const aOverview = isOverviewBlockEntry(blockA);
+  const bOverview = isOverviewBlockEntry(blockB);
+  const aKey = isKeyTermsBlockEntry(blockA);
+  const bKey = isKeyTermsBlockEntry(blockB);
+  if ((aOverview && bKey) || (bOverview && aKey)) {
+    return normalizeBlockTitle(blockA.title) !== normalizeBlockTitle(blockB.title);
+  }
+  return false;
+}
+
+/** @returns {import('./session.js').DedupMergeRecord[]} */
+export function findDeterministicDuplicateMerges(blockIndex) {
+  const safe = Array.isArray(blockIndex) ? blockIndex.slice() : [];
+  safe.sort((a, b) => Number(a.id) - Number(b.id));
+  const plans = [];
+  const scheduledAbsorb = new Set();
+  const keepAbsorbing = new Set();
+
+  for (let i = 0; i < safe.length; i += 1) {
+    const blockI = safe[i];
+    const idI = Number(blockI.id);
+    if (scheduledAbsorb.has(idI)) continue;
+
+    for (let j = i + 1; j < safe.length; j += 1) {
+      const blockJ = safe[j];
+      const idJ = Number(blockJ.id);
+      if (scheduledAbsorb.has(idJ)) continue;
+      if (shouldSkipDedupPair(blockI, blockJ)) continue;
+
+      const titleI = normalizeBlockTitle(blockI.title);
+      const titleJ = normalizeBlockTitle(blockJ.title);
+      let reason = null;
+      let overlap_terms = [];
+
+      if (titleI && titleI === titleJ) {
+        reason = "title_duplicate";
+      } else {
+        const sigI = normalizeSignatureTerms(blockI.signature);
+        const sigJ = normalizeSignatureTerms(blockJ.signature);
+        overlap_terms = [...sigI].filter((t) => sigJ.has(t));
+        if (overlap_terms.length >= 3) reason = "signature_overlap";
+      }
+
+      if (!reason) continue;
+      if (keepAbsorbing.has(idI)) continue;
+
+      plans.push({
+        keep_id: idI,
+        absorb_ids: [idJ],
+        reason,
+        overlap_terms,
+      });
+      scheduledAbsorb.add(idJ);
+      keepAbsorbing.add(idI);
+      break;
+    }
+  }
+
+  return plans;
+}
+
+export async function applyDeterministicDedup(blockIndex, { llmModel, apiKey: _legacyApiKey } = {}) {
+  const original = Array.isArray(blockIndex) ? blockIndex.slice() : [];
+  const plans = findDeterministicDuplicateMerges(original);
+  if (!plans.length) {
+    return {
+      blockIndex: renumberBlockIndexSequential(original),
+      dedup_merges: [],
+      merged_count: 0,
+    };
+  }
+
+  const byId = new Map(original.map((b) => [Number(b.id), b]));
+  const removed = new Set();
+  const dedup_merges = [];
+
+  for (const plan of plans) {
+    const keepId = Number(plan.keep_id);
+    if (removed.has(keepId)) continue;
+    const keep = byId.get(keepId);
+    if (!keep) continue;
+
+    const absorbIds = Array.isArray(plan.absorb_ids) ? plan.absorb_ids : [];
+    const absorbs = [];
+    for (const aid of absorbIds) {
+      const id = Number(aid);
+      if (!Number.isFinite(id) || id <= 0 || id === keepId) continue;
+      if (removed.has(id)) continue;
+      const b = byId.get(id);
+      if (b) absorbs.push(b);
+    }
+    if (!absorbs.length) continue;
+
+    const mergedChunk = await mergeChunks(
+      {
+        keepBlock: keep,
+        absorbBlocks: absorbs,
+        keep_id: keepId,
+        absorb_ids: absorbs.map((b) => Number(b.id)),
+        new_title: String(keep.title || "").trim(),
+      },
+      { llmModel },
+    );
+
+    byId.set(keepId, { ...keep, chunk: mergedChunk });
+    for (const b of absorbs) removed.add(Number(b.id));
+    dedup_merges.push({
+      keep_id: keepId,
+      absorb_ids: absorbs.map((b) => Number(b.id)),
+      reason: plan.reason,
+      overlap_terms: plan.overlap_terms || [],
+    });
+  }
+
+  const remaining = Array.from(byId.values()).filter((b) => !removed.has(Number(b.id)));
+  const merged_count = dedup_merges.reduce((acc, m) => acc + (m.absorb_ids?.length || 0), 0);
+  return {
+    blockIndex: renumberBlockIndexSequential(remaining),
+    dedup_merges,
+    merged_count,
+  };
+}
+
+/** UI copy for split summary (study.js + cursor-tests). */
+export function describeSplitRunMetaForUi(splitRunMeta) {
+  const meta = splitRunMeta && typeof splitRunMeta === "object" ? splitRunMeta : null;
+  const requested_n = Number(meta?.requested_n ?? meta?.original_n);
+  const final_n = Number(meta?.final_n);
+  const dedup_merged_count = Number(meta?.dedup_merged_count ?? meta?.merged_count ?? 0);
+  const pipeline = String(meta?.pipeline || "").trim();
+
+  if (!Number.isFinite(final_n) || final_n <= 0) {
+    return { hidden: true, headline: "", dedupLine: "", detailRows: [] };
+  }
+
+  const headlineParts = [];
+  if (Number.isFinite(requested_n) && final_n < requested_n) {
+    headlineParts.push(`Pediste ${requested_n}; el material sustentó ${final_n} bloques.`);
+  } else {
+    headlineParts.push(`Split complete: ${final_n} blocks.`);
+  }
+  if (pipeline === "fallback_mono") {
+    headlineParts.push("Usando split clásico (fallback).");
+  }
+
+  const dedupLine =
+    Number.isFinite(dedup_merged_count) && dedup_merged_count > 0
+      ? `Dedup: ${dedup_merged_count} bloques fusionados por firmas duplicadas`
+      : "";
+
+  const dedupMerges = Array.isArray(meta?.dedup_merges) ? meta.dedup_merges : [];
+  const legacyMerges = Array.isArray(meta?.merges) ? meta.merges : [];
+  const detailRows = dedupMerges.length
+    ? dedupMerges.map((row) => ({
+        keep_id: Number(row?.keep_id),
+        absorb_ids: Array.isArray(row?.absorb_ids) ? row.absorb_ids : [],
+        reason: String(row?.reason || "").trim(),
+        overlap_terms: Array.isArray(row?.overlap_terms) ? row.overlap_terms : [],
+        legacy: false,
+      }))
+    : legacyMerges.map((row) => ({
+        keep_id: Number(row?.keep_id),
+        absorb_ids: Array.isArray(row?.absorb_ids) ? row.absorb_ids : [],
+        reason: String(row?.reason || "").trim(),
+        keep_title_before: String(row?.keep_title_before || "").trim(),
+        keep_title_after: String(row?.keep_title_after || "").trim(),
+        absorb_titles: Array.isArray(row?.absorb_titles) ? row.absorb_titles : [],
+        legacy: true,
+      }));
+
+  return {
+    hidden: false,
+    headline: headlineParts.join(" "),
+    dedupLine,
+    detailRows,
+  };
+}
+
+export async function twoPhaseConceptSplit(
+  material,
+  nBlocks,
+  { llmModel, studyNotes, language, onProgress } = {},
+) {
+  const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
+  const materialText = String(material || "").trim();
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const progress = (msg) => {
+    if (typeof onProgress === "function" && msg) onProgress(String(msg));
+  };
+
+  const runFallback = async () => {
+    progress("Usando split clásico (fallback)…");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260525_1");
+    const parsed = await deepSeekSplitIntoBlocks({
+      llmModel: model,
+      nBlocks: requested_n,
+      materialText,
+      studyNotes: notes,
+      language: lang,
+    });
+    let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
+    if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
+    const chunks = splitMaterialIntoBlockChunks(materialText, normalized.length);
+    const blockIndex = normalized.map((b, i) => ({
+      ...b,
+      chunk: chunks[i] || "",
+    }));
+    return {
+      blockIndex,
+      splitRunMeta: {
+        requested_n,
+        final_n: blockIndex.length,
+        pipeline: "fallback_mono",
+      },
+    };
+  };
+
+  try {
+    const {
+      deepSeekConceptInventory,
+      deepSeekPackConceptsToBlocks,
+    } = await import("./api.js?v=20260525_1");
+
+    progress("Inventariando conceptos…");
+    const inventory = await deepSeekConceptInventory({
+      llmModel: model,
+      materialText,
+      studyNotes: notes,
+      language: lang,
+    });
+    const concept_count = inventory.length;
+
+    progress(`Empaquetando ${requested_n} bloques…`);
+    const { blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
+      llmModel: model,
+      inventory,
+      nBlocks: requested_n,
+      studyNotes: notes,
+      language: lang,
+    });
+
+    let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
+    if (!normalized?.length) throw new Error("Pack returned no normalizable blocks.");
+
+    normalized = applyPackMetaCount(normalized, pack_meta);
+    const finalCount = normalized.length;
+    const chunks = splitMaterialIntoBlockChunks(materialText, finalCount);
+    let blockIndex = normalized.map((b, i) => ({
+      ...b,
+      chunk: chunks[i] || "",
+    }));
+
+    progress("Comprobando duplicados…");
+    const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
+
+    return {
+      blockIndex: dedupResult.blockIndex,
+      splitRunMeta: {
+        requested_n,
+        final_n: dedupResult.blockIndex.length,
+        pipeline: "two_phase",
+        concept_count,
+        pack_meta,
+        dedup_merges: dedupResult.dedup_merges,
+        dedup_merged_count: dedupResult.merged_count,
+      },
+    };
+  } catch (err) {
+    console.warn("twoPhaseConceptSplit: falling back to mono split", err?.message || err);
+    return runFallback();
+  }
+}
+
 export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApiKey, language } = {}) {
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   assertLlmKeyPresent(model);

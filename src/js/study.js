@@ -1,6 +1,5 @@
 import {
   deepSeekGenerateBlockJson,
-  deepSeekSplitIntoBlocks,
   deepSeekSocraticTutor,
   deepSeekSummarySoFar,
   GapSynthesisError,
@@ -48,7 +47,6 @@ import {
   initActiveSessionFromBlocksList,
   loadDefaultQuestionConfig,
   loadActiveSession,
-  coerceBlockIndexToTargetCount,
   normalizeBlockIndexArray,
   parseImportedIndexText,
   parseOfflinePackMarkdown,
@@ -59,9 +57,9 @@ import {
   warnBlockGenerationProfileMismatch,
   safeParseJson,
   shouldTriggerCommentReply,
-  splitMaterialIntoBlockChunks,
+  describeSplitRunMetaForUi,
   storeDefaultQuestionConfig,
-  twoPhaseSplitMerge,
+  twoPhaseConceptSplit,
   state,
   storeActiveSession,
   triggerPrefetch,
@@ -109,17 +107,12 @@ function ensureSplitMergeSummaryEls() {
   return splitMergeSummaryEls;
 }
 
-function renderSplitMergeSummary(mergeInfo) {
+function renderSplitMergeSummary(splitRunMeta) {
   const o = ensureSplitMergeSummaryEls();
   if (!o) return;
 
-  const info = mergeInfo && typeof mergeInfo === "object" ? mergeInfo : null;
-  const originalN = Number(info?.original_n);
-  const finalN = Number(info?.final_n);
-  const mergedCount = Number(info?.merged_count);
-  const merges = Array.isArray(info?.merges) ? info.merges : [];
-
-  if (!Number.isFinite(originalN) || !Number.isFinite(finalN)) {
+  const view = describeSplitRunMetaForUi(splitRunMeta);
+  if (view.hidden) {
     o.wrap.hidden = true;
     o.meta.textContent = "";
     o.detailsWrap.innerHTML = "";
@@ -127,20 +120,17 @@ function renderSplitMergeSummary(mergeInfo) {
   }
 
   o.wrap.hidden = false;
-  o.meta.textContent = `Split complete: ${originalN} blocks → ${finalN} blocks (${Number.isFinite(
-    mergedCount,
-  )
-    ? mergedCount
-    : 0} merged for overlap)`;
+  const metaParts = [view.headline, view.dedupLine].filter(Boolean);
+  o.meta.textContent = metaParts.join(" ");
 
   o.detailsWrap.innerHTML = "";
-  if (!merges.length) return;
+  if (!view.detailRows.length) return;
 
   const details = document.createElement("details");
   details.open = false;
 
   const summary = document.createElement("summary");
-  summary.textContent = `Merged groups (${merges.length})`;
+  summary.textContent = `Merged groups (${view.detailRows.length})`;
   details.appendChild(summary);
 
   const list = document.createElement("div");
@@ -148,13 +138,11 @@ function renderSplitMergeSummary(mergeInfo) {
   list.style.display = "grid";
   list.style.gap = "10px";
 
-  for (const row of merges) {
+  for (const row of view.detailRows) {
     const keepId = Number(row?.keep_id);
     const absorbIds = Array.isArray(row?.absorb_ids) ? row.absorb_ids : [];
     const reason = String(row?.reason || "").trim();
-    const keepBefore = String(row?.keep_title_before || "").trim();
-    const keepAfter = String(row?.keep_title_after || "").trim();
-    const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
+    const overlapTerms = Array.isArray(row?.overlap_terms) ? row.overlap_terms.filter(Boolean) : [];
 
     const card = document.createElement("div");
     card.style.border = "1px solid rgba(148, 163, 184, 0.25)";
@@ -164,27 +152,38 @@ function renderSplitMergeSummary(mergeInfo) {
 
     const top = document.createElement("div");
     top.style.fontWeight = "600";
-    top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ← absorb ${absorbIds
-      .map((x) => `#${x}`)
-      .join(", ")}`;
-
-    const sub = document.createElement("div");
-    sub.className = "hint";
-    sub.style.marginTop = "6px";
-    sub.textContent =
-      absorbTitles.length || keepBefore
-        ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
-            absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
-          }`
-        : "";
+    if (row.legacy) {
+      const keepBefore = String(row?.keep_title_before || "").trim();
+      const keepAfter = String(row?.keep_title_after || "").trim();
+      const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
+      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ← absorb ${absorbIds
+        .map((x) => `#${x}`)
+        .join(", ")}`;
+      const sub = document.createElement("div");
+      sub.className = "hint";
+      sub.style.marginTop = "6px";
+      sub.textContent =
+        absorbTitles.length || keepBefore
+          ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
+              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
+            }`
+          : "";
+      if (sub.textContent) card.appendChild(sub);
+    } else {
+      top.textContent = `Keep #${keepId} ← absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
+    }
 
     const why = document.createElement("div");
     why.className = "hint";
-    why.style.marginTop = sub.textContent ? "6px" : "0";
-    why.textContent = reason ? `Reason: ${reason}` : "";
+    why.style.marginTop = "6px";
+    const reasonLabel = reason ? `Reason: ${reason}` : "";
+    const overlapLabel =
+      overlapTerms.length && reason === "signature_overlap"
+        ? ` (${overlapTerms.join(", ")})`
+        : "";
+    why.textContent = `${reasonLabel}${overlapLabel}`.trim();
 
     card.appendChild(top);
-    if (sub.textContent) card.appendChild(sub);
     if (why.textContent) card.appendChild(why);
     list.appendChild(card);
   }
@@ -2795,63 +2794,28 @@ export function wireStudyHandlers() {
         throw new Error("File appears to be empty.");
       }
       state.originalMaterialText = cleanedText;
-      state.lastNBlocks = nBlocks;
 
-      const parsed = await deepSeekSplitIntoBlocks({
+      const { blockIndex: finalIndex, splitRunMeta } = await twoPhaseConceptSplit(cleanedText, nBlocks, {
         llmModel,
-        nBlocks,
-        materialText: cleanedText,
         studyNotes: String(state.studyNotes || ""),
         language: getStudyLanguage(),
+        onProgress: (msg) => {
+          els.generateBlocksStatus.textContent = msg;
+        },
       });
 
-      let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
-      if (!normalized) {
-        console.warn("Block split: could not normalize blocks:", parsed);
+      if (!Array.isArray(finalIndex) || !finalIndex.length) {
         throw new Error(
-          "Model returned blocks JSON we could not parse. Please try generating blocks again.",
+          "Block split returned no blocks. Please try generating blocks again.",
         );
       }
-      const coerced = coerceBlockIndexToTargetCount(normalized, nBlocks);
-      if (!coerced) {
-        console.warn(
-          `Block split: expected ${nBlocks} blocks, got ${normalized.length}.`,
-          normalized.map((b) => b.id),
-        );
-        throw new Error(
-          `Model returned ${normalized.length} blocks but you asked for ${nBlocks}. Try again or change the block count.`,
-        );
-      }
-      const chunkFallbacks = splitMaterialIntoBlockChunks(cleanedText, nBlocks);
-      state.lastBlockIndex = coerced.map((b, i) => ({
-        ...b,
-        chunk: String(b.chunk || chunkFallbacks[i] || "").trim(),
-      }));
 
-      // Phase 2: audit overlap + merge chunks (conservative).
-      els.generateBlocksStatus.textContent = "Auditing split for overlap…";
-      let finalIndex = state.lastBlockIndex;
-      let mergeInfo = null;
-      try {
-        const r = await twoPhaseSplitMerge(state.lastBlockIndex, {
-          llmModel,
-          language: getStudyLanguage(),
-        });
-        if (r && typeof r === "object" && Array.isArray(r.blockIndex) && r.blockIndex.length) {
-          finalIndex = r.blockIndex;
-          mergeInfo = r.mergeInfo || null;
-        }
-      } catch {
-        // best-effort: keep the original split if audit/merge fails
-        finalIndex = state.lastBlockIndex;
-        mergeInfo = null;
-      }
       state.lastBlockIndex = finalIndex;
       state.lastNBlocks = finalIndex.length;
       window.blockIndex = finalIndex;
       window.indexWasImported = false;
 
-      renderSplitMergeSummary(mergeInfo);
+      renderSplitMergeSummary(splitRunMeta);
       renderBlockIndexEditor(finalIndex, { readOnly: false });
       if (els.blocksListOutput) {
         // keep the hidden textarea in a stable, pretty format (debug + fallback)
