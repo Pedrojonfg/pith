@@ -17,6 +17,9 @@
 - Q: ¿Qué hacer con la tarjeta inline de respuesta del guía al terminar RSVP? → A: **Eliminar** la tarjeta inline; las respuestas del guía viven solo en el historial de la sidebar.
 - Q: ¿Qué se muestra por defecto en la pantalla de transición (antes de Make changes)? → A: **Dos botones** (CTA principal deshabilitado hasta `ready` + secundario Adjust) **+ diccionario colapsado** + indicador de prefetch en la misma pantalla.
 - Q: Etiquetas del CTA principal y del camino de ajuste → A: Principal **Siguiente bloque** · Secundario **Ajustar siguiente bloque**.
+- Q: Para optimizar tokens, ¿cómo se normaliza el material de estudio según formato de entrada? → A: Si el archivo de origen es HTML, se conserva como HTML ultrarreducido (sin CSS/JS); cualquier otro formato se convierte a Markdown.
+- Q: ¿Cómo manejar “cualquier formato” en v1 para evitar alcance infinito? → A: Soportar solo una lista explícita de formatos en v1 y rechazar cualquier formato fuera de esa lista con un mensaje claro.
+- Q: ¿Qué formatos exactos entran en la lista soportada de v1? → A: `pdf`, `html`, `txt`, `md`.
 
 ### Session 2026-05-26
 
@@ -138,6 +141,7 @@ Como estudiante que acaba de terminar el bloque N, quiero ver en la pantalla de 
 - Último bloque de la sesión: no prefetch; flujo de cierre sin transición.
 - Bloque N+1 ya importado/generado en confirm: no regenerar en prefetch.
 - Offline / sin API key: prefetch no arranca; transición degrada con mensaje claro.
+- Archivo en formato no soportado por v1 (fuera de `pdf`, `html`, `txt`, `md`): rechazar carga con mensaje claro y sin conversión parcial.
 - Usuario acelera mucho (RSVP skip): puede llegar a transición antes de que termine prefetch; el botón rápido queda deshabilitado con indicador hasta `ready` (sin segundo flujo de espera post-clic).
 - Prefetch invalidado (`configKey` distinta o regen): reemplazar en el diccionario solo los `concepts` del índice de bloque afectado; términos de otros bloques permanecen; write-through de `session.blocks[idx]` se actualiza con el bloque vigente.
 - `explanation` vacía o &lt;4 frases tras prefetch `ready`: sneak peek muestra el texto disponible (0–3 frases); no llamada LLM extra.
@@ -169,6 +173,9 @@ Como estudiante que acaba de terminar el bloque N, quiero ver en la pantalla de 
 - **FR-011**: `buildMarkdown` / export DEBE construir **Concept Dictionary** como unión de `session_concepts` y todos los `blocks[].concepts` (dedup case-insensitive por término; preferir definición no vacía más larga).
 - **FR-011a**: Export manual y `beforeunload` DEBEN incluir secciones de bloque para todo índice con `explanation` o `questions` en `session.blocks`, aunque el usuario no haya respondido preguntas de ese bloque.
 - **FR-012**: Al invalidar o regenerar el bloque `idx`, el sistema DEBE reemplazar en el diccionario solo los términos procedentes de `blocks[idx].concepts` (vía metadata de índice o re-merge tras write-through), sin vaciar el diccionario global.
+- **FR-013**: En la normalización del material fuente para generación, si el documento de entrada es HTML el sistema DEBE producir HTML ultrarreducido (sin CSS ni JS); si el formato de entrada no es HTML, el sistema DEBE producir Markdown como formato intermedio canónico para optimizar tokens.
+- **FR-014**: El sistema DEBE definir y validar una lista explícita de formatos de entrada soportados en v1; cualquier formato fuera de esa lista DEBE rechazarse con un mensaje de error claro, sin intentar conversión best-effort.
+- **FR-014a**: La lista de formatos soportados en v1 DEBE ser exactamente: `pdf`, `html`, `txt`, `md`.
 
 ### Key Entities
 

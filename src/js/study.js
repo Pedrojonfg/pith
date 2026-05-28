@@ -549,6 +549,15 @@ export function readFileAsText(file) {
   });
 }
 
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function countWords(text) {
   const raw = String(text || "").replace(/\s+/g, " ").trim();
   if (!raw) return 0;
@@ -669,11 +678,36 @@ export function cleanMaterialText(rawText) {
 }
 
 export async function readAndCleanMaterialText(file) {
-  const raw = await readFileAsText(file);
-  const cleanedText = cleanMaterialText(raw);
+  const {
+    detectFormatFromFilename,
+    normalizeStudyMaterial,
+    UnsupportedFormatError,
+  } = await import("./input-normalization.js?v=20260527_1");
+
+  const detectedFormat = detectFormatFromFilename(file?.name || "");
+  if (!detectedFormat) {
+    throw new UnsupportedFormatError(
+      "Unsupported file format. Supported: pdf, html, txt, md.",
+      String(file?.name || "").split(".").pop() || "",
+    );
+  }
+
+  const rawContent =
+    detectedFormat === "pdf"
+      ? await readFileAsArrayBuffer(file)
+      : await readFileAsText(file);
+
+  const { normalizedFormat, normalizedContent } = await normalizeStudyMaterial(
+    rawContent,
+    detectedFormat,
+  );
+
+  const cleanedText = normalizedContent;
   return {
     cleanedText,
     wordCount: countWords(cleanedText),
+    originalFormat: detectedFormat,
+    normalizedFormat,
   };
 }
 
@@ -2876,7 +2910,7 @@ export function wireStudyHandlers() {
     state.lastUploadedFileNames = fileList.map((f) => String(f?.name || "")).filter(Boolean);
     const file = fileList[0];
     if (!file) {
-      setGenerateError("Please choose a file (.pdf, .html, or .txt).");
+      setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
       return;
     }
 

@@ -61,6 +61,15 @@
 3. Cuando pase a `ready` (indicador `Listo ✓` en el overlay), **expect**: el texto se reemplaza por un sneak peek derivado del `explanation` del bloque `N+1` (≤4 frases, como un único párrafo).
 4. En `Ajustar siguiente bloque`, **expect**: el sneak peek sigue visible (no se oculta en el panel de controles).
 
+## 10. Normalización de input por formato (FR-013, FR-014)
+
+1. Subir un archivo `.html` con `<style>` y `<script>` embebidos.
+2. **Expect**: la normalización conserva contenido semántico y elimina CSS/JS (HTML ultrarreducido).
+3. Subir un `.pdf`, `.txt` y `.md` equivalentes.
+4. **Expect**: cada uno se normaliza a Markdown para el pipeline de generación.
+5. Subir un formato fuera de lista (ej. `.docx`).
+6. **Expect**: error claro de formato no soportado; no inicia generación parcial.
+
 ## Pass criteria
 
 | ID | Check | Manual (2026-05-26) |
@@ -73,5 +82,6 @@
 | SC-005 | Dictionary shows prefetch concepts before next block | ✓ automated (`20260527_t03-prefetch-write-through.mjs`, `20260527_t11-ui-refresh-prefetch-ready.mjs`); manual §7 optional for live API |
 | SC-006 | Mid-session export includes block 2 + dictionary | ✓ automated (`20260527_t04-export-concepts-union.mjs`, `20260527_t10-export-concept-union.mjs`); manual §8 optional for live API |
 | SC-007 | Sneak peek placeholder then preview in transition overlay | ✓ manual (placeholder en generating; luego primeras ≤4 frases del `explanation` del bloque N+1) |
+| FR-013/014 | Normalización por formato y rechazo fuera de lista v1 | ✓ manual (§10) |
 
 **Automated**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` (T01–T04, T09–T11, validate-t12).

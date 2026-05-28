@@ -1,41 +1,50 @@
-# Implementation Plan: Zero-Latency Block Transitions
+# Implementation Plan: Zero-Latency Block Transitions (Background Prefetch)
 
-**Branch**: `20260527-zero-latency-blocks` | **Date**: 2026-05-27 (rev. 2026-05-26) | **Spec**: [spec.md](./spec.md)
+**Branch**: `20260527-zero-latency-blocks` | **Date**: 2026-05-27 | **Spec**: `specs/20260527-zero-latency-blocks/spec.md`
 
-**Input**: Feature specification from `/specs/20260527-zero-latency-blocks/spec.md`
+**Input**: Feature specification from `specs/20260527-zero-latency-blocks/spec.md`
 
 ## Summary
 
-Eliminar la latencia entre bloques con **prefetch de N+1**, transición bifurcada (**Siguiente bloque** / **Ajustar siguiente bloque**), regen parcial de preguntas, y dudas solo en sidebar.
-
-**Ampliación (clarificación 2026-05-26)**: El prefetch debe alimentar en paralelo el **diccionario de conceptos** y el **export `.md`**: write-through a `session.blocks` en `ready`, fusión de `concepts` al diccionario, export con unión de fuentes (SC-005, SC-006).
+Eliminar la espera percibida entre bloques con prefetch N+1, transición bifurcada (rápida vs ajustar), diccionario/export en paralelo al `ready`, y añadir normalización de material de estudio orientada a tokens: `html -> html ultrarreducido`, `pdf/txt/md -> markdown`, rechazando formatos fuera de la lista v1.
 
 ## Technical Context
 
-**Language/Version**: JavaScript (ES modules), browser vanilla  
-**Primary Dependencies**: `triggerPrefetch` / `getPrefetchedBlock` (`session.js`), `dictionary.js`, `export.js` (`buildMarkdown`), overlay `transitionOverlay` (`study.js`), `deepSeekRegenerateBlockQuestions` (`api.js`)  
-**Storage**: `prefetchState` (memoria); `localStorage` — `active_session`, `session_concepts`, **`session_concepts_by_block`** (nuevo)  
-**Testing**: `cursor-tests/20260527_t*.mjs` + nuevos tests T08–T12; manual [quickstart.md](./quickstart.md) §7–8  
-**Target Platform**: Desktop + móvil (misma SPA)  
-**Project Type**: Single-page study app (`index.html` + `src/js/*`)  
-**Performance Goals**: SC-001, SC-005/006; write-through síncrono &lt;50ms (localStorage)  
-**Constraints**: Sin backend; sin frameworks; portable a Flutter; no tocar timing de `rsvp.js`  
-**Scale/Scope**: ~150–250 LOC netas fase diccionario/export (T08–T12) sobre base T01–T07 ya implementada
+**Language/Version**: JavaScript ES modules (browser, sin build step)
+
+**Primary Dependencies**: APIs nativas del navegador (`fetch`, `localStorage`, `FileReader`, `DOMParser`), DeepSeek chat API, utilidades internas en `src/js/*.js`
+
+**Storage**: `localStorage` (`activeSession`, `session_concepts`, `session_concepts_by_block`)
+
+**Testing**: pruebas de integración ligeras con `cursor-tests/*.mjs` + validación manual en navegador
+
+**Target Platform**: Navegadores modernos desktop/mobile (app estática)
+
+**Project Type**: Web app frontend-only (single-page, vanilla JS)
+
+**Performance Goals**:
+- Transición rápida a bloque siguiente <1s percibido cuando `prefetch.ready`
+- 0 llamadas duplicadas de generación completa en fast path (`SC-003`)
+- Conversión de entrada sin inflar tokens (HTML sanitizado mínimo, resto en markdown)
+
+**Constraints**:
+- Sin backend y sin dependencias pesadas innecesarias
+- Sin introducir CSS/JS en el contenido normalizado
+- Formatos v1 estrictos: `pdf`, `html`, `txt`, `md`
+- Cambios quirúrgicos sobre flujo existente
+
+**Scale/Scope**:
+- Sesiones locales de estudio con decenas de bloques (sin multiusuario)
+- Prefetch de un bloque por adelantado (N+1) en v1
 
 ## Constitution Check
 
-*GATE: Project uses `.cursorrules` (constitution template not ratified).*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle (.cursorrules) | Status | Notes |
-|--------------------------|--------|-------|
-| Simplicity / surgical | PASS | Hook único `applyPrefetchReadySideEffects`; sin refactor global |
-| No backend | PASS | |
-| No frameworks | PASS | |
-| Flutter portability | PASS | Lógica en `session.js`, `dictionary.js`, `export.js` |
-| RSVP critical path | PASS | Sin cambios en `rsvp.js` |
-| Single-file preference | PASS | Módulos existentes |
-
-**Post-design re-check (2026-05-26)**: PASS
+- `constitution.md` está en plantilla (sin reglas ejecutables concretas), por lo que no define gates verificables.
+- No se detectan violaciones explícitas contra principios obligatorios del repositorio.
+- Gate status pre-research: **PASS (sin restricciones adicionales declaradas)**.
+- Gate status post-design: **PASS**.
 
 ## Project Structure
 
@@ -49,74 +58,79 @@ specs/20260527-zero-latency-blocks/
 ├── quickstart.md
 ├── contracts/
 │   ├── transition-overlay-ux.md
+│   ├── prefetch-ready-persistence.md
 │   ├── questions-only-regen.md
-│   ├── prefetch-ready-persistence.md    # NEW
-│   └── export-concept-dictionary.md     # NEW
-└── tasks.md             # /speckit-tasks (optional)
+│   ├── export-concept-dictionary.md
+│   ├── block-sneak-peek.md
+│   └── input-normalization.md
+└── tasks.md
 ```
 
 ### Source Code (repository root)
 
 ```text
-src/js/session.js        # applyPrefetchReadySideEffects; triggerPrefetch hook
-src/js/dictionary.js     # concepts_by_block; replaceBlockConcepts; aggregate
-src/js/export.js         # collectExportConcepts; buildMarkdown union
-src/js/study.js          # onPrefetchReady → refresh dictionary UI
-src/js/config.js         # LS_SESSION_CONCEPTS_BY_BLOCK_KEY (si aplica)
-cursor-tests/            # 20260527_t03-*.mjs (prefetch write-through + export)
+index.html
+src/
+└── js/
+    ├── study.js
+    ├── api.js
+    ├── export.js
+    ├── dictionary.js
+    ├── session.js
+    ├── ui.js
+    └── markdown.js
+
+cursor-tests/
+└── 20260527_t*.mjs
 ```
 
-## Phase 0: Research
+**Structure Decision**: Mantener arquitectura actual frontend-only y documentar contratos por flujo para que `/speckit-tasks` derive implementación sin refactor estructural.
 
-Complete — [research.md](./research.md) (R1–R11).
+## Phase 0 — Research Output
 
-## Phase 1: Design & Contracts
+`research.md` consolida decisiones cerradas para:
+- transición default/adjust y CTA deshabilitado hasta `ready`
+- regen parcial de preguntas sin tocar `explanation`
+- write-through a `session.blocks` + diccionario por bloque
+- sneak peek sin tokens extra
+- normalización de input por formato y lista soportada v1
 
-Complete:
+Todas las entradas `NEEDS CLARIFICATION` quedan resueltas.
 
-- [data-model.md](./data-model.md)
-- [contracts/transition-overlay-ux.md](./contracts/transition-overlay-ux.md)
-- [contracts/questions-only-regen.md](./contracts/questions-only-regen.md)
-- [contracts/prefetch-ready-persistence.md](./contracts/prefetch-ready-persistence.md)
-- [contracts/export-concept-dictionary.md](./contracts/export-concept-dictionary.md)
-- [quickstart.md](./quickstart.md)
+## Phase 1 — Design & Contracts Output
 
-**Agent context**: `.cursor/rules/specify-rules.mdc` → this plan.
+- `data-model.md` define estados de prefetch, persistencia de sesión, merge de conceptos y reglas de normalización de fuente.
+- `contracts/` define contratos de comportamiento para transición, persistencia, export, sneak peek, regen parcial y normalización de entrada.
+- `quickstart.md` incluye verificación manual de los nuevos criterios (`SC-001..SC-007` + formato de entrada).
+- Contexto de agente en `.cursor/rules/specify-rules.mdc` ya apunta al plan activo; no requiere cambio adicional.
 
-## Phase 2: Implementation Outline (metodo-pedro → ROADMAP.md)
+## Ejecución (Método Pedro)
 
-### Fase A — Completada (T01–T07)
+### Descomposición
 
-| ID | Work package | Status |
-|----|--------------|--------|
-| WP1–WP7 | Prefetch UX, regen parcial, sidebar, tests base | Done |
+| ID | Tarea | Dependencias | Complejidad |
+|----|-------|--------------|-------------|
+| T01 | Unificar normalización de input (HTML reducido vs Markdown) + validación de formatos v1 | - | M |
+| T02 | Ajustar transición rápida/adjust con gating por `prefetch.ready` | T01 | M |
+| T03 | Implementar regen parcial (`questions_only`) y fallback full regen | T02 | M |
+| T04 | Persistencia write-through + diccionario por bloque + refresh UI | T02 | L |
+| T05 | Export robusto de bloques prefetched + concept dictionary unión | T04 | M |
+| T06 | QA: quickstart + tests cursor + regresión manual | T03, T05 | M |
 
-### Fase B — Diccionario + export en paralelo (T08–T12)
+### Grafo de dependencias
 
-| ID | Work package | Acceptance |
-|----|--------------|------------|
-| WP8 | `applyPrefetchReadySideEffects` en `session.js` | FR-010; write-through + `concepts_by_block[idx]`; slot prefetch sigue `ready` |
-| WP9 | `dictionary.js`: agregado + `replaceBlockConcepts` | FR-009, FR-012; UI lee merge; idempotente con `commitSessionConceptsForBlock` |
-| WP10 | `export.js`: `collectExportConcepts` + `buildMarkdown` | FR-011, FR-011a; SC-006 en export mid-session |
-| WP11 | `study.js`: `onPrefetchReady` refresh UI | FR-009; botón diccionario + overlay transición |
-| WP12 | Tests + quickstart §7–8 | SC-005, SC-006 automatizado o documentado |
+`T01 -> T02 -> T03 -> T06`  
+`T02 -> T04 -> T05 -> T06`
 
-**Execution order (Fase B)**:
+Paralelizable tras `T02`: `T03` y `T04`.
 
-```text
-T08 → T09 ∥ T10 → T11 → T12
-```
+### Orden recomendado
 
-**Risks**: Cuota `localStorage` en sesiones largas — capturar try/catch sin romper prefetch `ready`.
+1. Ejecutar `T01` y `T02` secuencialmente.
+2. Ejecutar `T03` y `T04` en paralelo.
+3. Ejecutar `T05` cuando termine `T04`.
+4. Cerrar con `T06`.
 
 ## Complexity Tracking
 
-| Item | Why Needed | Simpler Alternative Rejected |
-|------|------------|-------------------------------|
-| `session_concepts_by_block` | FR-012 replace por índice | Vaciar diccionario global en regen |
-| Write-through en `ready` | Export + ensureBlockGenerated sin doble API | Solo memoria hasta transición |
-| Union en export | FR-011 rutas legacy + nuevas | Solo `session_concepts` (pierde bloques no commiteados) |
-
-## Next command
-
-Ejecutar **T08** desde `ROADMAP.md` (Fase B). Opcional: `/speckit-tasks` para `tasks.md` formal.
+No se justifican excepciones de complejidad ni violaciones de gates.
