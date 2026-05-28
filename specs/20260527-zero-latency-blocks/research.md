@@ -127,3 +127,20 @@
 | Recortar párrafo Connection en lugar de primeras 4 frases | Contradice clarificación 3A |
 | Heurística local que prepone frase de conexión | Frágil; no sustituye contenido pedagógico real |
 | Segunda pasada LLM | Rechazado explícitamente (clarificación 4A) |
+
+## R14 — Normalización de material de estudio por formato (tokens-first)
+
+**Decision**:
+- Lista v1 de entrada soportada: `pdf`, `html`, `txt`, `md`.
+- Si input es `html`: transformar a **HTML ultrarreducido** (contenido semántico mínimo, sin CSS/JS embebido).
+- Si input es `pdf`, `txt` o `md`: normalizar a **Markdown** como formato canónico.
+- Cualquier otro formato: rechazo explícito con mensaje claro (sin best-effort).
+
+**Rationale**: La decisión optimiza tokens en prompts y evita alcance infinito de "cualquier formato", preservando casos de uso más frecuentes sin añadir backend.
+
+**Alternatives considered**:
+| Opción | Descartada porque |
+|--------|-------------------|
+| Convertir todo a markdown | Pierde señales estructurales útiles de HTML ya limpio y parseable |
+| Convertir todo a HTML | Coste mayor de limpieza para PDF/TXT/MD y peor ergonomía para prompts textuales |
+| Aceptar cualquier formato | Riesgo alto de fallos silenciosos y deuda técnica incontrolable |

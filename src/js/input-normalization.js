@@ -1,0 +1,252 @@
+/**
+ * Study material normalization (FR-013, FR-014).
+ * html → html_min; pdf|txt|md → markdown.
+ */
+
+export const SUPPORTED_INPUT_FORMATS = Object.freeze(["pdf", "html", "txt", "md"]);
+
+const PDFJS_VERSION = "4.4.168";
+const PDFJS_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build`;
+
+export class UnsupportedFormatError extends Error {
+  constructor(message, detectedFormat = "") {
+    super(message);
+    this.name = "UnsupportedFormatError";
+    this.code = "unsupported_format";
+    this.detectedFormat = detectedFormat;
+  }
+}
+
+export class NormalizationError extends Error {
+  constructor(message, detectedFormat = "") {
+    super(message);
+    this.name = "NormalizationError";
+    this.code = "normalization_failed";
+    this.detectedFormat = detectedFormat;
+  }
+}
+
+/** @param {string} filename */
+export function detectFormatFromFilename(filename) {
+  const name = String(filename || "").trim().toLowerCase();
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return null;
+  const ext = name.slice(dot + 1);
+  if (!SUPPORTED_INPUT_FORMATS.includes(ext)) return null;
+  return ext;
+}
+
+function stripDataUriAttributes(html) {
+  return String(html || "").replace(
+    /\b([a-zA-Z0-9:_-]+)\s*=\s*(["'])\s*data:[\s\S]*?\2/gi,
+    '$1=""',
+  );
+}
+
+function stripScriptAndStyleBlocks(html) {
+  const raw = String(html || "");
+  const noScript = raw.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  return noScript.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+}
+
+const MINIMAL_HTML_TAGS = new Set([
+  "a",
+  "blockquote",
+  "br",
+  "code",
+  "div",
+  "em",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "hr",
+  "img",
+  "li",
+  "ol",
+  "p",
+  "pre",
+  "strong",
+  "table",
+  "tbody",
+  "td",
+  "th",
+  "thead",
+  "tr",
+  "ul",
+]);
+
+function stripUnsafeAttributes(el) {
+  const attrs = Array.from(el.attributes || []);
+  for (const a of attrs) {
+    const n = String(a.name || "").toLowerCase();
+    if (n.startsWith("on")) {
+      el.removeAttribute(a.name);
+      continue;
+    }
+    if (n === "style") {
+      el.removeAttribute(a.name);
+      continue;
+    }
+    if (n === "href" || n === "alt") continue;
+    el.removeAttribute(a.name);
+  }
+}
+
+function unwrapNonSemanticElement(el) {
+  const parent = el.parentNode;
+  if (!parent) return;
+  while (el.firstChild) parent.insertBefore(el.firstChild, el);
+  parent.removeChild(el);
+}
+
+/** @param {string} html */
+export function toMinimalHtml(html) {
+  const pre = stripScriptAndStyleBlocks(stripDataUriAttributes(html));
+  if (typeof DOMParser === "undefined") {
+    return String(pre)
+      .replace(/\s*on[a-z]+\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "")
+      .replace(/\sstyle\s*=\s*(".*?"|'.*?'|[^\s>]+)/gi, "")
+      .replace(/\s+/g, " ")
+      .replace(/>\s+</g, "><")
+      .trim();
+  }
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(pre, "text/html");
+
+  for (const node of Array.from(doc.querySelectorAll("script, style, link[rel='stylesheet'], noscript"))) {
+    node.remove();
+  }
+
+  const body = doc.body || doc.documentElement;
+  const walk = (el) => {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return;
+    const tag = String(el.tagName || "").toLowerCase();
+    if (!MINIMAL_HTML_TAGS.has(tag)) {
+      unwrapNonSemanticElement(el);
+      return;
+    }
+    stripUnsafeAttributes(el);
+    const children = Array.from(el.children || []);
+    for (const child of children) walk(child);
+  };
+
+  for (const child of Array.from(body.children || [])) walk(child);
+
+  const out = String(body.innerHTML || "")
+    .replace(/\s+/g, " ")
+    .replace(/>\s+</g, "><")
+    .trim();
+  return out;
+}
+
+/** Plain text → markdown paragraphs (no HTML). */
+export function plainTextToMarkdown(text) {
+  const raw = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim();
+  if (!raw) return "";
+  const blocks = raw.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (!blocks.length) return raw;
+  return blocks.join("\n\n");
+}
+
+/** Light cleanup for existing markdown files. */
+export function cleanupMarkdown(md) {
+  let out = stripScriptAndStyleBlocks(String(md || ""));
+  out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+  out = out.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+  return out.trim();
+}
+
+let pdfjsModulePromise = null;
+
+async function loadPdfJs() {
+  if (!pdfjsModulePromise) {
+    pdfjsModulePromise = import(`${PDFJS_BASE}/pdf.min.mjs`).then((mod) => {
+      const pdfjs = mod.default ?? mod;
+      pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`;
+      return pdfjs;
+    });
+  }
+  return pdfjsModulePromise;
+}
+
+/** @param {ArrayBuffer} buffer */
+export async function extractPdfPlainText(buffer) {
+  const pdfjs = await loadPdfJs();
+  const loadingTask = pdfjs.getDocument({ data: buffer });
+  const doc = await loadingTask.promise;
+  const parts = [];
+  for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
+    const page = await doc.getPage(pageNum);
+    const content = await page.getTextContent();
+    const line = content.items
+      .map((item) => String(item?.str || ""))
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (line) parts.push(line);
+  }
+  return parts.join("\n\n");
+}
+
+/**
+ * @param {string|ArrayBuffer} rawContent
+ * @param {"pdf"|"html"|"txt"|"md"} detectedFormat
+ * @returns {Promise<{ normalizedFormat: "html_min"|"markdown", normalizedContent: string, warnings: string[] }>}
+ */
+export async function normalizeStudyMaterial(rawContent, detectedFormat) {
+  const format = String(detectedFormat || "").toLowerCase();
+  if (!SUPPORTED_INPUT_FORMATS.includes(format)) {
+    throw new UnsupportedFormatError(
+      `Unsupported file format. Use one of: ${SUPPORTED_INPUT_FORMATS.join(", ")}.`,
+      format,
+    );
+  }
+
+  const warnings = [];
+
+  if (format === "html") {
+    const html = typeof rawContent === "string" ? rawContent : "";
+    const normalizedContent = toMinimalHtml(html);
+    if (!normalizedContent.trim()) {
+      throw new NormalizationError("HTML file appears empty after cleanup.", format);
+    }
+    return { normalizedFormat: "html_min", normalizedContent, warnings };
+  }
+
+  let text = "";
+  if (format === "pdf") {
+    if (!(rawContent instanceof ArrayBuffer)) {
+      throw new NormalizationError("PDF input must be read as binary.", format);
+    }
+    try {
+      text = await extractPdfPlainText(rawContent);
+    } catch (err) {
+      throw new NormalizationError(
+        err?.message ? String(err.message) : "Failed to extract text from PDF.",
+        format,
+      );
+    }
+  } else {
+    text = typeof rawContent === "string" ? rawContent : "";
+  }
+
+  if (format === "md") {
+    const normalizedContent = cleanupMarkdown(text);
+    if (!normalizedContent.trim()) {
+      throw new NormalizationError("Markdown file appears empty.", format);
+    }
+    return { normalizedFormat: "markdown", normalizedContent, warnings };
+  }
+
+  const normalizedContent = plainTextToMarkdown(text);
+  if (!normalizedContent.trim()) {
+    throw new NormalizationError("File appears empty after normalization.", format);
+  }
+  return { normalizedFormat: "markdown", normalizedContent, warnings };
+}

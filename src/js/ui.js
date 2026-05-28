@@ -377,15 +377,9 @@ export function setOfflinePackButtonVisibility(isVisible) {
 }
 
 export function enableUnifiedMaterialUpload() {
-  // #region agent log
-  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:352',message:'enableUnifiedMaterialUpload called',data:{beforeHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   if (els.loadOfflinePackBtn) {
     els.loadOfflinePackBtn.hidden = false;
   }
-  // #region agent log
-  fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H2',location:'src/js/ui.js:357',message:'enableUnifiedMaterialUpload applied',data:{afterHidden:els.loadOfflinePackBtn?els.loadOfflinePackBtn.hidden:null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 }
 
 function ensureOfflineModeBanner() {

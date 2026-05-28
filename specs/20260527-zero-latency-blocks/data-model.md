@@ -68,6 +68,20 @@ Ver [contracts/export-concept-dictionary.md](./contracts/export-concept-dictiona
 - `collectExportConcepts`: unión `session_concepts` + `concepts_by_block` + `blocks[].concepts`
 - Secciones `## Block k` iff `hasGeneratedBlockContent(blocks[k])` (incl. write-through prefetched)
 
+## Input normalization (source material)
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `originalFormat` | `"pdf" \| "html" \| "txt" \| "md"` | Validado al seleccionar archivo |
+| `normalizedFormat` | `"html_min" \| "markdown"` | Derivado por regla de formato |
+| `normalizedContent` | `string` | Payload limpio para prompts |
+| `normalizationMeta` | `{ strippedTags?: number, strippedAssets?: number }` | Diagnóstico opcional |
+
+**Normalization rules**:
+- `html` -> `html_min` (sin `<style>`, `<script>`, atributos inline de estilo/eventos, ni recursos embebidos)
+- `pdf`, `txt`, `md` -> `markdown`
+- Formato fuera de v1 -> error de validación con mensaje claro y sin contenido parcial
+
 ## Regen mode (lógica cliente)
 
 | Condición | Modo |
