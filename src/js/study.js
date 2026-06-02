@@ -1440,9 +1440,15 @@ function handleTestAnswer({ chosen, correct, feedback }) {
     correctAnswer: String(correct || ""),
   });
 
-  const chosenBtn = btns.find((b) => b.dataset.letter === chosen);
+  const normalizedChosen = String(chosen || "").trim().toUpperCase();
+  const normalizedCorrect = String(correct || "").trim().toUpperCase();
+  const chosenBtn = btns.find((b) => b.dataset.letter === normalizedChosen);
   if (chosenBtn) {
-    chosenBtn.classList.add(chosen === correct ? "is-correct" : "is-wrong");
+    chosenBtn.classList.add(normalizedChosen === normalizedCorrect ? "is-correct" : "is-wrong");
+  }
+  if (normalizedChosen !== normalizedCorrect) {
+    const correctBtn = btns.find((b) => b.dataset.letter === normalizedCorrect);
+    if (correctBtn) correctBtn.classList.add("is-correct-soft");
   }
 
   els.testFeedback.hidden = false;
