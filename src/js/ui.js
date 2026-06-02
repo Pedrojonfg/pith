@@ -65,6 +65,10 @@ export const els = {
   summaryOverlayCopyBtn: document.getElementById("summaryOverlayCopyBtn"),
   summaryOverlayCloseBtn: document.getElementById("summaryOverlayCloseBtn"),
 
+  reviewFocusInput: document.getElementById("reviewFocusInput"),
+  reviewBlocksList: document.getElementById("reviewBlocksList"),
+  reviewBlocksSelectAllBtn: document.getElementById("reviewBlocksSelectAllBtn"),
+  reviewBlocksDeselectAllBtn: document.getElementById("reviewBlocksDeselectAllBtn"),
   reviewTypeTestBtn: document.getElementById("reviewTypeTestBtn"),
   reviewTypeSocraticBtn: document.getElementById("reviewTypeSocraticBtn"),
   reviewTypeBothBtn: document.getElementById("reviewTypeBothBtn"),

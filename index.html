@@ -766,7 +766,33 @@
         >
           <div class="card">
             <h1>Review session</h1>
-            <p>Generate a new set of questions covering the full session.</p>
+            <p>Generate questions for the blocks and topics you choose.</p>
+
+            <div class="divider"></div>
+
+            <label for="reviewFocusInput">
+              Review focus (optional) — Enfoque del repaso (opcional)
+            </label>
+            <textarea
+              id="reviewFocusInput"
+              rows="4"
+              spellcheck="true"
+              placeholder="E.g. Focus on dates and cause-effect. Skip vocabulary I already know. / Ej: Repasar fechas y causa-efecto. Omitir vocabulario que ya domino."
+            ></textarea>
+
+            <div class="divider"></div>
+
+            <label>Blocks to include — Bloques a incluir</label>
+            <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
+              <button type="button" id="reviewBlocksSelectAllBtn">Select all</button>
+              <button type="button" id="reviewBlocksDeselectAllBtn">Deselect all</button>
+            </div>
+            <div
+              id="reviewBlocksList"
+              class="review-blocks-list"
+              role="group"
+              aria-label="Blocks to include in review"
+            ></div>
 
             <div class="divider"></div>
 

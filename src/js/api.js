@@ -1762,6 +1762,7 @@ export async function deepSeekGenerateReviewBatch({
   llmModel,
   apiKey: _legacyApiKey,
   sessionContent,
+  reviewInstructions,
   type,
   batchSize,
 }) {
@@ -1796,11 +1797,20 @@ No preamble, no backticks.`
     .split("{type}")
     .join(String(typeWord));
 
+  const instructions = String(reviewInstructions || "").trim();
+  const userParts = [];
+  if (instructions) {
+    userParts.push(
+      `Student review focus (follow these preferences when generating questions):\n${instructions}`,
+    );
+  }
+  userParts.push(String(sessionContent || ""));
+
   return llmChatCompletions({
     llmModel: resolveLlmModelArg(llmModel),
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: String(sessionContent || "") },
+      { role: "user", content: userParts.filter(Boolean).join("\n\n") },
     ],
     temperature: 0.2,
   });

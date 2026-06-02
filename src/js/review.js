@@ -7,6 +7,7 @@ import {
 import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
 import { buildMarkdown } from "./export.js?v=20260525_1";
 import {
+  LS_REVIEW_CONFIG_PREFIX,
   LS_REVIEW_SESSION_MD_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
 } from "./config.js?v=20260525_1";
@@ -82,29 +83,202 @@ function getSessionMarkdownForReview() {
   return "";
 }
 
-function extractSessionContentFromMarkdown(md) {
+export function extractSessionContentFromMarkdown(md, selectedIndices = null) {
   const text = String(md || "");
   if (!text.trim()) return "";
+  const allowed =
+    selectedIndices == null
+      ? null
+      : new Set(
+          (Array.isArray(selectedIndices) ? selectedIndices : [])
+            .map((i) => Math.floor(Number(i)))
+            .filter((i) => i >= 0),
+        );
   const parts = [];
   const re =
-    /^##\s+Block\s+\d+:\s+.*\n([\s\S]*?)\n###\s+Questions(?:\s*&\s*Answers)?\s*$/gim;
+    /^##\s+Block\s+(\d+):\s+.*\n([\s\S]*?)\n###\s+Questions(?:\s*&\s*Answers)?\s*$/gim;
   let m = null;
   while ((m = re.exec(text))) {
-    const expl = String(m[1] || "").trim();
+    const blockNum = Math.max(1, Math.floor(Number(m[1]) || 1));
+    const index = blockNum - 1;
+    if (allowed && !allowed.has(index)) continue;
+    const expl = String(m[2] || "").trim();
     if (expl) parts.push(expl);
   }
   return parts.join("\n\n").trim();
 }
 
-function buildSessionContentForReview() {
+function getReviewBlocksForPicker() {
+  const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
+  return blocks.map((b, index) => {
+    const row = b && typeof b === "object" ? b : {};
+    return {
+      index,
+      title: String(row.title || "").trim() || `Block ${index + 1}`,
+    };
+  });
+}
+
+function getSelectedReviewBlockIndices() {
+  const cbs = els.reviewBlocksList
+    ? [...els.reviewBlocksList.querySelectorAll('input[type="checkbox"][data-block-index]')]
+    : [];
+  if (!cbs.length) {
+    return getReviewBlocksForPicker().map((b) => b.index);
+  }
+  return cbs
+    .filter((cb) => cb.checked)
+    .map((cb) => Math.floor(Number(cb.dataset.blockIndex)))
+    .filter((i) => i >= 0);
+}
+
+export function getActiveReviewSessionId() {
+  return String(state.activeSession?._meta?.session_id || "").trim();
+}
+
+export function reviewConfigStorageKey(sessionId) {
+  const id = String(sessionId || "").trim();
+  return id ? `${LS_REVIEW_CONFIG_PREFIX}${id}` : "";
+}
+
+export function loadReviewConfigDraft(sessionId, blockCount) {
+  const key = reviewConfigStorageKey(sessionId);
+  if (!key) return null;
+  const raw = localStorage.getItem(key);
+  if (!raw || !raw.trim()) return null;
+  const n = Math.max(0, Math.floor(Number(blockCount) || 0));
+  try {
+    const obj = JSON.parse(raw);
+    const focus = String(obj?.focus ?? "");
+    const selectedBlocks = Array.isArray(obj?.selectedBlocks)
+      ? [
+          ...new Set(
+            obj.selectedBlocks
+              .map((v) => Math.floor(Number(v)))
+              .filter((i) => i >= 0 && (n <= 0 || i < n)),
+          ),
+        ].sort((a, b) => a - b)
+      : [];
+    return { focus, selectedBlocks };
+  } catch {
+    return null;
+  }
+}
+
+export function saveReviewConfigDraft(sessionId, { focus, selectedBlocks, blockCount } = {}) {
+  const key = reviewConfigStorageKey(sessionId);
+  if (!key) return;
+  const n = Math.max(0, Math.floor(Number(blockCount) || 0));
+  let indices = Array.isArray(selectedBlocks)
+    ? selectedBlocks.map((v) => Math.floor(Number(v))).filter((i) => i >= 0)
+    : [];
+  if (n > 0) {
+    indices = [...new Set(indices.filter((i) => i < n))].sort((a, b) => a - b);
+  } else {
+    indices = [...new Set(indices)].sort((a, b) => a - b);
+  }
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        focus: String(focus ?? ""),
+        selectedBlocks: indices,
+      }),
+    );
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function resolvePreselectedBlockIndices(preselected, blockCount) {
+  const n = Math.max(0, Math.floor(Number(blockCount) || 0));
+  if (!n) return null;
+  const arr = Array.isArray(preselected)
+    ? [
+        ...new Set(
+          preselected
+            .map((v) => Math.floor(Number(v)))
+            .filter((i) => i >= 0 && i < n),
+        ),
+      ]
+    : [];
+  return arr.length ? arr : null;
+}
+
+function persistReviewConfigDraft() {
+  const sessionId = getActiveReviewSessionId();
+  if (!sessionId) return;
+  const blockCount = getReviewBlocksForPicker().length;
+  saveReviewConfigDraft(sessionId, {
+    focus: els.reviewFocusInput ? String(els.reviewFocusInput.value || "") : "",
+    selectedBlocks: getSelectedReviewBlockIndices(),
+    blockCount,
+  });
+}
+
+function renderReviewBlockPicker(preselectedIndices = null) {
+  if (!els.reviewBlocksList) return;
+  const items = getReviewBlocksForPicker();
+  els.reviewBlocksList.innerHTML = "";
+  if (!items.length) {
+    els.reviewBlocksList.hidden = true;
+    if (els.reviewBlocksSelectAllBtn) els.reviewBlocksSelectAllBtn.hidden = true;
+    if (els.reviewBlocksDeselectAllBtn) els.reviewBlocksDeselectAllBtn.hidden = true;
+    return;
+  }
+  els.reviewBlocksList.hidden = false;
+  if (els.reviewBlocksSelectAllBtn) els.reviewBlocksSelectAllBtn.hidden = false;
+  if (els.reviewBlocksDeselectAllBtn) els.reviewBlocksDeselectAllBtn.hidden = false;
+
+  const preselected = resolvePreselectedBlockIndices(preselectedIndices, items.length);
+  const preSet = preselected ? new Set(preselected) : null;
+
+  for (const { index, title } of items) {
+    const id = `reviewBlockCb_${index}`;
+    const label = document.createElement("label");
+    label.className = "review-block-item";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.id = id;
+    cb.dataset.blockIndex = String(index);
+    cb.checked = preSet ? preSet.has(index) : true;
+    label.appendChild(cb);
+    label.append(` Block ${index + 1}: ${title}`);
+    els.reviewBlocksList.appendChild(label);
+  }
+}
+
+function setAllReviewBlocksChecked(checked) {
+  if (!els.reviewBlocksList) return;
+  for (const cb of els.reviewBlocksList.querySelectorAll('input[type="checkbox"]')) {
+    cb.checked = checked;
+  }
+}
+
+function getReviewFocusNotes() {
+  return els.reviewFocusInput ? String(els.reviewFocusInput.value || "").trim() : "";
+}
+
+export function buildSessionContentForReview(selectedIndices = null) {
+  const selected = new Set(
+    (Array.isArray(selectedIndices) ? selectedIndices : [])
+      .map((i) => Math.floor(Number(i)))
+      .filter((i) => i >= 0),
+  );
+  const filterBlocks = selected.size > 0;
+  const isSelected = (index) => !filterBlocks || selected.has(index);
+
   const md = getSessionMarkdownForReview();
-  const parsed = extractSessionContentFromMarkdown(md);
+  const parsed = extractSessionContentFromMarkdown(md, filterBlocks ? [...selected] : null);
   const baseExplanations =
     parsed ||
     (() => {
       const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
       return blocks
-        .map((b) => (b && typeof b === "object" ? String(b.explanation || "").trim() : ""))
+        .map((b, i) => {
+          if (!isSelected(i)) return "";
+          return b && typeof b === "object" ? String(b.explanation || "").trim() : "";
+        })
         .filter(Boolean)
         .join("\n\n")
         .trim();
@@ -113,8 +287,9 @@ function buildSessionContentForReview() {
   const outlineLines = [];
   const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
   if (blocks.length) {
-    outlineLines.push("SESSION OUTLINE (blocks in order):");
+    outlineLines.push("SESSION OUTLINE (blocks in scope for this review):");
     for (let i = 0; i < blocks.length; i += 1) {
+      if (!isSelected(i)) continue;
       const b = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
       const title = String(b.title || "").trim() || `Block ${i + 1}`;
       outlineLines.push(`- Block ${i + 1}: ${title}`);
@@ -124,10 +299,11 @@ function buildSessionContentForReview() {
   const extras = [];
 
   const missed = state.activeSession ? getMissedTestQuestions(state.activeSession) : [];
-  if (missed.length) {
+  const scopedMissed = missed.filter((m) => isSelected(Number(m.blockIndex)));
+  if (scopedMissed.length) {
     const lines = [];
     lines.push("WEAK SPOTS (missed questions):");
-    for (const m of missed.slice(0, 40)) {
+    for (const m of scopedMissed.slice(0, 40)) {
       const q = String(m.question || "").trim();
       lines.push(
         `- Block ${Number(m.blockIndex) + 1}, Q${Number(m.questionIndex) + 1}: ${q || "(missing)"} | Your: ${
@@ -409,6 +585,13 @@ function showReviewConfig() {
   resetReviewRun();
   els.reviewConfigStatus.textContent = "";
   els.reviewNQuestionsInput.value = String(getReviewQuestionCount());
+  const sessionId = getActiveReviewSessionId();
+  const blockCount = getReviewBlocksForPicker().length;
+  const draft = loadReviewConfigDraft(sessionId, blockCount);
+  renderReviewBlockPicker(draft?.selectedBlocks ?? null);
+  if (els.reviewFocusInput) {
+    els.reviewFocusInput.value = draft ? String(draft.focus || "") : "";
+  }
   setReviewType(reviewType);
   showScreen("reviewConfig");
 }
@@ -431,12 +614,19 @@ async function startReviewGeneration() {
     return;
   }
 
-  const sessionContent = buildSessionContentForReview();
+  const selectedBlocks = getSelectedReviewBlockIndices();
+  if (!selectedBlocks.length) {
+    setReviewConfigError("Select at least one block to review.");
+    return;
+  }
+
+  const sessionContent = buildSessionContentForReview(selectedBlocks);
   if (!sessionContent) {
     setReviewConfigError("Could not extract session content for review.");
     return;
   }
 
+  const reviewInstructions = getReviewFocusNotes();
   reviewSessionContent = sessionContent;
   reviewGenCancelToken = { cancelled: false };
   showScreen("reviewGenerating");
@@ -457,6 +647,7 @@ async function startReviewGeneration() {
     const content = await deepSeekGenerateReviewBatch({
       llmModel,
       sessionContent,
+      reviewInstructions,
       type: reviewType,
       batchSize,
     });
@@ -501,6 +692,25 @@ export function wireReviewHandlers() {
   els.reviewTypeBothBtn.addEventListener("click", () => setReviewType("both"));
 
   els.reviewCancelBtn.addEventListener("click", () => showScreen("complete"));
+
+  if (els.reviewBlocksSelectAllBtn) {
+    els.reviewBlocksSelectAllBtn.addEventListener("click", () => {
+      setAllReviewBlocksChecked(true);
+      persistReviewConfigDraft();
+    });
+  }
+  if (els.reviewBlocksDeselectAllBtn) {
+    els.reviewBlocksDeselectAllBtn.addEventListener("click", () => {
+      setAllReviewBlocksChecked(false);
+      persistReviewConfigDraft();
+    });
+  }
+  if (els.reviewBlocksList) {
+    els.reviewBlocksList.addEventListener("change", () => persistReviewConfigDraft());
+  }
+  if (els.reviewFocusInput) {
+    els.reviewFocusInput.addEventListener("input", () => persistReviewConfigDraft());
+  }
 
   els.reviewStartBtn.addEventListener("click", async () => {
     els.reviewConfigStatus.textContent = "";
