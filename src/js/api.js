@@ -1277,6 +1277,15 @@ export const MC_OPTION_PARITY_RULES = `Option parity (required for every test qu
 const QUESTION_PEDAGOGY_RULES = `Questions must test understanding (apply, discriminate, predict)—not verbatim recall of source phrasing.
 For vocabulary blocks: test term-to-meaning or meaning-to-term only; no multi-step application yet.`;
 
+const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every test question, even before any student answer exists):
+- Feedback must read as a short conceptual explanation, not as a label for the right option.
+- Start by restating the underlying idea or rule in your own words (without copying any option).
+- Then explain why that idea makes the correct option work, using principle-level reasoning.
+- Briefly contrast with at least one plausible distractor: name the confusion and why it fails.
+- Do NOT copy or closely paraphrase the text of the correct option in the feedback.
+- Avoid giveaway lead-ins such as "The correct answer is..." or direct letter references (A/B/C/D).
+- Keep it concise (3-5 short sentences), specific, and still useful after the student already knows if they were right or wrong.`;
+
 export function buildBlockGenerationSystemPrompt({
   language,
   n_test,
@@ -1336,8 +1345,9 @@ Return a single JSON object with this schema:
 ${BLOCK_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
 Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
-Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
+Test questions: 4 options (A/B/C/D), one correct answer, and high-value feedback.
 ${MC_OPTION_PARITY_RULES}
+${TEST_FEEDBACK_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
@@ -1445,8 +1455,9 @@ Return a single JSON object with this schema:
 ${QUESTIONS_ONLY_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
 Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
-Test questions: 4 options (A/B/C/D), one correct answer, brief feedback.
+Test questions: 4 options (A/B/C/D), one correct answer, and high-value feedback.
 ${MC_OPTION_PARITY_RULES}
+${TEST_FEEDBACK_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
@@ -1763,7 +1774,7 @@ export async function deepSeekGenerateReviewBatch({
 
   const testParity =
     type === "test" || type === "both"
-      ? `\nFor each test question: 4 options (A/B/C/D), one correct answer, brief feedback.\n${MC_OPTION_PARITY_RULES}\n`
+      ? `\nFor each test question: 4 options (A/B/C/D), one correct answer, and high-value feedback.\n${MC_OPTION_PARITY_RULES}\n${TEST_FEEDBACK_RULES}\n`
       : "";
 
   const systemPrompt = `You are a review examiner. Based on this study session content, generate exactly {batch_size} {type} questions that test retention across the ENTIRE session, not just one block.
