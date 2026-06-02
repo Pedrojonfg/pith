@@ -564,6 +564,14 @@ function countWords(text) {
   return raw.split(" ").filter(Boolean).length;
 }
 
+function formatFileSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function stripDataUriAttributes(html) {
   return String(html || "").replace(
     /\b([a-zA-Z0-9:_-]+)\s*=\s*(["'])\s*data:[\s\S]*?\2/gi,
@@ -2841,9 +2849,11 @@ export function wireStudyHandlers() {
       const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
       const file = fileList[0];
       if (!file) return;
-      els.fileExtractHint.textContent = "Extracting…";
-      const rawMaterialText = await readFileAsText(file);
-      if (String(rawMaterialText || "").includes("OFFLINE_PACK_V1")) {
+      els.fileExtractHint.textContent = `Selected: ${String(file.name || "file")} (${formatFileSize(file.size)})`;
+      const markerProbe = await file.slice(0, 64 * 1024).text();
+      if (String(markerProbe || "").includes("OFFLINE_PACK_V1")) {
+        els.fileExtractHint.textContent = "Loading offline pack…";
+        const rawMaterialText = await readFileAsText(file);
         await loadOfflinePack(rawMaterialText, String(file.name || ""));
         return;
       }
@@ -2852,11 +2862,9 @@ export function wireStudyHandlers() {
         window.offlinePack = null;
         setBlocksReadonlyMode({ enabled: false, bannerText: "" });
       }
-      const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
-      state.lastRawMaterialText = String(rawMaterialText || "");
-      state.lastCleanedMaterialText = cleanedText;
-      state.lastCleanedMaterialWordCount = wordCount;
-      els.fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+      state.lastRawMaterialText = "";
+      state.lastCleanedMaterialText = "";
+      state.lastCleanedMaterialWordCount = 0;
     } catch {
       els.fileExtractHint.textContent = "";
     }
