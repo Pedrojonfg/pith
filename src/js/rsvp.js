@@ -8,7 +8,7 @@ import { clampInt } from "./session.js?v=20260525_1";
 import { stripMarkdownForPlainText } from "./markdown.js?v=20260525_1";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260525_1";
 
-/** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean }} RsvpChunk */
+/** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean, afterBoldEnd?: boolean }} RsvpChunk */
 
 export const rsvpState = {
   /** Full explanation markdown (persisted across WPF rebuilds). */
@@ -373,6 +373,9 @@ const RSVP_LONG_WORD_LETTERS = 10;
 const RSVP_NAME_OR_NUMBER_MULT = 1.3;
 const RSVP_SENTENCE_END_MULT = 1.35;
 const RSVP_PARAGRAPH_START_MS = 200;
+const RSVP_AFTER_BOLD_MS = 150;
+/** Private-use sentinel inserted after `**bold**` / `__bold__` before tokenization. */
+const RSVP_BOLD_END_MARKER = "\uE000";
 
 const rsvpGraphemeSegmenter =
   typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
@@ -499,6 +502,9 @@ function dwellMsForChunk(meta) {
   if (meta.paragraphStart) {
     ms += RSVP_PARAGRAPH_START_MS;
   }
+  if (meta.afterBoldEnd) {
+    ms += RSVP_AFTER_BOLD_MS;
+  }
 
   return Math.max(20, ms);
 }
@@ -567,7 +573,7 @@ function longestWordTokenFromExplanation(explanationText) {
 
   for (const seg of segmentTextAndMath(src)) {
     if (seg.type !== "text") continue;
-    const plain = stripMarkdownForPlainText(seg.raw);
+    const plain = markdownToRsvpPlainText(seg.raw);
     for (const para of splitTextParagraphs(plain)) {
       for (const word of tokenizeWords(para)) {
         const score = countLetterGraphemes(word) || String(word).trim().length;
@@ -595,6 +601,22 @@ function isSentenceTerminalWord(word) {
   return /(?:\.{3}|[.!?…])(?:['"«»")\]}]*)$/.test(w);
 }
 
+/** Markdown segment → plain RSVP text; marks end of each bold span for timing. */
+function markdownToRsvpPlainText(raw) {
+  let s = String(raw || "");
+  s = s.replace(/\*\*([^*]+)\*\*/g, (_, inner) => inner + RSVP_BOLD_END_MARKER);
+  s = s.replace(/__([^_]+)__/g, (_, inner) => inner + RSVP_BOLD_END_MARKER);
+  return stripMarkdownForPlainText(s);
+}
+
+function wordEndsBoldSpan(word) {
+  return String(word || "").includes(RSVP_BOLD_END_MARKER);
+}
+
+function stripBoldEndMarkers(text) {
+  return String(text || "").split(RSVP_BOLD_END_MARKER).join("");
+}
+
 /** Split text on blank lines so RSVP never mixes paragraphs in one flash. */
 function splitTextParagraphs(text) {
   return String(text || "")
@@ -616,7 +638,7 @@ function chunkWordsBySentence(words, wordsPerFlash) {
 
   for (const word of words) {
     buf.push(word);
-    if (isSentenceTerminalWord(word) || buf.length >= wpf) {
+    if (isSentenceTerminalWord(word) || wordEndsBoldSpan(word) || buf.length >= wpf) {
       out.push(buf.join(""));
       buf = [];
     }
@@ -794,7 +816,7 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
 
   for (const seg of segmentTextAndMath(explanationText)) {
     if (seg.type === "text") {
-      const plain = stripMarkdownForPlainText(seg.raw);
+      const plain = markdownToRsvpPlainText(seg.raw);
       for (const para of splitTextParagraphs(plain)) {
         const paraChunks = chunkWordsBySentence(tokenizeWords(para), wpf);
         for (let i = 0; i < paraChunks.length; i++) {
@@ -802,8 +824,9 @@ function buildChunksFromExplanation(explanationText, wordsPerFlash) {
           if (t) {
             chunks.push({
               type: "text",
-              content: t,
+              content: stripBoldEndMarkers(t),
               paragraphStart: i === 0,
+              afterBoldEnd: wordEndsBoldSpan(t),
             });
           }
         }
