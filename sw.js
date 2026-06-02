@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v8";
+const CACHE_NAME = "mylearning-v9";
 
 const STATIC_ASSETS = [
   "/",
@@ -51,6 +51,13 @@ self.addEventListener("activate", (event) => {
       )
       .then(() => self.clients.claim()),
   );
+});
+
+self.addEventListener("message", (event) => {
+  const type = event?.data?.type;
+  if (type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 function isApiRequest(url) {

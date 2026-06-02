@@ -1024,11 +1024,88 @@
     <script type="module" src="src/js/main.js?v=20260525_1"></script>
     <script>
       if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker
-            .register("/sw.js", { scope: "/" })
-            .then((reg) => console.log("SW registered:", reg.scope))
-            .catch((err) => console.error("SW failed:", err));
+        window.addEventListener("load", async () => {
+          const reloadFromUpdate = () => {
+            window.location.reload();
+          };
+
+          const showUpdateToast = (reg) => {
+            if (document.getElementById("sw-update-toast")) return;
+
+            const toast = document.createElement("div");
+            toast.id = "sw-update-toast";
+            toast.style.position = "fixed";
+            toast.style.left = "50%";
+            toast.style.bottom = "16px";
+            toast.style.transform = "translateX(-50%)";
+            toast.style.zIndex = "2000";
+            toast.style.display = "flex";
+            toast.style.gap = "8px";
+            toast.style.alignItems = "center";
+            toast.style.padding = "10px 12px";
+            toast.style.borderRadius = "12px";
+            toast.style.border = "1px solid rgba(255,255,255,0.2)";
+            toast.style.background = "rgba(15,15,15,0.95)";
+            toast.style.backdropFilter = "blur(8px)";
+            toast.style.boxShadow = "0 8px 24px rgba(0,0,0,0.35)";
+            toast.innerHTML = "<span>Nueva version disponible.</span>";
+
+            const updateBtn = document.createElement("button");
+            updateBtn.type = "button";
+            updateBtn.textContent = "Actualizar ahora";
+            updateBtn.style.padding = "8px 10px";
+
+            updateBtn.addEventListener("click", () => {
+              if (reg.waiting) {
+                reg.waiting.postMessage({ type: "SKIP_WAITING" });
+              } else {
+                reloadFromUpdate();
+              }
+            });
+
+            toast.appendChild(updateBtn);
+            document.body.appendChild(toast);
+          };
+
+          try {
+            const reg = await navigator.serviceWorker.register("/sw.js?v=20260602_1", {
+              scope: "/",
+              updateViaCache: "none",
+            });
+
+            const notifyIfWaiting = () => {
+              if (reg.waiting) showUpdateToast(reg);
+            };
+
+            if (reg.waiting) {
+              showUpdateToast(reg);
+            }
+
+            reg.addEventListener("updatefound", () => {
+              const installingWorker = reg.installing;
+              if (!installingWorker) return;
+              installingWorker.addEventListener("statechange", () => {
+                if (
+                  installingWorker.state === "installed" &&
+                  navigator.serviceWorker.controller
+                ) {
+                  showUpdateToast(reg);
+                }
+              });
+            });
+
+            navigator.serviceWorker.addEventListener("controllerchange", () => {
+              if (!window.__swRefreshing) {
+                window.__swRefreshing = true;
+                reloadFromUpdate();
+              }
+            });
+
+            notifyIfWaiting();
+            setTimeout(() => reg.update().catch(() => undefined), 1500);
+          } catch (err) {
+            console.error("SW failed:", err);
+          }
         });
       }
     </script>
