@@ -267,7 +267,7 @@ function renderSlowScopeScreen(session) {
         els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
         if (!els.slowScopeLongWarning.hidden) {
           els.slowScopeLongWarning.textContent =
-            "Scope ≥ 60k characters — Fase 0 will use map-reduce by section.";
+            "Scope ≥ 60k characters — Phase 0 will use map-reduce by section.";
         }
       }
       storeActiveSession(session);
@@ -422,9 +422,9 @@ async function runPhase0Generation(session) {
         if (!els.slowPhase0Progress) return;
         els.slowPhase0Progress.hidden = false;
         if (phase === "chunk") {
-          els.slowPhase0Progress.textContent = `Fase 0: section ${current}/${total} — ${label}`;
+          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} — ${label}`;
         } else {
-          els.slowPhase0Progress.textContent = "Fase 0: synthesizing global orientation…";
+          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientation…";
         }
       },
     });

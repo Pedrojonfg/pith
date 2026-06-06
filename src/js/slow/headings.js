@@ -94,7 +94,7 @@ export function buildScopeOptions(normalizedText, format) {
       kind: "full",
       charStart: 0,
       charEnd: len,
-      label: "Documento completo",
+      label: "Full document",
     },
   ];
 

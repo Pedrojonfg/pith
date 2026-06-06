@@ -27,7 +27,7 @@ export function computeDepthScore(annotations) {
     byType[a.type] = (byType[a.type] || 0) + pts;
     total += pts;
     if (!String(a.userText || "").trim() && ["→", "≈", "?"].includes(a.type)) {
-      penalties.push({ annotationId: a.id, reason: "Anotación generativa sin texto propio" });
+      penalties.push({ annotationId: a.id, reason: "Generative annotation without your own text" });
       total -= 1;
     }
   }

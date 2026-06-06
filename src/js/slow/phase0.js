@@ -1,3 +1,4 @@
+import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260528_1";
 import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260528_1";
 import {
   getActiveSessionLlmModel,
@@ -367,6 +368,7 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     criticalMode = false,
     llmModel = getActiveSessionLlmModel(),
     language = "English",
+    normalizedFormat,
     onProgress,
     signal,
   } = opts;
@@ -390,7 +392,7 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     const raw = await callPhase0Json({
       llmModel: model,
       systemPrompt: buildChunkSystemPrompt(language),
-      userPrompt: `Section: ${chunks[i].title}\n\n${chunks[i].text}`,
+      userPrompt: `Section: ${chunks[i].title}\n\n${scopeTextForPhase0IA(chunks[i].text, normalizedFormat)}`,
       max_tokens: 2048,
       signal,
     });
@@ -438,16 +440,19 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
  */
 export async function generatePhase0ForScope(scopeText, session, opts = {}) {
   const text = String(scopeText || "");
+  const normalizedFormat = session?.slow?.normalizedFormat;
+  const iaText = scopeTextForPhase0IA(text, normalizedFormat);
   const boundaries = buildSectionBoundariesForScope(session);
   const criticalMode = Boolean(session?.slow?.criticalMode);
   const baseOpts = {
     criticalMode,
     llmModel: session?.llmModel,
+    normalizedFormat,
     ...opts,
   };
 
-  if (text.length < PHASE0_MAP_REDUCE_THRESHOLD) {
-    return generatePhase0Single(text, baseOpts);
+  if (iaText.length < PHASE0_MAP_REDUCE_THRESHOLD) {
+    return generatePhase0Single(iaText, baseOpts);
   }
   return mapReducePhase0(text, boundaries, baseOpts);
 }
