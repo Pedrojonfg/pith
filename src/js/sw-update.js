@@ -1,0 +1,121 @@
+/** PWA service worker update UX — detect new versions and let users refresh safely. */
+
+export const SW_VERSION = "20260606_1";
+
+export function getServiceWorkerUrl() {
+  return `/sw.js?v=${SW_VERSION}`;
+}
+
+/** True when a new worker finished installing while an older one still controls the page. */
+export function shouldNotifyUpdate(workerState, hasController) {
+  return workerState === "installed" && hasController === true;
+}
+
+/** First install should activate immediately; updates should wait for user action. */
+export function shouldSkipWaitingOnInstall(hasActiveWorker) {
+  return hasActiveWorker !== true;
+}
+
+export function showUpdateToast(document, window, registration) {
+  if (document.getElementById("sw-update-toast")) return null;
+
+  const toast = document.createElement("div");
+  toast.id = "sw-update-toast";
+  toast.style.position = "fixed";
+  toast.style.left = "50%";
+  toast.style.bottom = "16px";
+  toast.style.transform = "translateX(-50%)";
+  toast.style.zIndex = "2000";
+  toast.style.display = "flex";
+  toast.style.gap = "8px";
+  toast.style.alignItems = "center";
+  toast.style.padding = "10px 12px";
+  toast.style.borderRadius = "12px";
+  toast.style.border = "1px solid rgba(255,255,255,0.2)";
+  toast.style.background = "rgba(15,15,15,0.95)";
+  toast.style.backdropFilter = "blur(8px)";
+  toast.style.boxShadow = "0 8px 24px rgba(0,0,0,0.35)";
+
+  const label = document.createElement("span");
+  label.textContent = "Nueva versión disponible.";
+  toast.appendChild(label);
+
+  const updateBtn = document.createElement("button");
+  updateBtn.type = "button";
+  updateBtn.textContent = "Actualizar ahora";
+  updateBtn.style.padding = "8px 10px";
+  updateBtn.addEventListener("click", () => {
+    if (registration.waiting) {
+      registration.waiting.postMessage({ type: "SKIP_WAITING" });
+      return;
+    }
+    window.location.reload();
+  });
+
+  toast.appendChild(updateBtn);
+  document.body.appendChild(toast);
+  return toast;
+}
+
+const UPDATE_POLL_MS = 30 * 60 * 1000;
+
+export async function initServiceWorkerUpdate({
+  navigator: nav = globalThis.navigator,
+  window: win = globalThis.window,
+  document: doc = globalThis.document,
+  pollIntervalMs = UPDATE_POLL_MS,
+} = {}) {
+  if (!nav?.serviceWorker) {
+    return { registered: false, reason: "unsupported" };
+  }
+
+  const reloadFromUpdate = () => {
+    win.location.reload();
+  };
+
+  const notifyIfWaiting = (registration) => {
+    if (registration.waiting) {
+      showUpdateToast(doc, win, registration);
+    }
+  };
+
+  try {
+    const registration = await nav.serviceWorker.register(getServiceWorkerUrl(), {
+      scope: "/",
+      updateViaCache: "none",
+    });
+
+    notifyIfWaiting(registration);
+
+    registration.addEventListener("updatefound", () => {
+      const installingWorker = registration.installing;
+      if (!installingWorker) return;
+
+      installingWorker.addEventListener("statechange", () => {
+        if (shouldNotifyUpdate(installingWorker.state, Boolean(nav.serviceWorker.controller))) {
+          showUpdateToast(doc, win, registration);
+        }
+      });
+    });
+
+    nav.serviceWorker.addEventListener("controllerchange", () => {
+      if (!win.__swRefreshing) {
+        win.__swRefreshing = true;
+        reloadFromUpdate();
+      }
+    });
+
+    const checkForUpdate = () => registration.update().catch(() => undefined);
+    win.setTimeout(checkForUpdate, 1500);
+    const pollId = win.setInterval(checkForUpdate, pollIntervalMs);
+
+    return {
+      registered: true,
+      registration,
+      stopPolling: () => win.clearInterval(pollId),
+    };
+  } catch (error) {
+    console.error("SW failed:", error);
+    return { registered: false, reason: "register-failed", error };
+  }
+}
