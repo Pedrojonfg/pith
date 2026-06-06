@@ -12,6 +12,7 @@ export const els = {
   dictionaryBtn: document.getElementById("dictionaryBtn"),
 
   screenApiSetup: document.getElementById("screenApiSetup"),
+  screenModeSelect: document.getElementById("screenModeSelect"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenBlocksList: document.getElementById("screenBlocksList"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
@@ -165,6 +166,10 @@ export const els = {
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   modeResumePanel: document.getElementById("modeResumePanel"),
   modeResumeHint: document.getElementById("modeResumeHint"),
+  modeTriageToggle: document.getElementById("modeTriageToggle"),
+  modeTriageBody: document.getElementById("modeTriageBody"),
+  createBackToModesBtn: document.getElementById("createBackToModesBtn"),
+  createModeLabel: document.getElementById("createModeLabel"),
   continueSessionBtn: document.getElementById("continueSessionBtn"),
   newSessionModeBtn: document.getElementById("newSessionModeBtn"),
   rsvpOnlyControls: document.getElementById("rsvpOnlyControls"),
@@ -176,12 +181,16 @@ export const els = {
   screenSlowPhase0: document.getElementById("screenSlowPhase0"),
   screenSlowReader: document.getElementById("screenSlowReader"),
   screenSlowPhase3: document.getElementById("screenSlowPhase3"),
+  screenSlowGraph: document.getElementById("screenSlowGraph"),
   slowScopeList: document.getElementById("slowScopeList"),
   slowScopeCharCount: document.getElementById("slowScopeCharCount"),
   slowScopeLongWarning: document.getElementById("slowScopeLongWarning"),
   slowScopeConfirmBtn: document.getElementById("slowScopeConfirmBtn"),
   slowScopeBackBtn: document.getElementById("slowScopeBackBtn"),
+  slowScopeFillableMap: document.getElementById("slowScopeFillableMap"),
+  slowScopeFillableHint: document.getElementById("slowScopeFillableHint"),
   slowPhase0Progress: document.getElementById("slowPhase0Progress"),
+  slowPhase0CollapseBtn: document.getElementById("slowPhase0CollapseBtn"),
   slowPhase0Content: document.getElementById("slowPhase0Content"),
   slowPhase0Error: document.getElementById("slowPhase0Error"),
   slowPhase0RetryBtn: document.getElementById("slowPhase0RetryBtn"),
@@ -655,6 +664,7 @@ export function getStudyLanguage() {
 
 export function showScreen(which) {
   const showSetup = which === "setup";
+  const showModeSelect = which === "modeSelect";
   const showCreate = which === "create";
   const showBlocks = which === "blocks";
   const showAssessment = which === "assessment";
@@ -673,9 +683,11 @@ export function showScreen(which) {
   const showSlowPhase0 = which === "slowPhase0";
   const showSlowReader = which === "slowReader";
   const showSlowPhase3 = which === "slowPhase3";
+  const showSlowGraph = which === "slowGraph";
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
+  els.screenModeSelect?.setAttribute("aria-hidden", String(!showModeSelect));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
@@ -700,6 +712,7 @@ export function showScreen(which) {
   els.screenSlowPhase0?.setAttribute("aria-hidden", String(!showSlowPhase0));
   els.screenSlowReader?.setAttribute("aria-hidden", String(!showSlowReader));
   els.screenSlowPhase3?.setAttribute("aria-hidden", String(!showSlowPhase3));
+  els.screenSlowGraph?.setAttribute("aria-hidden", String(!showSlowGraph));
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
@@ -720,10 +733,20 @@ export function showScreen(which) {
     setTimeout(() => els.apiKeyInput.focus(), 0);
   }
 
-  if (showCreate) {
+  if (showModeSelect) {
     setTimeout(() => {
       const firstMode = document.querySelector('input[name="studyMode"]');
       if (firstMode) firstMode.focus();
+    }, 0);
+  }
+
+  if (showCreate) {
+    setTimeout(() => {
+      if (els.fileInput && !els.generateBlocksForm?.hidden) {
+        els.fileInput.focus();
+      } else if (els.continueSessionBtn && !els.modeResumePanel?.hidden) {
+        els.continueSessionBtn.focus();
+      }
     }, 0);
   }
 
