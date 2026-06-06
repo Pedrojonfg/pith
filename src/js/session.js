@@ -4,6 +4,7 @@ import {
   LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
+  LS_SESSIONS_BY_MODE_KEY,
   MAX_N_TEST,
 } from "./config.js?v=20260527_1";
 import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
@@ -248,6 +249,83 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+/** @returns {'rsvp'|'slow'} */
+export function normalizeStudyMode(mode) {
+  return String(mode || "").trim() === "slow" ? "slow" : "rsvp";
+}
+
+export function emptySessionsByMode() {
+  return { rsvp: null, slow: null };
+}
+
+function parseSessionsByModeRaw(raw) {
+  if (!raw || !String(raw).trim()) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+    return {
+      rsvp: obj.rsvp && typeof obj.rsvp === "object" ? obj.rsvp : null,
+      slow: obj.slow && typeof obj.slow === "object" ? obj.slow : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** One-time migration: legacy `active_session` → `sessions_by_mode.rsvp`. Idempotent. */
+export function migrateLegacyActiveSession() {
+  const existingRaw = localStorage.getItem(LS_SESSIONS_BY_MODE_KEY);
+  if (existingRaw && existingRaw.trim()) return;
+
+  const legacyRaw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
+  if (!legacyRaw || !legacyRaw.trim()) return;
+
+  try {
+    const legacy = JSON.parse(legacyRaw);
+    if (!legacy || typeof legacy !== "object") return;
+    const migrated = { rsvp: legacy, slow: null };
+    localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
+  } catch {
+    // ignore corrupt legacy
+  }
+}
+
+export function loadSessionsByMode() {
+  migrateLegacyActiveSession();
+  const parsed = parseSessionsByModeRaw(localStorage.getItem(LS_SESSIONS_BY_MODE_KEY));
+  return parsed || emptySessionsByMode();
+}
+
+export function storeSessionsByMode(data) {
+  const safe = {
+    rsvp: data?.rsvp && typeof data.rsvp === "object" ? data.rsvp : null,
+    slow: data?.slow && typeof data.slow === "object" ? data.slow : null,
+  };
+  localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(safe));
+  if (safe.rsvp) {
+    localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(safe.rsvp));
+  } else {
+    try {
+      localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function loadSessionForMode(mode) {
+  const slot = normalizeStudyMode(mode);
+  const all = loadSessionsByMode();
+  return all[slot] || null;
+}
+
+export function storeSessionForMode(mode, session) {
+  const slot = normalizeStudyMode(mode);
+  const all = loadSessionsByMode();
+  all[slot] = session && typeof session === "object" ? session : null;
+  storeSessionsByMode(all);
+}
+
 export function storeActiveSession(sessionObj, { bumpRev } = {}) {
   if (sessionObj && typeof sessionObj === "object") {
     if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
@@ -260,21 +338,20 @@ export function storeActiveSession(sessionObj, { bumpRev } = {}) {
       const prev = Number(sessionObj._meta.rev || 0);
       sessionObj._meta.rev = Number.isFinite(prev) && prev >= 0 ? prev + 1 : 1;
     }
+    const mode = normalizeStudyMode(sessionObj.studyMode);
+    if (!sessionObj.studyMode) sessionObj.studyMode = mode;
   }
-  localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(sessionObj));
+  const mode =
+    sessionObj && typeof sessionObj === "object"
+      ? normalizeStudyMode(sessionObj.studyMode)
+      : normalizeStudyMode(state.studyMode);
+  storeSessionForMode(mode, sessionObj);
 }
 
 export function loadActiveSession() {
-  const raw = localStorage.getItem(LS_ACTIVE_SESSION_KEY);
-  if (raw && raw.trim()) {
-    try {
-      const obj = JSON.parse(raw);
-      if (obj && typeof obj === "object") return obj;
-    } catch {
-      // ignore
-    }
-  }
-  return null;
+  migrateLegacyActiveSession();
+  const mode = state.studyMode != null ? normalizeStudyMode(state.studyMode) : "rsvp";
+  return loadSessionForMode(mode);
 }
 
 export function getBlocksSafe() {
@@ -2049,6 +2126,7 @@ export function initActiveSessionFromBlocksList({
   const n = Math.max(1, Number(nBlocks) || 1);
   const defaults = loadDefaultQuestionConfig();
   return {
+    studyMode: "rsvp",
     n_blocks: n,
     n_test: defaults.n_test,
     n_socratic: defaults.n_socratic,

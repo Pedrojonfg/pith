@@ -163,6 +163,37 @@ export const els = {
   assessmentGeneratingError: document.getElementById("assessmentGeneratingError"),
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
+  modeResumePanel: document.getElementById("modeResumePanel"),
+  modeResumeHint: document.getElementById("modeResumeHint"),
+  continueSessionBtn: document.getElementById("continueSessionBtn"),
+  newSessionModeBtn: document.getElementById("newSessionModeBtn"),
+  rsvpOnlyControls: document.getElementById("rsvpOnlyControls"),
+  rsvpBlocksSection: document.getElementById("rsvpBlocksSection"),
+  slowOnlyControls: document.getElementById("slowOnlyControls"),
+  criticalModeToggleBtn: document.getElementById("criticalModeToggleBtn"),
+
+  screenSlowScope: document.getElementById("screenSlowScope"),
+  screenSlowPhase0: document.getElementById("screenSlowPhase0"),
+  screenSlowReader: document.getElementById("screenSlowReader"),
+  screenSlowPhase3: document.getElementById("screenSlowPhase3"),
+  slowScopeList: document.getElementById("slowScopeList"),
+  slowScopeCharCount: document.getElementById("slowScopeCharCount"),
+  slowScopeLongWarning: document.getElementById("slowScopeLongWarning"),
+  slowScopeConfirmBtn: document.getElementById("slowScopeConfirmBtn"),
+  slowScopeBackBtn: document.getElementById("slowScopeBackBtn"),
+  slowPhase0Progress: document.getElementById("slowPhase0Progress"),
+  slowPhase0Content: document.getElementById("slowPhase0Content"),
+  slowPhase0Error: document.getElementById("slowPhase0Error"),
+  slowPhase0RetryBtn: document.getElementById("slowPhase0RetryBtn"),
+  slowPhase0SkipBtn: document.getElementById("slowPhase0SkipBtn"),
+  slowPhase0ContinueBtn: document.getElementById("slowPhase0ContinueBtn"),
+  slowReaderPage: document.getElementById("slowReaderPage"),
+  slowReaderMargin: document.getElementById("slowReaderMargin"),
+  slowReaderPrevBtn: document.getElementById("slowReaderPrevBtn"),
+  slowReaderNextBtn: document.getElementById("slowReaderNextBtn"),
+  slowFocusModeBtn: document.getElementById("slowFocusModeBtn"),
+  slowReaderCompleteBtn: document.getElementById("slowReaderCompleteBtn"),
+
   startStudyingBtn: document.getElementById("startStudyingBtn"),
   generateFullPackBtn: document.getElementById("generateFullPackBtn"),
   startStudyingStatus: document.getElementById("startStudyingStatus"),
@@ -638,6 +669,10 @@ export function showScreen(which) {
   const showReviewGenerating = which === "reviewGenerating";
   const showReview = which === "review";
   const showReviewSummary = which === "reviewSummary";
+  const showSlowScope = which === "slowScope";
+  const showSlowPhase0 = which === "slowPhase0";
+  const showSlowReader = which === "slowReader";
+  const showSlowPhase3 = which === "slowPhase3";
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
@@ -661,6 +696,10 @@ export function showScreen(which) {
   );
   els.screenReview.setAttribute("aria-hidden", String(!showReview));
   els.screenReviewSummary.setAttribute("aria-hidden", String(!showReviewSummary));
+  els.screenSlowScope?.setAttribute("aria-hidden", String(!showSlowScope));
+  els.screenSlowPhase0?.setAttribute("aria-hidden", String(!showSlowPhase0));
+  els.screenSlowReader?.setAttribute("aria-hidden", String(!showSlowReader));
+  els.screenSlowPhase3?.setAttribute("aria-hidden", String(!showSlowPhase3));
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
@@ -682,7 +721,10 @@ export function showScreen(which) {
   }
 
   if (showCreate) {
-    setTimeout(() => els.fileInput.focus(), 0);
+    setTimeout(() => {
+      const firstMode = document.querySelector('input[name="studyMode"]');
+      if (firstMode) firstMode.focus();
+    }, 0);
   }
 
   if (showBlocks) {

@@ -16,6 +16,7 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="stylesheet" href="src/css/main.css" />
     <link rel="stylesheet" href="src/css/sidebar.css" />
+    <link rel="stylesheet" href="src/css/slow-mode.css" />
   </head>
   <body>
     <aside id="block-read-sidebar" class="block-read-sidebar collapsed" hidden>
@@ -231,9 +232,37 @@
         >
           <div class="card">
             <h1>Create a study session</h1>
-            <p>Upload your material, choose a mode, and generate blocks.</p>
+            <p>Choose how you want to study, then upload your material.</p>
 
-            <form id="generateBlocksForm">
+            <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
+              <legend class="sr-only">Study mode</legend>
+              <div class="study-mode-options">
+                <label class="study-mode-option">
+                  <input type="radio" name="studyMode" value="rsvp" />
+                  <span class="study-mode-option-body">
+                    <strong>RSVP</strong>
+                    <span class="hint">Facts, definitions, exam prep — fast blocks with questions.</span>
+                  </span>
+                </label>
+                <label class="study-mode-option">
+                  <input type="radio" name="studyMode" value="slow" />
+                  <span class="study-mode-option-body">
+                    <strong>Slow Mode</strong>
+                    <span class="hint">Dense argument — paginated reading, annotations, phases 0–3.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <div id="modeResumePanel" class="mode-resume-panel" hidden>
+              <p id="modeResumeHint" class="hint"></p>
+              <div class="row">
+                <button type="button" id="continueSessionBtn" class="btn-primary">Continue session</button>
+                <button type="button" id="newSessionModeBtn">New session</button>
+              </div>
+            </div>
+
+            <form id="generateBlocksForm" hidden>
               <label for="fileInput">File</label>
               <input
                 id="fileInput"
@@ -244,6 +273,7 @@
               />
               <div class="hint" id="fileExtractHint" aria-live="polite"></div>
 
+              <div id="rsvpOnlyControls">
               <div style="text-align: center; margin-top: 10px; color: var(--muted)">-- OR --</div>
               <div class="row" style="margin-top: 8px">
                 <button type="button" id="loadOfflinePackBtn" style="opacity: 0.85">
@@ -274,6 +304,19 @@
                 tabindex="-1"
               />
               <div id="offlinePackError" class="error" hidden></div>
+              </div>
+
+              <div id="slowOnlyControls" hidden>
+                <div class="divider"></div>
+                <div class="toggle" role="group" aria-label="Critical reading mode">
+                  <button type="button" id="criticalModeToggleBtn" aria-pressed="false">
+                    Lectura crítica (Modo Crítico)
+                  </button>
+                </div>
+                <div class="hint" id="criticalModeHint" style="margin-top: 6px">
+                  Prioriza anotaciones críticas y steel-manning durante la lectura.
+                </div>
+              </div>
 
               <div class="divider"></div>
 
@@ -284,6 +327,7 @@
               </select>
               <div class="hint">Used for all API calls in this new session.</div>
 
+              <div id="rsvpBlocksSection">
               <div class="divider"></div>
 
               <label for="blocksInput">Blocks</label>
@@ -386,6 +430,7 @@
               </div>
 
               <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
+              </div>
 
               <div class="row">
                 <button type="submit" id="generateBlocksBtn" class="btn-primary">
@@ -910,6 +955,65 @@
             <div class="row">
               <button type="button" id="reviewSummaryBackBtn">Back</button>
               <button type="button" id="reviewSummaryNewBtn">Review again</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
+          <div class="card slow-card">
+            <h1>Reading scope</h1>
+            <p class="hint">Choose what to read before orientation (Fase 0).</p>
+            <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
+            <div id="slowScopeLongWarning" class="error" hidden></div>
+            <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
+            <div class="row">
+              <button type="button" id="slowScopeConfirmBtn" class="btn-primary" disabled>Continue →</button>
+              <button type="button" id="slowScopeBackBtn">Back</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowPhase0" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode orientation">
+          <div class="card slow-card">
+            <h1>Orientation (Fase 0)</h1>
+            <div id="slowPhase0Progress" class="hint" hidden></div>
+            <div id="slowPhase0Content" class="slow-phase0-content"></div>
+            <div id="slowPhase0Error" class="error" hidden></div>
+            <div class="row">
+              <button type="button" id="slowPhase0RetryBtn" hidden>Reintentar</button>
+              <button type="button" id="slowPhase0SkipBtn" hidden>Continuar sin orientación</button>
+              <button type="button" id="slowPhase0ContinueBtn" class="btn-primary" hidden>Start reading →</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowReader" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode reader">
+          <div class="slow-reader-layout" id="slowReaderLayout">
+            <aside id="slowReaderSidebar" class="slow-reader-sidebar" hidden></aside>
+            <div class="slow-reader-main">
+              <div class="slow-reader-toolbar">
+                <button type="button" id="slowReaderPrevBtn" aria-label="Previous page">←</button>
+                <button type="button" id="slowFontSmallerBtn" aria-label="Smaller text">A−</button>
+                <button type="button" id="slowFontLargerBtn" aria-label="Larger text">A+</button>
+                <div id="slowReaderProgress" class="slow-reader-progress" aria-hidden="true"><span id="slowReaderProgressFill"></span></div>
+                <button type="button" id="slowReaderNextBtn" aria-label="Next page">→</button>
+                <button type="button" id="slowFocusModeBtn" aria-pressed="false">Focus</button>
+                <button type="button" id="slowReaderCompleteBtn">Lectura completa</button>
+              </div>
+              <div id="slowReaderPage" class="slow-reader-page" aria-live="polite"></div>
+              <div id="slowReaderMargin" class="slow-reader-margin"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowPhase3" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode consolidation">
+          <div class="card slow-card">
+            <h1>Consolidation (Fase 3)</h1>
+            <div id="slowPhase3Modules" class="slow-phase3-modules"></div>
+            <div id="slowPhase3Content" class="slow-phase3-content"></div>
+            <div class="row">
+              <button type="button" id="slowPhase3BackBtn">Back to reader</button>
+              <button type="button" id="slowPhase3FinishBtn" class="btn-primary">Finish session</button>
             </div>
           </div>
         </section>

@@ -16,6 +16,7 @@ import {
   ensureSessionResponseState,
 } from "./session.js?v=20260527_1";
 import { isOfflineMode } from "./main.js?v=20260525_1";
+import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -194,8 +195,39 @@ export function collectExportConcepts(session) {
   );
 }
 
+function buildSlowMarkdown(session) {
+  const slow = session.slow || {};
+  const scope = slow.readingScope || {};
+  const lines = [];
+  lines.push("# Slow Mode Session");
+  lines.push(`Material: ${session.materialMeta?.fileName || "—"}`);
+  lines.push(`Scope: ${scope.label || "—"} (${scope.charStart ?? 0}–${scope.charEnd ?? 0})`);
+  lines.push(`Phase: ${slow.phase || "—"}`);
+  lines.push(`Critical mode: ${slow.criticalMode ? "yes" : "no"}`);
+  if (slow.phase0) {
+    lines.push("");
+    lines.push("## Phase 0");
+    lines.push(`Thesis: ${slow.phase0.thesis || ""}`);
+    lines.push(`Guide question: ${slow.phase0.guideQuestion || ""}`);
+  }
+  lines.push("");
+  lines.push("## Annotations");
+  for (const a of slow.annotations || []) {
+    lines.push(`- ${a.type} [${a.charStart}-${a.charEnd}] ${a.userText || ""}`);
+  }
+  const depth = slow.depthScore || computeDepthScore(slow.annotations);
+  lines.push("");
+  lines.push("## Depth score");
+  lines.push(`Total: ${depth.total}`);
+  lines.push(`Generative ratio: ${(depth.generativeRatio * 100).toFixed(0)}%`);
+  return `${lines.join("\n")}\n`;
+}
+
 export function buildMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
+  if (safe.studyMode === "slow" && safe.slow) {
+    return buildSlowMarkdown(safe);
+  }
   if (session === state.activeSession) {
     ensureSessionResponseState();
   }
