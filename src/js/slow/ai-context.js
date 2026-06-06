@@ -1,4 +1,5 @@
 import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260525_1";
+import { getStudyLanguage } from "../ui.js?v=20260525_1";
 import { getScopeText } from "./reader.js?v=20260528_1";
 
 export function buildIAContext(slow) {
@@ -14,15 +15,19 @@ export async function askSlowReaderIA(session, userQuery, { annotationType } = {
   const query = String(userQuery || "").trim();
   if (!query) throw new Error("Empty query");
 
+  const lang = getStudyLanguage() || "English";
+
   let system =
-    "El usuario lee un texto filosófico. Responde SOLO con información del fragmento ya leído. " +
-    "Máximo 3 oraciones. Si la respuesta requiere texto no leído, dilo sin revelarlo.";
+    `The user is reading a philosophical text. Respond ONLY with information from the portion already read. ` +
+    `Maximum 3 sentences. Respond entirely in ${lang}. If the answer requires unread text, say so without revealing it.`;
   if (annotationType === "⇑") {
     system =
-      "Presenta el steel man del argumento señalado: la versión más fuerte posible sin evaluar validez. Máx. 3 oraciones.";
+      `Present the steel man of the indicated argument: the strongest possible version without judging validity. ` +
+      `Max 3 sentences. Respond entirely in ${lang}.`;
   } else if (annotationType === "⚑") {
     system =
-      "Explica el fragmento señalado con contexto del texto ya leído. Máx. 3 oraciones, sin spoilers.";
+      `Explain the indicated passage using context from text already read. Max 3 sentences, no spoilers. ` +
+      `Respond entirely in ${lang}.`;
   }
 
   return llmChatCompletions({
@@ -31,7 +36,7 @@ export async function askSlowReaderIA(session, userQuery, { annotationType } = {
       { role: "system", content: system },
       {
         role: "user",
-        content: `Texto leído:\n${context.slice(-120000)}\n\nPregunta: ${query}`,
+        content: `Text read so far:\n${context.slice(-120000)}\n\nQuestion: ${query}`,
       },
     ],
     temperature: 0.2,

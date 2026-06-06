@@ -310,11 +310,11 @@
                 <div class="divider"></div>
                 <div class="toggle" role="group" aria-label="Critical reading mode">
                   <button type="button" id="criticalModeToggleBtn" aria-pressed="false">
-                    Lectura crítica (Modo Crítico)
+                    Critical reading mode
                   </button>
                 </div>
                 <div class="hint" id="criticalModeHint" style="margin-top: 6px">
-                  Prioriza anotaciones críticas y steel-manning durante la lectura.
+                  Prioritizes critical annotations and steel-manning while you read.
                 </div>
               </div>
 
@@ -962,7 +962,7 @@
         <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
           <div class="card slow-card">
             <h1>Reading scope</h1>
-            <p class="hint">Choose what to read before orientation (Fase 0).</p>
+            <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
             <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
             <div id="slowScopeLongWarning" class="error" hidden></div>
             <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
@@ -975,13 +975,16 @@
 
         <section id="screenSlowPhase0" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode orientation">
           <div class="card slow-card">
-            <h1>Orientation (Fase 0)</h1>
+            <h1>Orientation (Phase 0)</h1>
+            <p class="hint">
+              Before you read, AI summarizes the thesis, argument map, key concepts, and a guide question.
+            </p>
             <div id="slowPhase0Progress" class="hint" hidden></div>
             <div id="slowPhase0Content" class="slow-phase0-content"></div>
             <div id="slowPhase0Error" class="error" hidden></div>
             <div class="row">
-              <button type="button" id="slowPhase0RetryBtn" hidden>Reintentar</button>
-              <button type="button" id="slowPhase0SkipBtn" hidden>Continuar sin orientación</button>
+              <button type="button" id="slowPhase0RetryBtn" hidden>Retry</button>
+              <button type="button" id="slowPhase0SkipBtn" hidden>Continue without orientation</button>
               <button type="button" id="slowPhase0ContinueBtn" class="btn-primary" hidden>Start reading →</button>
             </div>
           </div>
@@ -998,7 +1001,7 @@
                 <div id="slowReaderProgress" class="slow-reader-progress" aria-hidden="true"><span id="slowReaderProgressFill"></span></div>
                 <button type="button" id="slowReaderNextBtn" aria-label="Next page">→</button>
                 <button type="button" id="slowFocusModeBtn" aria-pressed="false">Focus</button>
-                <button type="button" id="slowReaderCompleteBtn">Lectura completa</button>
+                <button type="button" id="slowReaderCompleteBtn">Reading complete</button>
               </div>
               <div id="slowReaderPage" class="slow-reader-page" aria-live="polite"></div>
               <div id="slowReaderMargin" class="slow-reader-margin"></div>
@@ -1008,7 +1011,7 @@
 
         <section id="screenSlowPhase3" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode consolidation">
           <div class="card slow-card">
-            <h1>Consolidation (Fase 3)</h1>
+            <h1>Consolidation (Phase 3)</h1>
             <div id="slowPhase3Modules" class="slow-phase3-modules"></div>
             <div id="slowPhase3Content" class="slow-phase3-content"></div>
             <div class="row">

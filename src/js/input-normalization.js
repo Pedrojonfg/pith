@@ -142,6 +142,31 @@ export function toMinimalHtml(html) {
   return out;
 }
 
+/** Strip html_min tags for IA prompts (keeps readable line breaks). */
+export function htmlMinToPlainText(html) {
+  const raw = String(html || "").trim();
+  if (!raw) return "";
+  if (typeof DOMParser === "undefined") {
+    return raw
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>/gi, "\n\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+  const doc = new DOMParser().parseFromString(`<body>${raw}</body>`, "text/html");
+  return (doc.body?.innerText || doc.body?.textContent || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Scope text prepared for Phase 0 / IA (plain text when source is html_min). */
+export function scopeTextForPhase0IA(text, normalizedFormat) {
+  const raw = String(text || "");
+  return String(normalizedFormat || "") === "html_min" ? htmlMinToPlainText(raw) : raw;
+}
+
 /** Plain text → markdown paragraphs (no HTML). */
 export function plainTextToMarkdown(text) {
   const raw = String(text || "")

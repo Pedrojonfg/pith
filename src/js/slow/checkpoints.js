@@ -77,7 +77,7 @@ function showCheckpointChip(session, section, onAnswer) {
   });
   const input = document.createElement("input");
   input.type = "text";
-  input.placeholder = "Integra la sección en una frase…";
+  input.placeholder = "Summarize this section in one sentence…";
   const send = document.createElement("button");
   send.type = "button";
   send.textContent = "→";

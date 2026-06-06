@@ -1,20 +1,20 @@
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
 export const ANNOTATION_TYPES = [
-  { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Parafrasear" },
-  { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Pregunta" },
-  { symbol: "→", id: "explain", tier: "primary", criticalMenu: false, label: "Auto-explicación" },
-  { symbol: "⟷", id: "link", tier: "primary", criticalMenu: false, label: "Conexión" },
-  { symbol: "⚑", id: "flag", tier: "primary", criticalMenu: false, label: "Pedir IA" },
-  { symbol: "⊘", id: "reject", tier: "critical", criticalMenu: true, label: "Objeción" },
-  { symbol: "↯", id: "tension", tier: "critical", criticalMenu: true, label: "Tensión" },
-  { symbol: "⚠", id: "weak", tier: "critical", criticalMenu: true, label: "Debilidad" },
-  { symbol: "★", id: "strong", tier: "critical", criticalMenu: true, label: "Fortaleza" },
+  { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase" },
+  { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question" },
+  { symbol: "→", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain" },
+  { symbol: "⟷", id: "link", tier: "primary", criticalMenu: false, label: "Connection" },
+  { symbol: "⚑", id: "flag", tier: "primary", criticalMenu: false, label: "Ask AI" },
+  { symbol: "⊘", id: "reject", tier: "critical", criticalMenu: true, label: "Objection" },
+  { symbol: "↯", id: "tension", tier: "critical", criticalMenu: true, label: "Tension" },
+  { symbol: "⚠", id: "weak", tier: "critical", criticalMenu: true, label: "Weakness" },
+  { symbol: "★", id: "strong", tier: "critical", criticalMenu: true, label: "Strength" },
   { symbol: "⇑", id: "steel", tier: "critical", criticalMenu: true, label: "Steel man" },
-  { symbol: "📌", id: "pin", tier: "secondary", criticalMenu: false, label: "Marcar" },
+  { symbol: "📌", id: "pin", tier: "secondary", criticalMenu: false, label: "Pin" },
   { symbol: "⚡", id: "insight", tier: "secondary", criticalMenu: false, label: "Insight" },
-  { symbol: "↩", id: "return", tier: "secondary", criticalMenu: false, label: "Retorno" },
-  { symbol: "🔗", id: "graph", tier: "secondary", criticalMenu: false, label: "Grafo" },
+  { symbol: "↩", id: "return", tier: "secondary", criticalMenu: false, label: "Return" },
+  { symbol: "🔗", id: "graph", tier: "secondary", criticalMenu: false, label: "Graph" },
 ];
 
 export function visibleAnnotationTypes(criticalMode, { showSecondary = false } = {}) {

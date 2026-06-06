@@ -1,4 +1,5 @@
 import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260525_1";
+import { getStudyLanguage } from "../ui.js?v=20260525_1";
 import { getScopeText } from "./reader.js?v=20260528_1";
 
 const PROXIMITY = 200;
@@ -20,12 +21,13 @@ export function comparePhase0ToAnnotations(phase0, annotations, scopeText) {
 export async function generateRetrievalQuestions(session, annotations) {
   const scope = getScopeText(session);
   const anns = (annotations || []).slice(0, 12);
-  const prompt = `Genera preguntas de retrieval (1 por anotación) en JSON array {annotationId, question}. Anotaciones: ${JSON.stringify(anns.map((a) => ({ id: a.id, type: a.type, text: a.userText })))}`;
+  const lang = getStudyLanguage() || "English";
+  const prompt = `Generate retrieval questions (1 per annotation) as a JSON array {annotationId, question}. Respond entirely in ${lang}. Annotations: ${JSON.stringify(anns.map((a) => ({ id: a.id, type: a.type, text: a.userText })))}`;
   const raw = await llmChatCompletions({
     llmModel: normalizeLlmModel(session.llmModel),
     messages: [
-      { role: "system", content: "Responde solo JSON array." },
-      { role: "user", content: `${prompt}\n\nContexto:\n${scope.slice(0, 80000)}` },
+      { role: "system", content: "Return only a JSON array." },
+      { role: "user", content: `${prompt}\n\nContext:\n${scope.slice(0, 80000)}` },
     ],
     temperature: 0.4,
   });
@@ -40,8 +42,8 @@ export function renderPhase3ModuleA(rows) {
   return (rows || [])
     .map(
       (r) =>
-        `<li>${r.hit ? "✓" : "✗"} ${r.node?.text || r.node?.label || r.node?.id || "Nodo"} — ${
-          r.hit ? "cubierto por anotaciones" : "oportunidad de revisión"
+        `<li>${r.hit ? "✓" : "✗"} ${r.node?.text || r.node?.label || r.node?.id || "Node"} — ${
+          r.hit ? "covered by annotations" : "review opportunity"
         }</li>`,
     )
     .join("");
@@ -55,10 +57,10 @@ export function renderPhase3ModuleB(questions) {
 
 export function renderPhase3ModuleC(session) {
   const anns = session?.slow?.annotations || [];
-  const lines = anns.slice(0, 20).map((a) => `- [Pedro:${a.type}] ${a.userText || "(sin texto)"}`);
+  const lines = anns.slice(0, 20).map((a) => `- [Pedro:${a.type}] ${a.userText || "(no text)"}`);
   return lines.length
     ? `<ul>${lines.map((l) => `<li>${l.replace(/^- /, "")}</li>`).join("")}</ul>`
-    : "<p class='hint'>Sin anotaciones para integrar.</p>";
+    : "<p class='hint'>No annotations to integrate yet.</p>";
 }
 
 export async function initPhase3Screen(session, hostEl) {
@@ -72,9 +74,9 @@ export async function initPhase3Screen(session, hostEl) {
     moduleB = [];
   }
   hostEl.innerHTML = `
-    <section><h2>A — Revisión argumental</h2><ul>${renderPhase3ModuleA(moduleA)}</ul></section>
+    <section><h2>A — Argument review</h2><ul>${renderPhase3ModuleA(moduleA)}</ul></section>
     <section><h2>B — Retrieval</h2><ul>${renderPhase3ModuleB(moduleB)}</ul></section>
-    <section><h2>C — Grafo</h2>${renderPhase3ModuleC(session)}</section>
+    <section><h2>C — Graph</h2>${renderPhase3ModuleC(session)}</section>
   `;
   session.slow.graphEnrichedUnlocked = true;
 }
