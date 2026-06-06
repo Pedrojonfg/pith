@@ -810,7 +810,7 @@ function refreshUiOnPrefetchReady() {
   const { newKeys, updatedKeys } = getConceptHighlightsForBlock(finishedIdx);
   renderDictionary({
     containerEl: o.dictionaryWrap,
-    title: `Conceptos hasta ahora (${concepts.length} términos)`,
+    title: `Concepts so far (${concepts.length} terms)`,
     concepts,
     collapsedByDefault: true,
     newTermKeys: newKeys,
@@ -830,7 +830,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
     prefetchState?.status === "ready" &&
     String(prefetchState?.configKey || "") === expectedKey;
 
-  const placeholder = "Preparando siguiente bloque…";
+  const placeholder = "Preparing next block…";
 
   if (!isReady) {
     o.sneakPeekWrap.hidden = false;
@@ -872,11 +872,11 @@ function getOrCreateTransitionOverlay() {
 
   const title = document.createElement("span");
   title.style.fontWeight = "600";
-  title.textContent = "Continuar";
+  title.textContent = "Continue";
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
-  closeBtn.textContent = "Cerrar";
+  closeBtn.textContent = "Close";
   closeBtn.addEventListener("click", () => setTransitionOverlayOpen(false));
 
   header.appendChild(title);
@@ -890,13 +890,13 @@ function getOrCreateTransitionOverlay() {
 
   const sneakPeekLabel = document.createElement("div");
   sneakPeekLabel.className = "hint";
-  sneakPeekLabel.textContent = "Siguiente bloque";
+  sneakPeekLabel.textContent = "Next block";
 
   const sneakPeekText = document.createElement("div");
   sneakPeekText.className = "hint";
   sneakPeekText.style.lineHeight = "1.5";
   sneakPeekText.style.marginBottom = "10px";
-  sneakPeekText.textContent = "Preparando siguiente bloque…";
+  sneakPeekText.textContent = "Preparing next block…";
 
   sneakPeekWrap.appendChild(sneakPeekLabel);
   sneakPeekWrap.appendChild(sneakPeekText);
@@ -908,7 +908,7 @@ function getOrCreateTransitionOverlay() {
   nextQDetails.open = false;
 
   const nextQSummary = document.createElement("summary");
-  nextQSummary.textContent = "Preguntas del siguiente bloque";
+  nextQSummary.textContent = "Next block questions";
   nextQSummary.className = "hint";
   nextQSummary.style.cursor = "pointer";
 
@@ -983,12 +983,13 @@ function getOrCreateTransitionOverlay() {
 
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
-  confirmBtn.textContent = "Confirmar";
+  confirmBtn.textContent = "Confirm";
+  confirmBtn.className = "btn-primary";
 
   const backBtn = document.createElement("button");
   backBtn.type = "button";
-  backBtn.textContent = "Volver";
-  backBtn.className = "secondary";
+  backBtn.textContent = "Back";
+  backBtn.className = "btn-secondary";
 
   adjustActions.appendChild(confirmBtn);
   adjustActions.appendChild(backBtn);
@@ -1002,12 +1003,13 @@ function getOrCreateTransitionOverlay() {
 
   const continueBtn = document.createElement("button");
   continueBtn.type = "button";
-  continueBtn.textContent = "Siguiente bloque";
+  continueBtn.textContent = "Next block";
+  continueBtn.className = "btn-primary";
 
   const adjustBtn = document.createElement("button");
   adjustBtn.type = "button";
-  adjustBtn.textContent = "Ajustar siguiente bloque";
-  adjustBtn.className = "secondary";
+  adjustBtn.textContent = "Adjust next block";
+  adjustBtn.className = "btn-secondary";
 
   defaultActions.appendChild(continueBtn);
   defaultActions.appendChild(adjustBtn);
@@ -1017,12 +1019,12 @@ function getOrCreateTransitionOverlay() {
 
   const retryBtn = document.createElement("button");
   retryBtn.type = "button";
-  retryBtn.textContent = "Reintentar";
+  retryBtn.textContent = "Retry";
   retryBtn.hidden = true;
 
   const skipBtn = document.createElement("button");
   skipBtn.type = "button";
-  skipBtn.textContent = "Saltar este bloque";
+  skipBtn.textContent = "Skip this block";
   skipBtn.hidden = true;
 
   const status = document.createElement("span");
@@ -1644,7 +1646,7 @@ async function finishQuestions(blockIndex) {
 
   const o = getOrCreateTransitionOverlay();
   const nextIndex = idx + 1;
-  o.title.textContent = `Continuar al bloque ${nextIndex + 1} de ${total}`;
+  o.title.textContent = `Continue to block ${nextIndex + 1} of ${total}`;
 
   o.finishedBlockIndex = idx;
 
@@ -1652,7 +1654,7 @@ async function finishQuestions(blockIndex) {
   const { newKeys, updatedKeys } = getConceptHighlightsForBlock(idx);
   renderDictionary({
     containerEl: o.dictionaryWrap,
-    title: `Conceptos hasta ahora (${concepts.length} términos)`,
+    title: `Concepts so far (${concepts.length} terms)`,
     concepts,
     collapsedByDefault: true,
     newTermKeys: newKeys,
@@ -1671,21 +1673,21 @@ async function finishQuestions(blockIndex) {
     if (o.nextSocValue) o.nextSocValue.textContent = String(nextCfg.n_socratic);
     if (o.nextQStatus) {
       o.nextQStatus.textContent =
-        keyOf(nextCfg) === keyOf(blockDefaults) ? "Perfil del bloque" : "Personalizado";
+        keyOf(nextCfg) === keyOf(blockDefaults) ? "Block profile" : "Custom";
     }
   };
 
   renderNextCfgUi();
 
   const setStatusPreparing = () => {
-    o.statusBarText.textContent = "Preparando siguiente bloque…";
+    o.statusBarText.textContent = "Preparing next block…";
     o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
     o.statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
     o.statusBarFill.style.transform = "translateX(-120%)";
     o.statusBarFill.style.width = "40%";
   };
   const setStatusReady = () => {
-    o.statusBarText.textContent = "Listo ✓";
+    o.statusBarText.textContent = "Ready ✓";
     o.statusBarText.style.color = "rgba(34, 197, 94, 0.95)";
     o.statusBarFill.style.animation = "none";
     o.statusBarFill.style.width = "100%";
@@ -1693,7 +1695,7 @@ async function finishQuestions(blockIndex) {
     o.statusBarFill.style.background = "rgba(34, 197, 94, 0.85)";
   };
   const setStatusFailed = () => {
-    o.statusBarText.textContent = "Error al preparar el bloque";
+    o.statusBarText.textContent = "Failed to prepare block";
     o.statusBarText.style.color = "rgba(248, 113, 113, 0.95)";
     o.statusBarFill.style.animation = "none";
     o.statusBarFill.style.width = "100%";
@@ -1740,7 +1742,7 @@ async function finishQuestions(blockIndex) {
 
   const showRetryControls = (message) => {
     o.error.hidden = false;
-    o.error.textContent = String(message || "Error al generar el bloque.");
+    o.error.textContent = String(message || "Failed to generate block.");
     o.retryBtn.hidden = false;
     o.skipBtn.hidden = false;
   };
@@ -1794,7 +1796,7 @@ async function finishQuestions(blockIndex) {
 
     setPrefetchIndicator("generating");
     setStatusPreparing();
-    o.statusBarText.textContent = "Regenerando siguiente bloque…";
+    o.statusBarText.textContent = "Regenerating next block…";
     triggerPrefetch(nextIndex, { ...nextCfg, force: true });
     syncPrefetchUi();
   };
@@ -1860,7 +1862,7 @@ async function finishQuestions(blockIndex) {
       o.status.textContent = "";
 
       if ((nextCfg.n_test || 0) <= 0 && (nextCfg.n_socratic || 0) <= 0) {
-        showRetryControls("Indica al menos una pregunta para el siguiente bloque.");
+        showRetryControls("Set at least one question for the next block.");
         return;
       }
 
@@ -1887,7 +1889,7 @@ async function finishQuestions(blockIndex) {
         if (mode === "consume_prefetch") {
           data = await getPrefetchedBlock(nextIndex, { configKey: keyOf(nextCfg) });
         } else if (mode === "questions_only") {
-          o.status.textContent = "Regenerando preguntas…";
+          o.status.textContent = "Regenerating questions…";
           data = await generateQuestionsOnlyForIndex(nextIndex, {
             n_test: nextCfg.n_test,
             n_socratic: nextCfg.n_socratic,
@@ -1897,7 +1899,7 @@ async function finishQuestions(blockIndex) {
           setPrefetchIndicator("ready");
           setStatusReady();
         } else {
-          o.status.textContent = "Regenerando bloque…";
+          o.status.textContent = "Regenerating block…";
           setPrefetchIndicator("generating");
           data = await generateBlockDirect(nextIndex, {
             timeoutMs: 30_000,
@@ -1923,7 +1925,7 @@ async function finishQuestions(blockIndex) {
   o.retryBtn.onclick = async () => {
     o.error.hidden = true;
     o.error.textContent = "";
-    o.status.textContent = "Reintentando…";
+    o.status.textContent = "Retrying…";
     try {
       setPrefetchIndicator("generating");
       const cfg = o.view === "adjust" ? nextCfg : blockDefaults;

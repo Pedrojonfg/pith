@@ -37,12 +37,12 @@ export function showUpdateToast(document, window, registration) {
   toast.style.boxShadow = "0 8px 24px rgba(0,0,0,0.35)";
 
   const label = document.createElement("span");
-  label.textContent = "Nueva versión disponible.";
+  label.textContent = "A new version is available.";
   toast.appendChild(label);
 
   const updateBtn = document.createElement("button");
   updateBtn.type = "button";
-  updateBtn.textContent = "Actualizar ahora";
+  updateBtn.textContent = "Update now";
   updateBtn.style.padding = "8px 10px";
   updateBtn.addEventListener("click", () => {
     if (registration.waiting) {

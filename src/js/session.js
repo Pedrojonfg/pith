@@ -1705,17 +1705,17 @@ export function describeSplitRunMetaForUi(splitRunMeta) {
 
   const headlineParts = [];
   if (Number.isFinite(requested_n) && final_n < requested_n) {
-    headlineParts.push(`Pediste ${requested_n}; el material sustentó ${final_n} bloques.`);
+    headlineParts.push(`You requested ${requested_n}; the material supported ${final_n} blocks.`);
   } else {
     headlineParts.push(`Split complete: ${final_n} blocks.`);
   }
   if (pipeline === "fallback_mono") {
-    headlineParts.push("Usando split clásico (fallback).");
+    headlineParts.push("Using classic split (fallback).");
   }
 
   const dedupLine =
     Number.isFinite(dedup_merged_count) && dedup_merged_count > 0
-      ? `Dedup: ${dedup_merged_count} bloques fusionados por firmas duplicadas`
+      ? `Dedup: ${dedup_merged_count} blocks merged due to duplicate signatures`
       : "";
 
   const dedupMerges = Array.isArray(meta?.dedup_merges) ? meta.dedup_merges : [];
@@ -1761,7 +1761,7 @@ export async function twoPhaseConceptSplit(
   };
 
   const runFallback = async () => {
-    progress("Usando split clásico (fallback)…");
+    progress("Using classic split (fallback)…");
     const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260525_1");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
@@ -1793,7 +1793,7 @@ export async function twoPhaseConceptSplit(
       deepSeekPackConceptsToBlocks,
     } = await import("./api.js?v=20260525_1");
 
-    progress("Inventariando conceptos…");
+    progress("Indexing concepts…");
     const inventory = await deepSeekConceptInventory({
       llmModel: model,
       materialText,
@@ -1802,7 +1802,7 @@ export async function twoPhaseConceptSplit(
     });
     const concept_count = inventory.length;
 
-    progress(`Empaquetando ${requested_n} bloques…`);
+    progress(`Packing ${requested_n} blocks…`);
     const { blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
       llmModel: model,
       inventory,
@@ -1822,7 +1822,7 @@ export async function twoPhaseConceptSplit(
       chunk: chunks[i] || "",
     }));
 
-    progress("Comprobando duplicados…");
+    progress("Checking for duplicates…");
     const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
 
     return {

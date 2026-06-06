@@ -7,6 +7,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Study App</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
     <link rel="manifest" href="/manifest.json" />
     <link rel="stylesheet" href="src/css/main.css" />
     <link rel="stylesheet" href="src/css/sidebar.css" />
@@ -137,7 +143,7 @@
       style="right: 150px; text-decoration: none"
       hidden
     >
-      Descargar app
+      Install app
     </button>
     <button
       type="button"
@@ -155,12 +161,12 @@
       aria-hidden="true"
       aria-label="Study progress"
     >
-      <div class="container" style="max-width: 720px">
+      <div class="container">
         <div class="rowline">
           <span id="studyProgressLabel">Block 1 of 1</span>
           <span id="studyProgressTitle"></span>
           <span style="display: inline-flex; gap: 8px; align-items: baseline">
-            <button type="button" id="saveSessionInlineBtn">Save session</button>
+            <button type="button" id="saveSessionInlineBtn" class="btn-secondary">Save session</button>
             <button type="button" id="summarySoFarBtn">Summary so far</button>
           </span>
         </div>
@@ -210,7 +216,7 @@
                 placeholder="AIza…"
               />
               <div class="row">
-                <button type="submit">Save</button>
+                <button type="submit" class="btn-primary">Save</button>
                 <span class="hint" id="apiKeyStatus" role="status"></span>
               </div>
             </form>
@@ -304,12 +310,12 @@
               <div class="divider"></div>
 
               <label for="studyNotesInput">
-                Comments / study focus (optional) — Comentarios / enfoque (opcional)
+                Comments / study focus (optional)
               </label>
               <textarea
                 id="studyNotesInput"
                 name="studyNotes"
-                placeholder="E.g. Focus only on topics with direct application to Art History. Ignore unrelated sections. Use concise, exam-style titles. / Ej: Solo Historia del Arte. Ignora lo demás. Títulos tipo examen."
+                placeholder="E.g. Focus only on topics with direct application to Art History. Ignore unrelated sections. Use concise, exam-style titles."
                 rows="4"
                 spellcheck="true"
               ></textarea>
@@ -367,7 +373,7 @@
                   id="connectionQuestionsToggleBtn"
                   aria-pressed="true"
                 >
-                  Preguntas de conexión con anteriores (bloques 2..N)
+                  Connection questions with prior blocks (blocks 2..N)
                 </button>
               </div>
               <div
@@ -376,13 +382,13 @@
                 style="margin-top: 6px"
                 hidden
               >
-                Desactivado: no se generarán preguntas de conexión en los bloques.
+                Off: connection questions will not be generated for blocks.
               </div>
 
               <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
 
               <div class="row">
-                <button type="submit" id="generateBlocksBtn">
+                <button type="submit" id="generateBlocksBtn" class="btn-primary">
                   Generate blocks
                 </button>
                 <span class="hint" id="generateBlocksStatus" role="status"></span>
@@ -477,7 +483,7 @@
               <span id="import-index-label-confirm" class="muted-label"></span>
             </div>
             <div class="row">
-              <button type="button" id="confirmBlocksBtn">
+              <button type="button" id="confirmBlocksBtn" class="btn-primary">
                 Looks good, start session
               </button>
               <span class="hint" id="confirmBlocksStatus" role="status"></span>
@@ -578,7 +584,7 @@
             <h1>Session ready</h1>
             <p id="sessionReadyMeta">Session ready.</p>
             <div class="row">
-              <button type="button" id="startStudyingBtn">Start studying →</button>
+              <button type="button" id="startStudyingBtn" class="btn-primary">Start studying →</button>
               <button type="button" id="generateFullPackBtn">Generate full pack 📦</button>
               <span class="hint" id="startStudyingStatus" role="status"></span>
             </div>
@@ -649,8 +655,8 @@
             ></textarea>
 
             <div class="row">
-              <button type="button" id="betweenBlocksSkipBtn">Skip</button>
-              <button type="button" id="betweenBlocksSendBtn">
+              <button type="button" id="betweenBlocksSkipBtn" class="btn-secondary">Skip</button>
+              <button type="button" id="betweenBlocksSendBtn" class="btn-primary">
                 Send & continue
               </button>
               <span class="hint" id="betweenBlocksStatus" role="status"></span>
@@ -684,7 +690,7 @@
               ></textarea>
 
               <div class="row">
-                <button type="button" id="socraticSubmitBtn">Submit</button>
+                <button type="button" id="socraticSubmitBtn" class="btn-primary">Submit</button>
                 <button type="button" id="socraticNextQuestionBtn" hidden>
                   Next question
                 </button>
@@ -752,8 +758,8 @@
             <h1>Session complete</h1>
             <p>You’re done. Save your session when you’re ready.</p>
             <div class="row" style="justify-content: center">
-              <button type="button" id="saveSessionBtn">Save session</button>
-              <button type="button" id="reviewSessionBtn">Review session</button>
+              <button type="button" id="saveSessionBtn" class="btn-primary">Save session</button>
+              <button type="button" id="reviewSessionBtn" class="btn-secondary">Review session</button>
             </div>
           </div>
         </section>
@@ -771,18 +777,18 @@
             <div class="divider"></div>
 
             <label for="reviewFocusInput">
-              Review focus (optional) — Enfoque del repaso (opcional)
+              Review focus (optional)
             </label>
             <textarea
               id="reviewFocusInput"
               rows="4"
               spellcheck="true"
-              placeholder="E.g. Focus on dates and cause-effect. Skip vocabulary I already know. / Ej: Repasar fechas y causa-efecto. Omitir vocabulario que ya domino."
+              placeholder="E.g. Focus on dates and cause-effect. Skip vocabulary I already know."
             ></textarea>
 
             <div class="divider"></div>
 
-            <label>Blocks to include — Bloques a incluir</label>
+            <label>Blocks to include</label>
             <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
               <button type="button" id="reviewBlocksSelectAllBtn">Select all</button>
               <button type="button" id="reviewBlocksDeselectAllBtn">Deselect all</button>
@@ -822,8 +828,8 @@
             />
 
             <div class="row">
-              <button type="button" id="reviewStartBtn">Start review</button>
-              <button type="button" id="reviewCancelBtn">Cancel</button>
+              <button type="button" id="reviewStartBtn" class="btn-primary">Start review</button>
+              <button type="button" id="reviewCancelBtn" class="btn-secondary">Cancel</button>
               <span class="hint" id="reviewConfigStatus" role="status"></span>
             </div>
             <div id="reviewConfigError" class="error" hidden></div>
@@ -989,7 +995,7 @@
         </div>
         <div class="group">
           <span class="label">Words/flash</span>
-          <span class="rsvp-wpf-hint" id="rsvpWpfHint">RSVP clásico = 1 palabra</span>
+          <span class="rsvp-wpf-hint" id="rsvpWpfHint">Classic RSVP = 1 word</span>
           <div class="toggle" role="group" aria-label="Words per flash">
             <button type="button" id="rsvpWpf1" data-wpf="1" aria-pressed="true">1</button>
             <button type="button" id="rsvpWpf2" data-wpf="2" aria-pressed="false">2</button>
@@ -1006,7 +1012,7 @@
         <div class="group rsvp-comprehension-group">
           <label class="rsvp-comprehension" for="rsvpComprehensionPause">
             <input type="checkbox" id="rsvpComprehensionPause" />
-            Pausa cada
+            Pause every
           </label>
           <input
             type="number"
@@ -1015,16 +1021,16 @@
             max="200"
             step="5"
             value="25"
-            aria-label="Palabras entre pausas de comprensión"
+            aria-label="Words between comprehension pauses"
           />
-          <span class="rsvp-comprehension-suffix">palabras</span>
+          <span class="rsvp-comprehension-suffix">words</span>
         </div>
         <div class="group">
           <button type="button" id="rsvpPlayPauseBtn">Pause</button>
           <button type="button" id="rsvpSkipBtn">Skip to questions</button>
         </div>
         <p class="rsvp-shortcuts-hint" id="rsvpShortcutsHint">
-          Espacio · Pausa · ← → · Flash · Esc · Saltar
+          Space · Pause · ← → · Flash · Esc · Skip
         </p>
       </div>
     </div>
