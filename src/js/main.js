@@ -27,7 +27,7 @@ import {
   toggleSidebar,
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
-import { wireStudyHandlers } from "./study.js?v=20260528_1";
+import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260528_1";
 
 export const isOfflineMode = () => window.offlineMode === true;
 
@@ -83,7 +83,8 @@ function resetToNewSession() {
   clearBlockIndexStorage();
   clearSessionConceptStorage();
   clearGuideChatStorage({ removeAllStored: true });
-  showScreen(getStoredKey() ? "create" : "setup");
+  if (getStoredKey()) enterModeSelectScreen();
+  else showScreen("setup");
   updateDictionaryButtonVisibility();
 }
 
@@ -224,7 +225,7 @@ function bootstrap() {
     const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
     if (geminiRaw) saveGeminiKey(geminiRaw);
     els.apiKeyStatus.textContent = geminiRaw ? "DeepSeek and Gemini saved." : "DeepSeek saved.";
-    showScreen("create");
+    enterModeSelectScreen();
   });
 
   if (els.geminiApiKeyInput) {
@@ -239,7 +240,7 @@ function bootstrap() {
   }
 
   if (getStoredKey()) {
-    showScreen("create");
+    enterModeSelectScreen();
   } else {
     showScreen("setup");
   }

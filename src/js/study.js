@@ -31,7 +31,7 @@ import {
 } from "./dictionary.js?v=20260526_1";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
-import { exportOfflinePack, exportSessionMarkdown } from "./export.js?v=20260525_1";
+import { exportOfflinePack, exportSessionMarkdown, downloadTextFile } from "./export.js?v=20260525_1";
 import {
   clearGuideChatStorage,
   refreshGuideContext,
@@ -109,10 +109,26 @@ import {
 } from "./ui.js?v=20260525_1";
 import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260527_1";
 import { buildScopeOptions, scopeCharCount, SCOPE_CHAR_WARN } from "./slow/headings.js?v=20260528_1";
-import { generatePhase0ForScope } from "./slow/phase0.js?v=20260528_1";
+import {
+  applyFillableMapMode,
+  ensurePhase0UserFields,
+  getPhase0SeenKeyForSession,
+  isPhase0Reread,
+  loadPhase0Cache,
+  markPhase0Seen,
+  savePhase0Cache,
+  slugGraphTermId,
+  generatePhase0ForScope,
+} from "./slow/phase0.js?v=20260528_1";
 import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260528_1";
 import { initPhase3Screen } from "./slow/phase3.js?v=20260528_1";
 import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
+import {
+  buildGraphSubgraphMarkdown,
+  mountEnrichedGraphScreen,
+  wireEnrichedGraphScreen,
+} from "./slow/graph-view.js?v=20260606_1";
+import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
 
 export function createSlowSession({
   normalizedText,
@@ -138,6 +154,9 @@ export function createSlowSession({
       phase: "scope",
       criticalMode: Boolean(criticalMode),
       fillableMapMode: false,
+      phase0SeenKey: null,
+      phase0SeenReread: false,
+      phase0Collapsed: false,
       phase0: null,
       phase0Status: "idle",
       currentPageIndex: 0,
@@ -148,6 +167,8 @@ export function createSlowSession({
       checkpointsDismissed: [],
       depthScore: null,
       graphEnrichedUnlocked: false,
+      graphNodes: [],
+      sidebarOpen: true,
     },
   };
 }
@@ -155,6 +176,47 @@ export function createSlowSession({
 function getSelectedStudyModeRadio() {
   const checked = document.querySelector('input[name="studyMode"]:checked');
   return checked ? normalizeStudyMode(checked.value) : null;
+}
+
+function getStudyModeLabel(mode) {
+  return mode === "slow" ? "Slow Mode" : "RSVP";
+}
+
+function setStudyModeRadio(mode) {
+  document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
+    r.checked = r.value === mode;
+  });
+}
+
+function resetModeSelectUi() {
+  document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
+    r.checked = false;
+  });
+  if (els.modeTriageToggle) els.modeTriageToggle.setAttribute("aria-expanded", "false");
+  if (els.modeTriageBody) els.modeTriageBody.hidden = true;
+}
+
+export function enterModeSelectScreen() {
+  resetModeSelectUi();
+  resetCreateScreenModeUi();
+  showScreen("modeSelect");
+}
+
+function enterCreateScreenForMode(mode) {
+  const normalized = normalizeStudyMode(mode);
+  state.studyMode = normalized;
+  setStudyModeRadio(normalized);
+  if (els.createModeLabel) {
+    els.createModeLabel.textContent = getStudyModeLabel(normalized);
+  }
+  showModeResumeOrUpload(normalized);
+  showScreen("create");
+}
+
+function returnToCreateScreen() {
+  const mode = state.studyMode || getSelectedStudyModeRadio();
+  if (mode) enterCreateScreenForMode(mode);
+  else enterModeSelectScreen();
 }
 
 function updateCreateScreenModeVisibility(mode) {
@@ -171,11 +233,9 @@ function updateCreateScreenModeVisibility(mode) {
 }
 
 function resetCreateScreenModeUi() {
-  document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
-    r.checked = false;
-  });
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  if (els.createModeLabel) els.createModeLabel.textContent = "";
   updateCreateScreenModeVisibility(null);
 }
 
@@ -282,6 +342,18 @@ function renderSlowScopeScreen(session) {
   if (els.slowScopeCharCount && slow.readingScope) {
     els.slowScopeCharCount.textContent = `Scope selected: ${scopeCharCount(slow.readingScope).toLocaleString()} characters`;
   }
+  if (els.slowScopeFillableMap) {
+    els.slowScopeFillableMap.checked = Boolean(slow.fillableMapMode);
+    if (!els.slowScopeFillableMap._wired) {
+      els.slowScopeFillableMap._wired = true;
+      els.slowScopeFillableMap.addEventListener("change", () => {
+        const s = state.activeSession;
+        if (!s?.slow) return;
+        s.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
+        storeActiveSession(s);
+      });
+    }
+  }
 }
 
 function setSlowPhase0Controls({ showRetry = false, showSkip = false, showContinue = false } = {}) {
@@ -290,52 +362,288 @@ function setSlowPhase0Controls({ showRetry = false, showSkip = false, showContin
   if (els.slowPhase0ContinueBtn) els.slowPhase0ContinueBtn.hidden = !showContinue;
 }
 
-function renderSlowPhase0Content(phase0, criticalMode) {
-  const host = els.slowPhase0Content;
-  if (!host) return;
-  host.innerHTML = "";
+const PHASE0_MAX_CONCEPTS = 5;
+
+function persistPhase0Edits(session) {
+  if (!session?.slow?.phase0) return;
+  storeActiveSession(session);
+}
+
+function renderPhase0ReadonlyBlock(parent, title, body) {
+  const section = document.createElement("section");
+  section.className = "slow-phase0-block";
+  const h2 = document.createElement("h2");
+  h2.textContent = title;
+  const pre = document.createElement("pre");
+  pre.className = "slow-phase0-block-body";
+  pre.textContent = body;
+  section.appendChild(h2);
+  section.appendChild(pre);
+  parent.appendChild(section);
+}
+
+function renderSlowPhase0Prequestions(session, parent) {
+  const slow = session.slow;
+  const phase0 = slow.phase0;
+  if (!phase0) return;
+  ensurePhase0UserFields(phase0);
+
+  const section = document.createElement("section");
+  section.className = "slow-phase0-block slow-phase0-editable";
+  const h2 = document.createElement("h2");
+  h2.textContent = "Your questions";
+  section.appendChild(h2);
+
+  const list = document.createElement("ul");
+  list.className = "slow-phase0-prequestions";
+  const renderRow = (text, index) => {
+    const li = document.createElement("li");
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "slow-phase0-input";
+    input.value = text;
+    input.placeholder = "Pregunta antes de leer…";
+    input.addEventListener("input", () => {
+      phase0.prequestions[index] = input.value.trim();
+      persistPhase0Edits(session);
+    });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "slow-phase0-icon-btn";
+    del.textContent = "×";
+    del.title = "Eliminar pregunta";
+    del.addEventListener("click", () => {
+      phase0.prequestions.splice(index, 1);
+      renderSlowPhase0Content(session);
+      persistPhase0Edits(session);
+    });
+    li.appendChild(input);
+    li.appendChild(del);
+    list.appendChild(li);
+  };
+
+  for (let i = 0; i < phase0.prequestions.length; i += 1) {
+    renderRow(phase0.prequestions[i], i);
+  }
+  section.appendChild(list);
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "slow-phase0-add-btn";
+  addBtn.textContent = "+ Añadir pregunta";
+  addBtn.addEventListener("click", () => {
+    phase0.prequestions.push("");
+    renderSlowPhase0Content(session);
+    persistPhase0Edits(session);
+  });
+  section.appendChild(addBtn);
+  parent.appendChild(section);
+}
+
+function renderSlowPhase0ArgumentMap(session, parent) {
+  const slow = session.slow;
+  const phase0 = slow.phase0;
   if (!phase0) return;
 
-  const blocks = [
-    { title: "Thesis", body: phase0.thesis },
-    {
-      title: "Argument map",
-      body: (phase0.argumentMap || [])
-        .map((n) => {
-          const status = n.status ? ` — ${n.status}` : "";
-          const link = n.linkType ? ` (${n.linkType})` : "";
-          return `${n.id}: ${n.text}${status}${link}`;
-        })
-        .join("\n"),
-    },
-    {
-      title: "Concepts to find",
-      body: (phase0.conceptsToFind || [])
-        .map((c) => `· ${c.term} — ${c.authorUsage}`)
-        .join("\n"),
-    },
-    { title: "Guide question", body: phase0.guideQuestion },
-  ];
+  const section = document.createElement("section");
+  section.className = "slow-phase0-block slow-phase0-editable";
+  const h2 = document.createElement("h2");
+  h2.textContent = slow.fillableMapMode ? "Argument map (fill while reading)" : "Argument map";
+  section.appendChild(h2);
+
+  const list = document.createElement("ul");
+  list.className = "slow-phase0-argument-map";
+
+  if (slow.fillableMapMode) {
+    const blanks = phase0.fillableBlanks || [];
+    for (const blank of blanks) {
+      const li = document.createElement("li");
+      li.className = "slow-phase0-fillable-row";
+      const id = document.createElement("span");
+      id.className = "slow-phase0-node-id";
+      id.textContent = `${blank.nodeId}:`;
+      const slot = document.createElement("span");
+      slot.className = "slow-phase0-blank";
+      slot.textContent = blank.userText || "___";
+      li.appendChild(id);
+      li.appendChild(slot);
+      if (blank.pageIndex != null) {
+        const page = document.createElement("span");
+        page.className = "hint";
+        page.textContent = `(p. ${Number(blank.pageIndex) + 1})`;
+        li.appendChild(page);
+      }
+      list.appendChild(li);
+    }
+  } else {
+    for (let i = 0; i < (phase0.argumentMap || []).length; i += 1) {
+      const node = phase0.argumentMap[i];
+      const li = document.createElement("li");
+      li.className = "slow-phase0-map-node";
+      const idLabel = document.createElement("span");
+      idLabel.className = "slow-phase0-node-id";
+      idLabel.textContent = `${node.id}:`;
+      const textInput = document.createElement("textarea");
+      textInput.className = "slow-phase0-textarea";
+      textInput.rows = 2;
+      textInput.value = node.text || "";
+      textInput.addEventListener("input", () => {
+        node.text = textInput.value.trim();
+        persistPhase0Edits(session);
+      });
+      const statusInput = document.createElement("input");
+      statusInput.type = "text";
+      statusInput.className = "slow-phase0-input slow-phase0-status-input";
+      statusInput.placeholder = "Status (optional)";
+      statusInput.value = node.status || "";
+      statusInput.addEventListener("input", () => {
+        node.status = statusInput.value.trim() || undefined;
+        persistPhase0Edits(session);
+      });
+      li.appendChild(idLabel);
+      li.appendChild(textInput);
+      li.appendChild(statusInput);
+      list.appendChild(li);
+    }
+  }
+  section.appendChild(list);
+  parent.appendChild(section);
+}
+
+function renderSlowPhase0Concepts(session, parent) {
+  const slow = session.slow;
+  const phase0 = slow.phase0;
+  if (!phase0) return;
+
+  const section = document.createElement("section");
+  section.className = "slow-phase0-block slow-phase0-editable";
+  const h2 = document.createElement("h2");
+  h2.textContent = "Concepts to find";
+  section.appendChild(h2);
+
+  const list = document.createElement("ul");
+  list.className = "slow-phase0-concepts";
+  for (let i = 0; i < (phase0.conceptsToFind || []).length; i += 1) {
+    const concept = phase0.conceptsToFind[i];
+    const li = document.createElement("li");
+    const termInput = document.createElement("input");
+    termInput.type = "text";
+    termInput.className = "slow-phase0-input";
+    termInput.value = concept.term || "";
+    termInput.addEventListener("input", () => {
+      concept.term = termInput.value.trim();
+      if (concept.graphTermId) concept.graphTermId = slugGraphTermId(concept.term);
+      persistPhase0Edits(session);
+    });
+    const usageInput = document.createElement("input");
+    usageInput.type = "text";
+    usageInput.className = "slow-phase0-input";
+    usageInput.placeholder = "How the author uses it";
+    usageInput.value = concept.authorUsage || "";
+    usageInput.addEventListener("input", () => {
+      concept.authorUsage = usageInput.value.trim();
+      persistPhase0Edits(session);
+    });
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "slow-phase0-icon-btn";
+    del.textContent = "×";
+    del.addEventListener("click", () => {
+      phase0.conceptsToFind.splice(i, 1);
+      renderSlowPhase0Content(session);
+      persistPhase0Edits(session);
+    });
+    li.appendChild(termInput);
+    li.appendChild(usageInput);
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+
+  const row = document.createElement("div");
+  row.className = "row slow-phase0-concept-actions";
+  const dictSelect = document.createElement("select");
+  dictSelect.className = "slow-phase0-select";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Add from dictionary…";
+  dictSelect.appendChild(placeholder);
+  const dictConcepts = getSortedSessionConcepts();
+  for (const c of dictConcepts) {
+    const opt = document.createElement("option");
+    opt.value = c.term;
+    opt.textContent = c.term;
+    opt.dataset.definition = c.definition || "";
+    dictSelect.appendChild(opt);
+  }
+  const addDictBtn = document.createElement("button");
+  addDictBtn.type = "button";
+  addDictBtn.textContent = "Add concept";
+  addDictBtn.disabled = (phase0.conceptsToFind || []).length >= PHASE0_MAX_CONCEPTS;
+  addDictBtn.addEventListener("click", () => {
+    const term = dictSelect.value.trim();
+    if (!term) return;
+    const def = dictSelect.selectedOptions[0]?.dataset?.definition || "";
+    const exists = (phase0.conceptsToFind || []).some(
+      (c) => String(c.term || "").toLowerCase() === term.toLowerCase(),
+    );
+    if (exists || (phase0.conceptsToFind || []).length >= PHASE0_MAX_CONCEPTS) return;
+    phase0.conceptsToFind.push({
+      term,
+      authorUsage: def || "From session dictionary",
+      graphTermId: slugGraphTermId(term),
+    });
+    renderSlowPhase0Content(session);
+    persistPhase0Edits(session);
+  });
+  row.appendChild(dictSelect);
+  row.appendChild(addDictBtn);
+  section.appendChild(row);
+  parent.appendChild(section);
+}
+
+function renderSlowPhase0Content(session) {
+  const slow = session?.slow;
+  const host = els.slowPhase0Content;
+  if (!host || !slow?.phase0) return;
+  const phase0 = ensurePhase0UserFields(slow.phase0);
+  const criticalMode = Boolean(slow.criticalMode);
+  const collapsed = Boolean(slow.phase0Collapsed);
+
+  host.innerHTML = "";
+  host.hidden = collapsed;
+
+  if (els.slowPhase0CollapseBtn) {
+    els.slowPhase0CollapseBtn.hidden = false;
+    els.slowPhase0CollapseBtn.textContent = collapsed
+      ? "Expand orientation"
+      : "Collapse orientation";
+  }
+
+  if (collapsed) return;
+
+  renderPhase0ReadonlyBlock(host, "Thesis", phase0.thesis);
+  renderSlowPhase0Prequestions(session, host);
+  renderSlowPhase0ArgumentMap(session, host);
+  renderSlowPhase0Concepts(session, host);
+  renderPhase0ReadonlyBlock(host, "Guide question", phase0.guideQuestion);
 
   if (criticalMode && phase0.criticalExaminePoints?.length) {
-    blocks.push({
-      title: "Examine critically",
-      body: phase0.criticalExaminePoints.map((p) => `· ${p}`).join("\n"),
-    });
+    renderPhase0ReadonlyBlock(
+      host,
+      "Examine critically",
+      phase0.criticalExaminePoints.map((p) => `· ${p}`).join("\n"),
+    );
   }
+}
 
-  for (const block of blocks) {
-    const section = document.createElement("section");
-    section.className = "slow-phase0-block";
-    const h2 = document.createElement("h2");
-    h2.textContent = block.title;
-    const pre = document.createElement("pre");
-    pre.className = "slow-phase0-block-body";
-    pre.textContent = block.body;
-    section.appendChild(h2);
-    section.appendChild(pre);
-    host.appendChild(section);
-  }
+function updatePhase0CollapseUi(session) {
+  const slow = session?.slow;
+  if (!slow || !els.slowPhase0CollapseBtn) return;
+  const collapsed = Boolean(slow.phase0Collapsed);
+  els.slowPhase0CollapseBtn.hidden = slow.phase0Status !== "ready" || !slow.phase0;
+  els.slowPhase0CollapseBtn.textContent = collapsed ? "Expand orientation" : "Collapse orientation";
+  if (els.slowPhase0Content) els.slowPhase0Content.hidden = collapsed;
 }
 
 function renderSlowPhase0Screen(session) {
@@ -351,6 +659,7 @@ function renderSlowPhase0Screen(session) {
 
   if (status === "generating") {
     setSlowPhase0Controls();
+    if (els.slowPhase0CollapseBtn) els.slowPhase0CollapseBtn.hidden = true;
     if (els.slowPhase0Content) els.slowPhase0Content.innerHTML = "";
     if (els.slowPhase0Progress) {
       els.slowPhase0Progress.hidden = false;
@@ -365,17 +674,20 @@ function renderSlowPhase0Screen(session) {
 
   if (status === "failed") {
     if (els.slowPhase0Content) els.slowPhase0Content.innerHTML = "";
+    if (els.slowPhase0CollapseBtn) els.slowPhase0CollapseBtn.hidden = true;
     if (els.slowPhase0Error) {
       els.slowPhase0Error.hidden = false;
       els.slowPhase0Error.textContent =
         slow.phase0Error || "Could not generate orientation. Check your connection and try again.";
     }
-    setSlowPhase0Controls({ showRetry: true, showSkip: true });
+    const allowSkipOnFail = Boolean(slow.phase0SeenReread);
+    setSlowPhase0Controls({ showRetry: true, showSkip: allowSkipOnFail });
     return;
   }
 
   if (status === "ready" && slow.phase0) {
-    renderSlowPhase0Content(slow.phase0, slow.criticalMode);
+    renderSlowPhase0Content(session);
+    updatePhase0CollapseUi(session);
     setSlowPhase0Controls({ showContinue: true });
     return;
   }
@@ -429,7 +741,7 @@ async function runPhase0Generation(session) {
       },
     });
     if (token !== phase0GenerationToken) return;
-    slow.phase0 = orientation;
+    slow.phase0 = applyFillableMapMode(ensurePhase0UserFields(orientation), slow.fillableMapMode);
     slow.phase0Status = "ready";
     slow.phase0Error = null;
     storeActiveSession(session);
@@ -445,6 +757,7 @@ async function runPhase0Generation(session) {
 
 function skipSlowPhase0(session) {
   if (!session?.slow) return;
+  if (!session.slow.phase0SeenReread) return;
   session.slow.phase0Status = "skipped";
   session.slow.phase0 = null;
   session.slow.phase0Error = null;
@@ -456,6 +769,14 @@ function skipSlowPhase0(session) {
 
 function continueSlowPhase0(session) {
   if (!session?.slow) return;
+  const seenKey = session.slow.phase0SeenKey || getPhase0SeenKeyForSession(session);
+  if (seenKey) {
+    session.slow.phase0SeenKey = seenKey;
+    if (session.slow.phase0) {
+      savePhase0Cache(seenKey, session.slow.phase0);
+    }
+    markPhase0Seen(seenKey);
+  }
   session.slow.phase = "phase1";
   storeActiveSession(session);
   navigateSlowByPhase(session);
@@ -488,33 +809,80 @@ function wireSlowPhase0Handlers() {
   els.slowPhase0ContinueBtn?.addEventListener("click", () => {
     continueSlowPhase0(state.activeSession);
   });
+
+  els.slowPhase0CollapseBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow) return;
+    session.slow.phase0Collapsed = !session.slow.phase0Collapsed;
+    renderSlowPhase0Content(session);
+    updatePhase0CollapseUi(session);
+    storeActiveSession(session);
+  });
+}
+
+function prepareSlowPhase0Entry(session) {
+  const slow = session?.slow;
+  if (!slow?.readingScope) return;
+  const seenKey = getPhase0SeenKeyForSession(session);
+  slow.phase0SeenKey = seenKey;
+  slow.phase0SeenReread = isPhase0Reread(seenKey);
+  slow.phase0Collapsed = slow.phase0SeenReread;
+  const cached = loadPhase0Cache(seenKey, { criticalMode: slow.criticalMode });
+  if (cached) {
+    slow.phase0 = applyFillableMapMode(ensurePhase0UserFields(cached), slow.fillableMapMode);
+    slow.phase0Status = "ready";
+    slow.phase0Error = null;
+  } else {
+    slow.phase0Status = "idle";
+    slow.phase0 = null;
+    slow.phase0Error = null;
+  }
 }
 
 function wireSlowScopeHandlers() {
   els.slowScopeConfirmBtn?.addEventListener("click", () => {
     const session = state.activeSession;
     if (!session?.slow?.readingScope) return;
+    if (els.slowScopeFillableMap) {
+      session.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
+    }
     session.slow.phase = "phase0";
-    session.slow.phase0Status = "idle";
-    session.slow.phase0 = null;
-    session.slow.phase0Error = null;
+    prepareSlowPhase0Entry(session);
     storeActiveSession(session);
     enterSlowPhase0(session);
   });
 
   els.slowScopeBackBtn?.addEventListener("click", () => {
-    resetCreateScreenModeUi();
-    showScreen("create");
+    enterModeSelectScreen();
+  });
+}
+
+function wireModeTriagePanel() {
+  const toggle = els.modeTriageToggle;
+  const body = els.modeTriageBody;
+  if (!toggle || !body) return;
+
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    const next = !open;
+    toggle.setAttribute("aria-expanded", String(next));
+    body.hidden = !next;
   });
 }
 
 function wireStudyModeSelector() {
+  wireModeTriagePanel();
+
   document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {
     radio.addEventListener("change", () => {
       const mode = getSelectedStudyModeRadio();
       if (!mode) return;
-      showModeResumeOrUpload(mode);
+      enterCreateScreenForMode(mode);
     });
+  });
+
+  els.createBackToModesBtn?.addEventListener("click", () => {
+    enterModeSelectScreen();
   });
 
   els.continueSessionBtn?.addEventListener("click", () => {
@@ -2500,6 +2868,50 @@ function ensureAssessmentRunnerEls() {
   return assessmentRunnerEls;
 }
 
+function wireSlowGraphHandlers() {
+  let lastGraph = null;
+
+  function openEnrichedGraphScreen() {
+    const session = state.activeSession;
+    if (!session?.slow?.graphEnrichedUnlocked) return;
+    const host = document.getElementById("slowGraphContent");
+    if (!host) return;
+    lastGraph = mountEnrichedGraphScreen(session, host);
+    wireEnrichedGraphScreen(host, session, {
+      onJumpToAnnotation: (s, ann) => {
+        storeActiveSession(s);
+        initSlowReader(s);
+        showScreen("slowReader");
+        jumpToAnnotation(s, ann);
+      },
+    });
+    storeActiveSession(session);
+    showScreen("slowGraph");
+  }
+
+  document.getElementById("slowPhase3GraphActions")?.addEventListener("click", (e) => {
+    if (e.target?.closest("#slowPhase3GraphBtn")) openEnrichedGraphScreen();
+  });
+
+  document.getElementById("slowGraphBackBtn")?.addEventListener("click", () => {
+    showScreen("slowPhase3");
+  });
+
+  document.getElementById("slowGraphExportBtn")?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow) return;
+    const graph = lastGraph || mountEnrichedGraphScreen(session, document.getElementById("slowGraphContent"));
+    if (!graph) return;
+    const lang = getStudyLanguage() || "English";
+    const md = buildGraphSubgraphMarkdown(graph, lang);
+    const stem = String(session.materialMeta?.fileName || "slow-graph").replace(/\.[^.]+$/, "");
+    downloadTextFile({
+      filename: `${stem}_graph_${Date.now()}.md`,
+      text: md,
+    });
+  });
+}
+
 function wireSlowPhase3Handlers() {
   document.getElementById("slowPhase3BackBtn")?.addEventListener("click", () => {
     const session = state.activeSession;
@@ -2513,20 +2925,27 @@ function wireSlowPhase3Handlers() {
   document.getElementById("slowPhase3FinishBtn")?.addEventListener("click", () => {
     const session = state.activeSession;
     if (!session?.slow) return;
-    session.slow.depthScore = computeDepthScore(session.slow.annotations);
+    session.slow.depthScore = computeDepthScore(session.slow.annotations, {
+      criticalMode: Boolean(session.slow.criticalMode),
+    });
     session.slow.phase = "complete";
     session.slow.graphEnrichedUnlocked = true;
     storeActiveSession(session);
     exportSessionMarkdown();
-    resetCreateScreenModeUi();
-    showScreen("create");
+    enterModeSelectScreen();
   });
 
   const observer = new MutationObserver(() => {
     if (els.screenSlowPhase3?.getAttribute("aria-hidden") === "false") {
       const session = state.activeSession;
       if (session?.slow) {
-        void initPhase3Screen(session, document.getElementById("slowPhase3Content"));
+        storeActiveSession(session);
+        void initPhase3Screen(
+          session,
+          document.getElementById("slowPhase3Content"),
+          document.getElementById("slowPhase3Modules"),
+          document.getElementById("slowPhase3Score"),
+        );
       }
     }
   });
@@ -2541,6 +2960,7 @@ export function wireStudyHandlers() {
   wireSlowScopeHandlers();
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
+  wireSlowGraphHandlers();
   resetCreateScreenModeUi();
 
   setBlockReadContentProvider(() => {
@@ -2601,7 +3021,7 @@ export function wireStudyHandlers() {
     if (!state.activeSession) {
       els.startStudyingError.hidden = false;
       els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
-      showScreen("create");
+      returnToCreateScreen();
       return;
     }
     ensureSessionResponseState();
@@ -3595,7 +4015,7 @@ export function wireStudyHandlers() {
     const nBlocks = indexLen > 0 ? indexLen : Number(state.lastNBlocks);
     if (!Number.isFinite(nBlocks) || nBlocks <= 0) {
       setConfirmError("Missing blocks count from previous step. Regenerate blocks.");
-      showScreen("create");
+      returnToCreateScreen();
       return;
     }
 
@@ -3603,7 +4023,7 @@ export function wireStudyHandlers() {
       setConfirmError(
         "Missing original material from previous step. Please re-upload and regenerate blocks.",
       );
-      showScreen("create");
+      returnToCreateScreen();
       return;
     }
 
@@ -3860,7 +4280,7 @@ export function wireStudyHandlers() {
         showScreen("blocks");
         return;
       }
-      showScreen("create");
+      enterModeSelectScreen();
     });
   }
 

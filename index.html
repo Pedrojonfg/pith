@@ -225,14 +225,14 @@
         </section>
 
         <section
-          id="screenPlaceholder"
-          class="screen"
+          id="screenModeSelect"
+          class="screen mode-select-screen"
           aria-hidden="true"
-          aria-label="Placeholder"
+          aria-label="Choose study mode"
         >
           <div class="card">
-            <h1>Create a study session</h1>
-            <p>Choose how you want to study, then upload your material.</p>
+            <h1>How do you want to study?</h1>
+            <p>Choose a mode to get started. You can switch anytime with the + button.</p>
 
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
               <legend class="sr-only">Study mode</legend>
@@ -253,6 +253,77 @@
                 </label>
               </div>
             </fieldset>
+
+            <div class="mode-triage-panel">
+              <button
+                type="button"
+                id="modeTriageToggle"
+                class="mode-triage-toggle"
+                aria-expanded="false"
+                aria-controls="modeTriageBody"
+              >
+                ¿Qué modo elijo?
+              </button>
+              <div id="modeTriageBody" class="mode-triage-body" hidden>
+                <table class="mode-triage-matrix">
+                  <caption class="sr-only">Matriz resumida Slow Mode vs RSVP</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Tipo de texto</th>
+                      <th scope="col">Modo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Filosofía, literatura, ensayo</td>
+                      <td><strong>Slow Mode</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Apuntes y resúmenes</td>
+                      <td><strong>RSVP</strong></td>
+                    </tr>
+                    <tr>
+                      <td>Bibliografía extensa (panorama general)</td>
+                      <td><strong>RSVP</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <p class="mode-triage-heuristic">
+                  ¿<strong>POR QUÉ</strong> cree el autor (<strong>Slow</strong>) o
+                  <strong>QUÉ</strong> cree (<strong>RSVP</strong>)?
+                </p>
+
+                <pre class="mode-triage-flow" aria-label="Flujo recomendado">Bibliografía del tema
+       │
+       ▼
+  RSVP (overview)
+       │
+       ▼
+  Slow Mode (profundidad)
+       │
+       ▼
+  RSVP (revisión)</pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenPlaceholder"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Configure session"
+        >
+          <div class="card">
+            <div class="create-screen-header">
+              <button type="button" id="createBackToModesBtn" class="create-back-btn">
+                ← All modes
+              </button>
+              <span id="createModeLabel" class="create-mode-badge"></span>
+            </div>
+            <h1>Configure your session</h1>
+            <p>Upload your material and adjust settings for this mode.</p>
 
             <div id="modeResumePanel" class="mode-resume-panel" hidden>
               <p id="modeResumeHint" class="hint"></p>
@@ -966,6 +1037,11 @@
             <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
             <div id="slowScopeLongWarning" class="error" hidden></div>
             <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
+            <label class="slow-scope-fillable-toggle" for="slowScopeFillableMap">
+              <input type="checkbox" id="slowScopeFillableMap" />
+              Mapa rellenable
+            </label>
+            <p class="hint" id="slowScopeFillableHint">Completa premisas y conclusión mientras lees (Fase 1).</p>
             <div class="row">
               <button type="button" id="slowScopeConfirmBtn" class="btn-primary" disabled>Continue →</button>
               <button type="button" id="slowScopeBackBtn">Back</button>
@@ -980,6 +1056,7 @@
               Before you read, AI summarizes the thesis, argument map, key concepts, and a guide question.
             </p>
             <div id="slowPhase0Progress" class="hint" hidden></div>
+            <button type="button" id="slowPhase0CollapseBtn" class="slow-phase0-collapse-btn" hidden>Expand orientation</button>
             <div id="slowPhase0Content" class="slow-phase0-content"></div>
             <div id="slowPhase0Error" class="error" hidden></div>
             <div class="row">
@@ -992,7 +1069,6 @@
 
         <section id="screenSlowReader" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode reader">
           <div class="slow-reader-layout" id="slowReaderLayout">
-            <aside id="slowReaderSidebar" class="slow-reader-sidebar" hidden></aside>
             <div class="slow-reader-main">
               <div class="slow-reader-toolbar">
                 <button type="button" id="slowReaderPrevBtn" aria-label="Previous page">←</button>
@@ -1010,17 +1086,69 @@
                 </div>
               </div>
             </div>
+            <aside id="slowReaderSidebar" class="slow-reader-sidebar" aria-label="Panel de lectura">
+              <header class="slow-sidebar-header">
+                <button
+                  type="button"
+                  id="slowSidebarCollapseBtn"
+                  class="slow-sidebar-collapse-btn"
+                  aria-label="Ocultar panel"
+                  title="Ocultar panel"
+                >
+                  ›
+                </button>
+              </header>
+              <div class="slow-sidebar-scroll">
+                <section class="slow-sidebar-section" aria-labelledby="slowSidebarAnnHeading">
+                  <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">Mis anotaciones</h3>
+                  <div id="slowSidebarAnnotations" class="slow-sidebar-annotations"></div>
+                </section>
+                <section class="slow-sidebar-section" aria-labelledby="slowSidebarDictHeading">
+                  <h3 id="slowSidebarDictHeading" class="slow-sidebar-section-title">Diccionario</h3>
+                  <ul id="slowSidebarDictionary" class="slow-sidebar-dictionary"></ul>
+                </section>
+                <section class="slow-sidebar-section" aria-labelledby="slowSidebarIAHeading">
+                  <h3 id="slowSidebarIAHeading" class="slow-sidebar-section-title">Preguntar a IA</h3>
+                  <div id="slowSidebarIA" class="slow-sidebar-ia">
+                    <input
+                      type="text"
+                      id="slowSidebarIAInput"
+                      class="slow-sidebar-ia-input"
+                      placeholder="Escribe una pregunta… Enter para enviar"
+                      aria-label="Preguntar a IA sobre el texto leído"
+                    />
+                    <ul id="slowSidebarIAQueries" class="slow-sidebar-ia-queries"></ul>
+                  </div>
+                </section>
+              </div>
+            </aside>
+            <button type="button" id="slowSidebarTab" class="slow-sidebar-tab" hidden aria-label="Mostrar panel">
+              ☰
+            </button>
           </div>
         </section>
 
         <section id="screenSlowPhase3" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode consolidation">
           <div class="card slow-card">
             <h1>Consolidation (Phase 3)</h1>
+            <div id="slowPhase3Score" class="slow-phase3-score" aria-label="Depth score and findings"></div>
             <div id="slowPhase3Modules" class="slow-phase3-modules"></div>
             <div id="slowPhase3Content" class="slow-phase3-content"></div>
+            <div id="slowPhase3GraphActions" class="slow-phase3-graph-actions" hidden></div>
             <div class="row">
               <button type="button" id="slowPhase3BackBtn">Back to reader</button>
               <button type="button" id="slowPhase3FinishBtn" class="btn-primary">Finish session</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowGraph" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode enriched graph">
+          <div class="card slow-card">
+            <h1>Enriched graph</h1>
+            <div id="slowGraphContent" class="slow-graph-content"></div>
+            <div class="row">
+              <button type="button" id="slowGraphBackBtn">Back to consolidation</button>
+              <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export subgraph</button>
             </div>
           </div>
         </section>
