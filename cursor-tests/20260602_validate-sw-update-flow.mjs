@@ -1,7 +1,6 @@
 /**
- * Validate SW update UX for non-technical users.
- * Run:
- * node --import ./cursor-tests/register.mjs cursor-tests/20260602_validate-sw-update-flow.mjs
+ * Legacy entry — redirects structural checks to sw-update.js module.
+ * Prefer: node cursor-tests/20260606_validate-sw-update-flow.mjs
  */
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -24,25 +23,20 @@ function assert(cond, msg) {
 
 const sw = await readFile(join(root, "sw.js"), "utf8");
 const html = await readFile(join(root, "index.html"), "utf8");
+const swUpdate = await readFile(join(root, "src/js/sw-update.js"), "utf8");
 
-// Happy path: new SW can be activated immediately by the UI action.
 assert(sw.includes('self.addEventListener("message"'), "sw.js listens for message events");
 assert(sw.includes('if (type === "SKIP_WAITING")'), "sw.js accepts SKIP_WAITING command");
-assert(sw.includes("self.skipWaiting();"), "sw.js triggers immediate activation");
+assert(sw.includes("if (!self.registration.active)"), "sw.js skipWaiting only on first install");
 
-// Edge case: update flow handles existing waiting worker and fallback reload.
-assert(html.includes("if (reg.waiting)"), "index.html checks waiting worker presence");
-assert(html.includes("reg.waiting.postMessage({ type: \"SKIP_WAITING\" });"), "update button posts SKIP_WAITING");
-assert(html.includes("reloadFromUpdate();"), "index.html has direct reload fallback");
+assert(swUpdate.includes("if (registration.waiting)"), "sw-update.js checks waiting worker presence");
+assert(swUpdate.includes('postMessage({ type: "SKIP_WAITING" })'), "update button posts SKIP_WAITING");
+assert(swUpdate.includes("window.location.reload()"), "sw-update.js has direct reload fallback");
+assert(swUpdate.includes("if (!win.__swRefreshing)"), "controllerchange reload is guarded");
 
-// Failure case: avoid accidental key wipe during update path.
+assert(html.includes("initServiceWorkerUpdate"), "index.html bootstraps sw-update module");
 assert(!html.includes("localStorage.clear("), "index.html does not clear full localStorage");
 assert(!sw.includes("localStorage.clear("), "sw.js does not clear full localStorage");
-assert(!html.includes('removeItem("ds_api_key")'), "index.html does not remove DeepSeek key");
-assert(!sw.includes('removeItem("ds_api_key")'), "sw.js does not remove DeepSeek key");
 
-// Regression guard: prevent infinite reload loops on controller change.
-assert(html.includes("if (!window.__swRefreshing)"), "controllerchange reload is guarded");
-
-console.log(`\nValidate SW update flow: ${passed} passed, ${failed} failed`);
+console.log(`\nValidate SW update flow (legacy): ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

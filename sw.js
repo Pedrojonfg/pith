@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v9";
+const CACHE_NAME = "mylearning-v10";
 
 const STATIC_ASSETS = [
   "/",
@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   "/src/js/review.js",
   "/src/js/config.js",
   "/src/js/llm.js",
+  "/src/js/sw-update.js",
   "/manifest.json",
 ];
 
@@ -39,7 +40,10 @@ self.addEventListener("install", (event) => {
       });
     }),
   );
-  self.skipWaiting();
+  // Only activate immediately on first install; updates wait for user "Actualizar ahora".
+  if (!self.registration.active) {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener("activate", (event) => {
