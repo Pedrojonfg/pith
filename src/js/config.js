@@ -1,6 +1,7 @@
 export const LS_KEY = "ds_api_key";
 export const LS_GEMINI_KEY = "gemini_api_key";
 export const LS_ACTIVE_SESSION_KEY = "active_session";
+export const LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode";
 export const LS_STUDY_LANG_KEY = "study_lang";
 export const LS_STUDY_NOTES_KEY = "study_notes";
 export const LS_BLOCK_INDEX_KEY = "block_index";

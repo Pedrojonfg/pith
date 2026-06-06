@@ -62,6 +62,8 @@ import {
   initActiveSessionFromBlocksList,
   loadDefaultQuestionConfig,
   loadActiveSession,
+  loadSessionForMode,
+  normalizeStudyMode,
   normalizeBlockIndexArray,
   parseImportedIndexText,
   parseOfflinePackMarkdown,
@@ -105,9 +107,448 @@ import {
   typesetMath,
   updateFullPackProgressUi,
 } from "./ui.js?v=20260525_1";
-import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260525_1";
+import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260527_1";
+import { buildScopeOptions, scopeCharCount, SCOPE_CHAR_WARN } from "./slow/headings.js?v=20260528_1";
+import { generatePhase0ForScope } from "./slow/phase0.js?v=20260528_1";
+import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260528_1";
+import { initPhase3Screen } from "./slow/phase3.js?v=20260528_1";
+import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 
-let splitMergeSummaryEls = null;
+export function createSlowSession({
+  normalizedText,
+  normalizedFormat,
+  fileName,
+  originalFormat,
+  llmModel,
+  criticalMode = false,
+}) {
+  return {
+    studyMode: "slow",
+    rev: 0,
+    llmModel: normalizeLlmModel(llmModel),
+    materialMeta: {
+      fileName: String(fileName || "").trim(),
+      originalFormat: String(originalFormat || "").trim(),
+      uploadedAt: new Date().toISOString(),
+    },
+    slow: {
+      normalizedTextFull: String(normalizedText || ""),
+      normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
+      readingScope: null,
+      phase: "scope",
+      criticalMode: Boolean(criticalMode),
+      fillableMapMode: false,
+      phase0: null,
+      phase0Status: "idle",
+      currentPageIndex: 0,
+      maxReadCharEnd: 0,
+      typography: { fontSizePx: 18, lineHeight: 1.6, fontFamily: '"DM Sans", sans-serif' },
+      annotations: [],
+      findings: [],
+      checkpointsDismissed: [],
+      depthScore: null,
+      graphEnrichedUnlocked: false,
+    },
+  };
+}
+
+function getSelectedStudyModeRadio() {
+  const checked = document.querySelector('input[name="studyMode"]:checked');
+  return checked ? normalizeStudyMode(checked.value) : null;
+}
+
+function updateCreateScreenModeVisibility(mode) {
+  const isSlow = mode === "slow";
+  const isRsvp = mode === "rsvp";
+  if (els.rsvpOnlyControls) els.rsvpOnlyControls.hidden = !isRsvp;
+  if (els.rsvpBlocksSection) els.rsvpBlocksSection.hidden = !isRsvp;
+  if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
+  if (els.blocksInput) els.blocksInput.required = isRsvp;
+  if (els.generateBlocksBtn) {
+    els.generateBlocksBtn.textContent = isSlow ? "Upload and continue →" : "Generate blocks";
+  }
+  setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
+}
+
+function resetCreateScreenModeUi() {
+  document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
+    r.checked = false;
+  });
+  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+  if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  updateCreateScreenModeVisibility(null);
+}
+
+function showModeResumeOrUpload(mode) {
+  const slot = loadSessionForMode(mode);
+  state.studyMode = mode;
+  updateCreateScreenModeVisibility(mode);
+  if (slot) {
+    if (els.modeResumePanel) {
+      els.modeResumePanel.hidden = false;
+      if (els.modeResumeHint) {
+        const label = mode === "slow" ? "Slow Mode" : "RSVP";
+        els.modeResumeHint.textContent = `You have a saved ${label} session. Continue where you left off or start fresh.`;
+      }
+    }
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  } else {
+    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+  }
+}
+
+function resumeSlowSession(session) {
+  state.activeSession = session;
+  state.studyMode = "slow";
+  storeActiveSession(session);
+  if (String(session?.slow?.phase || "") === "scope") {
+    renderSlowScopeScreen(session);
+  }
+  if (String(session?.slow?.phase || "") === "phase0") {
+    enterSlowPhase0(session);
+    return;
+  }
+  navigateSlowByPhase(session);
+  if (String(session?.slow?.phase || "") === "phase1" || String(session?.slow?.phase || "") === "phase2") {
+    initSlowReader(session);
+  }
+}
+
+function resumeRsvpSession(session) {
+  state.activeSession = session;
+  state.studyMode = "rsvp";
+  storeActiveSession(session);
+  const n = Math.max(1, Number(session?.n_blocks) || 1);
+  if (els.sessionReadyMeta) {
+    els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+  }
+  setFullPackEntryCta(n);
+  showScreen("ready");
+}
+
+function renderSlowScopeScreen(session) {
+  const slow = session?.slow;
+  if (!slow) return;
+  const options = buildScopeOptions(slow.normalizedTextFull, slow.normalizedFormat);
+  const listEl = els.slowScopeList;
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  let selectedId = slow.readingScope?.id || null;
+
+  for (const opt of options) {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "option");
+    btn.dataset.scopeId = opt.id;
+    btn.dataset.charStart = String(opt.charStart);
+    btn.dataset.charEnd = String(opt.charEnd);
+    btn.dataset.kind = opt.kind;
+    const chars = scopeCharCount(opt);
+    btn.textContent = `${opt.label} (${chars.toLocaleString()} chars)`;
+    btn.setAttribute("aria-selected", String(selectedId === opt.id));
+    btn.addEventListener("click", () => {
+      listEl.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", "false"));
+      btn.setAttribute("aria-selected", "true");
+      selectedId = opt.id;
+      slow.readingScope = {
+        id: opt.id,
+        kind: opt.kind,
+        charStart: opt.charStart,
+        charEnd: opt.charEnd,
+        label: opt.label,
+      };
+      if (els.slowScopeConfirmBtn) els.slowScopeConfirmBtn.disabled = false;
+      if (els.slowScopeCharCount) {
+        els.slowScopeCharCount.textContent = `Scope selected: ${chars.toLocaleString()} characters`;
+      }
+      if (els.slowScopeLongWarning) {
+        els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
+        if (!els.slowScopeLongWarning.hidden) {
+          els.slowScopeLongWarning.textContent =
+            "Scope ≥ 60k characters — Fase 0 will use map-reduce by section.";
+        }
+      }
+      storeActiveSession(session);
+    });
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  }
+
+  if (els.slowScopeConfirmBtn) {
+    els.slowScopeConfirmBtn.disabled = !slow.readingScope;
+  }
+  if (els.slowScopeCharCount && slow.readingScope) {
+    els.slowScopeCharCount.textContent = `Scope selected: ${scopeCharCount(slow.readingScope).toLocaleString()} characters`;
+  }
+}
+
+function setSlowPhase0Controls({ showRetry = false, showSkip = false, showContinue = false } = {}) {
+  if (els.slowPhase0RetryBtn) els.slowPhase0RetryBtn.hidden = !showRetry;
+  if (els.slowPhase0SkipBtn) els.slowPhase0SkipBtn.hidden = !showSkip;
+  if (els.slowPhase0ContinueBtn) els.slowPhase0ContinueBtn.hidden = !showContinue;
+}
+
+function renderSlowPhase0Content(phase0, criticalMode) {
+  const host = els.slowPhase0Content;
+  if (!host) return;
+  host.innerHTML = "";
+  if (!phase0) return;
+
+  const blocks = [
+    { title: "Thesis", body: phase0.thesis },
+    {
+      title: "Argument map",
+      body: (phase0.argumentMap || [])
+        .map((n) => {
+          const status = n.status ? ` — ${n.status}` : "";
+          const link = n.linkType ? ` (${n.linkType})` : "";
+          return `${n.id}: ${n.text}${status}${link}`;
+        })
+        .join("\n"),
+    },
+    {
+      title: "Concepts to find",
+      body: (phase0.conceptsToFind || [])
+        .map((c) => `· ${c.term} — ${c.authorUsage}`)
+        .join("\n"),
+    },
+    { title: "Guide question", body: phase0.guideQuestion },
+  ];
+
+  if (criticalMode && phase0.criticalExaminePoints?.length) {
+    blocks.push({
+      title: "Examine critically",
+      body: phase0.criticalExaminePoints.map((p) => `· ${p}`).join("\n"),
+    });
+  }
+
+  for (const block of blocks) {
+    const section = document.createElement("section");
+    section.className = "slow-phase0-block";
+    const h2 = document.createElement("h2");
+    h2.textContent = block.title;
+    const pre = document.createElement("pre");
+    pre.className = "slow-phase0-block-body";
+    pre.textContent = block.body;
+    section.appendChild(h2);
+    section.appendChild(pre);
+    host.appendChild(section);
+  }
+}
+
+function renderSlowPhase0Screen(session) {
+  const slow = session?.slow;
+  if (!slow) return;
+
+  if (els.slowPhase0Error) {
+    els.slowPhase0Error.hidden = true;
+    els.slowPhase0Error.textContent = "";
+  }
+
+  const status = String(slow.phase0Status || "idle");
+
+  if (status === "generating") {
+    setSlowPhase0Controls();
+    if (els.slowPhase0Content) els.slowPhase0Content.innerHTML = "";
+    if (els.slowPhase0Progress) {
+      els.slowPhase0Progress.hidden = false;
+      if (!els.slowPhase0Progress.textContent) {
+        els.slowPhase0Progress.textContent = "Generating orientation…";
+      }
+    }
+    return;
+  }
+
+  if (els.slowPhase0Progress) els.slowPhase0Progress.hidden = true;
+
+  if (status === "failed") {
+    if (els.slowPhase0Content) els.slowPhase0Content.innerHTML = "";
+    if (els.slowPhase0Error) {
+      els.slowPhase0Error.hidden = false;
+      els.slowPhase0Error.textContent =
+        slow.phase0Error || "Could not generate orientation. Check your connection and try again.";
+    }
+    setSlowPhase0Controls({ showRetry: true, showSkip: true });
+    return;
+  }
+
+  if (status === "ready" && slow.phase0) {
+    renderSlowPhase0Content(slow.phase0, slow.criticalMode);
+    setSlowPhase0Controls({ showContinue: true });
+    return;
+  }
+
+  if (status === "skipped") {
+    if (els.slowPhase0Content) {
+      els.slowPhase0Content.innerHTML =
+        '<p class="hint">Continuing without AI orientation. You can still annotate during reading.</p>';
+    }
+    setSlowPhase0Controls({ showContinue: true });
+    return;
+  }
+
+  setSlowPhase0Controls();
+  if (els.slowPhase0Content) els.slowPhase0Content.innerHTML = "";
+}
+
+let phase0GenerationToken = 0;
+
+async function runPhase0Generation(session) {
+  const slow = session?.slow;
+  if (!slow || slow.phase0Status === "generating") return;
+  if (slow.phase0Status === "ready" && slow.phase0) {
+    renderSlowPhase0Screen(session);
+    return;
+  }
+
+  const token = ++phase0GenerationToken;
+  slow.phase0Status = "generating";
+  slow.phase0Error = null;
+  if (els.slowPhase0Progress) {
+    els.slowPhase0Progress.hidden = false;
+    els.slowPhase0Progress.textContent = "Generating orientation…";
+  }
+  renderSlowPhase0Screen(session);
+  storeActiveSession(session);
+
+  const scopeText = getScopeText(session);
+  try {
+    const orientation = await generatePhase0ForScope(scopeText, session, {
+      language: getStudyLanguage(),
+      onProgress: ({ phase, current, total, label }) => {
+        if (token !== phase0GenerationToken) return;
+        if (!els.slowPhase0Progress) return;
+        els.slowPhase0Progress.hidden = false;
+        if (phase === "chunk") {
+          els.slowPhase0Progress.textContent = `Fase 0: section ${current}/${total} — ${label}`;
+        } else {
+          els.slowPhase0Progress.textContent = "Fase 0: synthesizing global orientation…";
+        }
+      },
+    });
+    if (token !== phase0GenerationToken) return;
+    slow.phase0 = orientation;
+    slow.phase0Status = "ready";
+    slow.phase0Error = null;
+    storeActiveSession(session);
+    renderSlowPhase0Screen(session);
+  } catch (err) {
+    if (token !== phase0GenerationToken) return;
+    slow.phase0Status = "failed";
+    slow.phase0Error = err?.message ? String(err.message) : "Phase 0 generation failed.";
+    storeActiveSession(session);
+    renderSlowPhase0Screen(session);
+  }
+}
+
+function skipSlowPhase0(session) {
+  if (!session?.slow) return;
+  session.slow.phase0Status = "skipped";
+  session.slow.phase0 = null;
+  session.slow.phase0Error = null;
+  session.slow.phase = "phase1";
+  storeActiveSession(session);
+  navigateSlowByPhase(session);
+  initSlowReader(session);
+}
+
+function continueSlowPhase0(session) {
+  if (!session?.slow) return;
+  session.slow.phase = "phase1";
+  storeActiveSession(session);
+  navigateSlowByPhase(session);
+  initSlowReader(session);
+}
+
+function enterSlowPhase0(session) {
+  showScreen("slowPhase0");
+  renderSlowPhase0Screen(session);
+  if (String(session?.slow?.phase0Status || "idle") === "idle") {
+    void runPhase0Generation(session);
+  }
+}
+
+function wireSlowPhase0Handlers() {
+  els.slowPhase0RetryBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow) return;
+    session.slow.phase0Status = "idle";
+    session.slow.phase0Error = null;
+    storeActiveSession(session);
+    void runPhase0Generation(session);
+  });
+
+  els.slowPhase0SkipBtn?.addEventListener("click", () => {
+    phase0GenerationToken += 1;
+    skipSlowPhase0(state.activeSession);
+  });
+
+  els.slowPhase0ContinueBtn?.addEventListener("click", () => {
+    continueSlowPhase0(state.activeSession);
+  });
+}
+
+function wireSlowScopeHandlers() {
+  els.slowScopeConfirmBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow?.readingScope) return;
+    session.slow.phase = "phase0";
+    session.slow.phase0Status = "idle";
+    session.slow.phase0 = null;
+    session.slow.phase0Error = null;
+    storeActiveSession(session);
+    enterSlowPhase0(session);
+  });
+
+  els.slowScopeBackBtn?.addEventListener("click", () => {
+    resetCreateScreenModeUi();
+    showScreen("create");
+  });
+}
+
+function wireStudyModeSelector() {
+  document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {
+    radio.addEventListener("change", () => {
+      const mode = getSelectedStudyModeRadio();
+      if (!mode) return;
+      showModeResumeOrUpload(mode);
+    });
+  });
+
+  els.continueSessionBtn?.addEventListener("click", () => {
+    const mode = getSelectedStudyModeRadio() || state.studyMode;
+    if (!mode) return;
+    const session = loadSessionForMode(mode);
+    if (!session) return;
+    if (mode === "slow") resumeSlowSession(session);
+    else resumeRsvpSession(session);
+  });
+
+  els.newSessionModeBtn?.addEventListener("click", () => {
+    const mode = getSelectedStudyModeRadio() || state.studyMode;
+    if (!mode) return;
+    const hadSlot = Boolean(loadSessionForMode(mode));
+    if (hadSlot) {
+      const ok = window.confirm(
+        "Starting a new session will replace your saved session for this mode. Continue?",
+      );
+      if (!ok) return;
+    }
+    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+    state.studyMode = mode;
+    updateCreateScreenModeVisibility(mode);
+  });
+
+  els.criticalModeToggleBtn?.addEventListener("click", () => {
+    const pressed = els.criticalModeToggleBtn.getAttribute("aria-pressed") === "true";
+    const next = !pressed;
+    els.criticalModeToggleBtn.setAttribute("aria-pressed", String(next));
+  });
+}
+
 function ensureSplitMergeSummaryEls() {
   if (splitMergeSummaryEls) return splitMergeSummaryEls;
   const host = els.screenBlocksList;
@@ -2059,7 +2500,49 @@ function ensureAssessmentRunnerEls() {
   return assessmentRunnerEls;
 }
 
+function wireSlowPhase3Handlers() {
+  document.getElementById("slowPhase3BackBtn")?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow) return;
+    session.slow.phase = "phase1";
+    storeActiveSession(session);
+    initSlowReader(session);
+    showScreen("slowReader");
+  });
+
+  document.getElementById("slowPhase3FinishBtn")?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (!session?.slow) return;
+    session.slow.depthScore = computeDepthScore(session.slow.annotations);
+    session.slow.phase = "complete";
+    session.slow.graphEnrichedUnlocked = true;
+    storeActiveSession(session);
+    exportSessionMarkdown();
+    resetCreateScreenModeUi();
+    showScreen("create");
+  });
+
+  const observer = new MutationObserver(() => {
+    if (els.screenSlowPhase3?.getAttribute("aria-hidden") === "false") {
+      const session = state.activeSession;
+      if (session?.slow) {
+        void initPhase3Screen(session, document.getElementById("slowPhase3Content"));
+      }
+    }
+  });
+  if (els.screenSlowPhase3) {
+    observer.observe(els.screenSlowPhase3, { attributes: true, attributeFilter: ["aria-hidden"] });
+  }
+}
+
 export function wireStudyHandlers() {
+  setSlowSessionGetter(() => state.activeSession);
+  wireStudyModeSelector();
+  wireSlowScopeHandlers();
+  wireSlowPhase0Handlers();
+  wireSlowPhase3Handlers();
+  resetCreateScreenModeUi();
+
   setBlockReadContentProvider(() => {
     const blocks = getBlocksSafe();
     const block = blocks[state.activeBlockIndex];
@@ -2882,6 +3365,61 @@ export function wireStudyHandlers() {
 
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
+    if (!selectedMode) {
+      setGenerateError("Please choose RSVP or Slow Mode first.");
+      return;
+    }
+    state.studyMode = selectedMode;
+
+    if (selectedMode === "slow") {
+      if (isOfflineMode()) {
+        setGenerateError("Offline pack is only available in RSVP mode.");
+        return;
+      }
+      clearGenerateError();
+      els.generateBlocksStatus.textContent = "";
+      const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+      try {
+        assertLlmKeyPresent(llmModel);
+      } catch (err) {
+        setGenerateError(err?.message ? String(err.message) : String(err));
+        if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+        return;
+      }
+      const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
+      const file = fileList[0];
+      if (!file) {
+        setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
+        return;
+      }
+      setGenerateLoading(true);
+      try {
+        const { cleanedText, normalizedFormat, originalFormat } = await readAndCleanMaterialText(file);
+        if (!cleanedText.trim()) throw new Error("File appears to be empty.");
+        const criticalMode =
+          els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
+        const sessionObj = createSlowSession({
+          normalizedText: cleanedText,
+          normalizedFormat,
+          fileName: file.name,
+          originalFormat,
+          llmModel,
+          criticalMode,
+        });
+        state.activeSession = sessionObj;
+        storeActiveSession(sessionObj);
+        renderSlowScopeScreen(sessionObj);
+        showScreen("slowScope");
+      } catch (err) {
+        setGenerateError(err?.message ? String(err.message) : String(err));
+      } finally {
+        setGenerateLoading(false);
+        els.generateBlocksStatus.textContent = "";
+      }
+      return;
+    }
+
     if (isOfflineMode()) {
       setGenerateError("Offline mode is active. Start this session from the loaded offline pack.");
       return;

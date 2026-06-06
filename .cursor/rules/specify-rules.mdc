@@ -6,9 +6,9 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260527-zero-latency-blocks/plan.md`
-- **Spec**: `specs/20260527-zero-latency-blocks/spec.md`
-- **Data model**: `specs/20260527-zero-latency-blocks/data-model.md`
-- **Contracts**: `specs/20260527-zero-latency-blocks/contracts/`
+- **Active plan**: `specs/20260528-slow-mode/plan.md`
+- **Spec**: `specs/20260528-slow-mode/spec.md`
+- **Data model**: `specs/20260528-slow-mode/data-model.md`
+- **Contracts**: `specs/20260528-slow-mode/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

@@ -1,695 +1,415 @@
-# TEST ROADMAP CONTENT
-<!-- OLD ROADMAP START
-
-**Spec**: `specs/20260527-zero-latency-blocks/spec.md`
-**Branch**: `20260527-zero-latency-blocks`
-
-## Tareas
-
-| ID | Descripcion | Dep. | Complejidad | Estado |
-|----|-------------|------|-------------|--------|
-| T13 | Reforzar que `explanation` conecte con el bloque anterior (para recorte del sneak peek) | - | S | [ ] |
-| T14 | Helper `extractSneakPeek(explanation)` (<=4 frases) + tests unitarios | - | S | [ ] |
-| T15 | Render sneak peek en `transitionOverlay` (placeholder -> texto al `ready`) | T14 | M | [ ] |
-| T16 | Tests + quickstart para SC-007 (sneak peek) | T15 | M | [ ] |
-
-## Grafo de dependencias
-
-```text
-T13 ------------------┐
-T14 --> T15 --> T16
-```
-
-Secuencial: `T14 -> T15 -> T16`. Paralelo: `T13` y `T14` pueden hacerse a la vez.
-
-## Orden de ejecucion recomendado
-
-1. Ejecuta `T13` y `T14` en paralelo (dos chats).
-2. Luego ejecuta `T15`.
-3. Finalmente ejecuta `T16`.
-
-## PROMPT T13 - Conexion temprana en `explanation` (para sneak peek)
-
-Actualiza el prompt de generacion para que el `explanation` incluya la conexion con el bloque anterior al inicio, ya que el sneak peek usa un recorte local de las primeras <=4 frases sin re-LLM.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002e, SC-007)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-
-**Archivos**
-- `src/js/api.js`
-
-**Tareas**
-1. Modificar `EXPLANATION_RSVP_THOROUGH` y `EXPLANATION_BRIEF_DEEP` para que, cuando `blockIndex >= 1` (bloque 2+):
-   - La primera frase del parrafo Hook/Core haga explicita la conexion con el bloque inmediatamente anterior (menciona titulo y/o concepto clave).
-   - La conexion aparezca antes de la parte que seria "Connection" al final (ya que el sneak peek recorta el inicio).
-2. Verifica que el cambio no introduce nuevos campos JSON ni rompe las reglas de formato existentes (sin etiquetas visibles, parrafos separados por una linea en blanco, <=15 palabras por frase, etc.).
-3. En `buildBlockGenerationUserContent`, cuando `blockIndex > 0`, anade (o refuerza) una linea corta con el titulo del bloque anterior dentro de la lista confirmada / contexto del modelo, para mejorar el puente textual.
-
-**Criterio de exito**
-- Para un bloque 2+, el `explanation` generado comienza con una frase que referencia el bloque anterior; al recortar primeras <=4 frases con el helper, el sneak peek ya incluye el puente pedagogico.
-
-criterio de exito: El prompt fuerza conexion en las primeras frases sin campos nuevos. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T14 - Helper `extractSneakPeek` + unit tests
-
-Crea un helper portable (sin DOM) que derive el sneak peek del `explanation` sin tokens extra: normaliza whitespace y devuelve hasta las primeras 4 frases como un unico parrafo compacto.
-
-**Contexto**
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c/FR-002d)
-
-**Archivos**
-- `src/js/sneakPeek.js` (nuevo)
-- `cursor-tests/20260527_t14-sneak-peek-extract.mjs` (nuevo)
-
-**Tareas**
-1. Implementa `export function extractSneakPeek(explanation, maxSentences = 4)`:
-   - Normaliza whitespace (trim; colapsar `\\s+` a espacio).
-   - Divide en frases con una regla conservadora que no se rompa por `? ! .`.
-   - Devuelve `""` si `explanation` es vacio/no valido.
-   - Devuelve max `maxSentences` frases unidas con espacio simple.
-2. Crea unit tests:
-   - Explicacion con 0/1/3/4/5+ frases.
-   - Signos `? ! .` para segmentacion.
-   - Texto con secuencias tipo LaTeX inline `\\( ... \\)` para garantizar que no se rompe el conteo de frases.
-
-**Criterio de exito**
-- `extractSneakPeek` nunca devuelve mas de 4 frases y pasa todos los tests.
-
-criterio de exito: Helper + tests unitarios green. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T15 - Render sneak peek en `transitionOverlay`
-
-Anade el sneak peek a la UI de transicion: se muestra encima del diccionario colapsado. Mientras `prefetch` no este `ready`, se muestra placeholder "Preparando siguiente bloque...". Cuando pasa a `ready`, el texto se reemplaza por el sneak peek derivado del `explanation` del bloque N+1.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002d)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-
-**Archivos**
-- `src/js/study.js`
-- `src/js/sneakPeek.js`
-
-**Tareas**
-1. En `getOrCreateTransitionOverlay()`:
-   - Crea `sneakPeekWrap` y `sneakPeekText`.
-   - Inserta `sneakPeekWrap` encima de `dictionaryWrap`.
-2. En `finishQuestions(blockIndex)` al abrir la transicion:
-   - Si `prefetch.status !== "ready"` para el configKey esperado: muestra placeholder.
-   - Si esta `ready`: obtiene el `explanation` del bloque N+1 (preferir `prefetchState.data.explanation`, con fallback a `getBlock(nextIndex).explanation`) y renderiza `extractSneakPeek(explanation)`.
-3. Asegura que al pasar a `ready` con el overlay abierto se actualice el sneak peek:
-   - Reusa/hookea la misma logica que ya actualiza el diccionario en `refreshUiOnPrefetchReady()` o extiende `syncPrefetchUi()`/`refreshUiOnPrefetchReady()` con un render adicional.
-4. Mantener el sneak peek fuera de la vista `adjust`.
-
-**Criterio de exito**
-- En transicion: placeholder aparece mientras genera; al estar `ready` el texto cambia a un parrafo <=4 frases derivado del `explanation`.
-
-criterio de exito: Sneak peek visible y reactivo al ready sin llamadas extra. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T16 - Tests + quickstart para SC-007
-
-Anade tests y documentacion para validar SC-007 (sneak peek) y que no se rompe la suite.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (SC-007)
-- Quickstart: `specs/20260527-zero-latency-blocks/quickstart.md`
-
-**Archivos**
-- `cursor-tests/20260527_t16-sneak-peek-ui.mjs` (nuevo)
-- `specs/20260527-zero-latency-blocks/quickstart.md` (anadir seccion/manual §9)
-
-**Tareas**
-1. Implementa un test de integracion "UI logic":
-   - Con `prefetch` en `generating`: placeholder visible.
-   - Con `prefetch` `ready`: texto derivado del `explanation` y <=4 frases.
-2. Actualiza `quickstart.md` con un paso manual para SC-007 (como comprobar visualmente sneak peek y placeholder).
-
-**Criterio de exito**
-- Suite `cursor-tests/20260527_t*.mjs` sigue pasando y quickstart documenta SC-007 claramente.
-
-criterio de exito: Tests+docs SC-007 completados sin romper suite. Ejecuta /validate antes de cerrar este mensaje
-
-<!-- OLD ROADMAP START
-
-**Spec**: `specs/20260527-zero-latency-blocks/spec.md`  
-**Branch**: `20260527-zero-latency-blocks`
-
-## Tareas
-
-| ID | Descripcion | Dep. | Complejidad | Estado |
-|----|-------------|------|-------------|--------|
-| T13 | Reforzar que `explanation` conecte con el bloque anterior (para recorte del sneak peek) | - | S | [ ] |
-| T14 | Helper `extractSneakPeek(explanation)` (<=4 frases) + tests unitarios | - | S | [ ] |
-| T15 | Render sneak peek en `transitionOverlay` (placeholder -> texto al `ready`) | T14 | M | [ ] |
-| T16 | Tests + quickstart para SC-007 (sneak peek) | T15 | M | [ ] |
-
-## Grafo de dependencias
-
-```text
-T13 ------------------┐
-T14 --> T15 --> T16
-```
-
-Secuencial: `T14 -> T15 -> T16`. Paralelo: `T13` y `T14` pueden hacerse a la vez.
-
-## Orden de ejecucion recomendado
-
-1. Ejecuta **T13** y **T14** en paralelo (dos chats).
-2. Luego ejecuta **T15**.
-3. Finalmente ejecuta **T16**.
-
-## PROMPT T13 - Conexion temprana en `explanation` (para sneak peek)
-
-Actualiza el prompt de generacion para que el `explanation` incluya la conexion con el bloque anterior **al inicio**, ya que el sneak peek usa un recorte local de las **primeras <=4 frases** sin re-LLM.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002e, SC-007)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-
-**Archivos**
-- `src/js/api.js`
-
-**Tareas**
-1. Modificar `EXPLANATION_RSVP_THOROUGH` y `EXPLANATION_BRIEF_DEEP` para que, cuando `blockIndex >= 1` (bloque 2+):
-   - La **primera frase** del parrafo Hook/Core haga explicita la conexion con el bloque inmediatamente anterior (menciona titulo y/o concepto clave).
-   - Asegurar que la **conexion** aparezca antes de la parte que seria “Connection” al final (ya que el sneak peek recorta el inicio).
-2. Verifica que el cambio **no** introduce nuevos campos JSON ni rompe las reglas de formato existentes (sin etiquetas visibles, parrafos separados por una linea en blanco, <=15 palabras por frase, etc.).
-3. En `buildBlockGenerationUserContent`, cuando `blockIndex > 0`, anade (o refuerza) una linea corta con el **titulo del bloque anterior** dentro de la lista confirmada / contexto del modelo, para mejorar el “puente” textual.
-
-**Criterio de exito**
-- Para un bloque 2+, el `explanation` generado comienza con una frase que referencia el bloque anterior; al recortar primeras <=4 frases con el helper, el sneak peek ya incluye el “puente” pedagogico.
-
-criterio de exito: El prompt fuerza conexion en las primeras frases sin campos nuevos. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T14 - Helper `extractSneakPeek` + unit tests
-
-Crea un helper portable (sin DOM) que derive el sneak peek del `explanation` sin tokens extra: normaliza whitespace y devuelve hasta las **primeras 4 frases** como un unico parrafo compacto.
-
-**Contexto**
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c/FR-002d)
-
-**Archivos**
-- `src/js/sneakPeek.js` (nuevo)
-- `cursor-tests/20260527_t14-sneak-peek-extract.mjs` (nuevo)
-
-**Tareas**
-1. Implementa `export function extractSneakPeek(explanation, maxSentences = 4)`:
-   - Normaliza whitespace (trim; colapsar `\\s+` a espacio).
-   - Divide en frases con una regla conservadora que no se rompa por `? ! .`.
-   - Devuelve `""` si `explanation` es vacio/no valido.
-   - Devuelve max `maxSentences` frases unidas con espacio simple.
-2. Crea unit tests:
-   - Explicacion con 0/1/3/4/5+ frases.
-   - Signos `? ! .` para segmentacion.
-   - Texto con secuencias tipo LaTeX inline `\\( ... \\)` para garantizar que no se rompe el conteo de frases.
-
-**Criterio de exito**
-- `extractSneakPeek` nunca devuelve mas de 4 frases y pasa todos los tests.
-
-criterio de exito: Helper + tests unitarios green. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T15 - Render sneak peek en `transitionOverlay`
-
-Aade el sneak peek a la UI de transicion: se muestra **encima del diccionario colapsado**. Mientras `prefetch` no este `ready`, se muestra placeholder “Preparando siguiente bloque...”. Cuando pasa a `ready`, el texto se reemplaza por el sneak peek derivado del `explanation` del bloque N+1.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002d)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-
-**Archivos**
-- `src/js/study.js`
-- `src/js/sneakPeek.js`
-
-**Tareas**
-1. En `getOrCreateTransitionOverlay()`:
-   - Crea `sneakPeekWrap` y `sneakPeekText`.
-   - Inserta `sneakPeekWrap` **encima** de `dictionaryWrap`.
-2. En `finishQuestions(blockIndex)` al abrir la transicion:
-   - Si `prefetch.status !== "ready"` para el `configKey` esperado: muestra placeholder.
-   - Si esta `ready`: obtiene el `explanation` del bloque N+1 (preferir `prefetchState.data.explanation`, con fallback a `getBlock(nextIndex).explanation`) y renderiza `extractSneakPeek(explanation)`.
-3. Asegura que al pasar a `ready` con overlay abierto se actualice el sneak peek:
-   - Reusa/hookea la misma logica que ya actualiza el diccionario en `refreshUiOnPrefetchReady()` o extiende `syncPrefetchUi()`/`refreshUiOnPrefetchReady()` con un render adicional.
-4. Mantén el sneak peek fuera de la vista `adjust` (no lo ocultes, pero no mezclar con controles de preguntas).
-
-**Criterio de exito**
-- En transicion: placeholder aparece mientras genera; al estar `ready` el texto cambia a un parrafo <=4 frases derivado del `explanation`.
-
-criterio de exito: Sneak peek visible y reactivo al ready sin llamadas extra. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T16 - Tests + quickstart para SC-007
-
-Aade tests y documentacion para validar SC-007 (sneak peek) y que no se rompe la suite.
-
-**Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (SC-007)
-- Quickstart: `specs/20260527-zero-latency-blocks/quickstart.md`
-
-**Archivos**
-- `cursor-tests/20260527_t16-sneak-peek-ui.mjs` (nuevo) o nombre equivalente siguiendo convencion del repo
-- `specs/20260527-zero-latency-blocks/quickstart.md` (anadir seccion/manual §9)
-
-**Tareas**
-1. Implementa test de integracion “UI logic”:
-   - Montar/activar overlay con `prefetch` en estado `generating`: debe mostrar placeholder.
-   - Con `prefetch` `ready`: debe mostrar texto derivado del `explanation`, y debe respetar <=4 frases.
-2. Actualiza `quickstart.md` con un paso manual para SC-007 (como comprobar visualmente el sneak peek y el placeholder).
-
-**Criterio de exito**
-- Suite `cursor-tests/20260527_t*.mjs` sigue pasando y quickstart documenta SC-007 claramente.
-
-criterio de exito: Tests+docs SC-007 completados sin romper suite. Ejecuta /validate antes de cerrar este mensaje
-
-# ROADMAP — Zero-Latency Block Transitions (Sneak Peek)
-
-**Spec**: `specs/20260527-zero-latency-blocks/spec.md`  
-**Branch**: `20260527-zero-latency-blocks`
+# ROADMAP — Slow Mode (Lectura Profunda)
+
+**Spec**: `specs/20260528-slow-mode/spec.md`  
+**Plan**: `specs/20260528-slow-mode/plan.md`  
+**Branch**: `20260528-slow-mode`
 
 ## Tareas
 
 | ID | Descripción | Dep. | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T13 | Reforzar que `explanation` conecte con el bloque anterior (para recorte del sneak peek) | — | S | [ ] |
-| T14 | Helper `extractSneakPeek(explanation)` (≤4 frases) + tests unitarios | — | S | [ ] |
-| T15 | Render sneak peek en `transitionOverlay` (placeholder → texto al `ready`) | T14 | M | [ ] |
-| T16 | Tests + quickstart para SC-007 (sneak peek) | T15 | M | [ ] |
+| T01 | `sessionsByMode` + migración `active_session` | — | S | [ ] |
+| T02 | Selector modo sin preselección + continuar/nueva | T01 | M | [ ] |
+| T03 | Screens Slow + routing `studyMode` | T02 | M | [ ] |
+| T04 | Parser headings + scope picker | T03 | M | [ ] |
+| T05 | Paginación viewport + tests | T04 | L | [ ] |
+| T06 | Fase 0 IA single + map-reduce 60k | T04 | L | [ ] |
+| T07 | Reader UI + tipografía + focus mode | T05, T06 | L | [ ] |
+| T08 | Anotaciones por offset de caracteres | T07 | M | [ ] |
+| T09 | IA Fase 1 anti-spoiler | T08 | M | [ ] |
+| T10 | Modo Crítico + menú tipos | T08 | S | [ ] |
+| T11 | Checkpoints Fase 2 | T08, T06 | M | [ ] |
+| T12 | Fase 3 consolidación (A/B/C) | T08, T06 | L | [ ] |
+| T13 | Grafo + gamificación + flashcards | T12 | L | [ ] |
+| T14 | Export sesión Slow | T12 | M | [ ] |
+| T15 | QA quickstart + cursor-tests | T09–T14 | M | [ ] |
 
 ## Grafo de dependencias
 
 ```text
-T13 ───────────────┐
-T14 ──> T15 ──> T16
+T01 → T02 → T03 → T04 ─┬→ T05 → T07 → T08 ─┬→ T09 ──────────────┐
+                        │                     ├→ T10 ─────────────┤
+                        └→ T06 ───────────────┘   T11 ────────────┤
+                                        T08 + T06 → T12 ─┬→ T13 ─┴→ T15
+                                                         └→ T14 ────↗
 ```
 
-Secuencial: `T14 → T15 → T16`. Paralelo: `T13` y `T14` pueden hacerse a la vez.
+**Paralelo 1** (tras T04): `T05` y `T06` en dos chats.  
+**Paralelo 2** (tras T08): `T09`, `T10`, `T11` en tres chats.  
+**Paralelo 3** (tras T12): `T13` y `T14` en dos chats.
 
 ## Orden de ejecución recomendado
 
-1. Ejecuta **T13** y **T14** en paralelo (dos chats).
-2. Luego ejecuta **T15**.
-3. Finalmente ejecuta **T16**.
+1. `T01` → `T02` → `T03` → `T04` (secuencial, un chat o encadenado).
+2. Lanzar **`T05` y `T06` en paralelo**; esperar ambos antes de `T07`.
+3. `T07` → `T08` (secuencial).
+4. Lanzar **`T09`, `T10`, `T11` en paralelo**; esperar los tres antes de `T12`.
+5. `T12` → luego **`T13` y `T14` en paralelo** → `T15`.
 
-## PROMPT T13 — Conexión temprana en `explanation` (para sneak peek)
+---
 
-Actualiza el prompt de generación para que el `explanation` incluya la conexión con el bloque anterior **al inicio**, ya que el sneak peek usa un recorte local de las **primeras ≤4 frases** sin re-LLM.
+## PROMPT T01 — sessionsByMode + migración
+
+Implementa persistencia dual por modo de estudio según el contrato de sesiones.
 
 **Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002e, SC-007)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
+- Spec: `specs/20260528-slow-mode/spec.md` (FR-011, FR-011a, FR-011b)
+- Contrato: `specs/20260528-slow-mode/contracts/mode-selector-sessions.md`
+- Data model: `specs/20260528-slow-mode/data-model.md`
 
 **Archivos**
-- `src/js/api.js`
+- `src/js/config.js` — añadir `LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode"`
+- `src/js/session.js` — `loadSessionsByMode()`, `storeSessionForMode(mode, session)`, `migrateLegacyActiveSession()`, actualizar `storeActiveSession`/`loadActiveSession` para delegar al slot activo
 
 **Tareas**
-1. Modificar `EXPLANATION_RSVP_THOROUGH` y `EXPLANATION_BRIEF_DEEP` para que, cuando `blockIndex >= 1` (bloque 2+):
-   - La **primera frase** del párrafo Hook/Core haga explícita la conexión con el bloque inmediatamente anterior (menciona título y/o concepto clave).
-   - Asegurar que la **conexión** aparezca antes de la parte que sería “Connection” al final (ya que el sneak peek recorta el inicio).
-2. Verifica que el cambio **no** introduce nuevos campos JSON ni rompe las reglas de formato existentes (no etiquetas visibles, párrafos separados por una línea en blanco, ≤15 palabras por frase, etc.).
-3. En `buildBlockGenerationUserContent`, cuando `blockIndex > 0`, añade (o refuerza) una línea corta con el **título del bloque anterior** dentro de la lista confirmada / contexto del modelo, para mejorar el “puente” textual.
+1. Implementar shape `{ rsvp: ActiveSession|null, slow: ActiveSession|null }`.
+2. Migración en bootstrap: si existe `active_session` y no `sessions_by_mode`, copiar a `.rsvp`.
+3. `storeActiveSession` escribe en slot según `session.studyMode` (default `rsvp` si ausente).
+4. Mantener compatibilidad: RSVP existente sigue cargando tras migración.
 
 **Criterio de éxito**
-- Para un bloque 2+, el `explanation` generado comienza con una frase que referencia el bloque anterior; al recortar primeras ≤4 frases con el helper, el sneak peek ya incluye el “puente” pedagógico.
+- Tras migración, sesión RSVP previa sigue cargando; guardar slow no toca slot rsvp.
 
-criterio de éxito: El prompt fuerza conexión en las primeras frases sin campos nuevos. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: Migración transparente y API `sessionsByMode` funcional. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T14 — Helper `extractSneakPeek` + unit tests
+## PROMPT T02 — Selector de modo + continuar/nueva
 
-Crea un helper portable (sin DOM) que derive el sneak peek del `explanation` sin tokens extra: normaliza whitespace y devuelve hasta las **primeras 4 frases** como un único párrafo compacto.
+Añade UI de selección de modo en pantalla de inicio sin preselección y flujo resume.
 
 **Contexto**
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c/FR-002d)
+- Contrato: `specs/20260528-slow-mode/contracts/mode-selector-sessions.md`
+- Depende de T01 (`sessionsByMode`)
 
 **Archivos**
-- `src/js/sneakPeek.js` (nuevo)
-- `cursor-tests/20260527_t14-sneak-peek-extract.mjs` (nuevo)
+- `index.html` — `screenPlaceholder`: radio/tabs RSVP vs Slow, panel continuar/nueva, toggle Modo Crítico (visible solo en Slow)
+- `src/css/main.css` — estilos selector
+- `src/js/study.js` — handlers elección modo, ocultar blocks UI en Slow
+- `src/js/main.js` — bootstrap no auto-entra a sesión sin elegir modo
 
 **Tareas**
-1. Implementa `export function extractSneakPeek(explanation, maxSentences = 4)`:
-   - Normaliza whitespace (trim; colapsar `\\s+` a espacio).
-   - Divide en frases con una regla conservadora que no se rompa por `? ! .`.
-   - Devuelve `""` si `explanation` es vacío/no válido.
-   - Devuelve máximo `maxSentences` frases unidas con espacio simple.
-2. Crea unit tests:
-   - explicación con 0/1/3/4/5+ frases.
-   - signos `? ! .` para segmentación.
-   - texto con secuencias tipo LaTeX inline `\\( ... \\)` para garantizar que no se rompe el conteo de frases.
+1. Ningún modo preseleccionado al abrir create screen.
+2. Tras elegir modo: si slot existe → Continuar / Nueva sesión.
+3. Nueva sesión pide confirmación si había slot.
+4. RSVP controls hidden cuando slow seleccionado.
 
 **Criterio de éxito**
-- `extractSneakPeek` nunca devuelve más de 4 frases y pasa todos los tests.
+- SC-001 manual: selector sin default; continuar restaura slot correcto por modo.
 
-criterio de éxito: Helper + tests unitarios green. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: Flujo modo + resume operativo en UI. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T15 — Render sneak peek en `transitionOverlay`
+## PROMPT T03 — Screens Slow + routing studyMode
 
-Añade el sneak peek a la UI de transición: se muestra **encima del diccionario colapsado**. Mientras `prefetch` no esté `ready`, se muestra placeholder “Preparando siguiente bloque…”. Cuando pasa a `ready`, el texto se reemplaza por el sneak peek derivado del `explanation` del bloque N+1.
+Crea esqueleto de pantallas Slow y enrutamiento por `studyMode`.
 
 **Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002d)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
+- Plan: `specs/20260528-slow-mode/plan.md` (estructura `src/js/slow/`)
+- Data model: fases `scope | phase0 | phase1 | phase3`
 
 **Archivos**
-- `src/js/study.js`
-- `src/js/sneakPeek.js`
+- `index.html` — `screenSlowScope`, `screenSlowPhase0`, `screenSlowReader`, `screenSlowPhase3` (estructura mínima)
+- `src/css/slow-mode.css` (nuevo, link en index.html)
+- `src/js/slow/reader.js` (stub exports)
+- `src/js/study.js` — tras upload Slow: `normalize → scope screen` en lugar de generate blocks
+- `src/js/ui.js` — registrar screens en `showScreen`
 
 **Tareas**
-1. En `getOrCreateTransitionOverlay()`:
-   - Crea `sneakPeekWrap` y `sneakPeekText`.
-   - Inserta `sneakPeekWrap` **encima** de `dictionaryWrap`.
-2. En `finishQuestions(blockIndex)` al abrir la transición:
-   - Si `prefetch.status !== "ready"` para el `configKey` esperado: muestra placeholder.
-   - Si está `ready`: obtiene el `explanation` del bloque N+1 (preferir `prefetchState.data.explanation`, con fallback a `getBlock(nextIndex).explanation`) y renderiza `extractSneakPeek(explanation)`.
-3. Asegura que al pasar a `ready` con overlay abierto se actualice el sneak peek:
-   - Reusa/hookea la misma lógica que ya actualiza el diccionario en `refreshUiOnPrefetchReady()` o extiende `syncPrefetchUi()`/`refreshUiOnPrefetchReady()` con un render adicional.
-4. Mantén el sneak peek fuera de la vista `adjust` (no lo ocultes, pero no mezclar con controles de preguntas).
+1. `state.studyMode = 'slow'` al confirmar modo Slow.
+2. Crear `ActiveSession` slow con `slow: { phase: 'scope', ... }` al subir archivo.
+3. Navegación placeholder entre screens según `slow.phase`.
 
 **Criterio de éxito**
-- En transición: placeholder aparece mientras genera; al estar `ready` el texto cambia a un párrafo ≤4 frases derivado del `explanation`.
+- Upload en Slow llega a scope screen sin llamar generación de bloques.
 
-criterio de éxito: Sneak peek visible y reactivo al ready sin llamadas extra. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: Routing Slow separado de RSVP sin regresión. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T16 — Tests + quickstart para SC-007
+## PROMPT T04 — Headings + scope picker
 
-Añade tests y documentación para validar SC-007 (sneak peek) y que no se rompe la suite.
+Implementa detección de headings y UI de selección de scope.
 
 **Contexto**
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (SC-007)
-- Quickstart: `specs/20260527-zero-latency-blocks/quickstart.md`
+- Contrato: `specs/20260528-slow-mode/contracts/phase0-orientation-ia.md`
+- FR-005, FR-005c
 
 **Archivos**
-- `cursor-tests/20260527_t16-sneak-peek-ui.mjs` (nuevo) o nombre equivalente siguiendo convención del repo
-- `specs/20260527-zero-latency-blocks/quickstart.md` (añadir sección/manual §9)
+- `src/js/slow/headings.js` (nuevo)
+- `src/js/study.js` o `src/js/slow/reader.js` — wire scope screen
+- `index.html` — lista de scopes en `screenSlowScope`
 
 **Tareas**
-1. Implementa test de integración “UI logic”:
-   - Montar/activar overlay con `prefetch` en estado `generating`: debe mostrar placeholder.
-   - Con `prefetch` `ready`: debe mostrar texto derivado del `explanation`, y debe respetar ≤4 frases.
-2. Actualiza `quickstart.md` con un paso manual para SC-007 (cómo comprobar visualmente el sneak peek y placeholder).
+1. `parseHeadings(normalizedText, format)` → `{ kind, charStart, charEnd, label }[]`.
+2. UI: documento completo + chapters/sections; mostrar char count; aviso si ≥60000.
+3. Guardar `readingScope` en `slow` al confirmar.
 
 **Criterio de éxito**
-- Suite `cursor-tests/20260527_t*.mjs` sigue pasando y quickstart documenta SC-007 claramente.
+- Ensayo con `##` produce lista de secciones con offsets correctos.
 
-criterio de éxito: Tests+docs SC-007 completados sin romper suite. Ejecuta /validate antes de cerrar este mensaje
-
-# ROADMAP — Zero-Latency Block Transitions
-
-**Spec**: `specs/20260527-zero-latency-blocks/spec.md`  
-**Plan**: `specs/20260527-zero-latency-blocks/plan.md`  
-**Branch**: `20260527-zero-latency-blocks`
-
-## Tareas
-
-| ID | Descripción | Dep. | Complejidad | Estado |
-|----|-------------|------|-------------|--------|
-| T01 | API regen solo preguntas | — | M | [x] |
-| T02 | `session.js`: `generateQuestionsOnlyForIndex` + merge | T01 | M | [x] |
-| T03 | Overlay transición: vista default vs Adjust | T02 | L | [x] |
-| T04 | Camino rápido: CTA deshabilitado + consumo prefetch | T03 | M | [x] |
-| T05 | Camino Adjust: regen parcial vs completa | T02, T03 | M | [x] |
-| T06 | Quitar tarjeta guía inline en `finishRSVP` | — | S | [x] |
-| T07 | Tests base + quickstart §1–6 | T04, T05, T06 | M | [x] |
-| **T08** | **`applyPrefetchReadySideEffects` (write-through + hook)** | T07 | M | [x] |
-| **T09** | **`dictionary.js`: `concepts_by_block` + agregado UI** | T08 | M | [x] |
-| **T10** | **`export.js`: `collectExportConcepts` + union export** | T08 | M | [x] |
-| **T11** | **`study.js`: refresh diccionario en `onPrefetchReady`** | T08, T09 | S | [ ] |
-| **T12** | **Tests T03 + quickstart §7–8 (SC-005/006)** | T09, T10, T11 | M | [ ] |
-| **T13** | **`api.js`: reforzar conexión entre bloques al inicio del `explanation`** | T07 | S | [ ] |
-| **T14** | **Helper `extractSneakPeek(explanation)` (≤4 frases) + unit tests** | — | S | [ ] |
-| **T15** | **`study.js`: render sneak peek en transición (placeholder→texto al `ready`)** | T14, T11 | M | [ ] |
-| **T16** | **Tests + quickstart: SC-007 sneak peek** | T13, T15 | M | [ ] |
-
-## Grafo de dependencias
-
-```text
-Fase A (hecho):
-T01 → T02 → T03 → T04 → T07
-          ↘     ↘ T05 ↗
-T06 (independiente)
-
-Fase B (diccionario + export):
-T08 → T09 → T12
-    → T10 ↗
-    → T11 → T12
-
-Sneak peek:
-T13 (prompt) ───────────────┐
-T14 (helper) → T15 (UI) → T16 (tests/docs) ←┘
-```
-
-**Paralelo posible (Fase B)**:
-- Tras **T08**: **T09** y **T10** en paralelo (archivos distintos).
-- **T11** tras **T09** (o en paralelo con T10 si solo toca `study.js` wiring).
-
-## Orden de ejecución recomendado
-
-### Fase A — completada
-T01 → T02 → (T06 ∥) → T03 → T04 → T05 → T07
-
-### Fase B — pendiente (bug diccionario/export)
-1. **T08** (un chat) — bloqueante  
-2. **T09 ∥ T10** (dos chats en paralelo)  
-3. **T11**  
-4. **T12** (cerrar)
-
-**Antes de producción**: bump `?v=` en imports (`session.js`, `dictionary.js`, `export.js`, `study.js`).
-
-### Sneak peek — nuevo (SC-007)
-1. **T14 ∥ T13** (dos chats en paralelo)  
-2. **T15**  
-3. **T16**  
+criterio de éxito: Scope picker con offsets válidos. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T08 — Prefetch ready side effects
+## PROMPT T05 — Paginación viewport + tests
 
-Implementa **write-through y diccionario en prefetch `ready`** según clarificaciones 2026-05-26.
+Motor de paginación por viewport con cache y tests unitarios.
 
-**Contexto**:
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-009–FR-012)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/prefetch-ready-persistence.md`
-- Hoy `triggerPrefetch` en `src/js/session.js` solo asigna `prefetchState.data` sin persistir sesión ni diccionario.
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/slow-pagination-viewport.md`
+- Research R2
 
-**Archivos**:
-- `src/js/session.js` (principal)
-- `src/js/config.js` (nueva constante `LS_SESSION_CONCEPTS_BY_BLOCK_KEY` si hace falta)
+**Archivos**
+- `src/js/slow/pagination.js` (nuevo)
+- `cursor-tests/20260528_t05-pagination.mjs` (nuevo)
 
-**Tareas**:
-1. `export function applyPrefetchReadySideEffects(blockIndex, data, cfg)` — normaliza bloque, `session.blocks[idx]=data`, `storeActiveSession`.
-2. Llamar desde el `.then()` de `triggerPrefetch` **antes** de marcar `ready` (o justo después, mismo tick).
-3. Invocar callback opcional `let onPrefetchReady = null; export function setOnPrefetchReady(fn)`.
-4. No vaciar `prefetchState` en write-through (sigue `ready` hasta `getPrefetchedBlock`).
-5. Delegar actualización de `concepts_by_block` a `dictionary.js` (import) — stub mínimo si T09 no está hecho.
+**Tareas**
+1. `computePageBreakpoints(scopeText, containerEl, typography)` vía medida DOM/binary search.
+2. `getPageSlice`, `charOffsetToPage`, cache por tipografía.
+3. Tests: texto corto → N páginas; cambio fontSize altera count pero preserva charStart de página actual.
 
-**Criterio de éxito**: Tras prefetch `ready` de bloque 2, `loadActiveSession().blocks[1]` tiene `explanation` no vacía sin pulsar **Siguiente bloque**; segunda llamada a `ensureBlockGenerated(1)` no dispara API.
+**Criterio de éxito**
+- Tests pasan; API exportada lista para T07.
 
-**ROADMAP**: T08. Ejecuta `/validate` antes de cerrar este mensaje.
+criterio de éxito: Paginación viewport testeada. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T09 — Dictionary per-block store
+## PROMPT T06 — Fase 0 IA (single + map-reduce)
 
-**Contexto**: Contrato `prefetch-ready-persistence.md`; `getSortedSessionConcepts` hoy solo lee `session_concepts`.
+Generación de orientación previa con estrategia híbrida por tamaño de scope.
 
-**Archivos**:
-- `src/js/dictionary.js`
-- `src/js/config.js`
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase0-orientation-ia.md`
+- Research R5, R6
+- Prompts referencia: `slow_mode_spec.md` sección 10
 
-**Tareas**:
-1. `load/saveConceptsByBlock()`, `setBlockConcepts(blockIndex, concepts)` — reemplaza entrada del índice (FR-012).
-2. `getSortedSessionConcepts()` — agregado: merge todas las entradas `concepts_by_block` ∪ legacy `session_concepts` (dedup existente).
-3. `export function syncConceptsFromBlock(blockIndex, concepts)` — usado por T08 y regen paths.
-4. Mantener `commitSessionConceptsForBlock` idempotente.
+**Archivos**
+- `src/js/slow/phase0.js` (nuevo)
+- `src/js/api.js` o `llm.js` — funciones chat JSON para phase0
+- `index.html` + `study.js` — wire `screenSlowPhase0`, progreso map-reduce
 
-**Criterio de éxito**: Tras `setBlockConcepts(1, [{term:"Foo",definition:"Bar"}])`, `getSortedSessionConcepts()` incluye Foo; actualizar bloque 1 no borra términos del bloque 0.
+**Tareas**
+1. `generatePhase0Single(scopeText, { criticalMode })` si len &lt; 60000.
+2. `mapReducePhase0(scopeText, boundaries)` si len ≥ 60000.
+3. UI bloques: tesis, mapa, conceptos, pregunta guía (+ críticos si aplica).
+4. Error red: Reintentar + Continuar sin orientación (`phase0Status: 'skipped'`).
 
-**ROADMAP**: T09 (requiere T08). Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**
+- Ensayo corto genera Fase 0 en una llamada; texto largo muestra progreso por sección.
+
+criterio de éxito: Fase 0 híbrida funcional con fallback skip. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T10 — Export union
+## PROMPT T07 — Reader UI + tipografía + focus
 
-**Contexto**: Contrato `export-concept-dictionary.md`; FR-011, SC-006.
+Pantalla de lectura paginada Fase 1 con layout del diseño.
 
-**Archivos**:
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase1-reader-ia.md` (layout)
+- Depende T05 (pagination) y T06 (phase0 → phase1 transition)
+
+**Archivos**
+- `src/js/slow/reader.js`
+- `src/css/slow-mode.css`
+- `index.html` — `screenSlowReader` completo
+
+**Tareas**
+1. Render página actual desde breakpoints; prev/next + swipe.
+2. Barra progreso discreta; controles tipografía (persistir en `slow.typography`).
+3. Focus mode toggle: oculta sidebar y chrome.
+4. Actualizar `maxReadCharEnd` al cambiar de página.
+
+**Criterio de éxito**
+- Lectura 3+ páginas fluida; focus mode deja solo texto + progreso.
+
+criterio de éxito: Reader paginado usable. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T08 — Anotaciones por offset
+
+Sistema de anotaciones con menú de tipos y marcas en margen.
+
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/annotation-char-offsets.md`
+
+**Archivos**
+- `src/js/slow/annotations.js` (nuevo)
+- `src/js/slow/reader.js` — integrar selección texto + margen
+- `src/css/slow-mode.css` — marcas por tipo
+
+**Tareas**
+1. `ANNOTATION_TYPES` registry con tier y visibilidad.
+2. Selection → `charStart`/`charEnd` en coords scope.
+3. CRUD anotaciones en `slow.annotations[]`; persistir vía `storeActiveSession`.
+4. Render marcas en margen al pintar página.
+
+**Criterio de éxito**
+- Crear anotación `≈` en pág 2, navegar away y back: marca persiste.
+
+criterio de éxito: Anotaciones ancladas por carácter. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T09 — IA Fase 1 anti-spoiler
+
+Sidebar "Preguntar a IA" con contexto limitado a texto leído.
+
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase1-reader-ia.md`
+- Research R7
+
+**Archivos**
+- `src/js/slow/ai-context.js` (nuevo)
+- `src/js/slow/reader.js` — sidebar IA + overlay respuesta
+- Reutilizar patrones de `guide-chat.js` donde aplique
+
+**Tareas**
+1. `buildIAContext(slow)` = scopeText.slice(0, maxReadCharEnd).
+2. Prompt anti-spoiler; respuesta ≤3 oraciones; overlay dismissable.
+3. Wire `⚑` y `⇑` a prompts específicos.
+
+**Criterio de éxito**
+- Pregunta sobre final del texto antes de leerlo → IA no revela (SC-003).
+
+criterio de éxito: IA on-demand sin spoilers. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T10 — Modo Crítico + menú tipos
+
+Toggle lectura crítica y menú de anotación extendido.
+
+**Contexto**
+- FR-016; contrato `annotation-char-offsets.md`
+
+**Archivos**
+- `index.html` — toggle en scope o pre-phase0
+- `src/js/slow/annotations.js` — filtrar menú por `criticalMode`
+
+**Tareas**
+1. `slow.criticalMode` persistido; tipos críticos en menú primario si true.
+2. Fase 0 pide `criticalExaminePoints` cuando activo.
+
+**Criterio de éxito**
+- Con crítico ON, menú muestra `⊘ ↯ ⚠ ★ ⇑` sin abrir `···`.
+
+criterio de éxito: Modo Crítico afecta menú y Fase 0. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T11 — Checkpoints Fase 2
+
+Chips de checkpoint dismissable al fin de sección.
+
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase2-checkpoints.md`
+
+**Archivos**
+- `src/js/slow/checkpoints.js` (nuevo)
+- `src/js/slow/reader.js` — timer 10s + chip UI
+
+**Tareas**
+1. Detectar última página de `SectionBoundary`.
+2. Timer 10s → mostrar chip; dismiss → `checkpointsDismissed`.
+3. Respuesta → anotación `→`.
+
+**Criterio de éxito**
+- SC-005: dismiss no bloquea; responder crea anotación.
+
+criterio de éxito: Checkpoints opcionales operativos. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T12 — Fase 3 consolidación
+
+Módulos A/B/C post-lectura.
+
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase3-consolidation.md`
+
+**Archivos**
+- `src/js/slow/phase3.js` (nuevo)
+- `index.html` — `screenSlowPhase3`
+
+**Tareas**
+1. Módulo A: diff phase0 vs anotaciones (offset ±200).
+2. Módulo B: preguntas retrieval por tipo de anotación (IA).
+3. Módulo C: integración nodos `[Pedro:]` al grafo/diccionario.
+4. Botón "Lectura completa" en reader → phase3.
+
+**Criterio de éxito**
+- Flujo completo Fase 0→1→3 en ensayo corto de prueba.
+
+criterio de éxito: Fase 3 tres módulos navegables. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T13 — Grafo + gamificación + flashcards
+
+Depth score, hallazgos, vista grafo enriquecida, flashcards.
+
+**Contexto**
+- Contrato: `specs/20260528-slow-mode/contracts/phase3-consolidation.md`
+- `slow_mode_spec.md` secciones 11 y 8
+
+**Archivos**
+- `src/js/slow/gamification.js` (nuevo)
+- `src/js/dictionary.js` — nodos usuario
+- Integración flashcards existente (grep `flashcard` / review)
+
+**Tareas**
+1. Depth score tabla diseño; solo en Fase 3.
+2. Hallazgos silenciosos vs visibles (mapa rellenable).
+3. `graphEnrichedUnlocked` tras completar Fase 3.
+4. Convertir anotaciones a flashcards.
+
+**Criterio de éxito**
+- SC-006, SC-007, SC-008 verificables manualmente.
+
+criterio de éxito: Gamificación y flashcards integrados. Ejecuta /validate antes de cerrar este mensaje
+
+---
+
+## PROMPT T14 — Export sesión Slow
+
+Extender export Markdown con contenido Slow.
+
+**Archivos**
 - `src/js/export.js`
-- `src/js/dictionary.js` (import `collectExportConcepts` o definir en dictionary y re-export)
 
-**Tareas**:
-1. `export function collectExportConcepts(session)` — unión de las 3 fuentes con dedup (definición más larga gana).
-2. `buildMarkdown` usa `collectExportConcepts` para tabla **Concept Dictionary**.
-3. Verificar bucle de bloques: incluir sección solo si `hasGeneratedBlockContent` (explicación o questions); bloques write-through prefetched cuentan.
+**Tareas**
+1. Si `studyMode === 'slow'`, export incluye scope, phase0, anotaciones tipadas, depth score.
+2. No romper export RSVP.
 
-**Criterio de éxito**: Test unitario o script: sesión mock con `blocks[1].explanation` poblado por write-through y sin respuestas → export contiene `## Block 2:` y ≥1 fila en Concept Dictionary.
+**Criterio de éxito**
+- Export mid-session Slow produce `.md` legible con anotaciones.
 
-**ROADMAP**: T10 (requiere T08). Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T11 — UI refresh on prefetch ready [x]
-
-**Contexto**: FR-009; overlay de transición ya renderiza diccionario en `finishQuestions`.
-
-**Archivos**:
-- `src/js/study.js`
-
-**Tareas**:
-1. En init/wire: `setOnPrefetchReady(({ blockIndex }) => { ... })`.
-2. Llamar `updateDictionaryButtonVisibility()`.
-3. Si overlay transición abierto: re-ejecutar `renderDictionary` en `o.dictionaryWrap` con `getSortedSessionConcepts()`.
-4. Tras regen Adjust / `persistNextBlock`: llamar `syncConceptsFromBlock` (T09) si no lo hace T08.
-
-**Criterio de éxito**: quickstart §7 — durante bloque 1, con prefetch bloque 2 ready, botón diccionario muestra términos nuevos sin avanzar de bloque.
-
-**ROADMAP**: T11 (requiere T08, T09). Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Validado**: `cursor-tests/20260527_t11-ui-refresh-prefetch-ready.mjs` (9 tests).
+criterio de éxito: Export Slow sin regresión RSVP. Ejecuta /validate antes de cerrar este mensaje
 
 ---
 
-## PROMPT T12 — Tests SC-005/006 + quickstart [x]
+## PROMPT T15 — QA quickstart + cursor-tests
 
-**Contexto**: `specs/20260527-zero-latency-blocks/quickstart.md` §7–8.
+Cierra QA del feature completo.
 
-**Archivos**:
-- `cursor-tests/20260527_t03-prefetch-write-through.mjs` (nuevo)
-- `cursor-tests/20260527_t04-export-concepts-union.mjs` (nuevo)
+**Contexto**
+- `specs/20260528-slow-mode/quickstart.md`
 
-**Tareas**:
-1. Test: mock `applyPrefetchReadySideEffects` / triggerPrefetch → `blocks[1]` poblado.
-2. Test: `collectExportConcepts` dedup y fuentes múltiples.
-3. Ejecutar quickstart §7–8 manual; actualizar tabla Pass criteria en quickstart.md.
+**Archivos**
+- `cursor-tests/20260528_t15-sessions-migration.mjs` (nuevo, si no cubierto en T01)
+- Verificar tests T05; añadir test anti-spoiler slice si falta
 
-**Criterio de éxito**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t*.mjs` exit 0; SC-005 y SC-006 marcados en quickstart.
+**Tareas**
+1. Ejecutar checklist quickstart (10 escenarios).
+2. Añadir tests faltantes para migración y `maxReadCharEnd`.
+3. Documentar resultados en comentario de commit o nota breve.
 
-**ROADMAP**: T12 (requiere T09–T11). Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**
+- Quickstart 1–9 pasan; RSVP regresión OK; tests cursor verdes.
 
-**Validado**: `20260527_t03` (12), `20260527_t04` (11), `20260527_validate-t12-sc005-sc006.mjs` (8); full `20260527_t*.mjs` suite green.
-
----
-
-**PROMPT T13 — Conexión al inicio del explanation (para sneak peek)**
-
-Actualiza el prompt de generación de bloques para que el `explanation` enfatice explícitamente la conexión con el bloque anterior **en las primeras frases**, ya que el sneak peek se recorta como “primeras ≤4 frases” sin llamada extra.
-
-**Contexto**:
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002e, SC-007)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-- Hoy `EXPLANATION_RSVP_THOROUGH` ya tiene una sección “Connection” al final; eso NO sirve para el sneak peek si el recorte toma el inicio.
-
-**Archivos**:
-- `src/js/api.js`
-
-**Tareas**:
-1. Modificar `EXPLANATION_RSVP_THOROUGH` (y opcionalmente `EXPLANATION_BRIEF_DEEP`) para exigir:
-   - En bloques con `blockIndex >= 1`: la primera frase del Hook debe enlazar con el bloque anterior (mencionar el concepto o el título de bloque previo).
-   - Las primeras 4 frases deben dar mini‑intro + puente (sin depender del párrafo “Connection” final).
-2. En `buildBlockGenerationUserContent`, cuando `blockIndex > 0`, incluir una línea adicional con el título del bloque anterior (extraído de `blocksListText`) para que el modelo tenga el texto exacto.
-3. Mantener reglas RSVP (≤15 palabras, etc.) y no introducir nuevos campos en JSON.
-
-**Criterio de éxito**: Para un bloque 2+, el `explanation` generado comienza con una frase que referencia el bloque anterior; el sneak peek (primeras 4 frases) incluye ese puente sin necesidad de reescritura.  
-
-criterio de éxito: El prompt fuerza conexión en las primeras frases sin campos nuevos. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-**PROMPT T14 — Helper extractSneakPeek + tests unitarios**
-
-Crea un helper portable (sin DOM) que derive el sneak peek del `explanation` sin tokens extra: normaliza whitespace y devuelve las primeras ≤4 frases como un párrafo compacto.
-
-**Contexto**:
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md` (algoritmo)
-
-**Archivos**:
-- `src/js/sneakPeek.js` (nuevo)
-- `cursor-tests/20260527_t14-sneak-peek-extract.mjs` (nuevo)
-
-**Tareas**:
-1. Implementar `export function extractSneakPeek(explanation, maxSentences = 4)`:
-   - `normalizeWhitespace`
-   - split de frases conservador y recorte a `maxSentences`
-   - si explanation vacío → `""`
-2. Tests: whitespace, <4 frases, >4 frases, signos `? ! .`, y contenido con `\\( ... \\)` (no debe romper).
-
-**Criterio de éxito**: `node --import ./cursor-tests/register.mjs cursor-tests/20260527_t14-*.mjs` exit 0 y `extractSneakPeek` nunca devuelve más de 4 frases.
-
-criterio de éxito: Helper + tests unitarios green. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-**PROMPT T15 — UI: sneak peek en overlay de transición**
-
-Añade el sneak peek a la UI de transición: se muestra **encima** del diccionario colapsado. Solo aparece cuando prefetch de N+1 está `ready`; mientras tanto muestra placeholder “Preparando siguiente bloque…”. Debe actualizarse cuando el prefetch pasa a ready con el overlay abierto.
-
-**Contexto**:
-- Spec: `specs/20260527-zero-latency-blocks/spec.md` (FR-002c, FR-002d, SC-007)
-- Contrato: `specs/20260527-zero-latency-blocks/contracts/block-sneak-peek.md`
-- `study.js` ya tiene `syncPrefetchUi()` y `refreshUiOnPrefetchReady()`.
-
-**Archivos**:
-- `src/js/study.js`
-- `src/js/sneakPeek.js` (importar `extractSneakPeek`)
-
-**Tareas**:
-1. En `getOrCreateTransitionOverlay()`, crear `sneakPeekWrap` + `sneakPeekText` y insertarlo **antes** de `dictionaryWrap`.
-2. En `finishQuestions(idx)`, render inicial:
-   - placeholder si no `ready`
-   - si `ready`, usar `extractSneakPeek` desde `prefetchState.data.explanation` o desde `getBlock(nextIndex).explanation`.
-3. Actualizar en:
-   - `syncPrefetchUi()` cuando detecta `ready`
-   - `refreshUiOnPrefetchReady()` (ya se llama al `ready`) si overlay abierto
-4. Si explanation tiene 0–3 frases: mostrar lo disponible; si vacío total y ready: oculta wrap o deja placeholder (sin LLM extra).
-
-**Criterio de éxito**: En transición, al pasar prefetch a `ready`, el texto cambia de placeholder a sneak peek sin recargar; nunca se hace llamada API adicional.
-
-criterio de éxito: Sneak peek visible y reactivo al ready. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-**PROMPT T16 — Tests + quickstart para SC-007**
-
-Añade tests y documentación para validar el sneak peek.
-
-**Archivos**:
-- `cursor-tests/20260527_t16-sneak-peek-ui.mjs` (nuevo)
-- `specs/20260527-zero-latency-blocks/quickstart.md` (añadir sección §9)
-
-**Tareas**:
-1. Test integración: montar `transitionOverlay` (o llamar a funciones exportadas si existen) con estados:
-   - `generating` → placeholder
-   - `ready` → texto derivado (≤4 frases)
-2. Actualizar `quickstart.md` con pasos manuales para SC-007 (sneak peek).
-
-**Criterio de éxito**: suite `cursor-tests/20260527_t*.mjs` sigue green y quickstart documenta SC-007 claramente.
-
-criterio de éxito: Tests+docs SC-007 completados sin romper suite. Ejecuta /validate antes de cerrar este mensaje
-
-## Instrucción de ejecución
-
-**Lanzar primero (Fase B)**: **T08** — un chat.
-
-**En paralelo tras T08**: **T09** y **T10** (dos chats).
-
-**Luego**: **T11** → **T12**.
-
-**Siguiente comando Spec Kit**: `/speckit-implement` o pegar **PROMPT T08** en un chat nuevo.
--->
+criterio de éxito: Feature Slow Mode verificado end-to-end. Ejecuta /validate antes de cerrar este mensaje

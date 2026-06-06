@@ -1,8 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { pathToFileURL } from "node:url";
-
-const mockMain = pathToFileURL(new URL("./mock-main.mjs", import.meta.url).pathname).href;
-const mockUi = pathToFileURL(new URL("./mock-ui.mjs", import.meta.url).pathname).href;
+const mockMain = new URL("./mock-main.mjs", import.meta.url).href;
+const mockUi = new URL("./mock-ui.mjs", import.meta.url).href;
 
 /** Strip ?v= cache busters; stub browser-only modules for Node tests. */
 export async function resolve(specifier, context, nextResolve) {

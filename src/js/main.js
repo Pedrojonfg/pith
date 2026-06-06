@@ -1,4 +1,4 @@
-import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY } from "./config.js?v=20260525_1";
+import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260527_1";
 import {
   clearSessionConceptStorage,
   updateDictionaryButtonVisibility,
@@ -10,7 +10,14 @@ import {
   initGuideChat,
   sendGuideMessage,
 } from "./guide-chat.js?v=20260526_1";
-import { getStoredKey, loadActiveSession, saveGeminiKey, getStoredGeminiKey, state } from "./session.js?v=20260527_1";
+import {
+  getStoredKey,
+  loadActiveSession,
+  migrateLegacyActiveSession,
+  saveGeminiKey,
+  getStoredGeminiKey,
+  state,
+} from "./session.js?v=20260527_1";
 import {
   closeBlockReadSidebar,
   initLanguageUi,
@@ -20,7 +27,7 @@ import {
   toggleSidebar,
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
-import { wireStudyHandlers } from "./study.js?v=20260527_1";
+import { wireStudyHandlers } from "./study.js?v=20260528_1";
 
 export const isOfflineMode = () => window.offlineMode === true;
 
@@ -96,6 +103,7 @@ function startNewSessionFlow() {
 }
 
 function bootstrap() {
+  migrateLegacyActiveSession();
   if (window.offlineMode !== true) window.offlineMode = false;
   if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
@@ -224,19 +232,13 @@ function bootstrap() {
     if (gk) els.geminiApiKeyInput.value = gk;
   }
 
-  const hasStoredSession = !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
+  const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
+    !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
   if (hasStoredSession) {
-    state.activeSession = loadActiveSession();
-    if (state.activeSession) {
-      const n = Math.max(1, Number(state.activeSession?.n_blocks) || 1);
-      els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
-      showScreen("ready");
-    } else if (getStoredKey()) {
-      showScreen("create");
-    } else {
-      showScreen("setup");
-    }
-  } else if (getStoredKey()) {
+    migrateLegacyActiveSession();
+  }
+
+  if (getStoredKey()) {
     showScreen("create");
   } else {
     showScreen("setup");
