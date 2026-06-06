@@ -4,9 +4,11 @@ import { maybeScheduleCheckpoint, clearCheckpointTimer } from "./checkpoints.js?
 import { matchConceptFindings } from "./gamification.js?v=20260528_1";
 import { askSlowReaderIA } from "./ai-context.js?v=20260528_1";
 import {
+  ANNOTATION_TYPES,
   annotationsOnPage,
   annotationMarkClass,
   visibleAnnotationTypes,
+  findAnnotationTypeByHotkey,
   addAnnotation,
 } from "./annotations.js?v=20260528_1";
 import { initPhase3Screen } from "./phase3.js?v=20260528_1";
@@ -22,6 +24,9 @@ import {
 let readerState = {
   breakpoints: [],
   debounceTimer: null,
+  pendingSelection: null,
+  menuShowSecondary: false,
+  noteDraft: null,
 };
 
 export function getScopeText(session) {
@@ -125,6 +130,8 @@ export function goToReaderPage(session, pageIndex) {
   const total = getPageCount(readerState.breakpoints);
   const idx = Math.min(Math.max(0, Math.floor(Number(pageIndex) || 0)), Math.max(0, total - 1));
   session.slow.currentPageIndex = idx;
+  hideAnnotationMenu();
+  readerState.pendingSelection = null;
   renderSlowReaderPage(session);
 }
 
@@ -139,47 +146,242 @@ function selectionToScopeOffsets(session) {
   pre.setEnd(range.startContainer, range.startOffset);
   const startInPage = pre.toString().length;
   const selected = range.toString().length;
+  if (selected <= 0) return null;
   const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
   return {
     charStart: slice.charStart + startInPage,
     charEnd: slice.charStart + startInPage + selected,
+    selectedText: range.toString(),
+    rect: range.getBoundingClientRect(),
   };
 }
 
-function showAnnotationMenu(session, offsets) {
+function isSlowReaderActive() {
+  return els.screenSlowReader?.getAttribute("aria-hidden") === "false";
+}
+
+function ensureAnnotationMenu() {
   let menu = document.getElementById("slowAnnotationMenu");
-  if (!menu) {
-    menu = document.createElement("div");
-    menu.id = "slowAnnotationMenu";
-    menu.className = "slow-annotation-menu";
-    document.body.appendChild(menu);
+  if (menu) return menu;
+  menu = document.createElement("div");
+  menu.id = "slowAnnotationMenu";
+  menu.className = "slow-annotation-menu";
+  menu.hidden = true;
+  menu.innerHTML = `
+    <div class="slow-annotation-types" role="toolbar" aria-label="Annotation types"></div>
+    <div class="slow-annotation-note" hidden>
+      <label class="slow-annotation-note-label"></label>
+      <input type="text" class="slow-annotation-note-input" placeholder="Nota (opcional) — Enter para guardar" spellcheck="true" />
+    </div>
+    <p class="slow-annotation-hint">Pulsa 1–9 para marcar · Esc cancelar</p>
+  `;
+  document.body.appendChild(menu);
+  return menu;
+}
+
+function positionAnnotationMenu(menu, rect) {
+  if (!menu || !rect) return;
+  menu.hidden = false;
+  menu.style.visibility = "hidden";
+  menu.style.top = "0";
+  menu.style.left = "0";
+  const pad = 10;
+  const anchor = rect.width || rect.height ? rect : { top: 120, bottom: 140, left: window.innerWidth / 2, width: 0, height: 0 };
+  const menuRect = menu.getBoundingClientRect();
+  let top = anchor.bottom + pad;
+  let left = anchor.left + anchor.width / 2 - menuRect.width / 2;
+  if (top + menuRect.height > window.innerHeight - 12) {
+    top = anchor.top - menuRect.height - pad;
   }
-  menu.innerHTML = "";
-  const types = visibleAnnotationTypes(session.slow.criticalMode);
+  left = Math.max(12, Math.min(left, window.innerWidth - menuRect.width - 12));
+  top = Math.max(12, Math.min(top, window.innerHeight - menuRect.height - 12));
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+  menu.style.visibility = "";
+}
+
+function hideAnnotationMenu() {
+  const menu = document.getElementById("slowAnnotationMenu");
+  if (!menu) return;
+  menu.hidden = true;
+  readerState.noteDraft = null;
+  const notePanel = menu.querySelector(".slow-annotation-note");
+  const typesPanel = menu.querySelector(".slow-annotation-types");
+  notePanel?.setAttribute("hidden", "");
+  typesPanel?.removeAttribute("hidden");
+  menu.querySelector(".slow-annotation-hint")?.removeAttribute("hidden");
+}
+
+function syncPendingSelection(session) {
+  if (!session?.slow || readerState.noteDraft) return;
+  const captured = selectionToScopeOffsets(session);
+  if (!captured) {
+    readerState.pendingSelection = null;
+    hideAnnotationMenu();
+    return;
+  }
+  readerState.pendingSelection = captured;
+  showAnnotationMenu(session, captured);
+}
+
+function renderAnnotationTypeButtons(session, menu) {
+  const typesPanel = menu.querySelector(".slow-annotation-types");
+  if (!typesPanel) return;
+  typesPanel.innerHTML = "";
+  const types = visibleAnnotationTypes(session.slow.criticalMode, {
+    showSecondary: readerState.menuShowSecondary,
+  });
   for (const t of types) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = `${t.symbol} ${t.label}`;
-    btn.addEventListener("click", async () => {
-      const text = window.prompt("Nota (opcional):") ?? "";
-      const ann = addAnnotation(session, { type: t.symbol, ...offsets, userText: text });
-      menu.hidden = true;
-      if (ann) matchConceptFindings(session, ann);
-      if (t.symbol === "⚑" || t.symbol === "⇑") {
-        try {
-          const reply = await askSlowReaderIA(session, text || "Explica este fragmento", {
-            annotationType: t.symbol,
-          });
-          ann.aiReply = reply;
-        } catch {
-          // ignore IA errors in annotation flow
-        }
-      }
-      renderSlowReaderPage(session);
-    });
-    menu.appendChild(btn);
+    btn.className = "slow-annotation-type-btn";
+    btn.dataset.hotkey = t.hotkey;
+    btn.title = `${t.label} (${t.hotkey})`;
+    btn.innerHTML = `<span class="slow-annotation-kbd">${t.hotkey}</span><span class="slow-annotation-symbol">${t.symbol}</span><span class="slow-annotation-label">${t.label}</span>`;
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => beginAnnotationNote(session, t));
+    typesPanel.appendChild(btn);
   }
-  menu.hidden = false;
+  const hasSecondary = ANNOTATION_TYPES.some((t) => t.tier === "secondary");
+  if (hasSecondary && !readerState.menuShowSecondary) {
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "slow-annotation-type-btn slow-annotation-more-btn";
+    more.textContent = "···";
+    more.title = "Más tipos";
+    more.addEventListener("mousedown", (e) => e.preventDefault());
+    more.addEventListener("click", () => {
+      readerState.menuShowSecondary = true;
+      showAnnotationMenu(session, readerState.pendingSelection);
+    });
+    typesPanel.appendChild(more);
+  }
+  const hint = menu.querySelector(".slow-annotation-hint");
+  if (hint && types.length) {
+    const keys = types.map((t) => t.hotkey).join(" · ");
+    hint.textContent = `Pulsa ${keys} para marcar · Esc cancelar`;
+  }
+}
+
+function showAnnotationMenu(session, selection) {
+  if (!selection || !session?.slow) return;
+  const menu = ensureAnnotationMenu();
+  renderAnnotationTypeButtons(session, menu);
+  const notePanel = menu.querySelector(".slow-annotation-note");
+  notePanel?.setAttribute("hidden", "");
+  menu.querySelector(".slow-annotation-types")?.removeAttribute("hidden");
+  menu.querySelector(".slow-annotation-hint")?.removeAttribute("hidden");
+  positionAnnotationMenu(menu, selection.rect);
+}
+
+function beginAnnotationNote(session, typeDef) {
+  if (!session?.slow || !readerState.pendingSelection || !typeDef) return;
+  const menu = ensureAnnotationMenu();
+  readerState.noteDraft = {
+    type: typeDef.symbol,
+    offsets: {
+      charStart: readerState.pendingSelection.charStart,
+      charEnd: readerState.pendingSelection.charEnd,
+    },
+  };
+  menu.querySelector(".slow-annotation-types")?.setAttribute("hidden", "");
+  menu.querySelector(".slow-annotation-hint")?.setAttribute("hidden", "");
+  const notePanel = menu.querySelector(".slow-annotation-note");
+  const label = menu.querySelector(".slow-annotation-note-label");
+  const input = menu.querySelector(".slow-annotation-note-input");
+  if (!notePanel || !label || !input) return;
+  label.textContent = `${typeDef.symbol} ${typeDef.label}`;
+  input.value = "";
+  notePanel.hidden = false;
+  positionAnnotationMenu(menu, readerState.pendingSelection.rect);
+  input.focus();
+}
+
+async function commitAnnotation(session, typeDef, offsets, userText) {
+  if (!session?.slow || !typeDef || !offsets) return;
+  const ann = addAnnotation(session, {
+    type: typeDef.symbol,
+    charStart: offsets.charStart,
+    charEnd: offsets.charEnd,
+    userText,
+  });
+  hideAnnotationMenu();
+  readerState.pendingSelection = null;
+  window.getSelection?.()?.removeAllRanges?.();
+  if (ann) matchConceptFindings(session, ann);
+  if (typeDef.symbol === "⚑" || typeDef.symbol === "⇑") {
+    try {
+      const reply = await askSlowReaderIA(session, userText || "Explica este fragmento", {
+        annotationType: typeDef.symbol,
+      });
+      ann.aiReply = reply;
+    } catch {
+      // ignore IA errors in annotation flow
+    }
+  }
+  renderSlowReaderPage(session);
+}
+
+function tryHotkeyAnnotation(session, key) {
+  if (!readerState.pendingSelection || readerState.noteDraft) return false;
+  const typeDef =
+    findAnnotationTypeByHotkey(key, session.slow.criticalMode, {
+      showSecondary: readerState.menuShowSecondary,
+    }) ||
+    findAnnotationTypeByHotkey(key, session.slow.criticalMode, { showSecondary: true });
+  if (!typeDef) return false;
+  beginAnnotationNote(session, typeDef);
+  return true;
+}
+
+function onSlowReaderKeydown(e) {
+  if (!isSlowReaderActive()) return;
+  const session = stateSession();
+  if (!session?.slow) return;
+
+  const menu = document.getElementById("slowAnnotationMenu");
+  const noteInput = menu?.querySelector(".slow-annotation-note-input");
+  const inNoteInput = noteInput && document.activeElement === noteInput;
+
+  if (inNoteInput) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const draft = readerState.noteDraft;
+      if (!draft) return;
+      const typeDef = ANNOTATION_TYPES.find((t) => t.symbol === draft.type);
+      void commitAnnotation(session, typeDef, draft.offsets, noteInput.value.trim());
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      readerState.noteDraft = null;
+      showAnnotationMenu(session, readerState.pendingSelection);
+      return;
+    }
+    return;
+  }
+
+  if (e.key === "Escape") {
+    if (!menu || menu.hidden) return;
+    e.preventDefault();
+    hideAnnotationMenu();
+    readerState.pendingSelection = null;
+    return;
+  }
+
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!readerState.pendingSelection) return;
+
+  const key = e.key.length === 1 ? e.key.toLowerCase() : "";
+  if (!key) return;
+  if (tryHotkeyAnnotation(session, key)) {
+    e.preventDefault();
+  }
+}
+
+function onSlowReaderSelectionChange() {
+  if (!isSlowReaderActive() || readerState.noteDraft) return;
+  syncPendingSelection(stateSession());
 }
 
 let wired = false;
@@ -222,10 +424,11 @@ export function initSlowReader(session) {
   });
 
   els.slowReaderPage?.addEventListener("mouseup", () => {
-    const s = stateSession();
-    const offsets = selectionToScopeOffsets(s);
-    if (offsets && offsets.charEnd > offsets.charStart) showAnnotationMenu(s, offsets);
+    syncPendingSelection(stateSession());
   });
+
+  document.addEventListener("selectionchange", onSlowReaderSelectionChange);
+  document.addEventListener("keydown", onSlowReaderKeydown);
 
   let touchStartX = 0;
   els.slowReaderPage?.addEventListener("touchstart", (e) => {
@@ -254,6 +457,14 @@ export function initSlowReader(session) {
     invalidatePaginationCache();
     clearTimeout(readerState.debounceTimer);
     readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+  });
+
+  window.addEventListener("resize", () => {
+    const s = stateSession();
+    if (!s?.slow || els.screenSlowReader?.getAttribute("aria-hidden") !== "false") return;
+    invalidatePaginationCache();
+    clearTimeout(readerState.debounceTimer);
+    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 200);
   });
 }
 

@@ -1,20 +1,20 @@
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
 export const ANNOTATION_TYPES = [
-  { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase" },
-  { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question" },
-  { symbol: "→", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain" },
-  { symbol: "⟷", id: "link", tier: "primary", criticalMenu: false, label: "Connection" },
-  { symbol: "⚑", id: "flag", tier: "primary", criticalMenu: false, label: "Ask AI" },
-  { symbol: "⊘", id: "reject", tier: "critical", criticalMenu: true, label: "Objection" },
-  { symbol: "↯", id: "tension", tier: "critical", criticalMenu: true, label: "Tension" },
-  { symbol: "⚠", id: "weak", tier: "critical", criticalMenu: true, label: "Weakness" },
-  { symbol: "★", id: "strong", tier: "critical", criticalMenu: true, label: "Strength" },
-  { symbol: "⇑", id: "steel", tier: "critical", criticalMenu: true, label: "Steel man" },
-  { symbol: "📌", id: "pin", tier: "secondary", criticalMenu: false, label: "Pin" },
-  { symbol: "⚡", id: "insight", tier: "secondary", criticalMenu: false, label: "Insight" },
-  { symbol: "↩", id: "return", tier: "secondary", criticalMenu: false, label: "Return" },
-  { symbol: "🔗", id: "graph", tier: "secondary", criticalMenu: false, label: "Graph" },
+  { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
+  { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question", hotkey: "2" },
+  { symbol: "→", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain", hotkey: "3" },
+  { symbol: "⟷", id: "link", tier: "primary", criticalMenu: false, label: "Connection", hotkey: "4" },
+  { symbol: "⚑", id: "flag", tier: "primary", criticalMenu: false, label: "Ask AI", hotkey: "5" },
+  { symbol: "⊘", id: "reject", tier: "critical", criticalMenu: true, label: "Objection", hotkey: "6" },
+  { symbol: "↯", id: "tension", tier: "critical", criticalMenu: true, label: "Tension", hotkey: "7" },
+  { symbol: "⚠", id: "weak", tier: "critical", criticalMenu: true, label: "Weakness", hotkey: "8" },
+  { symbol: "★", id: "strong", tier: "critical", criticalMenu: true, label: "Strength", hotkey: "9" },
+  { symbol: "⇑", id: "steel", tier: "critical", criticalMenu: true, label: "Steel man", hotkey: "0" },
+  { symbol: "📌", id: "pin", tier: "secondary", criticalMenu: false, label: "Pin", hotkey: "p" },
+  { symbol: "⚡", id: "insight", tier: "secondary", criticalMenu: false, label: "Insight", hotkey: "i" },
+  { symbol: "↩", id: "return", tier: "secondary", criticalMenu: false, label: "Return", hotkey: "r" },
+  { symbol: "🔗", id: "graph", tier: "secondary", criticalMenu: false, label: "Graph", hotkey: "g" },
 ];
 
 export function visibleAnnotationTypes(criticalMode, { showSecondary = false } = {}) {
@@ -24,6 +24,12 @@ export function visibleAnnotationTypes(criticalMode, { showSecondary = false } =
     if (t.tier === "secondary" && showSecondary) return true;
     return false;
   });
+}
+
+export function findAnnotationTypeByHotkey(key, criticalMode, { showSecondary = false } = {}) {
+  const k = String(key ?? "").toLowerCase();
+  if (!k) return null;
+  return visibleAnnotationTypes(criticalMode, { showSecondary }).find((t) => t.hotkey === k) || null;
 }
 
 export function newAnnotationId() {
