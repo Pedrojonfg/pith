@@ -328,7 +328,7 @@ function updateRsvpProgressUi() {
   const total = totalWordUnitsInBlock();
   const pct = Math.round(((k + 1) / len) * 100);
 
-  els.rsvpProgressLabel.textContent = `~${shown} / ${total} palabras · flash ${k + 1}/${len}`;
+  els.rsvpProgressLabel.textContent = `~${shown} / ${total} words · flash ${k + 1}/${len}`;
   if (els.rsvpProgressFill) els.rsvpProgressFill.style.width = `${pct}%`;
   if (els.rsvpProgressTrack) {
     els.rsvpProgressTrack.setAttribute("aria-valuenow", String(pct));

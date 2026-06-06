@@ -125,7 +125,7 @@ function bootstrap() {
     }
     if (!installPromptEvent) {
       installPwaBtn.hidden = false;
-      installPwaBtn.textContent = "Instalar app (menu del navegador)";
+      installPwaBtn.textContent = "Install app (browser menu)";
     }
   };
 
@@ -135,7 +135,7 @@ function bootstrap() {
     installPromptEvent = e;
     if (installPwaBtn) {
       installPwaBtn.hidden = false;
-      installPwaBtn.textContent = "Instalar app";
+      installPwaBtn.textContent = "Install app";
     }
     console.log("PWA install prompt available.");
   });

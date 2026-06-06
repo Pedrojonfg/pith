@@ -40,7 +40,7 @@ self.addEventListener("install", (event) => {
       });
     }),
   );
-  // Only activate immediately on first install; updates wait for user "Actualizar ahora".
+  // Only activate immediately on first install; updates wait for user "Update now".
   if (!self.registration.active) {
     self.skipWaiting();
   }
