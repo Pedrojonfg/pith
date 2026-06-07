@@ -13,6 +13,34 @@ export const PHASE0_MAX_CHUNK_CHARS = 50000;
 const MIN_CONCEPTS = 3;
 const MAX_CONCEPTS = 5;
 
+export const NODE_TYPES = new Set(["CONCEPTO", "PERSONA", "OBRA", "MOVIMIENTO", "EVENTO"]);
+export const TEXT_GENRES = new Set([
+  "ARGUMENTO_LINEAL",
+  "GENEALOGÍA",
+  "DEBATE",
+  "DEFINICIÓN",
+  "ANÁLISIS_DE_CASO",
+]);
+
+const NODE_TYPE_PREFIX_RE = /^\[(CONCEPTO|PERSONA|OBRA|MOVIMIENTO|EVENTO)\]\s*/i;
+
+function normalizeNodeType(raw, term = "") {
+  const fromField = normalizeString(raw).toUpperCase();
+  if (NODE_TYPES.has(fromField)) return fromField;
+  const fromTerm = String(term || "").match(NODE_TYPE_PREFIX_RE);
+  if (fromTerm) return fromTerm[1].toUpperCase();
+  return "CONCEPTO";
+}
+
+function stripNodeTypePrefix(term) {
+  return normalizeString(term).replace(NODE_TYPE_PREFIX_RE, "");
+}
+
+function normalizeTextGenre(raw) {
+  const genre = normalizeString(raw).toUpperCase();
+  return TEXT_GENRES.has(genre) ? genre : "ARGUMENTO_LINEAL";
+}
+
 function stripJsonFence(text) {
   return String(text || "")
     .trim()
@@ -91,19 +119,30 @@ function normalizeArgumentMapNode(raw) {
   if (linkType) node.linkType = linkType;
   const objections = normalizeString(raw.objections || raw.objeciones);
   if (objections) node.objections = objections;
+  const period = normalizeString(raw.period || raw.periodo);
+  if (period) node.period = period;
+  const author = normalizeString(raw.author || raw.autor);
+  if (author) node.author = author;
   return node;
 }
 
 function normalizeConcept(raw) {
   if (!raw || typeof raw !== "object") return null;
-  const term = normalizeString(raw.term || raw.concept || raw.name);
+  const rawTerm = normalizeString(raw.term || raw.concept || raw.name);
+  const term = stripNodeTypePrefix(rawTerm);
   const authorUsage = normalizeString(
     raw.authorUsage || raw.usage || raw.definition || raw.howUsed || raw.note,
   );
   if (!term || !authorUsage) return null;
-  const out = { term, authorUsage };
+  const nodeType = normalizeNodeType(raw.nodeType || raw.node_type || raw.type, rawTerm);
+  const out = { term, authorUsage, nodeType };
   const graphTermId = normalizeString(raw.graphTermId || raw.termId);
   if (graphTermId) out.graphTermId = graphTermId;
+  const includesRaw = raw.includes || raw.incluye;
+  if (Array.isArray(includesRaw)) {
+    const includes = includesRaw.map((item) => normalizeString(item)).filter(Boolean);
+    if (includes.length) out.includes = includes;
+  }
   return out;
 }
 
@@ -130,7 +169,8 @@ export function validatePhase0Orientation(value, { criticalMode = false } = {}) 
   if (!argumentMap.length) return null;
   if (conceptsToFind.length < MIN_CONCEPTS || conceptsToFind.length > MAX_CONCEPTS) return null;
 
-  const out = { thesis, argumentMap, conceptsToFind, guideQuestion };
+  const textGenre = normalizeTextGenre(raw.textGenre || raw.text_genre || raw.genre);
+  const out = { thesis, argumentMap, conceptsToFind, guideQuestion, textGenre };
 
   const preRaw = raw.prequestions || raw.pre_questions || raw.userQuestions;
   if (Array.isArray(preRaw)) {
@@ -166,7 +206,7 @@ function buildPhase0SystemPrompt(language, criticalMode) {
   const lang = normalizeString(language) || "English";
   const criticalBlock = criticalMode
     ? `
-5. criticalExaminePoints: array of 2-3 strings — structural weak points to examine critically (not verdicts on correctness).`
+6. criticalExaminePoints: array of 2-3 strings — structural weak points to examine critically (not verdicts on correctness).`
     : "";
   return `You are a philosophical reading assistant. Analyze the text and produce structured orientation BEFORE the student reads.
 
@@ -174,16 +214,30 @@ Rules:
 - Respond entirely in ${lang}.
 - Return ONLY valid JSON (no markdown fences).
 - Do NOT judge whether the argument is correct or valid.
+- Before building the argument map, classify the text into ONE textGenre:
+  ARGUMENTO_LINEAL (linear thesis + premises), GENEALOGÍA (historical evolution of a concept),
+  DEBATE (contrasting authors on one problem), DEFINICIÓN (what a concept is/is not),
+  ANÁLISIS_DE_CASO (concrete case with theoretical frame).
 - thesis: one sentence — what the author wants the reader to accept (conclusion-oriented, not a summary).
-- argumentMap: array of nodes with id (P1, P2, I, C, …), text, and status for premises (e.g. argued / taken for granted / intuition).
-- conceptsToFind: exactly 3-5 objects { term, authorUsage } — technical or redefined concepts to track actively.
+- argumentMap shape depends on textGenre:
+  ARGUMENTO_LINEAL → P1, P2, …, C with status on premises;
+  GENEALOGÍA → G1, G2, … chronological with required period per node;
+  DEBATE → D1, D2, … positions with required author per node;
+  DEFINICIÓN → DEF central node + S1, S2 satellites;
+  ANÁLISIS_DE_CASO → CASO + M1, M2 theoretical frame nodes.
+- conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } — technical or redefined concepts.
+  For each node indicate type: [CONCEPTO], [PERSONA], [OBRA], [MOVIMIENTO], or [EVENTO].
+  Never create a [PERSONA] node for the author of the text you are analyzing.
+  If the text contains its own name as a bibliographic reference, ignore it as a node.
+  If several concepts share the same structural role, group them in one node with includes: [...].
 - guideQuestion: one open question the text answers (broad enough to avoid tunnel vision, specific enough to orient reading).${criticalBlock}
 
 JSON schema:
 {
+  "textGenre": "ARGUMENTO_LINEAL",
   "thesis": "string",
   "argumentMap": [{ "id": "P1", "text": "...", "status": "..." }],
-  "conceptsToFind": [{ "term": "...", "authorUsage": "..." }],
+  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPTO", "includes": ["..."] }],
   "guideQuestion": "string"${criticalMode ? ',\n  "criticalExaminePoints": ["..."]' : ""}
 }`;
 }
@@ -216,15 +270,17 @@ function buildSynthesisSystemPrompt(language, criticalMode) {
 Rules:
 - Respond entirely in ${lang}.
 - Return ONLY valid JSON matching the full Phase 0 schema.
-- Merge partial maps into one coherent argumentMap (dedupe, renumber P1/P2/I/C as needed).
-- Pick the best 3-5 conceptsToFind across all sections.
+- Emit a single textGenre for the WHOLE text (pick dominant genre if sections disagree).
+- Merge partial maps into one coherent argumentMap (dedupe, renumber as needed per genre).
+- Pick the best 3-5 conceptsToFind across all sections (with nodeType and includes when grouping).
 - thesis and guideQuestion must reflect the WHOLE text.${criticalBlock}
 
 JSON schema:
 {
+  "textGenre": "ARGUMENTO_LINEAL",
   "thesis": "string",
   "argumentMap": [{ "id": "P1", "text": "...", "status": "..." }],
-  "conceptsToFind": [{ "term": "...", "authorUsage": "..." }],
+  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPTO" }],
   "guideQuestion": "string"${criticalMode ? ',\n  "criticalExaminePoints": ["..."]' : ""}
 }`;
 }

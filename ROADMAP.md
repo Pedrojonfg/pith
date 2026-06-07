@@ -1,333 +1,250 @@
-# ROADMAP — Cloze Detection (20260529-cloze-mode)
+# ROADMAP — Grafo Académico (Género Textual y Tipado Filosófico)
 
-> **Feature**: Tercer modo de estudio — pipeline NODE/EDGE + sesión MC mínima  
-> **Spec**: `specs/20260529-cloze-mode/spec.md`  
-> **Plan**: `specs/20260529-cloze-mode/plan.md`  
-> **Branch**: `20260529-cloze-mode`
-
----
+**Feature**: `20260530-graph-academic-genre` | **Spec**: `specs/20260530-graph-academic-genre/spec.md` | **Plan**: `specs/20260530-graph-academic-genre/plan.md`
 
 ## Tabla de tareas
 
-| ID | Descripción | Dep. | Complejidad | Estado |
+| ID | Descripción | Deps | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | Extender `sessionsByMode` con slot `cloze` + `normalizeStudyMode` | — | S | [x] |
-| T02 | Selector UI: tercer modo Cloze Detection + hints | T01 | S | [x] |
-| T03 | Routing `study.js`: create/resume/nueva sesión cloze | T02 | M | [x] |
-| T04 | `createClozeSession` + upload/normalización sin IA auto | T03 | M | [x] |
-| T05 | `buildClozeEpistemicGraph` + `buildSessionGraph` modo `cloze` | T01 | M | [x] |
-| T06 | `cloze/pipeline.js` — Fase 0 grafo epistémico | T04 | L | [x] |
-| T07 | Pipeline Fases 1–2: análisis semántico + ítems base | T06 | L | [x] |
-| T08 | Pipeline Fases 3–4: distractores L1+L3 + QA | T07 | L | [x] |
-| T09 | UI botón "Generar ítems" + progreso fases 0–4 | T08 | M | [x] |
-| T10 | Sesión MC mínima (`cloze/study.js`) | T09 | L | [x] |
-| T11 | Botón Ver grafo + `cloze-mode.css` | T05, T09 | S | [x] |
-| T12 | cursor-tests + validación quickstart | T10, T11 | M | [x] |
+| T01 | Tipado de nodos (`nodeType`) en Phase 0 + normalización + labels grafo | — | M | [x] |
+| T02 | Vocabulario de aristas ampliado (`EDGE_TYPES` + `export-format.js`) | — | S | [x] |
+| T03 | Detección `textGenre` en prompts Phase 0 + validación | — | M | [x] |
+| T04 | `buildSlowPhase0Graph` genre-aware (`historically_precedes` vs `sequence`) | T03 | M | [x] |
+| T05 | Deduplicación clusters (`includes`) en prompt + normalización | T01 | S | [x] |
+| T06 | `pruneOrphanNodes` en build.js + view.js | T04 | S | [x] |
+| T07 | Estilos SVG aristas en canvas.js | T02 | S | [x] |
+| T08 | Tests `t15-graph-academic-genre` + quickstart QA | T04,T05,T06,T07 | M | [x] |
 
----
-
-## Grafo de dependencias
+## Diagrama de dependencias
 
 ```text
-T01 ─┬→ T02 → T03 → T04 → T06 → T07 → T08 → T09 ─┬→ T10 → T12
-     │                                              └→ T11 ↗
-     └→ T05 ────────────────────────────────────────────────┘
+T03 → T04 → T06 → T08
+T01 → T05 ↗
+T02 → T07 ↗
 ```
 
-**Paralelizable**:
-- Tras **T01**: lanzar **T02** y **T05** en paralelo.
-- Tras **T09**: lanzar **T10** y **T11** en paralelo.
+**Paralelizables desde el inicio**: T01, T02, T03 (tres chats independientes)
 
----
+**Secuenciales**:
+- T04 requiere T03
+- T05 requiere T01
+- T06 requiere T04 (prune sobre grafo genre-aware)
+- T07 requiere T02
+- T08 requiere T04–T07
 
 ## Orden de ejecución recomendado
 
-### Oleada 1 (paralelo)
-- **T01** (obligatorio primero)
-- Luego en paralelo: **T02**, **T05**
+### Ola 1 (paralelo — lanzar 3 chats a la vez)
 
-### Oleada 2 (secuencial)
-- **T03** → **T04** → **T06** → **T07** → **T08** → **T09**
+1. **T01** — tipado nodos
+2. **T02** — aristas + export
+3. **T03** — género textual Phase 0
 
-### Oleada 3 (paralelo)
-- **T10** y **T11** en paralelo
+### Ola 2 (paralelo — tras Ola 1)
 
-### Oleada 4
-- **T12** (cuando T10 y T11 estén hechos)
+4. **T04** — tras T03
+5. **T05** — tras T01
+6. **T07** — tras T02
 
-**Esperar antes de continuar**:
-- Antes de T06: upload cloze guarda sesión con `pipelineStatus: 'normalized'`.
-- Antes de T10: pipeline llega a `ready` con ítems `valid`.
-- Antes de T12: los 3 cursor-tests pasan.
+### Ola 3 (secuencial)
 
----
+7. **T06** — tras T04
 
-## Prompts listos para usar
+### Ola 4 (cierre)
+
+8. **T08** — tras T06 y T07
 
 ---
 
-**PROMPT T01 — sessionsByMode.cloze**
+## PROMPT T01 — Tipado de nodos en capa text
 
-Implementa la persistencia del slot `cloze` en MyLearning (feature `20260529-cloze-mode`).
+Implementa el **Cambio 1** del feature Grafo Académico: subtipos de nodo en capa `text`.
 
-**Contexto**: Tercer modo Cloze Detection. Spec: `specs/20260529-cloze-mode/spec.md`. Contrato: `specs/20260529-cloze-mode/contracts/mode-selector-cloze.md`. Data model: `specs/20260529-cloze-mode/data-model.md`.
+**Contexto**: El sistema Slow Mode extrae conceptos en Phase 0 (`src/js/slow/phase0.js`) y los renderiza en `buildSlowPhase0GraphFromInputs` (`src/js/graph/build.js`). Hoy todos los nodos van a `layer: "text"` sin distinción.
 
 **Archivos a tocar**:
-- `src/js/session.js` — `normalizeStudyMode`, `emptySessionsByMode`, `parseSessionsByModeRaw`, `storeSessionsByMode`
-- `src/js/study.js` — `getStudyModeLabel` si aplica
-- `cursor-tests/20260529_t01-cloze-sessions.mjs` (crear)
+- `src/js/slow/phase0.js` — `buildPhase0SystemPrompt`, `buildSynthesisSystemPrompt`, `normalizeConcept`, `validatePhase0Orientation`
+- `src/js/graph/build.js` — `buildSlowPhase0GraphFromInputs`, `collectTextConceptsFromLists`
+- `specs/20260530-graph-academic-genre/contracts/text-node-subtypes.md` (referencia)
 
-**Requisitos**:
-1. `normalizeStudyMode('cloze')` → `'cloze'` (mantener `rsvp`/`slow` intactos).
-2. `emptySessionsByMode()` → `{ rsvp: null, slow: null, cloze: null }`.
-3. Parse/store incluyen `cloze`; migración idempotente si `cloze` ausente.
-4. `loadSessionForMode('cloze')` / `storeSessionForMode('cloze', …)` funcionan.
-5. Test: round-trip localStorage con los tres slots.
+**Subtipos**: CONCEPTO, PERSONA, OBRA, MOVIMIENTO, EVENTO.
 
-**No tocar**: pipeline IA, UI selector (T02).
+**Instrucciones prompt** (añadir en sección conceptsToFind):
+```
+Para cada nodo indica su tipo entre corchetes: [CONCEPTO], [PERSONA], [OBRA],
+[MOVIMIENTO] o [EVENTO]. Nunca crees un nodo [PERSONA] para el autor del texto
+que estás analizando. Si el texto contiene su propio nombre como referencia
+bibliográfica, ignóralo como nodo.
+```
 
-criterio de éxito: `node cursor-tests/20260529_t01-cloze-sessions.mjs` pasa; RSVP/Slow slots sin regresión. Ejecuta /validate antes de cerrar este mensaje.
+**Implementación**:
+1. Campo `nodeType` en JSON schema del prompt y en `normalizeConcept` (parsear también desde prefijo `[TIPO]` en `term`).
+2. Nodos grafo: `label: \`[${nodeType}] ${term}\``, metadata `nodeSubtype`.
+3. Validación: enum conocido; default `CONCEPTO`.
+
+**Criterio de éxito**: `normalizeConcept({ term: "Bildung", authorUsage: "...", nodeType: "CONCEPTO" })` produce nodo con label `[CONCEPTO] Bildung`; prompts actualizados en single y synthesis. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, `specs/20260530-graph-academic-genre/spec.md` FR-003, FR-004.
 
 ---
 
-**PROMPT T02 — Selector 3 modos UI**
+## PROMPT T02 — Vocabulario de aristas ampliado
 
-Añade Cloze Detection al selector de modos en la pantalla de creación.
-
-**Contexto**: ROADMAP.md T02. Depende de T01. Contrato: `specs/20260529-cloze-mode/contracts/mode-selector-cloze.md`.
+Implementa el **Cambio 2** (parte datos/export) del feature Grafo Académico.
 
 **Archivos a tocar**:
-- `index.html` — radio `studyMode` value `cloze`, hint descriptivo
-- `src/css/main.css` — ajustes layout 3 opciones si necesario
-- `src/js/study.js` — `getStudyModeLabel`, `resetModeSelectUi`, hints
+- `src/js/graph/build.js` — exportar `EDGE_TYPES` / constantes; usar en `addEdge` validation opcional
+- `src/js/export-format.js` — extender `EDGE_TYPE_FAMILIES`
+- `specs/20260530-graph-academic-genre/contracts/graph-edge-vocabulary.md` (referencia)
 
-**Requisitos**:
-1. Tres modos visibles sin preselección: RSVP, Slow Mode, Cloze Detection.
-2. Hint Cloze: recuperación activa con ítems cloze sobre el material.
-3. Al elegir cloze, ocultar controles RSVP (bloques) y Slow (critical mode, scope).
-4. Sin regresión en selección RSVP/Slow.
+**Tipos nuevos**: `historically_precedes`, `reinterprets`, `constitutes`, `contrasts_with`, `influences` (+ `instantiates` ya parcialmente usado).
 
-criterio de éxito: manual — abrir create screen, ver 3 modos, elegir cada uno y verificar visibilidad de controles. Ejecuta /validate antes de cerrar este mensaje.
+**Familias export**:
+- `historically_precedes` → didactic
+- `reinterprets`, `constitutes`, `influences` → semantic
+- `contrasts_with` → argumentative
+
+**Criterio de éxito**: `formatGraphEdgeMarkdown("a","b","contrasts_with","es")` incluye familia argumentativa; `EDGE_TYPES` contiene los 6 tipos nuevos. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, spec FR-006, FR-010.
 
 ---
 
-**PROMPT T03 — Routing study.js cloze**
+## PROMPT T03 — Detección de género textual Phase 0
 
-Conecta el flujo create/resume/nueva sesión para modo `cloze`.
-
-**Contexto**: ROADMAP.md T03. Depende de T01+T02. Spec FR-001, FR-009.
+Implementa el **Cambio 3** (parte IA/validación) del feature Grafo Académico.
 
 **Archivos a tocar**:
-- `src/js/study.js` — `enterCreateScreenForMode`, `wireStudyModeSelector`, `continueSessionBtn`, `newSessionModeBtn`, `updateCreateScreenModeVisibility`, `resumeClozeSession` (nuevo)
-- `src/js/main.js` — bootstrap si aplica
+- `src/js/slow/phase0.js` — system prompts (single, chunk synthesis), `validatePhase0Orientation`, `normalizeArgumentMapNode`
+- `specs/20260530-graph-academic-genre/contracts/phase0-text-genre.md` (referencia)
 
-**Requisitos**:
-1. Elegir cloze + slot existente → panel Continuar / Nueva sesión.
-2. Continuar carga `sessions_by_mode.cloze` en `state.activeSession`.
-3. Nueva sesión reemplaza solo slot `cloze` (confirmación si había sesión).
-4. `state.studyMode = 'cloze'` coherente en todo el flujo.
-5. No implementar aún pipeline ni estudio MC (T04+).
+**Géneros**: ARGUMENTO_LINEAL, GENEALOGÍA, DEBATE, DEFINICIÓN, ANÁLISIS_DE_CASO.
 
-criterio de éxito: continuar/nueva sesión cloze sin cruzar datos con rsvp/slow. Ejecuta /validate antes de cerrar este mensaje.
+**Prompt** (al inicio, antes de argumentMap):
+```
+Antes de construir el mapa argumental, clasifica este texto en uno de estos géneros:
+[lista de 5 géneros]
+Devuelve el género detectado como campo "textGenre" en el JSON de Phase 0.
+```
+
+**Estructuras argumentMap por género** (instruir en prompt):
+- GENEALOGÍA → nodos con `period`
+- DEBATE → nodos con `author`
+- DEFINICIÓN → nodo central + satélites
+- ARGUMENTO_LINEAL → P1/P2/C (actual)
+
+**Validación**: `textGenre` obligatorio en output normalizado; default `ARGUMENTO_LINEAL` si ausente/inválido.
+
+**Map-reduce**: synthesis prompt debe emitir `textGenre` global.
+
+**Criterio de éxito**: `validatePhase0Orientation({ textGenre: "GENEALOGÍA", thesis, argumentMap: [{id:"G1",text:"x",period:"XVIII"}], conceptsToFind: [...3 items], guideQuestion })` retorna objeto válido con `textGenre`. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, spec FR-001, FR-002, FR-011.
 
 ---
 
-**PROMPT T04 — createClozeSession + upload**
+## PROMPT T04 — buildSlowPhase0Graph genre-aware
 
-Crea la sesión cloze y conecta upload/normalización sin IA automática.
+Implementa el **Cambio 3** (parte grafo) — aristas según género.
 
-**Contexto**: ROADMAP.md T04. Contratos: `cloze-pipeline.md` (trigger). Data model: `ClozeSessionData`.
+**Deps**: T03 completado (`textGenre` en phase0).
 
 **Archivos a tocar**:
-- `src/js/study.js` — `createClozeSession` (export), handler upload para modo cloze
-- Reutilizar `input-normalization.js` (import dinámico como Slow)
+- `src/js/graph/build.js` — `buildSlowPhase0GraphFromInputs`
+- Opcional: reglas direccionalidad `reinterprets` si T01 ya mergeado
 
-**Requisitos**:
-1. `createClozeSession({ normalizedText, normalizedFormat, fileName, … })` → `{ studyMode: 'cloze', cloze: { normalizedText, pipelineStatus: 'normalized', … } }`.
-2. Upload igual que otros modos; **cero** llamadas LLM post-upload.
-3. Tras upload: mostrar botón "Generar ítems" (disabled hasta T09 si hace falta placeholder).
-4. `storeActiveSession` persiste en slot cloze.
+**Lógica**:
+```js
+const mapEdgeType =
+  phase0.textGenre === "GENEALOGÍA" ? "historically_precedes" : "sequence";
+// entre nodos consecutivos de argumentMap
+```
 
-criterio de éxito: subir .md en modo cloze crea sesión `pipelineStatus: 'normalized'` sin spinner IA. Ejecuta /validate antes de cerrar este mensaje.
+**Labels arg nodes**: incluir `period` o `author` en label si presente (ej. `G1 (siglo XVIII): ...`).
+
+**Criterio de éxito**: test manual o unit: phase0 con `textGenre: "GENEALOGÍA"` y 3 nodos mapa → 2 edges `historically_precedes`, 0 `sequence`. Phase0 lineal → edges `sequence`. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, spec FR-005, contract `phase0-text-genre.md`.
 
 ---
 
-**PROMPT T05 — buildClozeEpistemicGraph**
+## PROMPT T05 — Deduplicación de clusters (includes)
 
-Extiende el graph builder modo-agnóstico para grafo epistémico cloze.
+Implementa el **Cambio 4** del feature Grafo Académico.
 
-**Contexto**: ROADMAP.md T05. Contrato: `specs/20260529-cloze-mode/contracts/cloze-graph-view.md`. Referencia: `src/js/graph/build.js`.
+**Deps**: T01 completado.
 
 **Archivos a tocar**:
-- `src/js/graph/build.js` — `buildClozeEpistemicGraph`, rama `mode === 'cloze'` en `buildSessionGraph`
+- `src/js/slow/phase0.js` — prompt conceptsToFind + `normalizeConcept`
+- `src/js/graph/build.js` — propagar `includes` a nodo grafo (tooltip/metadata)
 
-**Requisitos**:
-1. `buildClozeEpistemicGraph(session)` lee `session.cloze.epistemicGraph`.
-2. Mapea nodos/aristas a formato canvas existente (`nodes`, `edges`, `kind: 'cloze'`).
-3. `buildSessionGraph(session, { mode: 'cloze' })` devuelve grafo visualizable.
-4. No leer grafos RSVP/Slow.
-5. Grafo vacío si `epistemicGraph` null.
+**Instrucción prompt** (ver `contracts/text-node-subtypes.md`):
+Agrupar conceptos con mismo rol estructural en un nodo con `includes: [...]`.
 
-criterio de éxito: unit test manual con grafo mock en cursor-test o console; `mountMaterialGraphScreen` acepta output. Ejecuta /validate antes de cerrar este mensaje.
+**Criterio de éxito**: `normalizeConcept` preserva `includes`; nodo grafo tiene campo `includes` cuando aplica. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, spec FR-003, SC-006.
 
 ---
 
-**PROMPT T06 — Pipeline Fase 0**
+## PROMPT T06 — pruneOrphanNodes
 
-Implementa generación de grafo epistémico (Fase 0) en `cloze/pipeline.js`.
+Implementa el **Cambio 5** del feature Grafo Académico.
 
-**Contexto**: ROADMAP.md T06. Diseño: `cloze_mode_spec.md` § Fase 0. Research R4.
+**Deps**: T04 completado.
 
 **Archivos a tocar**:
-- `src/js/cloze/pipeline.js` (crear) — `generateEpistemicGraph(text, { llmModel })`
-- `src/js/cloze/normalize.js` (crear) — validación shape mínimo
-- `src/js/llm.js` — usar APIs existentes
+- `src/js/graph/build.js` — `export function pruneOrphanNodes`; llamar al final de `buildSlowPhase0GraphFromInputs` y `buildSlowEnrichedGraphFromInputs`
+- `src/js/graph/view.js` — antes de `persistEnrichedGraph`
+- `specs/20260530-graph-academic-genre/contracts/orphan-prune.md` (referencia)
 
-**Requisitos**:
-1. Una llamada IA → JSON `{ nodes[], edges[] }` con campos del data-model.
-2. Nodos `importance` 1–5; edges con `sentence_context`.
-3. Función pura testeable; sin DOM.
-4. Export para uso desde `study.js` en T09.
+**Regla**: conservar nodos `layer === 'user'` aunque sin aristas.
 
-criterio de éxito: función retorna grafo válido con texto mock o stub LLM en test. Ejecuta /validate antes de cerrar este mensaje.
+**Criterio de éxito**: grafo con 1 nodo text aislado → tras build queda vacío (excepto user); `console.warn` con conteo. Ejecuta `/validate` antes de cerrar este mensaje.
+
+**Referencia**: `ROADMAP.md`, spec FR-008, SC-004.
 
 ---
 
-**PROMPT T07 — Pipeline Fases 1–2**
+## PROMPT T07 — Estilos SVG aristas en canvas
 
-Análisis semántico + generación ítems base NODE/EDGE.
+Implementa la parte visual del **Cambio 2**.
 
-**Contexto**: ROADMAP.md T07. `cloze_mode_spec.md` § Fases 1–2.
+**Deps**: T02 completado.
 
 **Archivos a tocar**:
-- `src/js/cloze/pipeline.js` — `analyzeSemanticCandidates`, `generateBaseItems`
-- `src/js/cloze/normalize.js` — validación candidatos e ítems base
+- `src/js/graph/canvas.js` — `EDGE_COLORS`, stroke dash patterns en render de `<path>`
+- Opcional: leyenda edge types
 
-**Requisitos**:
-1. Fase 1: `node_candidates` (importance ≥ 3) + `edge_candidates` con `aptitude_score`.
-2. Fase 2: ítems NODE (DEF/APP/COND/CONTRAST) y EDGE (SOURCE/TARGET/RELATION) con `sentence_with_blank`, offsets.
-3. Texto ≤15k pasa completo; sin distractores aún.
-4. Tipos `item_type` según taxonomía spec.
+**Estilos**:
+- Sólida: sequence, historically_precedes, constitutes, influences
+- Punteada: relates, contrasts_with, reinterprets
+- Gruesa punteada: contradicts, refuta, cuestiona
 
-criterio de éxito: pipeline fases 0→2 encadenables con grafo+texto de prueba. Ejecuta /validate antes de cerrar este mensaje.
+**Criterio de éxito**: SVG paths con `stroke-dasharray` distinto según `data-edge-type`; colores para tipos nuevos. Ejecuta `/validate` antes de cerrar este mensaje.
 
----
-
-**PROMPT T08 — Pipeline Fases 3–4**
-
-Distractores L1+L3 y QA con dificultad.
-
-**Contexto**: ROADMAP.md T08. Clarify: solo L1+L3, sin vault L2.
-
-**Archivos a tocar**:
-- `src/js/cloze/pipeline.js` — `generateDistractors`, `qaAndCalibrate`
-- `src/js/cloze/normalize.js` — `ClozeOption`, filtro `qa_status`
-
-**Requisitos**:
-1. Fase 3: 3 distractores + respuesta correcta = 4 opciones; pool L1 del grafo; fallback L3.
-2. Gradiente plausibility high/medium/low.
-3. Fase 4: asignar `difficulty`, `qa_status` (valid/weak/rejected).
-4. Export `getValidItems(items)` → solo `valid`.
-5. Target balance EASY 30% / MEDIUM 50% / HARD 20% documentado en comentario.
-
-criterio de éxito: `cursor-tests/20260529_t03-cloze-valid-items.mjs` pasa con fixtures. Ejecuta /validate antes de cerrar este mensaje.
+**Referencia**: `ROADMAP.md`, spec FR-009, contract `graph-edge-vocabulary.md`.
 
 ---
 
-**PROMPT T09 — UI Generar ítems**
+## PROMPT T08 — Tests y QA
 
-Botón y progreso del pipeline; wire en study.js.
+Cierra el feature con tests automatizados y verificación quickstart.
 
-**Contexto**: ROADMAP.md T09. Contrato: `cloze-pipeline.md`.
+**Deps**: T04, T05, T06, T07 completados.
 
-**Archivos a tocar**:
-- `index.html` — `#clozeGenerateBtn`, `#clozePipelineProgress`
-- `src/js/study.js` — handler async fases 0–4, actualizar `pipelineStatus`, persist
-- `src/css/cloze-mode.css` (crear mínimo)
+**Archivos a crear/tocar**:
+- `cursor-tests/20260607_t15-graph-academic-genre.mjs` (nuevo)
+- Verificar regresión: `cursor-tests/20260607_t14-graph-refactor.mjs`
+- `specs/20260530-graph-academic-genre/quickstart.md` (seguir escenarios)
 
-**Requisitos**:
-1. Botón visible cuando `pipelineStatus === 'normalized'` o `failed`.
-2. Progreso: "Fase N/5: …" durante generación.
-3. Al `ready`: mostrar resumen (N ítems valid) + botón Estudiar.
-4. Error: mensaje + Reintentar desde fase fallida.
-5. Continuar sesión con grafo+items ready omite regeneración.
+**Tests mínimos**:
+1. `buildSlowPhase0GraphFromInputs` con GENEALOGÍA → `historically_precedes`
+2. `buildSlowPhase0GraphFromInputs` con ARGUMENTO_LINEAL → `sequence`
+3. `pruneOrphanNodes` elimina text huérfano, conserva user
+4. `normalizeConcept` con `nodeType` + `includes`
+5. `formatGraphEdgeMarkdown` para `contrasts_with`
 
-criterio de éxito: flujo manual upload → Generar → ready con API key real. Ejecuta /validate antes de cerrar este mensaje.
+**Criterio de éxito**: ambos test files PASS; quickstart escenarios A–D verificados. Ejecuta `/validate` antes de cerrar este mensaje.
 
----
-
-**PROMPT T10 — Sesión MC cloze**
-
-Pantalla de estudio multiple-choice reutilizando patrones review.
-
-**Contexto**: ROADMAP.md T10. Contrato: `cloze-study-session.md`.
-
-**Archivos a tocar**:
-- `src/js/cloze/study.js` (crear)
-- `index.html` — `#screenClozeStudy`
-- `src/js/study.js` — navegación a estudio
-- Reutilizar: `shuffle-options.js`, `markdown.js`, patrones de `review.js`
-
-**Requisitos**:
-1. Cola solo ítems `qa_status === 'valid'`.
-2. Oración con hueco + 4 opciones barajadas.
-3. Feedback inmediato; avanzar `studyIndex`; persistir stats.
-4. Reanudar restaura índice y orden (`studyOrder`).
-5. Sin SR. Sin romper review RSVP.
-
-criterio de éxito: completar ≥10 ítems; recargar y continuar mismo índice. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-**PROMPT T11 — Ver grafo + CSS**
-
-Botón ver grafo y estilos mínimos del modo.
-
-**Contexto**: ROADMAP.md T11. Contrato: `cloze-graph-view.md`. Depende T05+T09.
-
-**Archivos a tocar**:
-- `index.html` — botón Ver grafo, contenedor grafo en flujo cloze
-- `src/js/study.js` — `mountMaterialGraphScreen(session, el, { mode: 'cloze' })`
-- `src/css/cloze-mode.css` — progreso, estudio, grafo
-- `sw.js` — cache bust nuevos assets si aplica
-
-**Requisitos**:
-1. Botón visible cuando `epistemicGraph` existe.
-2. Reutilizar `mountMaterialGraphScreen` — no nuevo canvas.
-3. Estilos coherentes con app existente.
-
-criterio de éxito: tras generar, Ver grafo muestra nodos del material. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-**PROMPT T12 — Tests + quickstart QA**
-
-Cierra QA del feature con cursor-tests y quickstart.
-
-**Contexto**: ROADMAP.md T12. `specs/20260529-cloze-mode/quickstart.md`.
-
-**Archivos a tocar**:
-- `cursor-tests/20260529_t01-cloze-sessions.mjs` (si incompleto)
-- `cursor-tests/20260529_t02-cloze-pipeline-status.mjs` (crear)
-- `cursor-tests/20260529_t03-cloze-valid-items.mjs` (crear)
-
-**Requisitos**:
-1. Tests cubren: slot cloze, transiciones pipelineStatus, filtro valid items.
-2. Ejecutar quickstart §1–8 manualmente documentando resultados.
-3. Verificar regresión RSVP/Slow §8.
-
-criterio de éxito: los 3 cursor-tests pasan; quickstart §1–7 verificados. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## Instrucción de ejecución
-
-1. **Lanzar primero**: PROMPT **T01** (solo).
-2. **En paralelo**: PROMPT **T02** + **T05** (cuando T01 esté hecho).
-3. **Secuencial**: T03 → T04 → T06 → T07 → T08 → T09.
-4. **En paralelo**: T10 + T11 (cuando T09 esté hecho).
-5. **Cerrar**: T12.
-
-**Tiempo estimado**: T06–T08 son el cuello de botella (prompts IA + validación JSON).
-
-**Siguiente comando Spec Kit**: `/speckit-tasks` para generar `tasks.md` formal (opcional; este ROADMAP ya es ejecutable).
+**Referencia**: `ROADMAP.md`, `specs/20260530-graph-academic-genre/quickstart.md`.
