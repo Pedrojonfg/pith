@@ -12,7 +12,12 @@ function normalizeConceptEntry(c) {
   const term = String(obj.term || "").trim();
   const definition = String(obj.definition || "").trim();
   if (!term) return null;
-  return { term, definition };
+  const out = { term, definition };
+  const layer = String(obj.layer || "").trim();
+  if (layer) out.layer = layer;
+  const sourceAnnotationId = String(obj.sourceAnnotationId || "").trim();
+  if (sourceAnnotationId) out.sourceAnnotationId = sourceAnnotationId;
+  return out;
 }
 
 function normalizeDefText(definition) {
@@ -264,6 +269,78 @@ export function getSortedSessionConcepts() {
   const fromBlocks = flattenConceptsByBlock();
   const legacy = loadSessionConcepts();
   return dedupeConcepts([legacy, fromBlocks]);
+}
+
+/** T11 — merge enriched-graph user nodes into session_concepts (layer: user). */
+export function mergeEnrichedGraphUserNodes(session, userNodes) {
+  const incoming = (Array.isArray(userNodes) ? userNodes : [])
+    .filter((n) => n && n.layer === "user")
+    .map((n) => {
+      const label = String(n.label || "").trim();
+      if (!label) return null;
+      return {
+        term: label,
+        definition: String(n.sourceAnnotationId || "").trim(),
+        layer: "user",
+        sourceAnnotationId: String(n.sourceAnnotationId || "").trim() || undefined,
+      };
+    })
+    .filter(Boolean);
+  if (!incoming.length) return getSortedSessionConcepts();
+  mergeConceptsIntoStorage(incoming);
+  if (session?.slow) {
+    session.slow.graphNodes = incoming.map((n) => ({
+      id: userNodes.find((u) => u.sourceAnnotationId === n.sourceAnnotationId)?.id || n.term,
+      label: n.term,
+      sourceAnnotationId: n.sourceAnnotationId,
+    }));
+  }
+  return getSortedSessionConcepts();
+}
+
+/** Word boundaries for long-press dictionary lookup (letters, digits, accented chars). */
+const WORD_CHAR_RE = /[\p{L}\p{N}'’-]/u;
+
+/** @returns {string} */
+export function extractWordAtOffset(text, offset) {
+  const src = String(text || "");
+  const len = src.length;
+  if (!len) return "";
+  let idx = Math.max(0, Math.min(Math.floor(Number(offset) || 0), len - 1));
+  if (!WORD_CHAR_RE.test(src[idx])) {
+    const next = src.slice(idx).search(WORD_CHAR_RE);
+    if (next < 0) return "";
+    idx += next;
+  }
+  let start = idx;
+  while (start > 0 && WORD_CHAR_RE.test(src[start - 1])) start -= 1;
+  let end = idx + 1;
+  while (end < len && WORD_CHAR_RE.test(src[end])) end += 1;
+  return src.slice(start, end).trim();
+}
+
+/**
+ * Lookup a term in session dictionary + Phase 0 concepts.
+ * @returns {{ term: string, definition: string, source: 'session'|'phase0' } | null}
+ */
+export function lookupSessionTerm(term, { sessionConcepts = [], phase0Concepts = [] } = {}) {
+  const needle = String(term || "").trim().toLowerCase();
+  if (!needle) return null;
+  for (const raw of sessionConcepts) {
+    const c = normalizeConceptEntry(raw);
+    if (!c) continue;
+    if (c.term.toLowerCase() === needle) {
+      return { term: c.term, definition: c.definition, source: "session" };
+    }
+  }
+  for (const raw of phase0Concepts) {
+    if (!raw || typeof raw !== "object") continue;
+    const t = String(raw.term || "").trim();
+    if (!t || t.toLowerCase() !== needle) continue;
+    const definition = String(raw.authorUsage || raw.definition || "").trim();
+    return { term: t, definition, source: "phase0" };
+  }
+  return null;
 }
 
 /** Concepts attributed to one block (concepts_by_block, else block JSON). */

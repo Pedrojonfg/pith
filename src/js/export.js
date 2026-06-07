@@ -16,7 +16,9 @@ import {
   ensureSessionResponseState,
 } from "./session.js?v=20260527_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
-import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
+import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
+import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
+import { buildSessionGraph } from "./graph/build.js?v=20260607_1";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -195,35 +197,225 @@ export function collectExportConcepts(session) {
   );
 }
 
+function appendConceptDictionarySection(lines, session) {
+  const exportConcepts = collectExportConcepts(session);
+  if (!exportConcepts.length) return;
+  lines.push("## Concept Dictionary");
+  lines.push("");
+  for (const c of exportConcepts) {
+    lines.push(`### ${c.term}`);
+    lines.push("");
+    lines.push(String(c.definition || "").trim() || "(no definition)");
+    lines.push("");
+  }
+}
+
+function formatGraphLinks(links) {
+  const arr = Array.isArray(links) ? links : [];
+  return arr
+    .map((link) => {
+      const termId = String(link?.termId || "").trim();
+      const relation = String(link?.relation || "").trim();
+      if (!termId) return "";
+      return relation ? `${termId} (${relation})` : termId;
+    })
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** Append Phase 0, enriched, and RSVP material graphs when data exists. */
+export function appendGraphSections(lines, session, lang = "English") {
+  const graphs = [];
+
+  const blockIndex = session?._meta?.material_graph?.blockIndex;
+  if (Array.isArray(blockIndex) && blockIndex.length) {
+    const rsvpGraph = buildSessionGraph(session, { mode: "rsvp" });
+    if (rsvpGraph.nodes.length) graphs.push(rsvpGraph);
+  }
+
+  if (session?.slow?.phase0) {
+    const phase0Graph = buildSessionGraph(session, { mode: "slow_phase0" });
+    if (phase0Graph.nodes.length) graphs.push(phase0Graph);
+  }
+
+  const annotations = Array.isArray(session?.slow?.annotations) ? session.slow.annotations : [];
+  const hasUserAnnotations = annotations.some((a) => String(a?.userText || "").trim());
+  if (hasUserAnnotations || session?.slow?.graphEnrichedUnlocked) {
+    const enrichedGraph = buildSessionGraph(session, { mode: "slow_enriched" });
+    if (enrichedGraph.nodes.length) graphs.push(enrichedGraph);
+  }
+
+  const seenKinds = new Set();
+  for (const graph of graphs) {
+    const kind = String(graph?.kind || "graph");
+    if (seenKinds.has(kind)) continue;
+    seenKinds.add(kind);
+    lines.push(buildGraphSubgraphMarkdown(graph, lang));
+  }
+}
+
+function appendPhase0Section(lines, phase0) {
+  if (!phase0 || typeof phase0 !== "object") return;
+  lines.push("## Phase 0 — Orientation");
+  lines.push("");
+  lines.push(`**Thesis:** ${String(phase0.thesis || "").trim() || "—"}`);
+  lines.push(`**Guide question:** ${String(phase0.guideQuestion || "").trim() || "—"}`);
+  lines.push("");
+
+  const prequestions = Array.isArray(phase0.prequestions) ? phase0.prequestions : [];
+  if (prequestions.length) {
+    lines.push("### Pre-questions");
+    for (let i = 0; i < prequestions.length; i += 1) {
+      const q = String(prequestions[i] || "").trim();
+      if (q) lines.push(`${i + 1}. ${q}`);
+    }
+    lines.push("");
+  }
+
+  const map = Array.isArray(phase0.argumentMap) ? phase0.argumentMap : [];
+  if (map.length) {
+    lines.push("### Argument map");
+    for (const node of map) {
+      const id = String(node?.id || "").trim();
+      const text = String(node?.text || "").trim();
+      const status = String(node?.status || "").trim();
+      const statusSuffix = status ? ` · *${status}*` : "";
+      lines.push(`- **${id || "?"}:** ${text || "—"}${statusSuffix}`);
+    }
+    lines.push("");
+  }
+
+  const fillable = Array.isArray(phase0.fillableBlanks) ? phase0.fillableBlanks : [];
+  if (fillable.length) {
+    lines.push("### Fillable blanks");
+    for (const blank of fillable) {
+      const slot = String(blank?.slotId || blank?.id || "").trim();
+      const answer = String(blank?.userAnswer || blank?.answer || "").trim();
+      lines.push(`- **${slot || "?"}:** ${answer || "(empty)"}`);
+    }
+    lines.push("");
+  }
+
+  const concepts = Array.isArray(phase0.conceptsToFind) ? phase0.conceptsToFind : [];
+  if (concepts.length) {
+    lines.push("### Concepts to track");
+    for (const c of concepts) {
+      const term = String(c?.term || "").trim();
+      const usage = String(c?.authorUsage || "").trim();
+      if (!term) continue;
+      lines.push(`- **${term}:** ${usage || "—"}`);
+    }
+    lines.push("");
+  }
+
+  const critical = Array.isArray(phase0.criticalExaminePoints) ? phase0.criticalExaminePoints : [];
+  if (critical.length) {
+    lines.push("### Critical examine points");
+    for (const point of critical) {
+      const text = String(point || "").trim();
+      if (text) lines.push(`- ${text}`);
+    }
+    lines.push("");
+  }
+}
+
+function appendFindingsSection(lines, findings) {
+  const arr = Array.isArray(findings) ? findings : [];
+  if (!arr.length) return;
+  lines.push("## Concept findings");
+  lines.push("");
+  for (const f of arr) {
+    const term = String(f?.conceptTerm || "").trim();
+    const text = String(f?.userText || "").trim();
+    const revealed = f?.revealedInPhase1 ? " (revealed in Phase 1)" : "";
+    lines.push(`- **${term || "concept"}**${revealed}: ${text || "—"}`);
+  }
+  lines.push("");
+}
+
+function appendAnnotationsSection(lines, annotations) {
+  const arr = Array.isArray(annotations) ? annotations : [];
+  lines.push("## Annotations");
+  lines.push("");
+  if (!arr.length) {
+    lines.push("(No annotations recorded.)");
+    lines.push("");
+    return;
+  }
+  for (const a of arr) {
+    const type = String(a?.type || "?").trim();
+    const range = `[${a?.charStart ?? "?"}–${a?.charEnd ?? "?"}]`;
+    const userText = String(a?.userText || "").trim();
+    const aiReply = String(a?.aiReply || "").trim();
+    const links = formatGraphLinks(a?.graphLinks);
+    lines.push(`- **${type}** ${range}${userText ? `: ${userText}` : ""}`);
+    if (aiReply) lines.push(`  - IA reply: ${aiReply}`);
+    if (links) lines.push(`  - Graph links: ${links}`);
+  }
+  lines.push("");
+}
+
+function appendDepthScoreSection(lines, session, depthScore) {
+  const slow = session?.slow || {};
+  const lang = String(session?.language || "English").trim() || "English";
+  const depth =
+    depthScore ||
+    computeDepthScore(slow.annotations, { criticalMode: Boolean(slow.criticalMode) });
+  lines.push("## Depth score");
+  lines.push("");
+  lines.push(`**Total:** ${depth.total}`);
+  lines.push(`**Generative ratio:** ${(depth.generativeRatio * 100).toFixed(0)}%`);
+  const byType = depth.byType && typeof depth.byType === "object" ? depth.byType : {};
+  const breakdown = Object.entries(byType).filter(([, pts]) => Number(pts) > 0);
+  if (breakdown.length) {
+    lines.push("");
+    lines.push("### Breakdown by type");
+    for (const [type, pts] of breakdown) {
+      lines.push(`- ${type}: ${pts}`);
+    }
+  }
+  const penalties = Array.isArray(depth.penalties) ? depth.penalties : [];
+  if (penalties.length) {
+    lines.push("");
+    lines.push("### Improvement opportunities");
+    const annById = new Map((slow.annotations || []).map((a) => [a.id, a]));
+    for (const p of penalties) {
+      const ann = annById.get(p.annotationId) || { type: p.type, id: p.annotationId };
+      lines.push(`- ${ann.type || "?"}: ${buildPenaltyFeedback(ann, lang)}`);
+    }
+  }
+  lines.push("");
+}
+
 function buildSlowMarkdown(session) {
-  const slow = session.slow || {};
+  const safe = session && typeof session === "object" ? session : {};
+  const slow = safe.slow || {};
   const scope = slow.readingScope || {};
+  const lang = String(safe.language || "English").trim() || "English";
   const lines = [];
   lines.push("# Slow Mode Session");
-  lines.push(`Material: ${session.materialMeta?.fileName || "—"}`);
-  lines.push(`Language: ${String(session.language || "English").trim() || "English"}`);
+  lines.push(`Material: ${safe.materialMeta?.fileName || "—"}`);
+  lines.push(`Language: ${lang}`);
   lines.push(`Scope: ${scope.label || "—"} (${scope.charStart ?? 0}–${scope.charEnd ?? 0})`);
   lines.push(`Phase: ${slow.phase || "—"}`);
   lines.push(`Critical mode: ${slow.criticalMode ? "yes" : "no"}`);
-  if (slow.phase0) {
-    lines.push("");
-    lines.push("## Phase 0");
-    lines.push(`Thesis: ${slow.phase0.thesis || ""}`);
-    lines.push(`Guide question: ${slow.phase0.guideQuestion || ""}`);
-  }
+  lines.push(`Fillable map mode: ${slow.fillableMapMode ? "yes" : "no"}`);
   lines.push("");
-  lines.push("## Annotations");
-  for (const a of slow.annotations || []) {
-    lines.push(`- ${a.type} [${a.charStart}-${a.charEnd}] ${a.userText || ""}`);
-  }
-  const depth =
-    slow.depthScore ||
-    computeDepthScore(slow.annotations, { criticalMode: Boolean(slow.criticalMode) });
-  lines.push("");
-  lines.push("## Depth score");
-  lines.push(`Total: ${depth.total}`);
-  lines.push(`Generative ratio: ${(depth.generativeRatio * 100).toFixed(0)}%`);
-  return `${lines.join("\n")}\n`;
+
+  appendPhase0Section(lines, slow.phase0);
+  appendFindingsSection(lines, slow.findings);
+  appendAnnotationsSection(lines, slow.annotations);
+  appendDepthScoreSection(lines, safe, slow.depthScore);
+  appendConceptDictionarySection(lines, safe);
+  appendGraphSections(lines, safe, lang);
+
+  const resumePayload = buildResumePayload(safe, {
+    activeBlockIndex: state.activeBlockIndex,
+    activeQuestionIndex: state.activeQuestionIndex,
+  });
+  lines.push(encodeResumeCapsule(resumePayload));
+
+  return `${lines.join("\n").trim()}\n`;
 }
 
 export function buildMarkdown(session) {
@@ -472,18 +664,10 @@ export function buildMarkdown(session) {
     lines.push("");
   }
 
-  const exportConcepts = collectExportConcepts(safe);
-  if (exportConcepts.length) {
-    lines.push("## Concept Dictionary");
-    lines.push("| Term | Definition |");
-    lines.push("|------|------------|");
-    for (const c of exportConcepts) {
-      const t = c.term.replace(/\|/g, "\\|");
-      const d = (c.definition || "").replace(/\|/g, "\\|");
-      lines.push(`| ${t} | ${d} |`);
-    }
-    lines.push("");
-  }
+  appendConceptDictionarySection(lines, safe);
+
+  const exportLang = String(safe.language || "English").trim() || "English";
+  appendGraphSections(lines, safe, exportLang);
 
   const formatHHMM = (ts) => {
     let d = null;

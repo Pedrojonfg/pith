@@ -1286,6 +1286,129 @@ const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every tes
 - Avoid giveaway lead-ins such as "The correct answer is…" or naming the correct letter outright.
 - Keep it concise (3-5 short sentences), specific, and still useful after the student already knows if they were right or wrong.`;
 
+/** Dictionary entries are NOT shown in RSVP — they may be substantive. */
+export const CONCEPT_DICTIONARY_EXTRACTION_RULES = (isVocabularyBlock) =>
+  `Also list key concepts for the session dictionary in concepts[]: ${
+    isVocabularyBlock
+      ? "every term in this vocabulary block (6-10)."
+      : "3-8 non-obvious domain-specific terms introduced in this block."
+  }
+For each: the term exactly as used in the material. Put a one-line scope hint (≤15 words) in definition — fuller entries are generated in a separate pass.
+Only include terms that are non-obvious or domain-specific. No common words.`;
+
+export const CONCEPT_DICTIONARY_ENRICHMENT_RULES = `You are writing session dictionary entries. The student reads these in a sidebar and in the exported session markdown — NOT via RSVP. Entries may be substantive.
+
+Rules (non-negotiable):
+- Ground EVERY claim in the provided study material and block explanation. Do NOT invent external history, authors, dates, or formulas unless explicitly named in the text.
+- For each term: 2-5 sentences (40-150 words). Markdown allowed for emphasis and inline LaTeX \\( ... \\).
+- When the text supports it, cover in order:
+  1. How the material defines or uses the term (paraphrase closely; quote key phrases if short).
+  2. Formal statement, equation, criterion, or procedure if present in the text.
+  3. Who formulated or named it ONLY if the text names them — otherwise omit.
+  4. One concrete example taken FROM the material (not invented).
+  5. Contrast or common confusion if the text mentions it.
+- If the text is silent on origin or formulation, say how the text uses the term — do not guess.
+- If a term has multiple senses, give the sense used in THIS block.
+- Keep the exact term spelling from the input list.
+
+Output JSON only:
+{"concepts":[{"term":"...","definition":"..."}]}`;
+
+export function buildConceptEnrichmentSystemPrompt(language) {
+  const lang = String(language || "English").trim() || "English";
+  return `${CONCEPT_DICTIONARY_ENRICHMENT_RULES}
+Respond entirely in ${lang}.
+Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+}
+
+export function buildConceptEnrichmentUserContent({
+  blockTitle,
+  materialText,
+  explanation,
+  concepts,
+}) {
+  const terms = (Array.isArray(concepts) ? concepts : [])
+    .map((c) => String(c?.term || "").trim())
+    .filter(Boolean);
+  const termList = terms.map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const expl = String(explanation || "").trim();
+  const material = String(materialText || "").trim();
+  return `Block: ${String(blockTitle || "").trim() || "(untitled)"}
+
+Terms to define (use exact spelling):
+${termList || "(none)"}
+
+Block explanation (study layer — use as secondary source, prefer raw material):
+${expl || "(none)"}
+
+Study material (primary source — do not go beyond this):
+${material || "(none)"}`;
+}
+
+function parseConceptEnrichmentResponse(text, expectedTerms) {
+  const parsed = parseModelJsonObject(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const raw = Array.isArray(parsed.concepts) ? parsed.concepts : [];
+  const byTerm = new Map();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const term = String(item.term || "").trim();
+    const definition = String(item.definition || "").trim();
+    if (!term || !definition) continue;
+    byTerm.set(term.toLowerCase(), { term, definition });
+  }
+  const expected = Array.isArray(expectedTerms) ? expectedTerms : [];
+  const out = [];
+  for (const c of expected) {
+    const term = String(c?.term || "").trim();
+    if (!term) continue;
+    const enriched = byTerm.get(term.toLowerCase());
+    if (enriched) out.push(enriched);
+    else {
+      const fallbackDef = String(c?.definition || "").trim();
+      if (fallbackDef) out.push({ term, definition: fallbackDef });
+    }
+  }
+  return out.length ? out : null;
+}
+
+export async function enrichBlockConceptDefinitions({
+  llmModel,
+  language,
+  blockTitle,
+  materialText,
+  explanation,
+  concepts,
+}) {
+  const incoming = Array.isArray(concepts) ? concepts : [];
+  const terms = incoming
+    .map((c) => (c && typeof c === "object" ? String(c.term || "").trim() : ""))
+    .filter(Boolean);
+  if (!terms.length) return incoming;
+
+  const systemPrompt = buildConceptEnrichmentSystemPrompt(language);
+  const userContent = buildConceptEnrichmentUserContent({
+    blockTitle,
+    materialText,
+    explanation,
+    concepts: incoming,
+  });
+
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.2,
+  });
+
+  const enriched = parseConceptEnrichmentResponse(raw, incoming);
+  return enriched || incoming;
+}
+
 export function buildBlockGenerationSystemPrompt({
   language,
   n_test,
@@ -1356,9 +1479,7 @@ ${QUESTION_PEDAGOGY_RULES}
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
 ${gapSection}
-Also extract key concepts for the dictionary: ${isVocabularyBlock ? "every term in this vocabulary block (6-10)." : "3-8 non-obvious domain terms introduced in the Technical layer."}
-For each: the term exactly as used, and a definition of max 15 words.
-Only include terms that are non-obvious or domain-specific. No common words.
+${CONCEPT_DICTIONARY_EXTRACTION_RULES(isVocabularyBlock)}
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
 }
@@ -1466,7 +1587,7 @@ ${QUESTION_PEDAGOGY_RULES}
 Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
 ${gapSection}
-Optionally extract key concepts for the dictionary (3-8 terms) in concepts[] if new terms appear in your questions; omit concepts if none.
+Optionally list new dictionary terms (3-8) in concepts[] if new domain terms appear; omit concepts if none. Use exact term spelling and a one-line scope hint (≤15 words) in definition.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 MUST NOT include "explanation", "title", or "id" fields in the response.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
@@ -1657,6 +1778,23 @@ export async function deepSeekGenerateBlockJson({
       console.warn("Block explanation still lacks required paragraph breaks after retry.");
     }
   }
+
+  const conceptList = Array.isArray(blockObj.concepts) ? blockObj.concepts : [];
+  if (conceptList.length > 0) {
+    try {
+      blockObj.concepts = await enrichBlockConceptDefinitions({
+        llmModel,
+        language,
+        blockTitle,
+        materialText,
+        explanation: blockObj.explanation,
+        concepts: conceptList,
+      });
+    } catch (err) {
+      console.warn("Concept dictionary enrichment failed; keeping extraction pass definitions:", err);
+    }
+  }
+
   return blockObj;
 }
 
