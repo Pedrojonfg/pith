@@ -1281,9 +1281,9 @@ const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every tes
 - Feedback must read as a short conceptual explanation, not as a label for the right option.
 - Start by restating the underlying idea or rule in your own words (without copying any option).
 - Then explain why that idea makes the correct option work, using principle-level reasoning.
-- Briefly contrast with at least one plausible distractor: name the confusion and why it fails.
+- Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails because…" / "La opción C confunde…".
 - Do NOT copy or closely paraphrase the text of the correct option in the feedback.
-- Avoid giveaway lead-ins such as "The correct answer is..." or direct letter references (A/B/C/D).
+- Avoid giveaway lead-ins such as "The correct answer is…" or naming the correct letter outright.
 - Keep it concise (3-5 short sentences), specific, and still useful after the student already knows if they were right or wrong.`;
 
 export function buildBlockGenerationSystemPrompt({

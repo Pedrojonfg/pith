@@ -129,6 +129,104 @@ function normalizeTestAnswer(answer, options) {
   return upper.length === 1 ? upper : raw;
 }
 
+/** Map each pre-shuffle option letter to its letter after permuting option texts. */
+export function computeOptionLetterMap(beforeOptions, afterOptions) {
+  const letterMap = {};
+  if (!beforeOptions || !afterOptions) return letterMap;
+  for (const oldLetter of OPTION_LETTERS) {
+    const text = beforeOptions[oldLetter];
+    if (text == null) continue;
+    for (const newLetter of OPTION_LETTERS) {
+      if (afterOptions[newLetter] === text) {
+        letterMap[oldLetter] = newLetter;
+        break;
+      }
+    }
+  }
+  return letterMap;
+}
+
+function mapLetterPreservingCase(sourceLetter, targetUpper) {
+  if (sourceLetter === sourceLetter.toLowerCase()) return targetUpper.toLowerCase();
+  return targetUpper;
+}
+
+/**
+ * Rewrite A–D references in pre-shuffle feedback so they match the shuffled option layout.
+ * Idempotent when letterMap is identity.
+ */
+export function remapFeedbackOptionLetters(feedback, letterMap) {
+  if (feedback == null || feedback === "") return feedback;
+  const map =
+    letterMap && typeof letterMap === "object"
+      ? letterMap
+      : computeOptionLetterMap(null, null);
+  if (OPTION_LETTERS.every((l) => (map[l] || l) === l)) return String(feedback);
+
+  const latexSlots = [];
+  let text = String(feedback).replace(/\\(?:\(|\[)[\s\S]*?\\(?:\)|\])/g, (match) => {
+    const slot = latexSlots.length;
+    latexSlots.push(match);
+    return `\x00LATEX${slot}\x00`;
+  });
+
+  const replaceLetter = (letter) => {
+    const mapped = map[String(letter).toUpperCase()] || String(letter).toUpperCase();
+    return mapLetterPreservingCase(letter, mapped);
+  };
+
+  text = text.replace(
+    /\b(option|options|opción|opcion|opciones|choice|choices|alternativa|alternativas)\s+([A-Da-d])\b/gi,
+    (full, word, letter) => `${word} ${replaceLetter(letter)}`,
+  );
+
+  text = text.replace(
+    /\b(la|el|the)\s+([A-Da-d])\b/gi,
+    (full, word, letter) => `${word} ${replaceLetter(letter)}`,
+  );
+
+  text = text.replace(/([\[(])\s*([A-Da-d])\s*([\])])/g, (_full, open, letter, close) =>
+    `${open}${replaceLetter(letter)}${close}`,
+  );
+
+  text = text.replace(/\b([A-Da-d])([).:])/g, (full, letter, punct, offset, whole) => {
+    const beforeChar = whole[offset - 1];
+    if (beforeChar === "(" || beforeChar === "[") return full;
+    return `${replaceLetter(letter)}${punct}`;
+  });
+
+  text = text.replace(
+    /\b([A-Da-d])(?=\s*(?:,|\/|\s+y\s+|\s+o\s+|\s+and\s+|\s+or\s+)\s*[A-Da-d]\b)/gi,
+    (letter) => replaceLetter(letter),
+  );
+
+  text = text.replace(/\b([A-Da-d])\b/g, (full, letter, offset, whole) => {
+    const before = whole.slice(0, offset);
+    if (
+      /(?:option|options|opción|opcion|opciones|choice|choices|alternativa|alternativas)\s+$/i.test(
+        before,
+      ) ||
+      /(?:^|\s)(?:la|el|the)\s+$/i.test(before)
+    ) {
+      return letter;
+    }
+    const after = whole.slice(offset + full.length);
+    if (
+      /^(?:\s+(?:is|are|was|were|es|son|era|eran|falla|fallan|fails|confunde|confuses|trata|treats|ignora|ignores|mezcla|mixes|asume|assumes|describe|describe|identifica|identifies))\b/i.test(
+        after,
+      )
+    ) {
+      return replaceLetter(letter);
+    }
+    if (/(?:^|\s)(?:unlike|frente a|compared to|a diferencia de|versus|vs\.?)\s*$/i.test(before)) {
+      return replaceLetter(letter);
+    }
+    return letter;
+  });
+
+  return text.replace(/\x00LATEX(\d+)\x00/g, (_full, slot) => latexSlots[Number(slot)] || "");
+}
+
 /** Normalize test question `options` / `choices` and `answer` before render or shuffle. */
 export function normalizeTestQuestion(question) {
   if (!question || typeof question !== "object") return question;
@@ -209,11 +307,19 @@ export function shuffleTestQuestionOptions(question) {
     }
   }
 
+  const letterMap = computeOptionLetterMap(options, newOptions);
+  const feedback =
+    q.feedback != null && String(q.feedback).trim()
+      ? remapFeedbackOptionLetters(String(q.feedback), letterMap)
+      : q.feedback;
+
   return {
     ...q,
     options: newOptions,
     answer: newAnswer,
+    feedback,
     _optionsShuffled: true,
+    _optionLetterMap: letterMap,
   };
 }
 
