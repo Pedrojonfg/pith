@@ -125,9 +125,12 @@ import { initPhase3Screen } from "./slow/phase3.js?v=20260528_1";
 import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 import {
   buildGraphSubgraphMarkdown,
-  mountEnrichedGraphScreen,
-  wireEnrichedGraphScreen,
-} from "./slow/graph-view.js?v=20260606_1";
+  buildRsvpMaterialGraph,
+  buildSessionGraph,
+  mountMaterialGraphScreen,
+  renderGraphUnlockButtonHtml,
+  wireMaterialGraphScreen,
+} from "./graph/view.js?v=20260607_1";
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
 
 export function createSlowSession({
@@ -687,6 +690,7 @@ function renderSlowPhase0Screen(session) {
 
   if (status === "ready" && slow.phase0) {
     renderSlowPhase0Content(session);
+    renderSlowPhase0GraphActions(session);
     updatePhase0CollapseUi(session);
     setSlowPhase0Controls({ showContinue: true });
     return;
@@ -2868,43 +2872,156 @@ function ensureAssessmentRunnerEls() {
   return assessmentRunnerEls;
 }
 
-function wireSlowGraphHandlers() {
-  let lastGraph = null;
+let materialGraphBackScreen = "blocks";
+let lastMaterialGraph = null;
 
-  function openEnrichedGraphScreen() {
-    const session = state.activeSession;
-    if (!session?.slow?.graphEnrichedUnlocked) return;
-    const host = document.getElementById("slowGraphContent");
-    if (!host) return;
-    lastGraph = mountEnrichedGraphScreen(session, host);
-    wireEnrichedGraphScreen(host, session, {
-      onJumpToAnnotation: (s, ann) => {
-        storeActiveSession(s);
-        initSlowReader(s);
+function updateMaterialGraphScreenCopy({ title, hint } = {}) {
+  const titleEl = document.getElementById("materialGraphTitle");
+  const hintEl = document.getElementById("materialGraphHint");
+  if (titleEl && title) titleEl.textContent = title;
+  if (hintEl && hint) hintEl.textContent = hint;
+}
+
+function openMaterialGraphScreen({
+  backScreen = "blocks",
+  session = state.activeSession,
+  blockIndex = state.materialGraphContext?.blockIndex,
+  conceptInventory = state.materialGraphContext?.conceptInventory,
+  mode = "auto",
+  title,
+  hint,
+} = {}) {
+  const host = document.getElementById("slowGraphContent");
+  if (!host) return;
+  materialGraphBackScreen = backScreen;
+  updateMaterialGraphScreenCopy({
+    title: title || "Material graph",
+    hint:
+      hint ||
+      "Concepts, blocks, and links from your study material.",
+  });
+  lastMaterialGraph = mountMaterialGraphScreen(session, host, {
+    blockIndex,
+    conceptInventory,
+    mode,
+    onNodeClick: (node) => {
+      if (!node?.sourceAnnotationId || !session?.slow) return;
+      const ann = (session.slow.annotations || []).find((a) => a.id === node.sourceAnnotationId);
+      if (ann) {
+        storeActiveSession(session);
+        initSlowReader(session);
         showScreen("slowReader");
-        jumpToAnnotation(s, ann);
-      },
-    });
-    storeActiveSession(session);
-    showScreen("slowGraph");
+        jumpToAnnotation(session, ann);
+      }
+    },
+  });
+  wireMaterialGraphScreen(host, session, {
+    onJumpToAnnotation: (s, ann) => {
+      storeActiveSession(s);
+      initSlowReader(s);
+      showScreen("slowReader");
+      jumpToAnnotation(s, ann);
+    },
+  });
+  if (session) storeActiveSession(session);
+  showScreen("slowGraph");
+}
+
+function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
+  const host = document.getElementById("blocksGraphActions");
+  if (!host) return;
+  const blocks = Array.isArray(blockIndex) ? blockIndex : [];
+  if (!blocks.length) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
   }
+  const graph = buildRsvpMaterialGraph({ conceptInventory, blockIndex: blocks });
+  state.materialGraphContext = {
+    blockIndex: blocks,
+    conceptInventory: Array.isArray(conceptInventory) ? conceptInventory : [],
+    graph,
+  };
+  const lang = getStudyLanguage() || "English";
+  const es = String(lang).toLowerCase().startsWith("es");
+  host.hidden = false;
+  host.innerHTML = `
+    ${renderGraphUnlockButtonHtml(lang, { id: "blocksMaterialGraphBtn" })}
+    <span class="hint">${es ? `${graph.nodes.length} nodos · ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes · ${graph.edges.length} edges`}</span>`;
+}
+
+function renderSlowPhase0GraphActions(session) {
+  const host = document.getElementById("slowPhase0GraphActions");
+  if (!host || !session?.slow?.phase0) {
+    if (host) {
+      host.hidden = true;
+      host.innerHTML = "";
+    }
+    return;
+  }
+  const graph = buildSessionGraph(session, { mode: "slow_phase0" });
+  const lang = getStudyLanguage() || "English";
+  const es = String(lang).toLowerCase().startsWith("es");
+  host.hidden = false;
+  host.innerHTML = `
+    ${renderGraphUnlockButtonHtml(lang, { id: "slowPhase0GraphBtn" })}
+    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} · ${graph.nodes.length} nodes</span>`;
+}
+
+function wireMaterialGraphHandlers() {
+  document.getElementById("blocksGraphActions")?.addEventListener("click", (e) => {
+    if (!e.target?.closest("#blocksMaterialGraphBtn")) return;
+    openMaterialGraphScreen({
+      backScreen: "blocks",
+      session: state.activeSession,
+      mode: "rsvp",
+      title: "Concept graph",
+      hint: "How concepts connect and which blocks cover them.",
+    });
+  });
+
+  document.getElementById("slowPhase0GraphActions")?.addEventListener("click", (e) => {
+    if (!e.target?.closest("#slowPhase0GraphBtn")) return;
+    openMaterialGraphScreen({
+      backScreen: "slowPhase0",
+      session: state.activeSession,
+      mode: "slow_phase0",
+      title: "Orientation graph",
+      hint: "Argument map and concepts to track while reading.",
+    });
+  });
 
   document.getElementById("slowPhase3GraphActions")?.addEventListener("click", (e) => {
-    if (e.target?.closest("#slowPhase3GraphBtn")) openEnrichedGraphScreen();
+    if (!e.target?.closest("#slowPhase3GraphBtn")) return;
+    openMaterialGraphScreen({
+      backScreen: "slowPhase3",
+      session: state.activeSession,
+      mode: "slow_enriched",
+      title: "Enriched graph",
+      hint: "Your annotations linked to concepts and argument nodes.",
+    });
   });
 
   document.getElementById("slowGraphBackBtn")?.addEventListener("click", () => {
-    showScreen("slowPhase3");
+    showScreen(materialGraphBackScreen || "blocks");
   });
 
   document.getElementById("slowGraphExportBtn")?.addEventListener("click", () => {
     const session = state.activeSession;
-    if (!session?.slow) return;
-    const graph = lastGraph || mountEnrichedGraphScreen(session, document.getElementById("slowGraphContent"));
+    const host = document.getElementById("slowGraphContent");
+    const graph =
+      lastMaterialGraph ||
+      mountMaterialGraphScreen(session, host, {
+        blockIndex: state.materialGraphContext?.blockIndex,
+        conceptInventory: state.materialGraphContext?.conceptInventory,
+        mode: "auto",
+      });
     if (!graph) return;
     const lang = getStudyLanguage() || "English";
     const md = buildGraphSubgraphMarkdown(graph, lang);
-    const stem = String(session.materialMeta?.fileName || "slow-graph").replace(/\.[^.]+$/, "");
+    const stem = String(
+      session?.materialMeta?.fileName || session?._meta?.source_files?.[0]?.name || "material-graph",
+    ).replace(/\.[^.]+$/, "");
     downloadTextFile({
       filename: `${stem}_graph_${Date.now()}.md`,
       text: md,
@@ -2960,7 +3077,7 @@ export function wireStudyHandlers() {
   wireSlowScopeHandlers();
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
-  wireSlowGraphHandlers();
+  wireMaterialGraphHandlers();
   resetCreateScreenModeUi();
 
   setBlockReadContentProvider(() => {
@@ -3720,6 +3837,7 @@ export function wireStudyHandlers() {
         window.blockIndex = mapped;
         window.indexWasImported = true;
         renderSplitMergeSummary(null);
+        renderBlocksGraphActions(mapped, []);
         renderBlockIndexEditor(mapped, { readOnly: false });
         if (els.blocksListOutput) {
           els.blocksListOutput.value = formatBlockIndexForConfirmation(mapped);
@@ -3909,14 +4027,18 @@ export function wireStudyHandlers() {
       }
       state.originalMaterialText = cleanedText;
 
-      const { blockIndex: finalIndex, splitRunMeta } = await twoPhaseConceptSplit(cleanedText, nBlocks, {
-        llmModel,
-        studyNotes: String(state.studyNotes || ""),
-        language: getStudyLanguage(),
-        onProgress: (msg) => {
-          els.generateBlocksStatus.textContent = msg;
+      const { blockIndex: finalIndex, splitRunMeta, conceptInventory } = await twoPhaseConceptSplit(
+        cleanedText,
+        nBlocks,
+        {
+          llmModel,
+          studyNotes: String(state.studyNotes || ""),
+          language: getStudyLanguage(),
+          onProgress: (msg) => {
+            els.generateBlocksStatus.textContent = msg;
+          },
         },
-      });
+      );
 
       if (!Array.isArray(finalIndex) || !finalIndex.length) {
         throw new Error(
@@ -3929,7 +4051,11 @@ export function wireStudyHandlers() {
       window.blockIndex = finalIndex;
       window.indexWasImported = false;
 
+      const inventory =
+        conceptInventory ||
+        (Array.isArray(splitRunMeta?.concept_inventory) ? splitRunMeta.concept_inventory : []);
       renderSplitMergeSummary(splitRunMeta);
+      renderBlocksGraphActions(finalIndex, inventory);
       renderBlockIndexEditor(finalIndex, { readOnly: false });
       if (els.blocksListOutput) {
         // keep the hidden textarea in a stable, pretty format (debug + fallback)
@@ -4068,12 +4194,15 @@ export function wireStudyHandlers() {
             `Missing block id ${id} in the edited list. Keep all ids 1..${nBlocks}.`,
           );
         }
-        merged.push({
+        const row = {
           id,
           title: e.title,
           summary: e.summary,
           chunk: String(b.chunk || ""),
-        });
+        };
+        if (Array.isArray(b.signature) && b.signature.length) row.signature = b.signature;
+        if (Array.isArray(b.concept_ids) && b.concept_ids.length) row.concept_ids = b.concept_ids;
+        merged.push(row);
       }
       merged.sort((a, b) => a.id - b.id);
       if (merged.length !== nBlocks) {
@@ -4122,6 +4251,17 @@ export function wireStudyHandlers() {
           name: String(name || ""),
         }));
       }
+      const mgInventory = state.materialGraphContext?.conceptInventory || [];
+      sessionObj._meta.material_graph = {
+        blockIndex: merged,
+        conceptInventory: mgInventory,
+        graph: buildRsvpMaterialGraph({ conceptInventory: mgInventory, blockIndex: merged }),
+      };
+      state.materialGraphContext = {
+        blockIndex: merged,
+        conceptInventory: mgInventory,
+        graph: sessionObj._meta.material_graph.graph,
+      };
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5',location:'src/js/study.js:2816',message:'confirm blocks before storeActiveSession',data:{nBlocks,sessionBlocks:Array.isArray(sessionObj.blocks)?sessionObj.blocks.length:null,stateActiveSessionBefore:!!state.activeSession,indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
