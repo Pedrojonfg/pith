@@ -107,7 +107,7 @@ export function resolveDurationMin(session) {
 export function buildExportFrontmatter(session, { mode } = {}) {
   const safe = session && typeof session === "object" ? session : {};
   const studyMode = String(mode || safe.studyMode || "rsvp").trim().toLowerCase();
-  const exportMode = studyMode === "slow" ? "slow" : "fast";
+  const exportMode = studyMode === "slow" ? "slow" : studyMode === "cloze" ? "cloze" : "fast";
   const lines = ["---"];
   lines.push(`session_id: ${yamlQuote(safe?._meta?.session_id || "unknown")}`);
   lines.push(`mode: ${exportMode}`);
@@ -115,6 +115,10 @@ export function buildExportFrontmatter(session, { mode } = {}) {
   lines.push(`material: ${yamlQuote(resolveMaterialPath(safe))}`);
   lines.push(`material_format: ${resolveMaterialFormat(safe)}`);
   lines.push(`language: ${normalizeExportLanguageCode(safe.language)}`);
+  if (exportMode === "cloze") {
+    const count = Number(safe?._meta?.item_count);
+    if (Number.isFinite(count) && count >= 0) lines.push(`item_count: ${Math.round(count)}`);
+  }
   if (exportMode === "slow") {
     const scope = safe.slow?.readingScope || {};
     const label = String(scope.label || "—").trim();
