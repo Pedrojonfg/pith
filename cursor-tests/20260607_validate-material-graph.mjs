@@ -8,11 +8,19 @@ import { dirname, join } from "node:path";
 import { JSDOM } from "jsdom";
 import {
   buildRsvpMaterialGraph,
+  buildSlowEnrichedGraphFromInputs,
+  collectTextConceptsFromLists,
+} from "../src/js/graph/build.js";
+import {
   buildSessionGraph,
   buildSlowPhase0Graph,
   buildSlowEnrichedGraph,
-} from "../src/js/graph/build.js";
-import { conceptNodeId, blockNodeId } from "../src/js/graph/ids.js";
+} from "../src/js/graph/adapters.js";
+import { conceptNodeId, blockNodeId, LITERATURE_TERM_ID } from "../src/js/graph/ids.js";
+import {
+  findNearestArgumentMapNode,
+  textOverlapScore,
+} from "../src/js/graph/proximity.js";
 import { renderGraphCanvas } from "../src/js/graph/canvas.js";
 import {
   buildGraphSubgraphMarkdown,
@@ -239,16 +247,52 @@ assert(studySrc.includes("renderBlocksGraphActions"), "MG-UI contract: study wir
 assert(studySrc.includes("wireMaterialGraphHandlers"), "MG-UI contract: unified graph handlers");
 assert(studySrc.includes("material_graph"), "MG-UI contract: persists material_graph on confirm");
 assert(studySrc.includes('from "./graph/view.js'), "MG-UI contract: imports shared graph view");
+assert(!studySrc.includes("slow/graph-view"), "MG-UI contract: no legacy graph-view import");
 assert(graphCss.includes(".material-graph-svg"), "MG-UI contract: graph.css has canvas styles");
 
 const unlockBtn = renderGraphUnlockButtonHtml("English", { id: "testGraphBtn" });
 assert(unlockBtn.includes('id="testGraphBtn"'), "MG-UI happy: unlock button html");
 
-// ─── Back-compat re-export ──────────────────────────────────────────────────
+// ─── Pure builder + proximity (no session I/O) ───────────────────────────────
 
-const reexport = await import("../src/js/slow/graph-view.js");
-assert(typeof reexport.buildEnrichedGraph === "function", "MG-Compat: slow/graph-view re-exports buildEnrichedGraph");
-assert(typeof reexport.mountEnrichedGraphScreen === "function", "MG-Compat: re-exports mountEnrichedGraphScreen");
+const pureGraph = buildSlowEnrichedGraphFromInputs({
+  textConcepts: collectTextConceptsFromLists([], [{ term: "libertad", authorUsage: "freedom", graphTermId: "libertad" }]),
+  argumentMap: [{ id: "P1", text: "Premise alpha about freedom" }],
+  annotations: [{ id: "a1", type: "⊘", charStart: 0, charEnd: 10, userText: "objection to premise alpha freedom" }],
+  scopeText: "Premise alpha about freedom and other topics far away",
+  onResolveMiss: () => {},
+});
+assert(
+  pureGraph.edges.some((e) => e.type === "refuta" && e.to === "arg:P1"),
+  "MG-Pure: text-overlap links critical annotation without char proximity",
+);
+
+const textMatch = findNearestArgumentMapNode(
+  { id: "x", charStart: 5000, charEnd: 5010, userText: "freedom objection premise alpha" },
+  {
+    argumentMap: [{ id: "P1", text: "Premise alpha about freedom" }],
+    scopeText: "unrelated padding ".repeat(200),
+  },
+);
+assert(textMatch.method === "text" && textMatch.nodeId === "P1", "MG-Proximity: text overlap fallback when char distance fails");
+
+assert(textOverlapScore("freedom premise", "premise about freedom") > 0.2, "MG-Proximity: token overlap score");
+
+assert(LITERATURE_TERM_ID === "literature", "MG-Ids: literature term constant");
+
+// ─── Column layout (no force drift) ──────────────────────────────────────────
+
+const layoutGraph = buildRsvpMaterialGraph({
+  conceptInventory: [{ id: "c1", title: "A" }],
+  blockIndex: [{ id: 1, title: "B", concept_ids: ["c1"], signature: [] }],
+});
+renderGraphCanvas(layoutGraph, host, { width: 640, height: 400, lang: "English" });
+const conceptNode = host.querySelector('[data-node-id="concept:c1"]');
+const blockNode = host.querySelector('[data-node-id="block:1"]');
+assert(conceptNode && blockNode, "MG-Layout: renders concept and block nodes");
+const conceptX = Number(conceptNode.getAttribute("transform")?.match(/translate\(([^,]+)/)?.[1] || 0);
+const blockX = Number(blockNode.getAttribute("transform")?.match(/translate\(([^,]+)/)?.[1] || 0);
+assert(conceptX < blockX, "MG-Layout: concept column left of block column (fixed columns)");
 
 // ─── Report ─────────────────────────────────────────────────────────────────
 
@@ -269,7 +313,8 @@ Casos cubiertos:
   ✓ mountMaterialGraphScreen + wire jump callback
   ✓ Markdown export titles (material vs enriched)
   ✓ index.html + study.js integration contracts
-  ✓ slow/graph-view.js backward compatibility
+  ✓ Pure builder + text-overlap proximity + fixed column layout
+  ✓ graph/adapters.js session dispatch + enrichedInputs injection
 
 Casos NO cubiertos (conscientemente):
   - twoPhaseConceptSplit live LLM call → requeriría mock de API / red

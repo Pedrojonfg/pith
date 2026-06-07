@@ -3,7 +3,8 @@
  * Run: node --import ./cursor-tests/register.mjs cursor-tests/20260529_t05-cloze-graph.mjs
  */
 import { JSDOM } from "jsdom";
-import { buildClozeEpistemicGraph, buildSessionGraph } from "../src/js/graph/build.js";
+import { buildClozeEpistemicGraph } from "../src/js/graph/build.js";
+import { buildSessionGraph } from "../src/js/graph/adapters.js";
 import { renderGraphCanvas } from "../src/js/graph/canvas.js";
 import { mountMaterialGraphScreen } from "../src/js/graph/view.js";
 

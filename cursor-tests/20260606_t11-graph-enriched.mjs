@@ -8,12 +8,13 @@ import {
   buildEnrichedGraph,
   buildGraphSubgraphMarkdown,
   mountEnrichedGraphScreen,
+  mountMaterialGraphScreen,
   persistEnrichedGraph,
   renderEnrichedGraphHtml,
   textNodeId,
   userNodeId,
-  wireEnrichedGraphScreen,
-} from "../src/js/slow/graph-view.js";
+  wireMaterialGraphScreen,
+} from "../src/js/graph/view.js";
 import { mergeEnrichedGraphUserNodes } from "../src/js/dictionary.js";
 
 let passed = 0;
@@ -118,7 +119,7 @@ const dom = new JSDOM("<!DOCTYPE html><div id='host'></div>");
 const host = dom.window.document.getElementById("host");
 let jumped = null;
 mountEnrichedGraphScreen(session, host);
-wireEnrichedGraphScreen(host, session, {
+wireMaterialGraphScreen(host, session, {
   onJumpToAnnotation: (s, a) => {
     jumped = a?.id;
   },

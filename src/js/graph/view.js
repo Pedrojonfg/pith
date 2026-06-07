@@ -1,6 +1,6 @@
 import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260606_1";
 import { getStudyLanguage } from "../ui.js?v=20260525_1";
-import { buildSessionGraph, buildSlowEnrichedGraph } from "./build.js";
+import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
 import { renderGraphCanvas } from "./canvas.js";
 
 function escapeHtml(text) {
@@ -181,5 +181,27 @@ export function wireEnrichedGraphScreen(containerEl, session, handlers) {
   return wireMaterialGraphScreen(containerEl, session, handlers);
 }
 
-export { buildSessionGraph, buildSlowEnrichedGraph, buildRsvpMaterialGraph } from "./build.js";
-export { textNodeId, userNodeId, argNodeId, conceptNodeId, blockNodeId } from "./ids.js";
+export {
+  buildEnrichedGraph,
+  buildSessionGraph,
+  buildSlowEnrichedGraph,
+  buildSlowPhase0Graph,
+  resolveEnrichedGraphInputs,
+} from "./adapters.js";
+export {
+  buildClozeEpistemicGraph,
+  buildRsvpMaterialGraph,
+  buildSlowEnrichedGraphFromInputs,
+  buildSlowPhase0GraphFromInputs,
+  collectTextConceptsFromLists,
+} from "./build.js";
+export { textNodeId, userNodeId, argNodeId, conceptNodeId, blockNodeId, LITERATURE_TERM_ID, graphTermSlug } from "./ids.js";
+export {
+  CHAR_PROXIMITY_CHARS,
+  MIN_TEXT_OVERLAP_SCORE,
+  PROXIMITY,
+  findNearestArgumentMapNode,
+  resolveArgumentMapNodeAnchor,
+  textOverlapScore,
+  tokenizeForOverlap,
+} from "./proximity.js";

@@ -12,8 +12,12 @@ import {
   getSlowFlashcardAnnotationIds,
   loadSlowFlashcards,
 } from "../review.js?v=20260528_1";
+import {
+  PROXIMITY,
+  resolveArgumentMapNodeAnchor,
+} from "../graph/proximity.js?v=20260607_2";
 
-export const PROXIMITY = 200;
+export { PROXIMITY, resolveArgumentMapNodeAnchor };
 
 export const FLASHCARD_CONVERTIBLE_TYPES = ["→", "≈", "⊘", "↯"];
 
@@ -111,48 +115,6 @@ function truncate(text, max = 80) {
   const s = String(text || "").trim();
   if (s.length <= max) return s;
   return `${s.slice(0, max - 1)}…`;
-}
-
-/**
- * Resolve scope char offset for an argument-map node.
- * Priority: fillable blank annotation → text search in scope → null.
- */
-export function resolveArgumentMapNodeAnchor(node, scopeText, fillableBlanks, annotations) {
-  const nodeId = String(node?.id || "").trim();
-  const blanks = Array.isArray(fillableBlanks) ? fillableBlanks : [];
-  const anns = Array.isArray(annotations) ? annotations : [];
-  const text = String(scopeText || "");
-
-  const linkedBlank = blanks.find((b) => b?.nodeId === nodeId && b?.annotationId);
-  if (linkedBlank) {
-    const ann = anns.find((a) => a.id === linkedBlank.annotationId);
-    if (ann) {
-      return {
-        anchor: annotationMid(ann),
-        source: "fillable",
-        pageIndex: linkedBlank.pageIndex,
-      };
-    }
-  }
-
-  const needle = String(node?.text || "").trim();
-  if (needle.length >= 4 && text.length) {
-    const lowerScope = text.toLowerCase();
-    const lowerNeedle = needle.toLowerCase();
-    let idx = lowerScope.indexOf(lowerNeedle);
-    if (idx >= 0) {
-      return { anchor: idx + needle.length / 2, source: "text", pageIndex: null };
-    }
-    const words = needle.split(/\s+/).filter((w) => w.length >= 5);
-    for (const word of words) {
-      idx = lowerScope.indexOf(word.toLowerCase());
-      if (idx >= 0) {
-        return { anchor: idx + word.length / 2, source: "keyword", pageIndex: null };
-      }
-    }
-  }
-
-  return { anchor: null, source: "unknown", pageIndex: null };
 }
 
 export function comparePhase0ToAnnotations(phase0, annotations, scopeText, options = {}) {
@@ -702,12 +664,22 @@ function renderGraphUnlockButtonHtml(lang = "English") {
   return `<button type="button" id="slowPhase3GraphBtn" class="btn-secondary slow-phase3-graph-btn">${escapeHtml(label)}</button>`;
 }
 
-export function renderPhase3ModuleC(session) {
+export function renderPhase3ModuleC(session, lang = "English") {
+  const es = isSpanishLang(lang);
   const anns = session?.slow?.annotations || [];
-  const lines = anns.slice(0, 20).map((a) => `[Pedro:${a.type}] ${a.userText || "(no text)"}`);
-  return lines.length
+  const withText = anns.filter((a) => String(a?.userText || "").trim());
+  const graphBtnLabel = es ? "Ver grafo interactivo" : "View interactive graph";
+  const graphHint = es
+    ? "Mapa de tus anotaciones enlazadas a conceptos y al mapa argumental."
+    : "Map of your annotations linked to concepts and the argument map.";
+  const lines = withText.slice(0, 20).map((a) => `[Pedro:${a.type}] ${a.userText}`);
+  const listHtml = lines.length
     ? `<ul class="slow-phase3-graph-list">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
-    : "<p class='hint'>No annotations to integrate yet.</p>";
+    : `<p class="hint">${escapeHtml(es ? "Aún no hay anotaciones con texto." : "No annotations with text yet.")}</p>`;
+  return `
+    <p class="hint">${escapeHtml(graphHint)}</p>
+    <button type="button" id="slowPhase3ModuleCGraphBtn" class="btn-secondary slow-phase3-module-c-graph-btn">${escapeHtml(graphBtnLabel)}</button>
+    ${listHtml}`;
 }
 
 export function renderPhase3ModulePicker(session, pickerEl, { onChange } = {}) {
@@ -793,7 +765,7 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
     const def = PHASE3_MODULE_DEFS.find((m) => m.id === "C");
     sections.push(`<section class="slow-phase3-module slow-phase3-module-c">
       <h2>${escapeHtml(def?.title || "C")}</h2>
-      ${renderPhase3ModuleC(session)}
+      ${renderPhase3ModuleC(session, lang)}
     </section>`);
   }
 
@@ -848,15 +820,11 @@ export async function initPhase3Screen(session, hostEl, pickerEl, scoreEl) {
   });
   await renderPhase3Modules(session, contentEl, selected);
   wirePhase3FlashcardConvert(contentEl, session);
-  session.slow.graphEnrichedUnlocked = true;
 
   const graphActionsEl =
     typeof document !== "undefined" ? document.getElementById("slowPhase3GraphActions") : null;
-  if (graphActionsEl && session.slow.graphEnrichedUnlocked) {
+  if (graphActionsEl) {
     graphActionsEl.hidden = false;
     graphActionsEl.innerHTML = renderGraphUnlockButtonHtml(lang);
-  } else if (graphActionsEl) {
-    graphActionsEl.hidden = true;
-    graphActionsEl.innerHTML = "";
   }
 }

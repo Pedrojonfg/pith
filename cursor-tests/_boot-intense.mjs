@@ -29,11 +29,12 @@ const modules = [
   "src/js/session.js",
   "src/js/study.js",
   "src/js/graph/view.js",
+  "src/js/graph/adapters.js",
+  "src/js/graph/proximity.js",
   "src/js/graph/build.js",
   "src/js/graph/canvas.js",
   "src/js/graph/ids.js",
   "src/js/slow/sidebar.js",
-  "src/js/slow/graph-view.js",
   "src/js/main.js",
 ];
 

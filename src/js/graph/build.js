@@ -1,15 +1,14 @@
-import { getSortedSessionConcepts } from "../dictionary.js?v=20260606_1";
-import { slugGraphTermId } from "../slow/phase0.js?v=20260528_1";
-import { PROXIMITY, resolveArgumentMapNodeAnchor } from "../slow/phase3.js?v=20260528_1";
-import { getScopeText } from "../slow/reader.js?v=20260528_1";
 import {
   argNodeId,
   blockNodeId,
   conceptNodeId,
+  graphTermSlug,
+  LITERATURE_TERM_ID,
   termNodeId,
   textNodeId,
   userNodeId,
 } from "./ids.js";
+import { findNearestArgumentMapNode } from "./proximity.js";
 
 const RELATES_TYPES = new Set(["⟷", "🔗"]);
 const CRITICAL_EDGE_TYPES = new Set(["⊘", "↯", "⚠"]);
@@ -156,19 +155,20 @@ export function buildRsvpMaterialGraph({ conceptInventory = [], blockIndex = [] 
   return { nodes: g.nodes, edges: g.edges, kind: "rsvp_material" };
 }
 
-function collectTextConcepts(session) {
+/** Pure: collect text-layer concepts from explicit lists (no session I/O). */
+export function collectTextConceptsFromLists(sessionConcepts = [], conceptsToFind = []) {
   const map = new Map();
-  for (const c of getSortedSessionConcepts()) {
+  for (const c of sessionConcepts) {
     const term = String(c?.term || "").trim();
     if (!term) continue;
-    const termId = slugGraphTermId(term);
+    const termId = graphTermSlug(term);
     if (!termId) continue;
     map.set(termId, { termId, term, definition: String(c?.definition || "").trim(), source: "session" });
   }
-  for (const c of session?.slow?.phase0?.conceptsToFind || []) {
+  for (const c of conceptsToFind) {
     const term = String(c?.term || "").trim();
     if (!term) continue;
-    const termId = String(c?.graphTermId || slugGraphTermId(term)).trim();
+    const termId = String(c?.graphTermId || graphTermSlug(term)).trim();
     if (!termId || map.has(termId)) continue;
     map.set(termId, {
       termId,
@@ -180,32 +180,6 @@ function collectTextConcepts(session) {
   return map;
 }
 
-function annotationMid(ann) {
-  return (Number(ann?.charStart) + Number(ann?.charEnd)) / 2;
-}
-
-function nearestArgumentMapNodeId(session, ann) {
-  const phase0 = session?.slow?.phase0;
-  const map = Array.isArray(phase0?.argumentMap) ? phase0.argumentMap : [];
-  if (!map.length || !ann) return null;
-  const scopeText = getScopeText(session);
-  const fillableBlanks = phase0?.fillableBlanks || [];
-  const annotations = session?.slow?.annotations || [];
-  const mid = annotationMid(ann);
-  let bestId = null;
-  let bestDist = Infinity;
-  for (const node of map) {
-    const resolved = resolveArgumentMapNodeAnchor(node, scopeText, fillableBlanks, annotations);
-    if (resolved.anchor == null) continue;
-    const dist = Math.abs(resolved.anchor - mid);
-    if (dist <= PROXIMITY && dist < bestDist) {
-      bestDist = dist;
-      bestId = node.id;
-    }
-  }
-  return bestId;
-}
-
 function edgeTypeForAnnotation(type) {
   if (type === "⊘") return "refuta";
   if (type === "↯" || type === "⚠") return "cuestiona";
@@ -214,13 +188,22 @@ function edgeTypeForAnnotation(type) {
 }
 
 /**
- * Slow-mode enriched graph (text + user layers, annotations, argument map).
- * @param {object} session
+ * Pure enriched graph builder — inject all inputs explicitly (testable in isolation).
  */
-export function buildSlowEnrichedGraph(session) {
+export function buildSlowEnrichedGraphFromInputs(inputs = {}) {
   const g = createGraphBuilder();
+  const textConceptsRaw = inputs.textConcepts;
+  const textConcepts =
+    textConceptsRaw instanceof Map
+      ? textConceptsRaw
+      : collectTextConceptsFromLists(Array.isArray(textConceptsRaw) ? textConceptsRaw : [], []);
 
-  const textConcepts = collectTextConcepts(session);
+  const argumentMap = Array.isArray(inputs.argumentMap) ? inputs.argumentMap : [];
+  const annotations = Array.isArray(inputs.annotations) ? inputs.annotations : [];
+  const scopeText = String(inputs.scopeText || "");
+  const fillableBlanks = Array.isArray(inputs.fillableBlanks) ? inputs.fillableBlanks : [];
+  const onMiss = typeof inputs.onResolveMiss === "function" ? inputs.onResolveMiss : null;
+
   for (const { termId, term } of textConcepts.values()) {
     g.addNode({
       id: textNodeId(termId),
@@ -230,7 +213,7 @@ export function buildSlowEnrichedGraph(session) {
     });
   }
 
-  for (const node of session?.slow?.phase0?.argumentMap || []) {
+  for (const node of argumentMap) {
     const id = String(node?.id || "").trim();
     const text = String(node?.text || "").trim();
     if (!id || !text) continue;
@@ -242,7 +225,6 @@ export function buildSlowEnrichedGraph(session) {
     });
   }
 
-  const annotations = Array.isArray(session?.slow?.annotations) ? session.slow.annotations : [];
   for (const ann of annotations) {
     const userText = String(ann?.userText || "").trim();
     if (!userText) continue;
@@ -261,7 +243,7 @@ export function buildSlowEnrichedGraph(session) {
       if (!termId) continue;
       if (!g.hasNode(textNodeId(termId))) {
         const label =
-          termId === "literature"
+          termId === LITERATURE_TERM_ID
             ? "[Texto] literature"
             : `[Texto] ${termId.replace(/_/g, " ")}`;
         g.addNode({ id: textNodeId(termId), label, layer: "text", termId });
@@ -269,15 +251,29 @@ export function buildSlowEnrichedGraph(session) {
       g.addEdge(uid, textNodeId(termId), "relates");
     }
 
-    if (CRITICAL_EDGE_TYPES.has(ann.type)) {
-      const argId = nearestArgumentMapNodeId(session, ann);
-      if (argId) {
-        g.addEdge(uid, argNodeId(argId), edgeTypeForAnnotation(ann.type));
-      }
-    } else if (RELATES_TYPES.has(ann.type) && links.length === 0) {
-      const argId = nearestArgumentMapNodeId(session, ann);
-      if (argId) {
-        g.addEdge(uid, argNodeId(argId), "relates");
+    const needsArgLink =
+      CRITICAL_EDGE_TYPES.has(ann.type) || (RELATES_TYPES.has(ann.type) && links.length === 0);
+    if (needsArgLink) {
+      const match = findNearestArgumentMapNode(ann, {
+        argumentMap,
+        scopeText,
+        fillableBlanks,
+        annotations,
+        charProximity: inputs.charProximity,
+        minTextOverlap: inputs.minTextOverlap,
+      });
+      if (match.nodeId) {
+        const edgeType = CRITICAL_EDGE_TYPES.has(ann.type)
+          ? edgeTypeForAnnotation(ann.type)
+          : "relates";
+        g.addEdge(uid, argNodeId(match.nodeId), edgeType);
+      } else if (onMiss) {
+        onMiss(
+          ann,
+          CRITICAL_EDGE_TYPES.has(ann.type)
+            ? `type ${ann.type}`
+            : `type ${ann.type}, no graphLinks`,
+        );
       }
     }
   }
@@ -286,19 +282,15 @@ export function buildSlowEnrichedGraph(session) {
   return { nodes: g.nodes, edges: g.edges, kind: "slow_enriched" };
 }
 
-/**
- * Phase 0 preview graph (argument map + concepts, no user layer).
- * @param {object} session
- */
-export function buildSlowPhase0Graph(session) {
+/** Pure Phase 0 preview graph. */
+export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
   const g = createGraphBuilder();
-  const phase0 = session?.slow?.phase0;
   if (!phase0) return { nodes: [], edges: [], kind: "slow_phase0" };
 
   for (const c of phase0.conceptsToFind || []) {
     const term = String(c?.term || "").trim();
     if (!term) continue;
-    const termId = String(c?.graphTermId || slugGraphTermId(term)).trim();
+    const termId = String(c?.graphTermId || graphTermSlug(term)).trim();
     if (!termId) continue;
     g.addNode({
       id: textNodeId(termId),
@@ -335,10 +327,7 @@ function clozeNodeId(epistemicId) {
   return `cloze:${String(epistemicId || "").trim()}`;
 }
 
-/**
- * Cloze epistemic graph from pipeline Fase 0 (session.cloze only).
- * @param {object} session
- */
+/** Cloze epistemic graph from pipeline Fase 0 (session.cloze only). */
 export function buildClozeEpistemicGraph(session) {
   const epistemicGraph = session?.cloze?.epistemicGraph;
   if (!epistemicGraph || typeof epistemicGraph !== "object") {
@@ -378,63 +367,4 @@ export function buildClozeEpistemicGraph(session) {
 
   g.sortNodes();
   return { nodes: g.nodes, edges: g.edges, kind: "cloze" };
-}
-
-/**
- * Mode-agnostic entry: pick the best graph for the current context.
- * @param {object} session
- * @param {{ conceptInventory?: object[], blockIndex?: object[], mode?: 'auto'|'rsvp'|'slow'|'slow_phase0'|'slow_enriched'|'cloze' }} [options]
- */
-export function buildSessionGraph(session, options = {}) {
-  const mode = String(options.mode || "auto").trim();
-  const blockIndex = options.blockIndex ?? session?._meta?.material_graph?.blockIndex ?? null;
-  const conceptInventory =
-    options.conceptInventory ?? session?._meta?.material_graph?.conceptInventory ?? null;
-
-  if (mode === "cloze") {
-    return buildClozeEpistemicGraph(session);
-  }
-
-  if (mode === "slow_phase0") {
-    return buildSlowPhase0Graph(session);
-  }
-
-  if (mode === "slow_enriched") {
-    return buildSlowEnrichedGraph(session);
-  }
-
-  if (
-    mode === "rsvp" ||
-    (mode === "auto" && session?.studyMode !== "slow" && Array.isArray(blockIndex) && blockIndex.length)
-  ) {
-    if (Array.isArray(blockIndex) && blockIndex.length) {
-      return buildRsvpMaterialGraph({
-        conceptInventory: conceptInventory || [],
-        blockIndex,
-      });
-    }
-  }
-
-  if (mode === "auto" && session?.slow?.graphEnrichedUnlocked) {
-    const enriched = buildSlowEnrichedGraph(session);
-    if (enriched.nodes.length) return enriched;
-  }
-
-  if (session?.slow?.phase0) {
-    return buildSlowPhase0Graph(session);
-  }
-
-  if (Array.isArray(blockIndex) && blockIndex.length) {
-    return buildRsvpMaterialGraph({
-      conceptInventory: conceptInventory || [],
-      blockIndex,
-    });
-  }
-
-  return { nodes: [], edges: [], kind: "empty" };
-}
-
-/** @deprecated Use buildSlowEnrichedGraph */
-export function buildEnrichedGraph(session) {
-  return buildSlowEnrichedGraph(session);
 }

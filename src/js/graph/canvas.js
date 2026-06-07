@@ -1,4 +1,4 @@
-/** SVG force-style layout for material graphs (Obsidian-like nodes + arrows). */
+/** SVG column layout for material graphs (fixed layers, no force simulation). */
 
 const LAYER_COLORS = {
   concept: { fill: "#3b82f6", stroke: "#1d4ed8", text: "#eff6ff" },
@@ -63,49 +63,6 @@ function layoutGraph(graph, width, height) {
       n.y = padY + (list.length === 1 ? usableH / 2 : i * step);
       n.r = n.layer === "block" ? 22 : n.layer === "user" ? 18 : 16;
     });
-  }
-
-  const idToNode = new Map(nodes.map((n) => [n.id, n]));
-  for (let iter = 0; iter < 48; iter += 1) {
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const a = nodes[i];
-        const b = nodes[j];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 0.001;
-        const minDist = (a.r || 16) + (b.r || 16) + 28;
-        if (dist < minDist) {
-          const push = (minDist - dist) * 0.35;
-          const ux = dx / dist;
-          const uy = dy / dist;
-          a.x -= ux * push;
-          a.y -= uy * push;
-          b.x += ux * push;
-          b.y += uy * push;
-        }
-      }
-    }
-    for (const e of edges) {
-      const a = idToNode.get(e.from);
-      const b = idToNode.get(e.to);
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.hypot(dx, dy) || 0.001;
-      const target = 120;
-      const pull = (dist - target) * 0.02;
-      const ux = dx / dist;
-      const uy = dy / dist;
-      a.x += ux * pull;
-      a.y += uy * pull;
-      b.x -= ux * pull;
-      b.y -= uy * pull;
-    }
-    for (const n of nodes) {
-      n.x = Math.max(padX, Math.min(width - padX, n.x));
-      n.y = Math.max(padY, Math.min(height - padY, n.y));
-    }
   }
 
   return { nodes, edges };

@@ -1,3 +1,5 @@
+import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260607_1";
+
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
 export const IA_QUERY_TYPE = "ia-query";
@@ -118,7 +120,7 @@ export function addGraphLink(session, annotationId, { termId, relation } = {}) {
 export function addLiteratureGraphLink(session, annotationId, note) {
   const rel = String(note || "").trim();
   if (!rel) return null;
-  return addGraphLink(session, annotationId, { termId: "literature", relation: rel });
+  return addGraphLink(session, annotationId, { termId: LITERATURE_TERM_ID, relation: rel });
 }
 
 export function annotationsOnPage(annotations, pageSlice) {

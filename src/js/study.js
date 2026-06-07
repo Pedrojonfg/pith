@@ -3124,7 +3124,6 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   state.materialGraphContext = {
     blockIndex: blocks,
     conceptInventory: Array.isArray(conceptInventory) ? conceptInventory : [],
-    graph,
   };
   const lang = getStudyLanguage() || "English";
   const es = String(lang).toLowerCase().startsWith("es");
@@ -3177,6 +3176,17 @@ function wireMaterialGraphHandlers() {
 
   document.getElementById("slowPhase3GraphActions")?.addEventListener("click", (e) => {
     if (!e.target?.closest("#slowPhase3GraphBtn")) return;
+    openMaterialGraphScreen({
+      backScreen: "slowPhase3",
+      session: state.activeSession,
+      mode: "slow_enriched",
+      title: "Enriched graph",
+      hint: "Your annotations linked to concepts and argument nodes.",
+    });
+  });
+
+  document.getElementById("slowPhase3Content")?.addEventListener("click", (e) => {
+    if (!e.target?.closest("#slowPhase3ModuleCGraphBtn")) return;
     openMaterialGraphScreen({
       backScreen: "slowPhase3",
       session: state.activeSession,
@@ -4493,12 +4503,10 @@ export function wireStudyHandlers() {
       sessionObj._meta.material_graph = {
         blockIndex: merged,
         conceptInventory: mgInventory,
-        graph: buildRsvpMaterialGraph({ conceptInventory: mgInventory, blockIndex: merged }),
       };
       state.materialGraphContext = {
         blockIndex: merged,
         conceptInventory: mgInventory,
-        graph: sessionObj._meta.material_graph.graph,
       };
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5',location:'src/js/study.js:2816',message:'confirm blocks before storeActiveSession',data:{nBlocks,sessionBlocks:Array.isArray(sessionObj.blocks)?sessionObj.blocks.length:null,stateActiveSessionBefore:!!state.activeSession,indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
