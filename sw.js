@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v12";
+const CACHE_NAME = "mylearning-v13";
 
 const STATIC_ASSETS = [
   "/",
@@ -8,6 +8,7 @@ const STATIC_ASSETS = [
   "/src/css/slow-mode.css",
   "/src/css/graph.css",
   "/src/js/main.js",
+  "/src/js/offline.js",
   "/src/js/api.js",
   "/src/js/session.js",
   "/src/js/study.js",
@@ -18,10 +19,20 @@ const STATIC_ASSETS = [
   "/src/js/guide-chat.js",
   "/src/js/markdown.js",
   "/src/js/dictionary.js",
+  "/src/js/shuffle-options.js",
+  "/src/js/sneakPeek.js",
   "/src/js/graph/build.js",
   "/src/js/graph/canvas.js",
   "/src/js/graph/view.js",
   "/src/js/graph/ids.js",
+  "/src/js/slow/sidebar.js",
+  "/src/js/slow/headings.js",
+  "/src/js/slow/reader.js",
+  "/src/js/slow/phase0.js",
+  "/src/js/slow/phase3.js",
+  "/src/js/slow/gamification.js",
+  "/src/js/slow/pagination.js",
+  "/src/js/slow/annotations.js",
   "/src/js/slow/graph-view.js",
   "/src/js/review.js",
   "/src/js/config.js",
