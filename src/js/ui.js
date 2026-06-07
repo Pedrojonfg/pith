@@ -662,6 +662,14 @@ export function getStudyLanguage() {
   return "English";
 }
 
+export function syncStudyLanguage(lang) {
+  const v = String(lang || "").trim();
+  const safe = v && STUDY_LANG_OPTIONS.some((o) => o.value === v) ? v : getStudyLanguage();
+  localStorage.setItem(LS_STUDY_LANG_KEY, safe);
+  if (els.languageSelect) els.languageSelect.value = safe;
+  return safe;
+}
+
 function resolveModeSelectScreenEl() {
   if (els.screenModeSelect) return els.screenModeSelect;
   const el = document.getElementById("screenModeSelect");
