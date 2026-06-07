@@ -4,8 +4,10 @@
  */
 import {
   OPTION_LETTERS,
+  computeOptionLetterMap,
   normalizeTestOptions,
   normalizeTestQuestion,
+  remapFeedbackOptionLetters,
   shuffleInPlace,
   shuffleTestQuestionOptions,
   shuffleTestQuestionsInList,
@@ -127,6 +129,48 @@ assert(
 const order = [1, 2, 3, 4, 5];
 shuffleInPlace(order);
 assert(order.length === 5, "shuffleInPlace keeps length");
+
+const beforeOptions = { A: "tA", B: "tB", C: "tC", D: "tD" };
+const afterOptions = { A: "tC", B: "tA", C: "tD", D: "tB" };
+const letterMap = computeOptionLetterMap(beforeOptions, afterOptions);
+assert(letterMap.A === "B" && letterMap.B === "D" && letterMap.C === "A" && letterMap.D === "C", "letter map follows option text");
+
+const remapped = remapFeedbackOptionLetters(
+  "Option B fails because x. Option C fails because y. La opción D confunde z.",
+  letterMap,
+);
+assert(
+  remapped === "Option D fails because x. Option A fails because y. La opción C confunde z.",
+  "feedback option letters remapped (EN + ES)",
+);
+
+const withFeedback = shuffleTestQuestionOptions({
+  type: "test",
+  question: "Pick",
+  options: { A: "correct", B: "wrong1", C: "wrong2", D: "wrong3" },
+  answer: "A",
+  feedback: "Option B fails. Option C fails. Option D fails.",
+  _optionsShuffled: false,
+});
+assert(withFeedback._optionsShuffled === true, "feedback question shuffled");
+const bText = withFeedback.options.B;
+const cText = withFeedback.options.C;
+const dText = withFeedback.options.D;
+const origB = "wrong1";
+const origC = "wrong2";
+const origD = "wrong3";
+const expectedBLetter = OPTION_LETTERS.find((l) => withFeedback.options[l] === origB);
+const expectedCLetter = OPTION_LETTERS.find((l) => withFeedback.options[l] === origC);
+const expectedDLetter = OPTION_LETTERS.find((l) => withFeedback.options[l] === origD);
+assert(
+  withFeedback.feedback.includes(`Option ${expectedBLetter} fails`) &&
+    withFeedback.feedback.includes(`Option ${expectedCLetter} fails`) &&
+    withFeedback.feedback.includes(`Option ${expectedDLetter} fails`),
+  "shuffled question remaps feedback letters to match displayed options",
+);
+void bText;
+void cText;
+void dText;
 
 console.log(`\nT09 shuffle-options: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
