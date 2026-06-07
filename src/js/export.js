@@ -18,7 +18,7 @@ import {
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
-import { buildSessionGraph } from "./graph/build.js?v=20260607_1";
+import { buildSessionGraph } from "./graph/adapters.js?v=20260607_2";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
