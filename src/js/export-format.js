@@ -5,12 +5,17 @@ export const EDGE_TYPE_FAMILIES = {
   sequence: "didactic",
   covers: "didactic",
   mentions: "didactic",
+  historically_precedes: "didactic",
   relates: "semantic",
   instantiates: "semantic",
+  reinterprets: "semantic",
+  constitutes: "semantic",
+  influences: "semantic",
   supports: "argumentative",
   contradicts: "argumentative",
   refuta: "argumentative",
   cuestiona: "argumentative",
+  contrasts_with: "argumentative",
 };
 
 const FAMILY_LABELS = {

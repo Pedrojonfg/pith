@@ -2,6 +2,7 @@ import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260606_1";
 import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260607_1";
 import { getStudyLanguage } from "../ui.js?v=20260525_1";
 import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
+import { pruneOrphanNodes } from "./build.js";
 import { renderGraphCanvas } from "./canvas.js";
 
 function escapeHtml(text) {
@@ -119,13 +120,14 @@ export function persistEnrichedGraph(session, graph) {
 export function mountMaterialGraphScreen(session, containerEl, options = {}) {
   if (!containerEl) return null;
   const lang = getStudyLanguage() || "English";
-  const graph =
+  const builtGraph =
     options.graph ||
     buildSessionGraph(session, {
       conceptInventory: options.conceptInventory,
       blockIndex: options.blockIndex,
       mode: options.mode || "auto",
     });
+  const graph = pruneOrphanNodes(builtGraph);
 
   if (session?.slow?.graphEnrichedUnlocked || options.mode === "slow_enriched") {
     persistEnrichedGraph(session, graph);
@@ -195,6 +197,8 @@ export {
   buildSlowEnrichedGraphFromInputs,
   buildSlowPhase0GraphFromInputs,
   collectTextConceptsFromLists,
+  pruneOrphanNodes,
+  EDGE_TYPES,
 } from "./build.js";
 export { textNodeId, userNodeId, argNodeId, conceptNodeId, blockNodeId, LITERATURE_TERM_ID, graphTermSlug } from "./ids.js";
 export {

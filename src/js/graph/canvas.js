@@ -14,10 +14,42 @@ const EDGE_COLORS = {
   covers: "#22c55e",
   mentions: "#8b5cf6",
   sequence: "#94a3b8",
+  historically_precedes: "#0ea5e9",
   relates: "#3b82f6",
+  reinterprets: "#6366f1",
+  constitutes: "#14b8a6",
+  contrasts_with: "#a855f7",
+  influences: "#06b6d4",
+  instantiates: "#8b5cf6",
+  supports: "#22c55e",
+  contradicts: "#ef4444",
   cuestiona: "#f59e0b",
   refuta: "#ef4444",
 };
+
+const EDGE_DASH_SOLID = new Set([
+  "sequence",
+  "historically_precedes",
+  "supports",
+  "constitutes",
+  "influences",
+  "requires",
+  "covers",
+  "mentions",
+  "instantiates",
+]);
+const EDGE_DASH_HEAVY = new Set(["contradicts", "refuta", "cuestiona"]);
+
+function edgeStrokeAttrs(type) {
+  const edgeType = String(type || "").trim();
+  if (EDGE_DASH_HEAVY.has(edgeType)) {
+    return { dasharray: "8 4", width: 2.5 };
+  }
+  if (EDGE_DASH_SOLID.has(edgeType)) {
+    return { dasharray: "none", width: 2 };
+  }
+  return { dasharray: "4 4", width: 2 };
+}
 
 function escapeHtml(text) {
   return String(text ?? "")
@@ -121,7 +153,10 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
       const to = idToNode.get(e.to);
       if (!from || !to) return "";
       const color = EDGE_COLORS[e.type] || "#64748b";
-      return `<path class="material-graph-edge" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="2" marker-end="url(#material-graph-arrow)"/>`;
+      const stroke = edgeStrokeAttrs(e.type);
+      const dashAttr =
+        stroke.dasharray === "none" ? "" : ` stroke-dasharray="${stroke.dasharray}"`;
+      return `<path class="material-graph-edge" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="${stroke.width}"${dashAttr} marker-end="url(#material-graph-arrow)"/>`;
     })
     .join("");
 

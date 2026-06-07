@@ -10,6 +10,26 @@ import {
 } from "./ids.js";
 import { findNearestArgumentMapNode } from "./proximity.js";
 
+export const EDGE_TYPES = {
+  requires: "requires",
+  covers: "covers",
+  mentions: "mentions",
+  sequence: "sequence",
+  relates: "relates",
+  supports: "supports",
+  contradicts: "contradicts",
+  refuta: "refuta",
+  cuestiona: "cuestiona",
+  instantiates: "instantiates",
+  historically_precedes: "historically_precedes",
+  reinterprets: "reinterprets",
+  constitutes: "constitutes",
+  contrasts_with: "contrasts_with",
+  influences: "influences",
+};
+
+const KNOWN_EDGE_TYPES = new Set(Object.values(EDGE_TYPES));
+
 const RELATES_TYPES = new Set(["⟷", "🔗"]);
 const CRITICAL_EDGE_TYPES = new Set(["⊘", "↯", "⚠"]);
 
@@ -19,7 +39,39 @@ function truncate(text, max = 72) {
   return `${raw.slice(0, Math.max(0, max - 1))}…`;
 }
 
-function createGraphBuilder() {
+/**
+ * Remove nodes with no incident edges, except user-layer notes.
+ * @param {{ nodes: object[], edges: object[] }} graph
+ */
+export function pruneOrphanNodes(graph) {
+  if (!graph || !Array.isArray(graph.nodes)) return graph;
+  const edges = Array.isArray(graph.edges) ? graph.edges : [];
+  const connectedIds = new Set(edges.flatMap((e) => [e.from, e.to]));
+  const pruned = graph.nodes.filter((n) => connectedIds.has(n.id) || n.layer === "user");
+  if (pruned.length < graph.nodes.length) {
+    console.warn(`[graph] Pruned ${graph.nodes.length - pruned.length} orphan nodes`);
+  }
+  return { ...graph, nodes: pruned };
+}
+
+function argNodeLabel(node) {
+  const id = String(node?.id || "").trim();
+  const text = String(node?.text || "").trim();
+  const period = String(node?.period || "").trim();
+  const author = String(node?.author || "").trim();
+  let prefix = id;
+  if (period) prefix = `${id} (${period})`;
+  else if (author) prefix = `${id} (${author})`;
+  return `${prefix}: ${truncate(text)}`;
+}
+
+function textConceptLabel(c) {
+  const term = String(c?.term || "").trim();
+  const nodeType = String(c?.nodeType || "CONCEPTO").trim() || "CONCEPTO";
+  return `[${nodeType}] ${term}`;
+}
+
+function createGraphBuilder({ validateEdgeTypes = false } = {}) {
   const nodes = [];
   const edges = [];
   const nodeIds = new Set();
@@ -35,10 +87,12 @@ function createGraphBuilder() {
     const f = String(from || "").trim();
     const t = String(to || "").trim();
     if (!f || !t || f === t) return;
-    const key = `${f}|${t}|${type}`;
+    const edgeType = String(type || "").trim() || "relates";
+    if (validateEdgeTypes && !KNOWN_EDGE_TYPES.has(edgeType)) return;
+    const key = `${f}|${t}|${edgeType}`;
     if (edgeKeys.has(key)) return;
     edgeKeys.add(key);
-    edges.push({ from: f, to: t, type });
+    edges.push({ from: f, to: t, type: edgeType });
   };
 
   const sortNodes = () => {
@@ -201,7 +255,7 @@ function edgeTypeForGraphLink(ann, link) {
  * Pure enriched graph builder — inject all inputs explicitly (testable in isolation).
  */
 export function buildSlowEnrichedGraphFromInputs(inputs = {}) {
-  const g = createGraphBuilder();
+  const g = createGraphBuilder({ validateEdgeTypes: true });
   const textConceptsRaw = inputs.textConcepts;
   const textConcepts =
     textConceptsRaw instanceof Map
@@ -289,12 +343,12 @@ export function buildSlowEnrichedGraphFromInputs(inputs = {}) {
   }
 
   g.sortNodes();
-  return { nodes: g.nodes, edges: g.edges, kind: "slow_enriched" };
+  return pruneOrphanNodes({ nodes: g.nodes, edges: g.edges, kind: "slow_enriched" });
 }
 
 /** Pure Phase 0 preview graph. */
 export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
-  const g = createGraphBuilder();
+  const g = createGraphBuilder({ validateEdgeTypes: true });
   if (!phase0) return { nodes: [], edges: [], kind: "slow_phase0" };
 
   for (const c of phase0.conceptsToFind || []) {
@@ -302,13 +356,24 @@ export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
     if (!term) continue;
     const termId = String(c?.graphTermId || graphTermSlug(term)).trim();
     if (!termId) continue;
-    g.addNode({
+    const nodeType = String(c?.nodeType || "CONCEPTO").trim() || "CONCEPTO";
+    const canvasNode = {
       id: textNodeId(termId),
-      label: term,
+      label: textConceptLabel(c),
       layer: "text",
       termId,
-    });
+      nodeSubtype: nodeType,
+    };
+    if (Array.isArray(c.includes) && c.includes.length) {
+      canvasNode.includes = c.includes;
+    }
+    g.addNode(canvasNode);
   }
+
+  const mapEdgeType =
+    String(phase0.textGenre || "").trim() === "GENEALOGÍA"
+      ? "historically_precedes"
+      : "sequence";
 
   const mapNodes = Array.isArray(phase0.argumentMap) ? phase0.argumentMap : [];
   for (let i = 0; i < mapNodes.length; i += 1) {
@@ -318,19 +383,31 @@ export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
     if (!id || !text) continue;
     g.addNode({
       id: argNodeId(id),
-      label: `${id}: ${truncate(text)}`,
+      label: argNodeLabel(node),
       layer: "arg",
       termId: id,
     });
     if (i > 0) {
       const prev = mapNodes[i - 1];
       const prevId = String(prev?.id || "").trim();
-      if (prevId) g.addEdge(argNodeId(prevId), argNodeId(id), "sequence");
+      if (prevId) g.addEdge(argNodeId(prevId), argNodeId(id), mapEdgeType);
+    }
+  }
+
+  const anchorMapNode = mapNodes.length ? mapNodes[mapNodes.length - 1] : null;
+  const anchorArgId = String(anchorMapNode?.id || "").trim();
+  if (anchorArgId && g.hasNode(argNodeId(anchorArgId))) {
+    for (const c of phase0.conceptsToFind || []) {
+      const term = String(c?.term || "").trim();
+      if (!term) continue;
+      const termId = String(c?.graphTermId || graphTermSlug(term)).trim();
+      if (!termId || !g.hasNode(textNodeId(termId))) continue;
+      g.addEdge(textNodeId(termId), argNodeId(anchorArgId), "relates");
     }
   }
 
   g.sortNodes();
-  return { nodes: g.nodes, edges: g.edges, kind: "slow_phase0" };
+  return pruneOrphanNodes({ nodes: g.nodes, edges: g.edges, kind: "slow_phase0" });
 }
 
 function clozeNodeId(epistemicId) {
