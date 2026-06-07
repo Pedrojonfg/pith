@@ -5,7 +5,7 @@ import {
   llmChatCompletions,
 } from "./llm.js?v=20260525_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
-import { isOfflineMode } from "./main.js?v=20260525_1";
+import { isOfflineMode } from "./offline.js?v=20260606_1";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();

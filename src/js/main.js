@@ -29,8 +29,6 @@ import {
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260528_1";
 
-export const isOfflineMode = () => window.offlineMode === true;
-
 function clearActiveSessionStorage() {
   try {
     localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
@@ -239,9 +237,14 @@ function bootstrap() {
     migrateLegacyActiveSession();
   }
 
-  if (getStoredKey()) {
-    enterModeSelectScreen();
-  } else {
+  try {
+    if (getStoredKey()) {
+      enterModeSelectScreen();
+    } else {
+      showScreen("setup");
+    }
+  } catch (err) {
+    console.error("Failed to open initial screen:", err);
     showScreen("setup");
   }
 }

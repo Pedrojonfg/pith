@@ -45,7 +45,7 @@ import {
 } from "./markdown.js?v=20260525_1";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
-import { isOfflineMode } from "./main.js?v=20260525_1";
+import { isOfflineMode } from "./offline.js?v=20260606_1";
 import {
   blocksListTextFromBlockIndex,
   clampInt,

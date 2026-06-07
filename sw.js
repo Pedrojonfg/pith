@@ -1,10 +1,11 @@
-const CACHE_NAME = "mylearning-v10";
+const CACHE_NAME = "mylearning-v11";
 
 const STATIC_ASSETS = [
   "/",
   "/index.html",
   "/src/css/main.css",
   "/src/css/sidebar.css",
+  "/src/css/slow-mode.css",
   "/src/js/main.js",
   "/src/js/api.js",
   "/src/js/session.js",

@@ -90,9 +90,11 @@ assert(
 assert(uiSrc.includes("screenModeSelect"), "MS: ui els screenModeSelect");
 assert(uiSrc.includes('which === "modeSelect"'), "MS: showScreen modeSelect branch");
 assert(
-  uiSrc.includes('els.screenModeSelect?.setAttribute("aria-hidden"'),
-  "MS: mode select aria-hidden toggled",
+  uiSrc.includes("resolveModeSelectScreenEl") && uiSrc.includes('modeSelectEl.setAttribute("aria-hidden"'),
+  "MS: mode select aria-hidden toggled via resolved element",
 );
+assert(uiSrc.includes('no visible screen'), "MS: showScreen fallback when all screens hidden");
+assert(uiSrc.includes("offline.js"), "MS: isOfflineMode moved out of main.js");
 
 // --- Edge: both mode radios live on mode select screen only ---
 assert(modeRadios.length === 2, "MS: exactly two mode radios");

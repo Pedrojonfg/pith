@@ -24,7 +24,7 @@ import {
 } from "./llm.js?v=20260525_1";
 import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
-import { isOfflineMode } from "./main.js?v=20260525_1";
+import { isOfflineMode } from "./offline.js?v=20260606_1";
 
 export { getStoredGeminiKey, saveGeminiKey };
 
