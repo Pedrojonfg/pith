@@ -37,9 +37,11 @@ const sectionText = section.join("\n");
 assert(sectionText.includes("### Knowledge gaps by block"), "has gaps subsection heading");
 assert(sectionText.includes("Gaps source: merged"), "includes gaps_source");
 assert(sectionText.includes("Gap synthesis: ok"), "includes synthesis_status");
-assert(sectionText.includes("Block 1 — Intro**: Flux confusion"), "block 1 summary with title");
-assert(sectionText.includes("Block 2 — Advanced**: Boundary conditions"), "block 2 first gap");
+assert(sectionText.includes("Block 1 — Intro**"), "block 1 heading with title");
+assert(sectionText.includes("Flux confusion"), "block 1 gap label");
+assert(sectionText.includes("Boundary conditions"), "block 2 first gap");
 assert(sectionText.includes("User refined gap (edited)"), "user-edited gap marked");
+assert(sectionText.includes("review_priority:"), "gaps include review_priority");
 
 // empty gaps → none recorded
 const empty = formatAssessmentGapsExportSection(
@@ -81,9 +83,11 @@ state.activeQuestionIndex = 0;
 const md = buildMarkdown(state.activeSession);
 assert(md.includes("## Initial Assessment"), "export has assessment section");
 assert(md.includes("### Knowledge gaps by block"), "full export includes gaps subsection");
-assert(md.includes("Block 2 — Advanced**: Laguna editada por usuario (edited)"), "merged user gap in export");
+assert(md.includes("Block 2 — Advanced**"), "block 2 in gap list");
+assert(md.includes("Laguna editada por usuario (edited)"), "merged user gap in export");
+assert(md.includes("review_priority:"), "export gap includes review_priority");
 assert(md.includes("Weak blocks: Block 2"), "preserves weak block list");
-assert(!md.includes("Block 1 — Intro**: "), "block without gaps omitted from gap list");
+assert(!md.includes("Block 1 — Intro**"), "block without gaps omitted from gap list");
 
 // no assessment meta → no gaps subsection
 state.activeSession = { n_blocks: 1, blocks: [{}], blocks_list_text: "1. Solo" };

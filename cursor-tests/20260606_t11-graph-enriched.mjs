@@ -81,9 +81,9 @@ const crit = addAnnotation(session, {
 const graphCrit = buildEnrichedGraph(session);
 assert(
   graphCrit.edges.some(
-    (e) => e.from === userNodeId(crit.id) && e.type === "refuta" && e.to.startsWith("arg:"),
+    (e) => e.from === userNodeId(crit.id) && e.type === "contradicts" && e.to.startsWith("arg:"),
   ),
-  "T11 happy: critical ⊘ edge refuta nearest argument node",
+  "T11 happy: critical ⊘ edge contradicts nearest argument node",
 );
 
 const emptySession = makeSession({ slow: { annotations: [], phase0: null, readingScope: { charStart: 0, charEnd: 10 } } });

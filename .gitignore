@@ -1,2 +1,8 @@
 .cursorrules
 *:Zone.Identifier
+
+# Fixtures locales para pruebas manuales (no versionar)
+fixtures/
+
+# Muestras genéricas de export .md de sesión (revisión manual)
+fixtures/session-samples/

@@ -263,7 +263,7 @@ const pureGraph = buildSlowEnrichedGraphFromInputs({
   onResolveMiss: () => {},
 });
 assert(
-  pureGraph.edges.some((e) => e.type === "refuta" && e.to === "arg:P1"),
+  pureGraph.edges.some((e) => e.type === "contradicts" && e.to === "arg:P1"),
   "MG-Pure: text-overlap links critical annotation without char proximity",
 );
 
