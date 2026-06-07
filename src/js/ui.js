@@ -176,6 +176,18 @@ export const els = {
   rsvpBlocksSection: document.getElementById("rsvpBlocksSection"),
   slowOnlyControls: document.getElementById("slowOnlyControls"),
   criticalModeToggleBtn: document.getElementById("criticalModeToggleBtn"),
+  clozeSessionPanel: document.getElementById("clozeSessionPanel"),
+  clozePipelineProgress: document.getElementById("clozePipelineProgress"),
+  clozeReadySummary: document.getElementById("clozeReadySummary"),
+  clozeGenerateBtn: document.getElementById("clozeGenerateBtn"),
+  clozeStudyBtn: document.getElementById("clozeStudyBtn"),
+  clozeViewGraphBtn: document.getElementById("clozeViewGraphBtn"),
+  clozePipelineError: document.getElementById("clozePipelineError"),
+  clozeGraphMount: document.getElementById("clozeGraphMount"),
+  screenClozeStudy: document.getElementById("screenClozeStudy"),
+  clozeStudyContent: document.getElementById("clozeStudyContent"),
+  clozeStudyMeta: document.getElementById("clozeStudyMeta"),
+  clozeStudyBackBtn: document.getElementById("clozeStudyBackBtn"),
 
   screenSlowScope: document.getElementById("screenSlowScope"),
   screenSlowPhase0: document.getElementById("screenSlowPhase0"),
@@ -701,6 +713,7 @@ export function showScreen(which) {
   const showSlowReader = which === "slowReader";
   const showSlowPhase3 = which === "slowPhase3";
   const showSlowGraph = which === "slowGraph";
+  const showClozeStudy = which === "clozeStudy";
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
@@ -730,6 +743,7 @@ export function showScreen(which) {
   els.screenSlowReader?.setAttribute("aria-hidden", String(!showSlowReader));
   els.screenSlowPhase3?.setAttribute("aria-hidden", String(!showSlowPhase3));
   els.screenSlowGraph?.setAttribute("aria-hidden", String(!showSlowGraph));
+  els.screenClozeStudy?.setAttribute("aria-hidden", String(!showClozeStudy));
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);

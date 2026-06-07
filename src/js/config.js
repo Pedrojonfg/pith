@@ -18,6 +18,8 @@ export const LS_REVIEW_SESSION_MD_KEY = "review_session_markdown";
 export const LS_REVIEW_SESSION_RESULTS_KEY = "review_session_results";
 /** Per-session review config draft: focus text + selected block indices (not shared across sessions). */
 export const LS_REVIEW_CONFIG_PREFIX = "review_session_config_";
+/** Per-session spaced-repetition flashcards queued from Slow Mode (T12). */
+export const LS_REVIEW_FLASHCARDS_PREFIX = "review_flashcards_";
 export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 
 /** Maximum test (MCQ) questions per study block. */

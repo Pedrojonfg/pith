@@ -96,8 +96,8 @@ assert(
 assert(uiSrc.includes('no visible screen'), "MS: showScreen fallback when all screens hidden");
 assert(uiSrc.includes("offline.js"), "MS: isOfflineMode moved out of main.js");
 
-// --- Edge: both mode radios live on mode select screen only ---
-assert(modeRadios.length === 2, "MS: exactly two mode radios");
+// --- Edge: all mode radios live on mode select screen only ---
+assert(modeRadios.length === 3, "MS: exactly three mode radios (rsvp, slow, cloze)");
 for (const radio of modeRadios) {
   assert(modeSelectScreen.contains(radio), `MS: radio ${radio.value} inside mode select screen`);
 }

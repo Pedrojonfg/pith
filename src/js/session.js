@@ -249,13 +249,16 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/** @returns {'rsvp'|'slow'} */
+/** @returns {'rsvp'|'slow'|'cloze'} */
 export function normalizeStudyMode(mode) {
-  return String(mode || "").trim() === "slow" ? "slow" : "rsvp";
+  const m = String(mode || "").trim();
+  if (m === "slow") return "slow";
+  if (m === "cloze") return "cloze";
+  return "rsvp";
 }
 
 export function emptySessionsByMode() {
-  return { rsvp: null, slow: null };
+  return { rsvp: null, slow: null, cloze: null };
 }
 
 function parseSessionsByModeRaw(raw) {
@@ -266,6 +269,7 @@ function parseSessionsByModeRaw(raw) {
     return {
       rsvp: obj.rsvp && typeof obj.rsvp === "object" ? obj.rsvp : null,
       slow: obj.slow && typeof obj.slow === "object" ? obj.slow : null,
+      cloze: obj.cloze && typeof obj.cloze === "object" ? obj.cloze : null,
     };
   } catch {
     return null;
@@ -283,7 +287,7 @@ export function migrateLegacyActiveSession() {
   try {
     const legacy = JSON.parse(legacyRaw);
     if (!legacy || typeof legacy !== "object") return;
-    const migrated = { rsvp: legacy, slow: null };
+    const migrated = { rsvp: legacy, slow: null, cloze: null };
     localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
   } catch {
     // ignore corrupt legacy
@@ -300,6 +304,7 @@ export function storeSessionsByMode(data) {
   const safe = {
     rsvp: data?.rsvp && typeof data.rsvp === "object" ? data.rsvp : null,
     slow: data?.slow && typeof data.slow === "object" ? data.slow : null,
+    cloze: data?.cloze && typeof data.cloze === "object" ? data.cloze : null,
   };
   localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(safe));
   if (safe.rsvp) {

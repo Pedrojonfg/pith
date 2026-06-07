@@ -2,6 +2,7 @@ import { storeActiveSession } from "../session.js?v=20260527_1";
 import { els, showScreen } from "../ui.js?v=20260525_1";
 import { maybeScheduleCheckpoint, clearCheckpointTimer } from "./checkpoints.js?v=20260528_1";
 import { matchConceptFindings } from "./gamification.js?v=20260528_1";
+import { fillBlankFromAnnotation } from "./phase0.js?v=20260528_1";
 import { askSlowReaderIA } from "./ai-context.js?v=20260528_1";
 import {
   ANNOTATION_TYPES,
@@ -10,7 +11,16 @@ import {
   visibleAnnotationTypes,
   findAnnotationTypeByHotkey,
   addAnnotation,
+  addIAQueryAnnotation,
+  addGraphLink,
+  addLiteratureGraphLink,
+  deleteAnnotation,
+  findAnnotation,
+  isIAQueryAnnotation,
+  shouldShowSteelManNudge,
+  updateAnnotation,
 } from "./annotations.js?v=20260528_1";
+import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260527_1";
 import { initPhase3Screen } from "./phase3.js?v=20260528_1";
 import {
   charOffsetToPage,
@@ -20,6 +30,17 @@ import {
   getPageSlice,
   invalidatePaginationCache,
 } from "./pagination.js?v=20260528_1";
+import {
+  hideConceptPicker,
+  renderSlowSidebar,
+  setAnnotationNavigator,
+  showConceptPicker,
+  wireSidebarToggle,
+  wireSidebarIAInput,
+  setIAReplyViewer,
+} from "./sidebar.js?v=20260528_1";
+
+const LONG_PRESS_MS = 500;
 
 let readerState = {
   breakpoints: [],
@@ -27,6 +48,12 @@ let readerState = {
   pendingSelection: null,
   menuShowSecondary: false,
   noteDraft: null,
+  iaOverlayOpen: false,
+  iaOverlayTouchStartY: 0,
+  steelManNudgeOpen: false,
+  longPressTimer: null,
+  longPressFired: false,
+  editDraft: null,
 };
 
 export function getScopeText(session) {
@@ -96,18 +123,616 @@ function renderProgress(session) {
   if (fill) fill.style.width = total ? `${((idx + 1) / total) * 100}%` : "0%";
 }
 
+/** @returns {{ localStart: number, localEnd: number } | null} */
+export function resolveHighlightLocalRange(slice, charStart, charEnd) {
+  const pageLen = Math.max(0, slice.charEnd - slice.charStart);
+  const localStart = Math.max(0, Math.floor(Number(charStart) || 0) - slice.charStart);
+  const localEnd = Math.min(pageLen, Math.floor(Number(charEnd) || 0) - slice.charStart);
+  if (localStart >= localEnd) return null;
+  return { localStart, localEnd };
+}
+
+export function highlightRange(pageEl, slice, charStart, charEnd) {
+  if (!pageEl || !slice) return;
+  const local = resolveHighlightLocalRange(slice, charStart, charEnd);
+  if (!local) return;
+
+  const fullText = pageEl.textContent || "";
+  const { localStart, localEnd } = local;
+  const before = fullText.slice(0, localStart);
+  const middle = fullText.slice(localStart, localEnd);
+  const after = fullText.slice(localEnd);
+
+  pageEl.textContent = "";
+  if (before) pageEl.appendChild(document.createTextNode(before));
+  const span = document.createElement("span");
+  span.className = "slow-highlight-pulse";
+  span.textContent = middle;
+  pageEl.appendChild(span);
+  if (after) pageEl.appendChild(document.createTextNode(after));
+
+  clearTimeout(highlightRange._timer);
+  highlightRange._timer = setTimeout(() => {
+    if (pageEl.isConnected) pageEl.textContent = fullText;
+  }, 2000);
+}
+
+/** Proportional Y fallback when Range measurement fails. */
+export function computeMarkYFallback(charStart, pageSlice, pageHeight, markIndex = 0, markCount = 1) {
+  const pageLen = Math.max(1, pageSlice.charEnd - pageSlice.charStart);
+  const rel = (Math.floor(Number(charStart) || 0) - pageSlice.charStart) / pageLen;
+  const usable = Math.max(0, Number(pageHeight) || 0);
+  const proportional = rel * Math.max(0, usable - 16);
+  if (markCount <= 1) return proportional;
+  const evenly = (markIndex / Math.max(1, markCount - 1)) * Math.max(0, usable - 16);
+  return Number.isFinite(proportional) ? proportional : evenly;
+}
+
+function clearLongPressTimer() {
+  if (readerState.longPressTimer) clearTimeout(readerState.longPressTimer);
+  readerState.longPressTimer = null;
+}
+
+function wireLongPress(el, { onLongPress, onTap } = {}) {
+  if (!el) return;
+  const start = (e) => {
+    if (e.button != null && e.button !== 0) return;
+    readerState.longPressFired = false;
+    clearLongPressTimer();
+    readerState.longPressTimer = setTimeout(() => {
+      readerState.longPressFired = true;
+      onLongPress?.(e);
+    }, LONG_PRESS_MS);
+  };
+  const end = (e) => {
+    clearLongPressTimer();
+    if (!readerState.longPressFired) onTap?.(e);
+  };
+  const cancel = () => clearLongPressTimer();
+  el.addEventListener("pointerdown", start);
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointerleave", cancel);
+  el.addEventListener("pointercancel", cancel);
+  el.addEventListener("contextmenu", (e) => {
+    if (readerState.longPressFired) e.preventDefault();
+  });
+}
+
+function ensureAnnotationEditMenu() {
+  let menu = document.getElementById("slowAnnotationEditMenu");
+  if (menu) return menu;
+  menu = document.createElement("div");
+  menu.id = "slowAnnotationEditMenu";
+  menu.className = "slow-annotation-edit-menu";
+  menu.hidden = true;
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `
+    <div class="slow-annotation-edit-actions" role="group" aria-label="Editar anotación">
+      <button type="button" class="slow-annotation-edit-btn" data-action="type">Editar tipo</button>
+      <button type="button" class="slow-annotation-edit-btn" data-action="text">Editar texto</button>
+      <button type="button" class="slow-annotation-edit-btn slow-annotation-edit-btn--danger" data-action="delete">Eliminar</button>
+    </div>
+    <div class="slow-annotation-edit-types" hidden role="toolbar" aria-label="Cambiar tipo"></div>
+    <div class="slow-annotation-edit-text" hidden>
+      <label class="slow-annotation-edit-text-label">Texto de la anotación</label>
+      <input type="text" class="slow-annotation-edit-text-input" spellcheck="true" />
+    </div>
+  `;
+  document.body.appendChild(menu);
+  return menu;
+}
+
+function hideAnnotationEditMenu() {
+  const menu = document.getElementById("slowAnnotationEditMenu");
+  if (!menu) return;
+  menu.hidden = true;
+  readerState.editDraft = null;
+  menu.querySelector(".slow-annotation-edit-actions")?.removeAttribute("hidden");
+  menu.querySelector(".slow-annotation-edit-types")?.setAttribute("hidden", "");
+  menu.querySelector(".slow-annotation-edit-text")?.setAttribute("hidden", "");
+}
+
+function showAnnotationEditMenu(session, annotation, anchorRect) {
+  if (!session?.slow || !annotation) return;
+  hideAnnotationMenu();
+  hideConceptPicker();
+  const menu = ensureAnnotationEditMenu();
+  readerState.editDraft = { annId: annotation.id, mode: "actions" };
+  const actions = menu.querySelector(".slow-annotation-edit-actions");
+  const typesPanel = menu.querySelector(".slow-annotation-edit-types");
+  const textPanel = menu.querySelector(".slow-annotation-edit-text");
+  actions?.removeAttribute("hidden");
+  typesPanel?.setAttribute("hidden", "");
+  textPanel?.setAttribute("hidden", "");
+
+  const onDelete = () => {
+    deleteAnnotation(session, annotation.id);
+    storeActiveSession(session);
+    hideAnnotationEditMenu();
+    renderSlowReaderPage(session);
+  };
+  const onEditType = () => {
+    readerState.editDraft = { annId: annotation.id, mode: "type" };
+    actions?.setAttribute("hidden", "");
+    typesPanel?.removeAttribute("hidden");
+    typesPanel.innerHTML = "";
+    const types = visibleAnnotationTypes(session.slow.criticalMode, { showSecondary: true });
+    for (const t of types) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "slow-annotation-type-btn";
+      btn.textContent = `${t.symbol} ${t.label}`;
+      btn.addEventListener("click", () => {
+        updateAnnotation(session, annotation.id, { type: t.symbol });
+        storeActiveSession(session);
+        hideAnnotationEditMenu();
+        renderSlowReaderPage(session);
+      });
+      typesPanel.appendChild(btn);
+    }
+    positionAnnotationMenu(menu, anchorRect);
+  };
+  const onEditText = () => {
+    readerState.editDraft = { annId: annotation.id, mode: "text" };
+    actions?.setAttribute("hidden", "");
+    textPanel?.removeAttribute("hidden");
+    const input = menu.querySelector(".slow-annotation-edit-text-input");
+    if (input) {
+      input.value = String(annotation.userText || "");
+      input.focus();
+      input.select();
+    }
+    positionAnnotationMenu(menu, anchorRect);
+  };
+
+  for (const btn of menu.querySelectorAll(".slow-annotation-edit-btn")) {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+  }
+  menu.querySelector('[data-action="type"]')?.addEventListener("click", onEditType);
+  menu.querySelector('[data-action="text"]')?.addEventListener("click", onEditText);
+  menu.querySelector('[data-action="delete"]')?.addEventListener("click", onDelete);
+
+  const textInput = menu.querySelector(".slow-annotation-edit-text-input");
+  if (textInput && !textInput.dataset.wired) {
+    textInput.dataset.wired = "1";
+    textInput.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      const draft = readerState.editDraft;
+      if (!draft?.annId) return;
+      updateAnnotation(session, draft.annId, { userText: textInput.value.trim() });
+      storeActiveSession(session);
+      hideAnnotationEditMenu();
+      renderSlowReaderPage(session);
+    });
+  }
+
+  positionAnnotationMenu(menu, anchorRect);
+}
+
+function charOffsetFromPoint(pageEl, clientX, clientY, pageSlice) {
+  if (!pageEl || !pageSlice) return null;
+  const doc = pageEl.ownerDocument;
+  let range = null;
+  if (doc.caretRangeFromPoint) {
+    range = doc.caretRangeFromPoint(clientX, clientY);
+  } else if (doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(clientX, clientY);
+    if (pos) {
+      range = doc.createRange();
+      range.setStart(pos.offsetNode, pos.offset);
+      range.collapse(true);
+    }
+  }
+  if (!range || !pageEl.contains(range.startContainer)) return null;
+  const pre = range.cloneRange();
+  pre.selectNodeContents(pageEl);
+  pre.setEnd(range.startContainer, range.startOffset);
+  return pageSlice.charStart + pre.toString().length;
+}
+
+function showDictionaryPopup({ term, definition, rect }) {
+  showSlowIAOverlay({
+    query: term,
+    reply: definition || "Sin definición en el diccionario de sesión.",
+  });
+}
+
+async function handleWordLongPress(session, clientX, clientY) {
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  if (!pageEl || !session?.slow) return;
+  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
+  const pageText = pageEl.textContent || "";
+  const charOffset = charOffsetFromPoint(pageEl, clientX, clientY, slice);
+  if (charOffset == null) return;
+  const localOffset = charOffset - slice.charStart;
+  const word = extractWordAtOffset(pageText, localOffset);
+  if (!word) return;
+
+  const hit = lookupSessionTerm(word, {
+    sessionConcepts: getSortedSessionConcepts(),
+    phase0Concepts: session.slow.phase0?.conceptsToFind || [],
+  });
+  const rect = { top: clientY - 8, bottom: clientY + 8, left: clientX, width: 0, height: 16 };
+  if (hit) {
+    showDictionaryPopup({ term: hit.term, definition: hit.definition, rect });
+    return;
+  }
+
+  const query = `¿Qué significa «${word}» en este contexto?`;
+  showSlowIAOverlay({ query, loading: true });
+  try {
+    const reply = await askSlowReaderIA(session, query);
+    showSlowIAOverlay({ query, reply });
+  } catch {
+    showSlowIAOverlay({
+      query,
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+    });
+  }
+}
+
+function measureMarkY(pageEl, marginEl, charOffsetInPage) {
+  const textNode = pageEl?.firstChild;
+  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
+  const len = textNode.length;
+  const offset = Math.max(0, Math.min(Math.floor(charOffsetInPage), len));
+  try {
+    const range = document.createRange();
+    range.setStart(textNode, offset);
+    range.setEnd(textNode, Math.min(offset + 1, len));
+    const rangeRect = range.getBoundingClientRect();
+    const marginRect = marginEl.getBoundingClientRect();
+    if (!rangeRect.height && !rangeRect.width && rangeRect.top === 0) return null;
+    return rangeRect.top - marginRect.top;
+  } catch {
+    return null;
+  }
+}
+
 function renderMarginMarks(session, pageSlice) {
   const margin = els.slowReaderMargin || document.getElementById("slowReaderMargin");
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   if (!margin) return;
   margin.innerHTML = "";
   const anns = annotationsOnPage(session.slow.annotations, pageSlice);
-  for (const a of anns) {
+  const pageHeight = pageEl?.clientHeight || margin.clientHeight || 400;
+
+  anns.forEach((a, index) => {
+    const charOffsetInPage = a.charStart - pageSlice.charStart;
+    let y = pageEl ? measureMarkY(pageEl, margin, charOffsetInPage) : null;
+    if (y == null || !Number.isFinite(y)) {
+      y = computeMarkYFallback(a.charStart, pageSlice, pageHeight, index, anns.length);
+    }
+
     const mark = document.createElement("span");
     mark.className = `annotation-mark annotation-mark--${annotationMarkClass(a.type)}`;
     mark.textContent = a.type;
     mark.title = a.userText || a.type;
+    mark.dataset.annId = a.id;
+    mark.style.top = `${Math.max(0, y)}px`;
+    if (isIAQueryAnnotation(a) && a.aiReply) {
+      mark.classList.add("annotation-mark--ia");
+      mark.setAttribute("role", "button");
+      mark.setAttribute("aria-label", `Ver respuesta IA: ${a.userText || a.type}`);
+    }
+    wireLongPress(mark, {
+      onLongPress: (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showAnnotationEditMenu(session, a, mark.getBoundingClientRect());
+      },
+      onTap: (e) => {
+        e.stopPropagation();
+        if (isIAQueryAnnotation(a) && a.aiReply) {
+          showSlowIAOverlayFromAnnotation(a);
+          return;
+        }
+        navigateToAnnotation(session, a);
+      },
+    });
     margin.appendChild(mark);
+  });
+}
+
+export function getReadAnchor(session) {
+  const idx = Math.max(0, Number(session?.slow?.currentPageIndex) || 0);
+  const slice = getPageSlice(readerState.breakpoints, idx);
+  const charEnd = Math.max(Number(session?.slow?.maxReadCharEnd) || 0, slice.charEnd);
+  const charStart = Math.max(0, charEnd - 1);
+  return { charStart, charEnd: Math.max(charStart + 1, charEnd) };
+}
+
+function ensureIAOverlay() {
+  let overlay = document.getElementById("slowIAOverlay");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "slowIAOverlay";
+  overlay.className = "slow-ia-overlay";
+  overlay.hidden = true;
+  overlay.setAttribute("role", "dialog");
+  overlay.setAttribute("aria-modal", "true");
+  overlay.setAttribute("aria-labelledby", "slowIAOverlayQuery");
+  overlay.innerHTML = `
+    <div class="slow-ia-overlay-panel">
+      <button type="button" class="slow-ia-overlay-close" aria-label="Cerrar respuesta IA">×</button>
+      <p id="slowIAOverlayQuery" class="slow-ia-overlay-query"></p>
+      <p class="slow-ia-overlay-reply"></p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const panel = overlay.querySelector(".slow-ia-overlay-panel");
+  overlay.querySelector(".slow-ia-overlay-close")?.addEventListener("click", () => hideSlowIAOverlay());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) hideSlowIAOverlay();
+  });
+  panel?.addEventListener("touchstart", (e) => {
+    readerState.iaOverlayTouchStartY = e.changedTouches?.[0]?.clientY || 0;
+  }, { passive: true });
+  panel?.addEventListener("touchend", (e) => {
+    const dy = (e.changedTouches?.[0]?.clientY || 0) - readerState.iaOverlayTouchStartY;
+    if (dy > 50) hideSlowIAOverlay();
+  }, { passive: true });
+
+  return overlay;
+}
+
+export function isSlowIAOverlayOpen() {
+  return Boolean(readerState.iaOverlayOpen);
+}
+
+export function showSlowIAOverlay({ query = "", reply = "", loading = false } = {}) {
+  const overlay = ensureIAOverlay();
+  const queryEl = overlay.querySelector(".slow-ia-overlay-query");
+  const replyEl = overlay.querySelector(".slow-ia-overlay-reply");
+  if (queryEl) queryEl.textContent = String(query || "").trim() || "Consulta IA";
+  if (replyEl) {
+    replyEl.textContent = loading ? "Pensando…" : String(reply || "").trim();
+    replyEl.classList.toggle("slow-ia-overlay-reply--loading", loading);
   }
+  overlay.hidden = false;
+  readerState.iaOverlayOpen = true;
+  overlay.querySelector(".slow-ia-overlay-close")?.focus();
+}
+
+export function showSlowIAOverlayFromAnnotation(ann) {
+  const query =
+    ann?.userText ||
+    (ann?.type === "⇑" ? "Steel man del fragmento" : "Explica este fragmento");
+  showSlowIAOverlay({ query, reply: ann?.aiReply || "" });
+}
+
+export function hideSlowIAOverlay() {
+  const overlay = document.getElementById("slowIAOverlay");
+  if (overlay) overlay.hidden = true;
+  readerState.iaOverlayOpen = false;
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  if (pageEl) {
+    if (!pageEl.hasAttribute("tabindex")) pageEl.setAttribute("tabindex", "-1");
+    pageEl.focus({ preventScroll: true });
+  }
+}
+
+function ensureSteelManNudgeModal() {
+  let modal = document.getElementById("slowSteelManNudge");
+  if (modal) return modal;
+  modal = document.createElement("div");
+  modal.id = "slowSteelManNudge";
+  modal.className = "slow-steelman-nudge";
+  modal.hidden = true;
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-labelledby", "slowSteelManNudgeTitle");
+  modal.innerHTML = `
+    <div class="slow-steelman-nudge-panel">
+      <p id="slowSteelManNudgeTitle" class="slow-steelman-nudge-title">¿Has formulado el mejor argumento del autor?</p>
+      <p class="slow-steelman-nudge-hint">Antes de objetar, conviene articular la versión más fuerte del texto (steel man).</p>
+      <div class="slow-steelman-nudge-actions">
+        <button type="button" class="btn btn-primary slow-steelman-nudge-steel">Pedir steel man</button>
+        <button type="button" class="btn btn-secondary slow-steelman-nudge-continue">Continuar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+export function isSlowSteelManNudgeOpen() {
+  return Boolean(readerState.steelManNudgeOpen);
+}
+
+export function hideSteelManNudgeModal() {
+  const modal = document.getElementById("slowSteelManNudge");
+  if (modal) modal.hidden = true;
+  readerState.steelManNudgeOpen = false;
+}
+
+export function showSteelManNudgeModal(session, ann, { onSteelMan, onContinue } = {}) {
+  const modal = ensureSteelManNudgeModal();
+  modal.hidden = false;
+  readerState.steelManNudgeOpen = true;
+  const steelBtn = modal.querySelector(".slow-steelman-nudge-steel");
+  const continueBtn = modal.querySelector(".slow-steelman-nudge-continue");
+  const handleSteel = () => {
+    hideSteelManNudgeModal();
+    onSteelMan?.();
+  };
+  const handleContinue = () => {
+    if (session?.slow && ann?.id) {
+      updateAnnotation(session, ann.id, { skippedSteelMan: true });
+      storeActiveSession(session);
+    }
+    hideSteelManNudgeModal();
+    onContinue?.();
+  };
+  steelBtn?.replaceWith(steelBtn.cloneNode(true));
+  continueBtn?.replaceWith(continueBtn.cloneNode(true));
+  modal.querySelector(".slow-steelman-nudge-steel")?.addEventListener("click", handleSteel);
+  modal.querySelector(".slow-steelman-nudge-continue")?.addEventListener("click", handleContinue);
+  modal.querySelector(".slow-steelman-nudge-steel")?.focus();
+}
+
+async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "⇑") {
+  if (!session?.slow || !ann) return;
+  const queryText =
+    userText ||
+    (typeSymbol === "⇑" ? "Steel man del fragmento" : "Explica este fragmento");
+  showSlowIAOverlay({ query: queryText, loading: true });
+  try {
+    const reply = await askSlowReaderIA(session, userText || "Explica este fragmento", {
+      annotationType: typeSymbol,
+    });
+    ann.aiReply = reply;
+    storeActiveSession(session);
+    showSlowIAOverlay({ query: queryText, reply });
+    renderSlowSidebar(session, {
+      breakpoints: readerState.breakpoints,
+      scopeText: getScopeText(session),
+    });
+  } catch {
+    showSlowIAOverlay({
+      query: queryText,
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+    });
+  }
+}
+
+async function requestSteelManForRange(session, offsets, userText = "") {
+  if (!session?.slow || !offsets) return null;
+  const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "⇑");
+  if (!steelType) return null;
+  const ann = addAnnotation(session, {
+    type: steelType.symbol,
+    charStart: offsets.charStart,
+    charEnd: offsets.charEnd,
+    userText,
+  });
+  storeActiveSession(session);
+  renderSlowReaderPage(session);
+  if (ann) await runSteelManIAFlow(session, ann, userText);
+  return ann;
+}
+
+function maybeShowSteelManNudge(session, ann) {
+  if (!session?.slow || !ann) return;
+  if (!shouldShowSteelManNudge(session.slow.annotations, ann)) return;
+  showSteelManNudgeModal(session, ann, {
+    onSteelMan: () => {
+      void requestSteelManForRange(session, {
+        charStart: ann.charStart,
+        charEnd: ann.charEnd,
+      });
+    },
+  });
+}
+
+async function handleSidebarIAQuery(session, queryText) {
+  if (!session?.slow) return;
+  const savedPage = session.slow.currentPageIndex;
+  const anchor = getReadAnchor(session);
+  showSlowIAOverlay({ query: queryText, loading: true });
+  try {
+    const reply = await askSlowReaderIA(session, queryText);
+    addIAQueryAnnotation(session, {
+      userText: queryText,
+      charStart: anchor.charStart,
+      charEnd: anchor.charEnd,
+      aiReply: reply,
+    });
+    storeActiveSession(session);
+    showSlowIAOverlay({ query: queryText, reply });
+    renderSlowSidebar(session, {
+      breakpoints: readerState.breakpoints,
+      scopeText: getScopeText(session),
+    });
+  } catch {
+    showSlowIAOverlay({
+      query: queryText,
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+    });
+  }
+  session.slow.currentPageIndex = savedPage;
+}
+
+export function getReaderBreakpoints() {
+  return readerState.breakpoints;
+}
+
+function navigateToAnnotation(session, annotation) {
+  if (!session?.slow || !annotation) return;
+  const page = charOffsetToPage(readerState.breakpoints, annotation.charStart);
+  goToReaderPage(session, page);
+  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  highlightRange(pageEl, slice, annotation.charStart, annotation.charEnd);
+}
+
+setAnnotationNavigator(navigateToAnnotation);
+
+function showFindingToast(conceptTerm) {
+  let toast = document.getElementById("slowFindingToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "slowFindingToast";
+    toast.className = "slow-finding-toast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `✦  HALLAZGO · ${conceptTerm}`;
+  toast.hidden = false;
+  clearTimeout(showFindingToast._timer);
+  showFindingToast._timer = setTimeout(() => {
+    toast.hidden = true;
+  }, 3500);
+}
+
+function renderFillableMapPanel(session) {
+  const slow = session?.slow;
+  let panel = document.getElementById("slowFillableMapPanel");
+  if (!slow?.fillableMapMode || !slow.phase0?.fillableBlanks?.length) {
+    if (panel) panel.hidden = true;
+    return;
+  }
+  if (!panel) {
+    panel = document.createElement("div");
+    panel.id = "slowFillableMapPanel";
+    panel.className = "slow-fillable-map-panel";
+    panel.setAttribute("aria-label", "Fillable argument map");
+    const toolbar = document.querySelector(".slow-reader-toolbar");
+    if (toolbar) toolbar.insertAdjacentElement("afterend", panel);
+    else document.body.appendChild(panel);
+  }
+  panel.hidden = false;
+  panel.innerHTML = "";
+  const title = document.createElement("p");
+  title.className = "slow-fillable-map-title";
+  title.textContent = "Mapa rellenable";
+  panel.appendChild(title);
+  const list = document.createElement("ul");
+  list.className = "slow-fillable-map-list";
+  for (const blank of slow.phase0.fillableBlanks) {
+    const li = document.createElement("li");
+    const label = document.createElement("span");
+    label.className = "slow-fillable-map-node";
+    label.textContent = `${blank.nodeId}:`;
+    const value = document.createElement("span");
+    value.className = "slow-fillable-map-value";
+    if (blank.userText) {
+      const page =
+        blank.pageIndex != null ? ` (p. ${Number(blank.pageIndex) + 1})` : "";
+      value.textContent = `${blank.userText}${page}`;
+    } else {
+      value.textContent = "___";
+      value.classList.add("slow-fillable-map-empty");
+    }
+    li.appendChild(label);
+    li.appendChild(value);
+    list.appendChild(li);
+  }
+  panel.appendChild(list);
 }
 
 export function renderSlowReaderPage(session) {
@@ -122,6 +747,8 @@ export function renderSlowReaderPage(session) {
   updateMaxReadCharEnd(session);
   renderProgress(session);
   renderMarginMarks(session, slice);
+  renderFillableMapPanel(session);
+  renderSlowSidebar(session, { breakpoints: readerState.breakpoints, scopeText });
   maybeScheduleCheckpoint(session, readerState.breakpoints, idx, () => renderSlowReaderPage(session));
   storeActiveSession(session);
 }
@@ -131,6 +758,8 @@ export function goToReaderPage(session, pageIndex) {
   const idx = Math.min(Math.max(0, Math.floor(Number(pageIndex) || 0)), Math.max(0, total - 1));
   session.slow.currentPageIndex = idx;
   hideAnnotationMenu();
+  hideAnnotationEditMenu();
+  hideConceptPicker();
   readerState.pendingSelection = null;
   renderSlowReaderPage(session);
 }
@@ -292,6 +921,13 @@ function beginAnnotationNote(session, typeDef) {
   if (!notePanel || !label || !input) return;
   label.textContent = `${typeDef.symbol} ${typeDef.label}`;
   input.value = "";
+  if (typeDef.symbol === "🔗") {
+    input.placeholder = "URL o nota de literatura — Enter para guardar";
+  } else if (typeDef.symbol === "⟷") {
+    input.placeholder = "Describe la conexión — Enter para elegir concepto";
+  } else {
+    input.placeholder = "Nota (opcional) — Enter para guardar";
+  }
   notePanel.hidden = false;
   positionAnnotationMenu(menu, readerState.pendingSelection.rect);
   input.focus();
@@ -299,6 +935,7 @@ function beginAnnotationNote(session, typeDef) {
 
 async function commitAnnotation(session, typeDef, offsets, userText) {
   if (!session?.slow || !typeDef || !offsets) return;
+  const anchorRect = readerState.pendingSelection?.rect;
   const ann = addAnnotation(session, {
     type: typeDef.symbol,
     charStart: offsets.charStart,
@@ -308,18 +945,34 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
   hideAnnotationMenu();
   readerState.pendingSelection = null;
   window.getSelection?.()?.removeAllRanges?.();
-  if (ann) matchConceptFindings(session, ann);
-  if (typeDef.symbol === "⚑" || typeDef.symbol === "⇑") {
-    try {
-      const reply = await askSlowReaderIA(session, userText || "Explica este fragmento", {
-        annotationType: typeDef.symbol,
-      });
-      ann.aiReply = reply;
-    } catch {
-      // ignore IA errors in annotation flow
+  if (ann) {
+    const finding = matchConceptFindings(session, ann);
+    if (finding?.revealedInPhase1) showFindingToast(finding.conceptTerm);
+    if (session.slow.fillableMapMode) {
+      fillBlankFromAnnotation(session, ann, session.slow.currentPageIndex);
+    }
+    if (typeDef.symbol === "🔗" && userText) {
+      addLiteratureGraphLink(session, ann.id, userText);
+      storeActiveSession(session);
     }
   }
   renderSlowReaderPage(session);
+
+  if (typeDef.symbol === "⟷" && ann) {
+    const picked = await showConceptPicker(session, { anchorRect });
+    if (picked) {
+      addGraphLink(session, ann.id, { termId: picked.termId, relation: userText });
+      storeActiveSession(session);
+      renderSlowReaderPage(session);
+    }
+  }
+
+  if (typeDef.symbol === "⚑" || typeDef.symbol === "⇑") {
+    await runSteelManIAFlow(session, ann, userText, typeDef.symbol);
+  }
+  if (["⊘", "↯", "⚠"].includes(typeDef.symbol)) {
+    maybeShowSteelManNudge(session, ann);
+  }
 }
 
 function tryHotkeyAnnotation(session, key) {
@@ -338,6 +991,40 @@ function onSlowReaderKeydown(e) {
   if (!isSlowReaderActive()) return;
   const session = stateSession();
   if (!session?.slow) return;
+
+  if (isSlowIAOverlayOpen()) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      hideSlowIAOverlay();
+    }
+    return;
+  }
+
+  if (isSlowSteelManNudgeOpen()) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      const session = stateSession();
+      const modal = document.getElementById("slowSteelManNudge");
+      modal?.querySelector(".slow-steelman-nudge-continue")?.click();
+    }
+    return;
+  }
+
+  const editMenu = document.getElementById("slowAnnotationEditMenu");
+  if (editMenu && !editMenu.hidden) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      const draft = readerState.editDraft;
+      if (draft?.mode === "type" || draft?.mode === "text") {
+        const ann = findAnnotation(session, draft.annId);
+        if (ann) showAnnotationEditMenu(session, ann, editMenu.getBoundingClientRect());
+        else hideAnnotationEditMenu();
+      } else {
+        hideAnnotationEditMenu();
+      }
+    }
+    return;
+  }
 
   const menu = document.getElementById("slowAnnotationMenu");
   const noteInput = menu?.querySelector(".slow-annotation-note-input");
@@ -394,6 +1081,9 @@ export function initSlowReader(session) {
   }
 
   renderSlowReaderPage(session);
+  wireSidebarToggle(stateSession);
+  setIAReplyViewer(showSlowIAOverlayFromAnnotation);
+  wireSidebarIAInput(stateSession, handleSidebarIAQuery);
 
   if (wired) return;
   wired = true;
@@ -420,7 +1110,11 @@ export function initSlowReader(session) {
     s.slow.phase = "phase3";
     storeActiveSession(s);
     showScreen("slowPhase3");
-    void initPhase3Screen(s, document.getElementById("slowPhase3Content"));
+    void initPhase3Screen(
+      s,
+      document.getElementById("slowPhase3Content"),
+      document.getElementById("slowPhase3Modules"),
+    );
   });
 
   els.slowReaderPage?.addEventListener("mouseup", () => {
@@ -431,16 +1125,42 @@ export function initSlowReader(session) {
   document.addEventListener("keydown", onSlowReaderKeydown);
 
   let touchStartX = 0;
+  let touchStartY = 0;
+  let pageLongPressTimer = null;
+  let pageLongPressFired = false;
+
   els.slowReaderPage?.addEventListener("touchstart", (e) => {
     touchStartX = e.changedTouches?.[0]?.clientX || 0;
+    touchStartY = e.changedTouches?.[0]?.clientY || 0;
+    pageLongPressFired = false;
+    if (pageLongPressTimer) clearTimeout(pageLongPressTimer);
+    const x = touchStartX;
+    const y = touchStartY;
+    pageLongPressTimer = setTimeout(() => {
+      pageLongPressFired = true;
+      void handleWordLongPress(stateSession(), x, y);
+    }, LONG_PRESS_MS);
   }, { passive: true });
   els.slowReaderPage?.addEventListener("touchend", (e) => {
+    if (pageLongPressTimer) clearTimeout(pageLongPressTimer);
+    pageLongPressTimer = null;
+    if (pageLongPressFired) return;
     const dx = (e.changedTouches?.[0]?.clientX || 0) - touchStartX;
     if (Math.abs(dx) < 40) return;
     const s = stateSession();
     if (dx < 0) goToReaderPage(s, (s?.slow?.currentPageIndex || 0) + 1);
     else goToReaderPage(s, (s?.slow?.currentPageIndex || 0) - 1);
   }, { passive: true });
+  els.slowReaderPage?.addEventListener("touchcancel", () => {
+    if (pageLongPressTimer) clearTimeout(pageLongPressTimer);
+    pageLongPressTimer = null;
+  }, { passive: true });
+
+  els.slowReaderPage?.addEventListener("contextmenu", (e) => {
+    if (!isSlowReaderActive()) return;
+    e.preventDefault();
+    void handleWordLongPress(stateSession(), e.clientX, e.clientY);
+  });
 
   document.getElementById("slowFontSmallerBtn")?.addEventListener("click", () => {
     const s = stateSession();

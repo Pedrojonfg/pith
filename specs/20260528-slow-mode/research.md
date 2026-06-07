@@ -113,3 +113,46 @@
 **Decision**: Tests en `cursor-tests/20260528_t*.mjs` para: pagination breakpoints, offset anchoring, phase0 threshold split, sessionsByMode migration, anti-spoiler slice. Manual via `quickstart.md`.
 
 **Rationale**: Alineado con convención del repo; sin framework nuevo.
+
+---
+
+## Wave 2 — Gaps `slow_mode_spec.md`
+
+### R13 — Sidebar reader (iAnnotate / Perlego)
+
+**Decision**: Activar `#slowReaderSidebar` (20% derecho, colapsable con tab). Tres secciones: **Mis anotaciones** (agrupadas por tipo con contador), **Diccionario** (`getSortedSessionConcepts()` + conceptos Fase 0), **Preguntar a IA** (textarea + historial de la sesión slow).
+
+**Rationale**: Spec §5 layout; hoy sidebar existe en HTML pero `hidden` y vacía.
+
+### R14 — Tap-to-source
+
+**Decision**: Click en ítem sidebar o marca margen → `charOffsetToPage` + `goToReaderPage` + highlight temporal del rango (`charStart`/`charEnd`). Margen: posición Y derivada del offset dentro de la página (medir con Range en texto renderizado).
+
+**Alternatives**: Solo sidebar tap (sin Y en margen) — descartado; spec exige anclaje espacial.
+
+### R15 — Fase 0 editable y re-lectura
+
+**Decision**:
+- Campos editables: prequestions[], argumentMap edit, conceptos extra del diccionario.
+- `fillableMapMode`: toggle en scope screen; `fillableBlanks` rellenables durante Fase 1 con ref página.
+- Re-lectura: flag `phase0Seen` por `(materialHash, scope)` → Fase 0 colapsada; primera lectura sin botón skip (solo colapsar).
+
+### R16 — Phase 3 correspondencia real
+
+**Decision**: `comparePhase0ToAnnotations()` usa offsets reales de anotaciones + proximidad ±200 chars; muestra página derivada, snippet usuario, conceptos 3/5, weak points 2/3. Módulos A/B/C **elegibles** con picker UI.
+
+### R17 — Grafo enriquecido
+
+**Decision**: Pantalla `screenSlowGraph` o overlay; nodos `[Texto]` desde `session_concepts` + `[Pedro:]` desde anotaciones; edges desde `graphLinks` y críticas (`cuestiona`/`refuta`). Sin canvas LiquidText en v2 — lista/árbol navegable + export; canvas opcional backlog.
+
+### R18 — Steel-man pedagogy
+
+**Decision**: Soft gate (no bloqueo duro): al confirmar `⊘`/`↯`/`⚠` sin anotación `⇑` o `≈` previa en ±500 chars, modal educativo con opción "Continuar igual" / "Pedir steel man". Depth score: multiplicador ×1.25 tipos críticos si `criticalMode`.
+
+### R19 — Checkpoint IA
+
+**Decision**: `generateCheckpointQuestion(section, phase0.argumentMap, iaContext)` — una pregunta integración; evaluación profundidad opcional en Fase 3 (no bloquea lectura).
+
+### R20 — Triage §13
+
+**Decision**: Panel expandible bajo selector de modo con matriz resumida (3 filas) + heurística "¿POR QUÉ o QUÉ?" — copy estático, sin IA.

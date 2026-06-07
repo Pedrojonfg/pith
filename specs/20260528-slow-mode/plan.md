@@ -63,7 +63,11 @@ specs/20260528-slow-mode/
 │   ├── phase0-orientation-ia.md
 │   ├── phase1-reader-ia.md
 │   ├── phase2-checkpoints.md
-│   └── phase3-consolidation.md
+│   ├── phase3-consolidation.md
+│   ├── reader-sidebar-tap-to-source.md
+│   ├── phase0-editing-fillable.md
+│   ├── graph-enriched-view.md
+│   └── critical-pedagogy-phase3-rich.md
 └── tasks.md                    # /speckit-tasks
 ```
 
@@ -166,3 +170,32 @@ T01 → T02 → T03 → T04 ─┬→ T05 → T07 → T08 ─┬→ T09 ─┐
 | Map-reduce Fase 0 | Textos filosóficos largos; umbral 60k del clarify |
 
 No violaciones de constitution; complejidad acotada a módulos `slow/`.
+
+---
+
+## Wave 2 — Completar `slow_mode_spec.md` (gaps UX/pedagogía)
+
+**Estado Wave 1** (T01–T15 original): implementado en `src/js/slow/` — pipeline vertical (modo, scope, Fase 0 IA, reader paginado, anotaciones, checkpoints básicos, Phase 3 stub, export). Ver auditoría en `ROADMAP.md` § Wave 1.
+
+**Objetivo Wave 2**: cerrar diferenciadores del diseño no implementados — sidebar iAnnotate, Fase 0 editable, grafo enriquecido, pedagogía modo crítico, Phase 3 real, triage §13.
+
+### Descomposición Wave 2
+
+| ID | Tarea | Dep. | Complejidad |
+|----|-------|------|-------------|
+| T01 | Sidebar reader (anotaciones + diccionario + IA) | — | L |
+| T02 | Tap-to-source + marcas margen ancladas Y | T01 | M |
+| T03 | Overlay IA + anotaciones tipo query | T01 | M |
+| T04 | Fase 0 editable + mapa rellenable + re-lectura | — | L |
+| T05 | Gestos: long-press editar + ⟷ enlace grafo | T02, T01 | M |
+| T06 | Checkpoints IA desde mapa argumental | T04 | M |
+| T07 | Steel-man nudges + depth score modo crítico | T03 | M |
+| T08 | Phase 3 módulos reales A/B + picker | T02, T04 | L |
+| T09 | Abogado del diablo + retrieval por tipo | T08 | M |
+| T10 | UI depth score + hallazgos + feedback calidad | T08 | M |
+| T11 | Vista grafo enriquecida 2 capas | T05, T08 | L |
+| T12 | Flashcards UI → spaced repetition | T08 | M |
+| T13 | Triage matriz §13 en selector modo | — | S |
+| T14 | QA Wave 2 + quickstart ampliado | T03–T13 | M |
+
+**ROADMAP activo**: `ROADMAP.md` (Wave 2 con prompts).

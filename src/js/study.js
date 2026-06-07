@@ -133,6 +133,44 @@ import {
   wireMaterialGraphScreen,
 } from "./graph/view.js?v=20260607_1";
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
+import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260607_1";
+import { enterClozeStudyScreen, wireClozeStudyHandlers } from "./cloze/study.js?v=20260607_1";
+
+export function createClozeSession({
+  normalizedText,
+  normalizedFormat,
+  fileName,
+  originalFormat,
+  llmModel,
+  language,
+}) {
+  const lang = String(language || getStudyLanguage()).trim() || "English";
+  return {
+    studyMode: "cloze",
+    rev: 0,
+    language: lang,
+    llmModel: normalizeLlmModel(llmModel),
+    materialMeta: {
+      fileName: String(fileName || "").trim(),
+      originalFormat: String(originalFormat || "").trim(),
+      uploadedAt: new Date().toISOString(),
+    },
+    cloze: {
+      normalizedText: String(normalizedText || ""),
+      normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
+      pipelineStatus: "normalized",
+      pipelinePhase: null,
+      pipelineError: null,
+      epistemicGraph: null,
+      analysis: null,
+      items: [],
+      studyIndex: 0,
+      studyStats: { correct: 0, shown: 0 },
+      studyOrder: null,
+      generationMeta: null,
+    },
+  };
+}
 
 export function createSlowSession({
   normalizedText,
@@ -186,7 +224,9 @@ function getSelectedStudyModeRadio() {
 }
 
 function getStudyModeLabel(mode) {
-  return mode === "slow" ? "Slow Mode" : "RSVP";
+  if (mode === "slow") return "Slow Mode";
+  if (mode === "cloze") return "Cloze Detection";
+  return "RSVP";
 }
 
 function setStudyModeRadio(mode) {
@@ -229,12 +269,14 @@ function returnToCreateScreen() {
 function updateCreateScreenModeVisibility(mode) {
   const isSlow = mode === "slow";
   const isRsvp = mode === "rsvp";
+  const isCloze = mode === "cloze";
   if (els.rsvpOnlyControls) els.rsvpOnlyControls.hidden = !isRsvp;
   if (els.rsvpBlocksSection) els.rsvpBlocksSection.hidden = !isRsvp;
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (els.generateBlocksBtn) {
-    els.generateBlocksBtn.textContent = isSlow ? "Upload and continue →" : "Generate blocks";
+    els.generateBlocksBtn.textContent =
+      isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
 }
@@ -242,8 +284,143 @@ function updateCreateScreenModeVisibility(mode) {
 function resetCreateScreenModeUi() {
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
   if (els.createModeLabel) els.createModeLabel.textContent = "";
   updateCreateScreenModeVisibility(null);
+}
+
+function updateClozeSessionPanel(session) {
+  const cloze = session?.cloze;
+  const isCloze = session?.studyMode === "cloze" && cloze;
+  if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = !isCloze;
+  if (!isCloze) return;
+
+  const status = String(cloze.pipelineStatus || "normalized");
+  const validCount = getValidItems(cloze.items || []).length;
+  const hasGraph = Boolean(cloze.epistemicGraph?.nodes?.length);
+  const generating = status === "generating" || /^phase\d$/.test(status);
+  const ready = status === "ready";
+  const failed = status === "failed";
+
+  if (els.clozePipelineProgress) {
+    if (generating && cloze.pipelinePhase != null) {
+      const phaseNum = Number(cloze.pipelinePhase);
+      els.clozePipelineProgress.textContent = `Generando ítems — Fase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
+    } else if (ready) {
+      els.clozePipelineProgress.textContent = "Ítems listos.";
+    } else if (failed) {
+      els.clozePipelineProgress.textContent = "";
+    } else {
+      els.clozePipelineProgress.textContent = "Material normalizado. Pulsa Generar ítems para iniciar el pipeline.";
+    }
+  }
+
+  if (els.clozeReadySummary) {
+    if (ready && validCount > 0) {
+      els.clozeReadySummary.hidden = false;
+      els.clozeReadySummary.textContent = `${validCount} ítems validados listos para estudiar.`;
+    } else {
+      els.clozeReadySummary.hidden = true;
+      els.clozeReadySummary.textContent = "";
+    }
+  }
+
+  if (els.clozeGenerateBtn) {
+    els.clozeGenerateBtn.hidden = ready;
+    els.clozeGenerateBtn.disabled = generating;
+    els.clozeGenerateBtn.textContent = failed ? "Reintentar" : "Generar ítems";
+  }
+  if (els.clozeStudyBtn) {
+    els.clozeStudyBtn.hidden = !(ready && validCount > 0);
+  }
+  if (els.clozeViewGraphBtn) {
+    els.clozeViewGraphBtn.hidden = !hasGraph;
+  }
+  if (els.clozePipelineError) {
+    els.clozePipelineError.hidden = !failed || !cloze.pipelineError;
+    els.clozePipelineError.textContent = failed ? String(cloze.pipelineError || "Error en el pipeline.") : "";
+  }
+}
+
+function resumeClozeSession(session) {
+  if (session?.language) syncStudyLanguage(session.language);
+  state.activeSession = session;
+  state.studyMode = "cloze";
+  storeActiveSession(session);
+  if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+  updateClozeSessionPanel(session);
+  showScreen("create");
+  if (session?.cloze?.pipelineStatus === "ready" && getValidItems(session.cloze.items || []).length > 0) {
+    // User can tap Estudiar; optional auto-navigate deferred.
+  }
+}
+
+let clozePipelineRunning = false;
+
+async function runClozeGeneration(session) {
+  if (!session?.cloze || clozePipelineRunning) return;
+  const llmModel = normalizeLlmModel(session.llmModel || els.llmModelSelect?.value);
+  try {
+    assertLlmKeyPresent(llmModel);
+  } catch (err) {
+    if (els.clozePipelineError) {
+      els.clozePipelineError.hidden = false;
+      els.clozePipelineError.textContent = err?.message ? String(err.message) : String(err);
+    }
+    return;
+  }
+
+  clozePipelineRunning = true;
+  session.llmModel = llmModel;
+  session.cloze.pipelineStatus = "generating";
+  session.cloze.pipelineError = null;
+  session.cloze.pipelinePhase = 0;
+  updateClozeSessionPanel(session);
+  storeActiveSession(session);
+
+  try {
+    const result = await runClozePipelinePhases(session.cloze.normalizedText, session, {
+      onPhase(phaseIndex, statusKey, partial = {}) {
+        session.cloze.pipelinePhase = phaseIndex;
+        session.cloze.pipelineStatus = statusKey;
+        if (partial.epistemicGraph) session.cloze.epistemicGraph = partial.epistemicGraph;
+        if (partial.analysis) session.cloze.analysis = partial.analysis;
+        if (partial.items) session.cloze.items = partial.items;
+        updateClozeSessionPanel(session);
+        storeActiveSession(session);
+      },
+    });
+
+    session.cloze.epistemicGraph = result.epistemicGraph;
+    session.cloze.analysis = result.analysis;
+    session.cloze.items = result.items;
+    session.cloze.pipelineStatus = "ready";
+    session.cloze.pipelinePhase = null;
+    session.cloze.pipelineError = null;
+    session.cloze.generationMeta = {
+      completedAt: new Date().toISOString(),
+      itemCounts: {
+        total: result.items.length,
+        valid: result.validItems.length,
+      },
+    };
+    updateClozeSessionPanel(session);
+    storeActiveSession(session);
+  } catch (err) {
+    session.cloze.pipelineStatus = "failed";
+    session.cloze.pipelineError = err?.message ? String(err.message) : String(err);
+    updateClozeSessionPanel(session);
+    storeActiveSession(session);
+  } finally {
+    clozePipelineRunning = false;
+  }
+}
+
+function mountClozeGraph(session) {
+  if (!els.clozeGraphMount || !session?.cloze?.epistemicGraph) return;
+  els.clozeGraphMount.hidden = false;
+  mountMaterialGraphScreen(session, els.clozeGraphMount, { mode: "cloze" });
 }
 
 function showModeResumeOrUpload(mode) {
@@ -254,7 +431,7 @@ function showModeResumeOrUpload(mode) {
     if (els.modeResumePanel) {
       els.modeResumePanel.hidden = false;
       if (els.modeResumeHint) {
-        const label = mode === "slow" ? "Slow Mode" : "RSVP";
+        const label = getStudyModeLabel(mode);
         els.modeResumeHint.textContent = `You have a saved ${label} session. Continue where you left off or start fresh.`;
       }
     }
@@ -900,6 +1077,7 @@ function wireStudyModeSelector() {
     const session = loadSessionForMode(mode);
     if (!session) return;
     if (mode === "slow") resumeSlowSession(session);
+    else if (mode === "cloze") resumeClozeSession(session);
     else resumeRsvpSession(session);
   });
 
@@ -915,6 +1093,7 @@ function wireStudyModeSelector() {
     }
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+    if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
     state.studyMode = mode;
     updateCreateScreenModeVisibility(mode);
   });
@@ -3083,6 +3262,19 @@ export function wireStudyHandlers() {
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
   wireMaterialGraphHandlers();
+  wireClozeStudyHandlers();
+  els.clozeGenerateBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (session?.studyMode === "cloze") void runClozeGeneration(session);
+  });
+  els.clozeStudyBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (session?.studyMode === "cloze") enterClozeStudyScreen(session);
+  });
+  els.clozeViewGraphBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (session?.studyMode === "cloze") mountClozeGraph(session);
+  });
   resetCreateScreenModeUi();
 
   setBlockReadContentProvider(() => {
@@ -3910,10 +4102,50 @@ export function wireStudyHandlers() {
     e.preventDefault();
     const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
     if (!selectedMode) {
-      setGenerateError("Please choose RSVP or Slow Mode first.");
+      setGenerateError("Please choose a study mode first.");
       return;
     }
     state.studyMode = selectedMode;
+
+    if (selectedMode === "cloze") {
+      if (isOfflineMode()) {
+        setGenerateError("Offline pack is only available in RSVP mode.");
+        return;
+      }
+      clearGenerateError();
+      els.generateBlocksStatus.textContent = "";
+      const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
+      const file = fileList[0];
+      if (!file) {
+        setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
+        return;
+      }
+      setGenerateLoading(true);
+      try {
+        const { cleanedText, normalizedFormat, originalFormat } = await readAndCleanMaterialText(file);
+        if (!cleanedText.trim()) throw new Error("File appears to be empty.");
+        const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+        const sessionObj = createClozeSession({
+          normalizedText: cleanedText,
+          normalizedFormat,
+          fileName: file.name,
+          originalFormat,
+          llmModel,
+          language: getStudyLanguage(),
+        });
+        state.activeSession = sessionObj;
+        storeActiveSession(sessionObj);
+        if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+        updateClozeSessionPanel(sessionObj);
+        showScreen("create");
+      } catch (err) {
+        setGenerateError(err?.message ? String(err.message) : String(err));
+      } finally {
+        setGenerateLoading(false);
+        els.generateBlocksStatus.textContent = "";
+      }
+      return;
+    }
 
     if (selectedMode === "slow") {
       if (isOfflineMode()) {

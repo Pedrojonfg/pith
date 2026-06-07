@@ -8,6 +8,7 @@ import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-opt
 import { buildMarkdown } from "./export.js?v=20260525_1";
 import {
   LS_REVIEW_CONFIG_PREFIX,
+  LS_REVIEW_FLASHCARDS_PREFIX,
   LS_REVIEW_SESSION_MD_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
 } from "./config.js?v=20260525_1";
@@ -28,6 +29,138 @@ let reviewTestTotal = 0;
 let reviewAnswers = [];
 let reviewGenCancelToken = { cancelled: false };
 let reviewSessionContent = "";
+
+export const SLOW_FLASHCARD_SOURCE = "slow_mode";
+
+export function slowFlashcardsStorageKey(sessionId) {
+  const id = String(sessionId || "").trim();
+  return id ? `${LS_REVIEW_FLASHCARDS_PREFIX}${id}` : "";
+}
+
+export function normalizeSlowFlashcardPayload(payload) {
+  const obj = payload && typeof payload === "object" ? payload : {};
+  const front = String(obj.front || "").trim();
+  const back = String(obj.back || "").trim();
+  const annotationId = String(obj.annotationId || "").trim();
+  if (!front || !annotationId) return null;
+  return {
+    front,
+    back: back || "Retrieval from Slow Mode annotation",
+    source: String(obj.source || SLOW_FLASHCARD_SOURCE).trim() || SLOW_FLASHCARD_SOURCE,
+    annotationId,
+    addedAt: Number(obj.addedAt) || Date.now(),
+  };
+}
+
+export function loadSlowFlashcards(sessionId) {
+  const key = slowFlashcardsStorageKey(sessionId);
+  if (!key) return [];
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw || !raw.trim()) return [];
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.map(normalizeSlowFlashcardPayload).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+export function saveSlowFlashcards(sessionId, cards) {
+  const key = slowFlashcardsStorageKey(sessionId);
+  if (!key) return;
+  const list = (Array.isArray(cards) ? cards : [])
+    .map(normalizeSlowFlashcardPayload)
+    .filter(Boolean);
+  try {
+    localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function getSlowFlashcardAnnotationIds(sessionId) {
+  return new Set(loadSlowFlashcards(sessionId).map((c) => c.annotationId));
+}
+
+export function addSlowFlashcards(sessionId, payloads) {
+  const existing = loadSlowFlashcards(sessionId);
+  const byAnnId = new Map(existing.map((c) => [c.annotationId, c]));
+  let added = 0;
+  for (const raw of Array.isArray(payloads) ? payloads : []) {
+    const norm = normalizeSlowFlashcardPayload(raw);
+    if (!norm || byAnnId.has(norm.annotationId)) continue;
+    byAnnId.set(norm.annotationId, norm);
+    added += 1;
+  }
+  const next = [...byAnnId.values()].sort((a, b) => a.addedAt - b.addedAt);
+  saveSlowFlashcards(sessionId, next);
+  return { added, total: next.length, cards: next };
+}
+
+export function addSlowFlashcardFromPayload(sessionId, payload) {
+  return addSlowFlashcards(sessionId, [payload]);
+}
+
+export function formatSlowFlashcardsForReview(cards) {
+  const list = Array.isArray(cards) ? cards : [];
+  if (!list.length) return "";
+  const lines = ["SPACED REPETITION FLASHCARDS (from Slow Mode annotations):"];
+  for (const c of list) {
+    lines.push(`- Front: ${c.front}`);
+    lines.push(`  Back: ${c.back}`);
+  }
+  return lines.join("\n");
+}
+
+function renderReviewFlashcardQueue(sessionId) {
+  const card = els.screenReviewConfig?.querySelector(".card");
+  if (!card) return;
+  let host = card.querySelector("#reviewFlashcardQueue");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "reviewFlashcardQueue";
+    host.className = "review-flashcard-queue";
+    host.hidden = true;
+    const divider = document.createElement("div");
+    divider.className = "divider";
+    const blocksList = els.reviewBlocksList;
+    if (blocksList?.parentElement) {
+      blocksList.parentElement.insertBefore(divider, blocksList);
+      blocksList.parentElement.insertBefore(host, blocksList);
+    } else {
+      card.appendChild(divider);
+      card.appendChild(host);
+    }
+  }
+
+  const cards = loadSlowFlashcards(sessionId);
+  if (!cards.length) {
+    host.hidden = true;
+    host.innerHTML = "";
+    return;
+  }
+
+  host.hidden = false;
+  const items = cards
+    .map(
+      (c) =>
+        `<li class="review-flashcard-item"><span class="review-flashcard-front">${escapeReviewHtml(c.front)}</span></li>`,
+    )
+    .join("");
+  host.innerHTML = `
+    <label>Flashcards from Slow Mode (${cards.length})</label>
+    <p class="hint">These cards are included when you start a review session.</p>
+    <ul class="review-flashcard-list" aria-label="Queued flashcards">${items}</ul>`;
+}
+
+function escapeReviewHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function setReviewConfigError(msg) {
   els.reviewConfigError.hidden = false;
@@ -326,6 +459,10 @@ export function buildSessionContentForReview(selectedIndices = null) {
     extras.push(`SIDEBAR NOTES:\n${userNotes.map((t) => `- ${t}`).join("\n")}`);
   }
 
+  const sessionId = getActiveReviewSessionId();
+  const flashcardSection = formatSlowFlashcardsForReview(loadSlowFlashcards(sessionId));
+  if (flashcardSection) extras.push(flashcardSection);
+
   const out = [outlineLines.join("\n").trim(), baseExplanations, ...extras]
     .filter((section) => section && String(section).trim())
     .join("\n\n")
@@ -592,6 +729,7 @@ function showReviewConfig() {
   if (els.reviewFocusInput) {
     els.reviewFocusInput.value = draft ? String(draft.focus || "") : "";
   }
+  renderReviewFlashcardQueue(sessionId);
   setReviewType(reviewType);
   showScreen("reviewConfig");
 }
