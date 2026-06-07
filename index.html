@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="src/css/main.css" />
     <link rel="stylesheet" href="src/css/sidebar.css" />
     <link rel="stylesheet" href="src/css/slow-mode.css" />
+    <link rel="stylesheet" href="src/css/graph.css" />
   </head>
   <body>
     <aside id="block-read-sidebar" class="block-read-sidebar collapsed" hidden>
@@ -598,6 +599,7 @@
               </button>
               <span id="import-index-label-confirm" class="muted-label"></span>
             </div>
+            <div id="blocksGraphActions" class="blocks-graph-actions" hidden></div>
             <div class="row">
               <button type="button" id="confirmBlocksBtn" class="btn-primary">
                 Looks good, start session
@@ -1058,6 +1060,7 @@
             <div id="slowPhase0Progress" class="hint" hidden></div>
             <button type="button" id="slowPhase0CollapseBtn" class="slow-phase0-collapse-btn" hidden>Expand orientation</button>
             <div id="slowPhase0Content" class="slow-phase0-content"></div>
+            <div id="slowPhase0GraphActions" class="slow-phase0-graph-actions" hidden></div>
             <div id="slowPhase0Error" class="error" hidden></div>
             <div class="row">
               <button type="button" id="slowPhase0RetryBtn" hidden>Retry</button>
@@ -1142,13 +1145,14 @@
           </div>
         </section>
 
-        <section id="screenSlowGraph" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode enriched graph">
+        <section id="screenSlowGraph" class="screen slow-screen" aria-hidden="true" aria-label="Material graph">
           <div class="card slow-card">
-            <h1>Enriched graph</h1>
-            <div id="slowGraphContent" class="slow-graph-content"></div>
+            <h1 id="materialGraphTitle">Material graph</h1>
+            <p class="hint" id="materialGraphHint">Concepts, blocks, and links from your study material.</p>
+            <div id="slowGraphContent" class="slow-graph-content material-graph-content"></div>
             <div class="row">
-              <button type="button" id="slowGraphBackBtn">Back to consolidation</button>
-              <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export subgraph</button>
+              <button type="button" id="slowGraphBackBtn">Back</button>
+              <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export graph</button>
             </div>
           </div>
         </section>

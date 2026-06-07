@@ -1433,7 +1433,12 @@ export function normalizeBlockIndexArray(arr, { requireChunk = true, lenient = f
       if (lenient) continue;
       return null;
     }
-    out.push({ id, title, summary, signature, chunk });
+    const concept_ids = Array.isArray(item.concept_ids)
+      ? item.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
+      : [];
+    const row = { id, title, summary, signature, chunk };
+    if (concept_ids.length) row.concept_ids = concept_ids;
+    out.push(row);
   }
   if (!out.length) return null;
   out.sort((a, b) => a.id - b.id);
@@ -1749,7 +1754,24 @@ export async function applyDeterministicDedup(blockIndex, { llmModel, apiKey: _l
       { llmModel },
     );
 
-    byId.set(keepId, { ...keep, chunk: mergedChunk });
+    const mergedConceptIds = [
+      ...new Set([
+        ...(Array.isArray(keep.concept_ids) ? keep.concept_ids : []),
+        ...absorbs.flatMap((b) => (Array.isArray(b.concept_ids) ? b.concept_ids : [])),
+      ]),
+    ];
+    const mergedSignature = [
+      ...new Set([
+        ...(Array.isArray(keep.signature) ? keep.signature : []),
+        ...absorbs.flatMap((b) => (Array.isArray(b.signature) ? b.signature : [])),
+      ]),
+    ];
+    byId.set(keepId, {
+      ...keep,
+      chunk: mergedChunk,
+      signature: mergedSignature,
+      ...(mergedConceptIds.length ? { concept_ids: mergedConceptIds } : {}),
+    });
     for (const b of absorbs) removed.add(Number(b.id));
     dedup_merges.push({
       keep_id: keepId,
@@ -1894,21 +1916,32 @@ export async function twoPhaseConceptSplit(
     normalized = applyPackMetaCount(normalized, pack_meta);
     const finalCount = normalized.length;
     const chunks = splitMaterialIntoBlockChunks(materialText, finalCount);
-    let blockIndex = normalized.map((b, i) => ({
-      ...b,
-      chunk: chunks[i] || "",
-    }));
+    let blockIndex = normalized.map((b, i) => {
+      const src = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
+      const concept_ids = Array.isArray(src.concept_ids)
+        ? src.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
+        : Array.isArray(b.concept_ids)
+          ? b.concept_ids
+          : [];
+      return {
+        ...b,
+        chunk: chunks[i] || "",
+        ...(concept_ids.length ? { concept_ids } : {}),
+      };
+    });
 
     progress("Checking for duplicates…");
     const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
 
     return {
       blockIndex: dedupResult.blockIndex,
+      conceptInventory: inventory,
       splitRunMeta: {
         requested_n,
         final_n: dedupResult.blockIndex.length,
         pipeline: "two_phase",
         concept_count,
+        concept_inventory: inventory,
         pack_meta,
         dedup_merges: dedupResult.dedup_merges,
         dedup_merged_count: dedupResult.merged_count,
