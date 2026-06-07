@@ -107,7 +107,14 @@ export function resolveDurationMin(session) {
 export function buildExportFrontmatter(session, { mode } = {}) {
   const safe = session && typeof session === "object" ? session : {};
   const studyMode = String(mode || safe.studyMode || "rsvp").trim().toLowerCase();
-  const exportMode = studyMode === "slow" ? "slow" : studyMode === "cloze" ? "cloze" : "fast";
+  const exportMode =
+    studyMode === "slow"
+      ? "slow"
+      : studyMode === "cloze"
+        ? "cloze"
+        : studyMode === "questions"
+          ? "questions"
+          : "fast";
   const lines = ["---"];
   lines.push(`session_id: ${yamlQuote(safe?._meta?.session_id || "unknown")}`);
   lines.push(`mode: ${exportMode}`);

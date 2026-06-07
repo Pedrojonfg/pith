@@ -23,6 +23,7 @@ import {
   saveGeminiKey,
 } from "./llm.js?v=20260525_1";
 import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260527_1";
+import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 
@@ -249,16 +250,27 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/** @returns {'rsvp'|'slow'|'cloze'} */
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'} */
 export function normalizeStudyMode(mode) {
   const m = String(mode || "").trim();
   if (m === "slow") return "slow";
   if (m === "cloze") return "cloze";
+  if (m === "questions") return "questions";
   return "rsvp";
 }
 
+export function isQuestionsStudyMode(sessionOrMode) {
+  const raw =
+    typeof sessionOrMode === "string"
+      ? sessionOrMode
+      : sessionOrMode?.studyMode != null
+        ? sessionOrMode.studyMode
+        : state.studyMode;
+  return normalizeStudyMode(raw) === "questions";
+}
+
 export function emptySessionsByMode() {
-  return { rsvp: null, slow: null, cloze: null };
+  return { rsvp: null, slow: null, cloze: null, questions: null };
 }
 
 function parseSessionsByModeRaw(raw) {
@@ -270,6 +282,7 @@ function parseSessionsByModeRaw(raw) {
       rsvp: obj.rsvp && typeof obj.rsvp === "object" ? obj.rsvp : null,
       slow: obj.slow && typeof obj.slow === "object" ? obj.slow : null,
       cloze: obj.cloze && typeof obj.cloze === "object" ? obj.cloze : null,
+      questions: obj.questions && typeof obj.questions === "object" ? obj.questions : null,
     };
   } catch {
     return null;
@@ -287,7 +300,7 @@ export function migrateLegacyActiveSession() {
   try {
     const legacy = JSON.parse(legacyRaw);
     if (!legacy || typeof legacy !== "object") return;
-    const migrated = { rsvp: legacy, slow: null, cloze: null };
+    const migrated = { rsvp: legacy, slow: null, cloze: null, questions: null };
     localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
   } catch {
     // ignore corrupt legacy
@@ -305,6 +318,7 @@ export function storeSessionsByMode(data) {
     rsvp: data?.rsvp && typeof data.rsvp === "object" ? data.rsvp : null,
     slow: data?.slow && typeof data.slow === "object" ? data.slow : null,
     cloze: data?.cloze && typeof data.cloze === "object" ? data.cloze : null,
+    questions: data?.questions && typeof data.questions === "object" ? data.questions : null,
   };
   localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(safe));
   if (safe.rsvp) {
@@ -585,6 +599,9 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     if (!block) throw new Error("Missing offline block.");
     return block;
   }
+  if (isQuestionsStudyMode(state.activeSession)) {
+    return generateQuestionsBlockForIndex(blockIndex, { n_test, n_socratic });
+  }
   const llmModel = getSessionLlmModel(state.activeSession);
   assertLlmKeyPresent(llmModel);
 
@@ -633,6 +650,92 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   return normalizeBlockJson(obj, cfg, idx);
 }
 
+export function getBlockSummaryFromList(blockIndex) {
+  const plan = parseBlocksPlanFromList(state.activeSession?.blocks_list_text);
+  const id = Math.max(1, Math.floor(Number(blockIndex) || 0) + 1);
+  const row = plan.find((p) => Number(p.id) === id);
+  return row ? String(row.summary || "").trim() : "";
+}
+
+/** Questions mode: generate test/socratic items from block summary + source chunk (no RSVP explanation). */
+export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_socratic } = {}) {
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  if (isOfflineMode()) {
+    const block = getBlock(idx);
+    if (!block) throw new Error("Missing offline block.");
+    return block;
+  }
+
+  const resolved = resolveBlockQuestionConfig(idx);
+  const cfg = {
+    n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
+    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    explanation_profile: resolved.explanation_profile,
+    gap_focus: resolved.gap_focus,
+    include_connection_questions: resolved.include_connection_questions,
+  };
+
+  const materialChunk = getBlockChunkFromIndex(idx);
+  if (!materialChunk) {
+    throw new Error("Missing block chunk for this session. Please regenerate blocks.");
+  }
+
+  const blockTitle = String(getBlockTitleFromList(idx)).trim() || getBlockTitleFromList(idx);
+  const summary = getBlockSummaryFromList(idx);
+  const grounding = summary || blockTitle;
+
+  const llmModel = getSessionLlmModel(state.activeSession);
+  assertLlmKeyPresent(llmModel);
+
+  const titlesById = parseBlockTitlesFromList(String(state.activeSession?.blocks_list_text || ""));
+  const previousBlocksTitles = [];
+  for (let id = 1; id <= idx; id += 1) {
+    const t = titlesById[String(id)];
+    if (t) previousBlocksTitles.push(t);
+  }
+
+  const request = {
+    llmModel,
+    language: getStudyLanguage(),
+    n_test: cfg.n_test,
+    n_socratic: cfg.n_socratic,
+    blockTitle,
+    blockIndex: idx,
+    include_connection_questions: cfg.include_connection_questions,
+    explanation: grounding,
+    materialText: materialChunk,
+    gap_focus: cfg.gap_focus,
+    previousBlocksTitles,
+  };
+
+  let response = null;
+  try {
+    response = await deepSeekRegenerateBlockQuestions(request);
+  } catch (err) {
+    const message = err?.message ? String(err.message) : String(err);
+    if (!message.includes("valid JSON")) throw err;
+    response = await deepSeekRegenerateBlockQuestions(request);
+  }
+  warnQuestionsOnlyCountMismatch(response, cfg);
+
+  const merged = normalizeBlockJson(
+    {
+      id: idx + 1,
+      title: blockTitle,
+      explanation: "",
+      questions: Array.isArray(response?.questions) ? response.questions : [],
+      concepts: Array.isArray(response?.concepts) ? response.concepts : [],
+    },
+    cfg,
+    idx,
+  );
+  merged.explanation = "";
+  if (Array.isArray(merged.questions)) {
+    merged.questions = shuffleTestQuestionsInList(merged.questions);
+  }
+  return merged;
+}
+
 /**
  * Client regen mode for transition overlay (see data-model.md).
  * @returns {"consume_prefetch"|"questions_only"|"full_block"}
@@ -651,6 +754,14 @@ export function resolveRegenMode(nextCfg, prefetchedBlock, opts = {}) {
     typeof prefetchedBlock === "object"
   ) {
     return "consume_prefetch";
+  }
+
+  if (isQuestionsStudyMode(state.activeSession)) {
+    const questions = Array.isArray(prefetchedBlock?.questions) ? prefetchedBlock.questions : [];
+    if (prefetchedBlock && questions.length) {
+      return "questions_only";
+    }
+    return "full_block";
   }
 
   const explanation = String(prefetchedBlock?.explanation || "").trim();
@@ -2163,8 +2274,9 @@ export function initActiveSessionFromBlocksList({
 }) {
   const n = Math.max(1, Number(nBlocks) || 1);
   const defaults = loadDefaultQuestionConfig();
+  const studyMode = normalizeStudyMode(mode);
   return {
-    studyMode: "rsvp",
+    studyMode,
     n_blocks: n,
     n_test: defaults.n_test,
     n_socratic: defaults.n_socratic,

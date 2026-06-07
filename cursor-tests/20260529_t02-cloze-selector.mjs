@@ -37,9 +37,11 @@ const clozeRadio = doc.querySelector('input[name="studyMode"][value="cloze"]');
 const rsvpRadio = doc.querySelector('input[name="studyMode"][value="rsvp"]');
 const slowRadio = doc.querySelector('input[name="studyMode"][value="slow"]');
 
-// --- Happy path: three modes visible, none preselected ---
-assert(modeRadios.length === 3, "T02: exactly three mode radios");
-assert(rsvpRadio && slowRadio && clozeRadio, "T02: rsvp, slow, cloze radios exist");
+const questionsRadio = doc.querySelector('input[name="studyMode"][value="questions"]');
+
+// --- Happy path: four modes visible, none preselected ---
+assert(modeRadios.length === 4, "T02: four mode radios");
+assert(rsvpRadio && slowRadio && clozeRadio && questionsRadio, "T02: rsvp, slow, cloze, questions radios exist");
 assert([...modeRadios].every((r) => !r.checked), "T02: no mode preselected");
 for (const radio of modeRadios) {
   assert(modeSelectScreen.contains(radio), `T02: radio ${radio.value} on mode select screen`);

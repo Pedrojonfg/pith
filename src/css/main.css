@@ -1353,9 +1353,9 @@ body.assessment-active .block-read-sidebar {
   color: var(--accent, #818cf8);
 }
 
-/* Cloze T02: three mode options on create screen picker */
+/* Mode selector: four study modes on create screen picker */
 .mode-select-screen .study-mode-options {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
 }
 
 .mode-triage-panel {
