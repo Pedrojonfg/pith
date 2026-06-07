@@ -89,7 +89,8 @@ assert(
 );
 assert(md.includes("## Block 1:"), "block 1 section present");
 assert(md.includes("## Concept Dictionary"), "concept dictionary section present");
-assert(md.includes("| Flux |"), "concept dictionary has Flux row");
+assert(md.includes("### Flux"), "concept dictionary has Flux heading");
+assert(md.includes("Rate of flow through a surface."), "concept dictionary includes Flux definition body");
 
 // ungenerated block omitted
 const sessionSparse = {

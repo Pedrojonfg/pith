@@ -328,14 +328,23 @@ const phase0 = {
   ],
   conceptsToFind: [{ term: "libertad", authorUsage: "freedom" }],
 };
-const scopeText = "x".repeat(1000);
-const nearAnn = [{ id: "a1", charStart: 480, charEnd: 520, type: "≈", userText: "libertad en el texto" }];
+const scopeText = `${"x".repeat(400)} Premise in scope ${"y".repeat(400)} Conclusion here ${"z".repeat(100)}`;
+const premiseMid = scopeText.toLowerCase().indexOf("premise") + "Premise".length / 2;
+const nearAnn = [
+  {
+    id: "a1",
+    charStart: Math.floor(premiseMid),
+    charEnd: Math.floor(premiseMid) + 20,
+    type: "≈",
+    userText: "libertad en el texto",
+  },
+];
 const diffHit = comparePhase0ToAnnotations(phase0, nearAnn, scopeText);
-assert(diffHit.some((r) => r.hit), "T12 happy: annotation near anchor → hit");
+assert(diffHit.find((r) => r.node?.id === "P1")?.hit, "T12 happy: annotation near P1 anchor → hit");
 
 const farAnn = [{ id: "a2", charStart: 5, charEnd: 8, type: "?", userText: "nope" }];
 const diffMiss = comparePhase0ToAnnotations(phase0, farAnn, scopeText);
-assert(diffMiss.some((r) => !r.hit), "T12 fail: distant annotation → miss");
+assert(diffMiss.every((r) => !r.hit), "T12 fail: distant annotation → all miss");
 
 const scoreSession = makeSlowSession({
   annotations: [
@@ -374,6 +383,7 @@ const slowMd = buildMarkdown(slowExport);
 assert(slowMd.includes("# Slow Mode Session"), "T14 happy: slow export header");
 assert(slowMd.includes("Tesis export") && slowMd.includes("≈"), "T14 happy: phase0 + annotations in export");
 assert(slowMd.includes("Depth score"), "T14 happy: depth score section");
+assert(slowMd.includes("study-session-resume:v2:"), "T14 happy: slow export includes resume capsule");
 
 const rsvpMd = buildMarkdown({
   studyMode: "rsvp",

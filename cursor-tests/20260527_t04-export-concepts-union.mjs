@@ -94,7 +94,7 @@ assert(
   "SC-006: write-through explanation in export without studying block 2",
 );
 assert(md.includes("## Concept Dictionary"), "SC-006: concept dictionary section present");
-assert(md.includes("| MidSessionTerm |"), "SC-006: dictionary table includes block-2 prefetch term");
+assert(md.includes("### MidSessionTerm"), "SC-006: dictionary includes block-2 prefetch term heading");
 assert(!md.includes("## Block 3:"), "no phantom block 3");
 
 // Failure-ish: ungenerated block omitted from body
