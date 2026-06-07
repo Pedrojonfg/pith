@@ -16,6 +16,7 @@ import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
 import { buildSessionGraph } from "./graph/adapters.js?v=20260607_2";
+import { buildClozeMarkdown } from "./cloze/export-import.js?v=20260607_1";
 import {
   appendSourceOfTruthAndResumeCapsule,
   buildExportFrontmatter,
@@ -445,6 +446,9 @@ export function buildMarkdown(session) {
   if (safe.studyMode === "slow" && safe.slow) {
     return buildSlowMarkdown(safe);
   }
+  if (safe.studyMode === "cloze" && safe.cloze) {
+    return buildClozeMarkdown(safe);
+  }
   if (session === state.activeSession) {
     ensureSessionResponseState();
   }
@@ -811,8 +815,24 @@ export function downloadTextFile({ filename, text }) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+export function exportClozeItemsMarkdown(session = state.activeSession) {
+  const safe = session && typeof session === "object" ? session : null;
+  if (!safe?.cloze || safe.studyMode !== "cloze") return;
+  const md = buildClozeMarkdown(safe);
+  const ts = formatExportTimestamp(new Date());
+  const stem = sanitizeFilenameStem(stripExtension(safe.materialMeta?.fileName || "cloze-pack"));
+  downloadTextFile({
+    filename: `${stem}_cloze_${ts}.md`,
+    text: md,
+  });
+}
+
 export function exportSessionMarkdown() {
   if (!state.activeSession) return;
+  if (state.activeSession.studyMode === "cloze") {
+    exportClozeItemsMarkdown(state.activeSession);
+    return;
+  }
   ensureSessionResponseState();
   const sessionId = String(state.activeSession?._meta?.session_id || "");
   const rev = Number(state.activeSession?._meta?.rev || 0);

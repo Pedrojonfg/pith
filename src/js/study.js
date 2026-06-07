@@ -31,7 +31,7 @@ import {
 } from "./dictionary.js?v=20260526_1";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
-import { exportOfflinePack, exportSessionMarkdown, downloadTextFile } from "./export.js?v=20260525_1";
+import { exportOfflinePack, exportSessionMarkdown, exportClozeItemsMarkdown, downloadTextFile } from "./export.js?v=20260525_1";
 import {
   clearGuideChatStorage,
   refreshGuideContext,
@@ -135,6 +135,7 @@ import {
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
 import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260607_1";
 import { enterClozeStudyScreen, wireClozeStudyHandlers } from "./cloze/study.js?v=20260607_1";
+import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
 
 export function createClozeSession({
   normalizedText,
@@ -273,6 +274,7 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.rsvpOnlyControls) els.rsvpOnlyControls.hidden = !isRsvp;
   if (els.rsvpBlocksSection) els.rsvpBlocksSection.hidden = !isRsvp;
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
+  if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (els.generateBlocksBtn) {
     els.generateBlocksBtn.textContent =
@@ -332,6 +334,9 @@ function updateClozeSessionPanel(session) {
   }
   if (els.clozeStudyBtn) {
     els.clozeStudyBtn.hidden = !(ready && validCount > 0);
+  }
+  if (els.clozeExportBtn) {
+    els.clozeExportBtn.hidden = !(ready && validCount > 0);
   }
   if (els.clozeViewGraphBtn) {
     els.clozeViewGraphBtn.hidden = !hasGraph;
@@ -415,6 +420,76 @@ async function runClozeGeneration(session) {
   } finally {
     clozePipelineRunning = false;
   }
+}
+
+function setClozeImportError(msg) {
+  if (!els.clozeImportError) return;
+  const text = String(msg || "").trim();
+  els.clozeImportError.hidden = !text;
+  els.clozeImportError.textContent = text;
+}
+
+async function importClozePacksFromInput() {
+  clearClozeImportError();
+  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "";
+  const fileList = els.clozeImportInput?.files ? Array.from(els.clozeImportInput.files) : [];
+  if (!fileList.length) {
+    setClozeImportError("Elige al menos un archivo .md exportado (pack cloze).");
+    return;
+  }
+  if (els.clozeImportBtn) els.clozeImportBtn.disabled = true;
+  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importando…";
+  try {
+    const result = await parseClozePackFiles(fileList, readFileAsText);
+    if (!result.ok) {
+      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" · ") : "";
+      throw new Error(
+        detail ||
+          (result.reason === "no_valid_items"
+            ? "Ningún ítem válido en los archivos seleccionados."
+            : "No se pudo importar ningún pack cloze."),
+      );
+    }
+    const sessionObj = result.session;
+    state.activeSession = sessionObj;
+    state.studyMode = "cloze";
+    storeActiveSession(sessionObj);
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+    updateClozeSessionPanel(sessionObj);
+    showScreen("create");
+    const warn =
+      Array.isArray(result.errors) && result.errors.length
+        ? ` (${result.errors.length} archivo(s) omitido(s))`
+        : "";
+    if (els.clozeImportStatus) {
+      els.clozeImportStatus.textContent = `${result.validCount} ítems de ${result.packCount} pack(s)${warn}`;
+    }
+  } catch (err) {
+    setClozeImportError(err?.message ? String(err.message) : String(err));
+    if (els.clozeImportStatus) els.clozeImportStatus.textContent = "";
+  } finally {
+    if (els.clozeImportBtn) els.clozeImportBtn.disabled = false;
+  }
+}
+
+function clearClozeImportError() {
+  setClozeImportError("");
+}
+
+function wireClozeImportHandlers() {
+  els.clozeImportInput?.addEventListener("change", () => {
+    clearClozeImportError();
+    const fileList = els.clozeImportInput?.files ? Array.from(els.clozeImportInput.files) : [];
+    if (els.clozeImportHint) {
+      els.clozeImportHint.textContent = fileList.length
+        ? `${fileList.length} archivo(s): ${fileList.map((f) => f.name).join(", ")}`
+        : "";
+    }
+  });
+  els.clozeImportBtn?.addEventListener("click", () => {
+    void importClozePacksFromInput();
+  });
 }
 
 function mountClozeGraph(session) {
@@ -3273,6 +3348,7 @@ export function wireStudyHandlers() {
   wireSlowPhase3Handlers();
   wireMaterialGraphHandlers();
   wireClozeStudyHandlers();
+  wireClozeImportHandlers();
   els.clozeGenerateBtn?.addEventListener("click", () => {
     const session = state.activeSession;
     if (session?.studyMode === "cloze") void runClozeGeneration(session);
@@ -3284,6 +3360,10 @@ export function wireStudyHandlers() {
   els.clozeViewGraphBtn?.addEventListener("click", () => {
     const session = state.activeSession;
     if (session?.studyMode === "cloze") mountClozeGraph(session);
+  });
+  els.clozeExportBtn?.addEventListener("click", () => {
+    const session = state.activeSession;
+    if (session?.studyMode === "cloze") exportClozeItemsMarkdown(session);
   });
   resetCreateScreenModeUi();
 

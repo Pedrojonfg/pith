@@ -81,6 +81,14 @@
   margin-top: 14px;
 }
 
+.cloze-import-section {
+  margin-top: 16px;
+}
+
+.cloze-import-section input[type="file"] {
+  margin-top: 6px;
+}
+
 #clozeStudyNextBtn {
   margin-top: 12px;
 }
