@@ -201,6 +201,7 @@ function buildSlowMarkdown(session) {
   const lines = [];
   lines.push("# Slow Mode Session");
   lines.push(`Material: ${session.materialMeta?.fileName || "—"}`);
+  lines.push(`Language: ${String(session.language || "English").trim() || "English"}`);
   lines.push(`Scope: ${scope.label || "—"} (${scope.charStart ?? 0}–${scope.charEnd ?? 0})`);
   lines.push(`Phase: ${slow.phase || "—"}`);
   lines.push(`Critical mode: ${slow.criticalMode ? "yes" : "no"}`);

@@ -104,6 +104,7 @@ import {
   setPrefetchIndicator,
   showScreen,
   showSidebar,
+  syncStudyLanguage,
   typesetMath,
   updateFullPackProgressUi,
 } from "./ui.js?v=20260525_1";
@@ -140,10 +141,13 @@ export function createSlowSession({
   originalFormat,
   llmModel,
   criticalMode = false,
+  language,
 }) {
+  const lang = String(language || getStudyLanguage()).trim() || "English";
   return {
     studyMode: "slow",
     rev: 0,
+    language: lang,
     llmModel: normalizeLlmModel(llmModel),
     materialMeta: {
       fileName: String(fileName || "").trim(),
@@ -262,6 +266,7 @@ function showModeResumeOrUpload(mode) {
 }
 
 function resumeSlowSession(session) {
+  if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;
   state.studyMode = "slow";
   storeActiveSession(session);
@@ -732,7 +737,7 @@ async function runPhase0Generation(session) {
   const scopeText = getScopeText(session);
   try {
     const orientation = await generatePhase0ForScope(scopeText, session, {
-      language: getStudyLanguage(),
+      language: String(session?.language || getStudyLanguage()).trim() || "English",
       onProgress: ({ phase, current, total, label }) => {
         if (token !== phase0GenerationToken) return;
         if (!els.slowPhase0Progress) return;
@@ -3944,6 +3949,7 @@ export function wireStudyHandlers() {
           originalFormat,
           llmModel,
           criticalMode,
+          language: getStudyLanguage(),
         });
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
