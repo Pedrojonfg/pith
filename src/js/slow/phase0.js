@@ -5,6 +5,7 @@ import {
   llmChatCompletions,
   normalizeLlmModel,
 } from "../llm.js?v=20260525_1";
+import { getStudyLanguage } from "../ui.js?v=20260525_1";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
 export const PHASE0_MAX_CHUNK_CHARS = 50000;
@@ -130,6 +131,18 @@ export function validatePhase0Orientation(value, { criticalMode = false } = {}) 
   if (conceptsToFind.length < MIN_CONCEPTS || conceptsToFind.length > MAX_CONCEPTS) return null;
 
   const out = { thesis, argumentMap, conceptsToFind, guideQuestion };
+
+  const preRaw = raw.prequestions || raw.pre_questions || raw.userQuestions;
+  if (Array.isArray(preRaw)) {
+    const prequestions = preRaw.map(normalizePrequestion).filter(Boolean);
+    if (prequestions.length) out.prequestions = prequestions;
+  }
+
+  const blanksRaw = raw.fillableBlanks || raw.fillable_blanks;
+  if (Array.isArray(blanksRaw)) {
+    const fillableBlanks = blanksRaw.map(normalizeFillableBlank).filter(Boolean);
+    if (fillableBlanks.length) out.fillableBlanks = fillableBlanks;
+  }
 
   const criticalRaw = raw.criticalExaminePoints || raw.critical_examine_points || raw.criticalPoints;
   if (criticalMode && Array.isArray(criticalRaw)) {
@@ -455,4 +468,278 @@ export async function generatePhase0ForScope(scopeText, session, opts = {}) {
     return generatePhase0Single(iaText, baseOpts);
   }
   return mapReducePhase0(text, boundaries, baseOpts);
+}
+
+// --- T04: editable Phase 0, fillable map, re-read ---
+
+export const LS_PHASE0_SEEN_KEYS = "slow_phase0_seen_keys";
+export const LS_PHASE0_ORIENTATION_CACHE = "slow_phase0_orientation_cache";
+
+export function slugGraphTermId(term) {
+  return String(term || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_áéíóúñü-]/gi, "");
+}
+
+function readJsonStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw || !raw.trim()) return fallback;
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+/** Stable key for (fileName + scope range) re-read detection. */
+export function computePhase0SeenKey(fileName, scope) {
+  const fn = String(fileName || "").trim();
+  const start = Math.max(0, Number(scope?.charStart) || 0);
+  const end = Math.max(start, Number(scope?.charEnd) || 0);
+  const raw = `${fn}\0${start}:${end}`;
+  let h = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    h = (h << 5) - h + raw.charCodeAt(i);
+    h |= 0;
+  }
+  return `p0_${Math.abs(h)}_${start}_${end}`;
+}
+
+export function loadPhase0SeenKeys() {
+  const arr = readJsonStorage(LS_PHASE0_SEEN_KEYS, []);
+  return Array.isArray(arr) ? arr.map(String) : [];
+}
+
+export function isPhase0Reread(seenKey) {
+  const key = String(seenKey || "").trim();
+  if (!key) return false;
+  return loadPhase0SeenKeys().includes(key);
+}
+
+export function markPhase0Seen(seenKey) {
+  const key = String(seenKey || "").trim();
+  if (!key) return;
+  const keys = loadPhase0SeenKeys();
+  if (!keys.includes(key)) {
+    keys.push(key);
+    writeJsonStorage(LS_PHASE0_SEEN_KEYS, keys);
+  }
+}
+
+export function loadPhase0Cache(seenKey, { criticalMode = false } = {}) {
+  const key = String(seenKey || "").trim();
+  if (!key) return null;
+  const cache = readJsonStorage(LS_PHASE0_ORIENTATION_CACHE, {});
+  const entry = cache && typeof cache === "object" ? cache[key] : null;
+  if (!entry || typeof entry !== "object") return null;
+  return validatePhase0Orientation(entry, { criticalMode });
+}
+
+export function savePhase0Cache(seenKey, phase0) {
+  const key = String(seenKey || "").trim();
+  if (!key || !phase0) return;
+  const cache = readJsonStorage(LS_PHASE0_ORIENTATION_CACHE, {});
+  const next = cache && typeof cache === "object" && !Array.isArray(cache) ? { ...cache } : {};
+  next[key] = phase0;
+  writeJsonStorage(LS_PHASE0_ORIENTATION_CACHE, next);
+}
+
+export function normalizePrequestion(raw) {
+  const text = normalizeString(typeof raw === "string" ? raw : raw?.text || raw?.question);
+  return text || null;
+}
+
+export function normalizeFillableBlank(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const nodeId = normalizeString(raw.nodeId || raw.id);
+  if (!nodeId) return null;
+  const out = {
+    nodeId,
+    userText: normalizeString(raw.userText || raw.text),
+    pageIndex: raw.pageIndex == null ? null : Math.max(0, Math.floor(Number(raw.pageIndex) || 0)),
+  };
+  const annotationId = normalizeString(raw.annotationId);
+  if (annotationId) out.annotationId = annotationId;
+  return out;
+}
+
+export function buildFillableBlanksFromMap(argumentMap) {
+  return (Array.isArray(argumentMap) ? argumentMap : [])
+    .map((n) => normalizeArgumentMapNode(n))
+    .filter(Boolean)
+    .map((n) => ({ nodeId: n.id, userText: "", pageIndex: null }));
+}
+
+export function applyFillableMapMode(orientation, fillableMapMode) {
+  if (!orientation || !fillableMapMode) return orientation;
+  const existing = Array.isArray(orientation.fillableBlanks)
+    ? orientation.fillableBlanks.map(normalizeFillableBlank).filter(Boolean)
+    : [];
+  const blanks =
+    existing.length > 0 ? existing : buildFillableBlanksFromMap(orientation.argumentMap);
+  return { ...orientation, fillableBlanks: blanks };
+}
+
+export function ensurePhase0UserFields(phase0) {
+  if (!phase0 || typeof phase0 !== "object") return phase0;
+  if (!Array.isArray(phase0.prequestions)) phase0.prequestions = [];
+  return phase0;
+}
+
+/**
+ * Fill the next matching blank during Phase 1 (fillable map mode).
+ * @returns {object | null} filled blank entry
+ */
+export function fillBlankFromAnnotation(session, annotation, pageIndex) {
+  const slow = session?.slow;
+  if (!slow?.fillableMapMode || !slow.phase0?.fillableBlanks) return null;
+  const userText = normalizeString(annotation?.userText);
+  if (!userText) return null;
+
+  const blanks = slow.phase0.fillableBlanks;
+  const upper = userText.toUpperCase();
+  let target =
+    blanks.find((b) => !b.userText && upper.includes(String(b.nodeId || "").toUpperCase())) ||
+    null;
+
+  if (!target) {
+    for (const c of slow.phase0.conceptsToFind || []) {
+      const term = String(c.term || "").toLowerCase();
+      if (term && userText.toLowerCase().includes(term)) {
+        const node = (slow.phase0.argumentMap || []).find(
+          (n) => String(n.text || "").toLowerCase().includes(term),
+        );
+        if (node) {
+          target = blanks.find((b) => b.nodeId === node.id && !b.userText);
+          if (target) break;
+        }
+      }
+    }
+  }
+
+  if (!target) {
+    target = blanks.find((b) => !b.userText) || null;
+  }
+  if (!target) return null;
+
+  target.userText = userText;
+  target.pageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0));
+  if (annotation?.id) target.annotationId = annotation.id;
+  return target;
+}
+
+export function getPhase0SeenKeyForSession(session) {
+  return computePhase0SeenKey(session?.materialMeta?.fileName, session?.slow?.readingScope);
+}
+
+const GENERIC_SUMMARIZE_RE = /summarize (?:this section )?in one sentence/i;
+
+function isSpanishLang(lang) {
+  const v = String(lang || "").trim().toLowerCase();
+  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
+}
+
+/**
+ * Local integration question when phase0 was skipped or IA is unavailable.
+ */
+export function buildCheckpointQuestionTemplate(section, argumentMap, lang = "English") {
+  const title = String(section?.title || "this section").trim() || "this section";
+  const map = Array.isArray(argumentMap) ? argumentMap.filter(Boolean) : [];
+  const es = isSpanishLang(lang);
+
+  if (map.length) {
+    const nodes = map
+      .slice(0, 3)
+      .map((n) => `${n.id}: ${n.text}`)
+      .join("; ");
+    return es
+      ? `¿Cómo conecta lo leído en «${title}» con el mapa argumental (${nodes})?`
+      : `How does what you read in «${title}» connect to the argument map (${nodes})?`;
+  }
+
+  return es
+    ? `¿Cómo integrarías lo leído bajo «${title}» con el hilo argumental del autor?`
+    : `How would you integrate what you read under «${title}» with the author's line of argument?`;
+}
+
+function normalizeCheckpointQuestion(text) {
+  return String(text || "")
+    .trim()
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .trim();
+}
+
+function isWeakCheckpointQuestion(text) {
+  const q = normalizeCheckpointQuestion(text);
+  if (!q) return true;
+  if (GENERIC_SUMMARIZE_RE.test(q)) return true;
+  if (/^(who|quién)\s+(is|was|es|fue)\s+(the\s+)?author/i.test(q)) return true;
+  return false;
+}
+
+/**
+ * One integration checkpoint question from argument map + section text (FR-007 / R19).
+ */
+export async function generateCheckpointQuestion({
+  section,
+  argumentMap,
+  sectionText,
+  llmModel,
+  phase0Skipped = false,
+  lang,
+  llmCall = llmChatCompletions,
+} = {}) {
+  const studyLang = lang || getStudyLanguage() || "English";
+
+  if (phase0Skipped || !Array.isArray(argumentMap) || !argumentMap.length) {
+    return buildCheckpointQuestionTemplate(section, phase0Skipped ? null : argumentMap, studyLang);
+  }
+
+  const mapSummary = argumentMap
+    .map((n) => `${n.id}${n.status ? ` (${n.status})` : ""}: ${n.text}`)
+    .join("\n");
+
+  try {
+    const question = await llmCall({
+      llmModel: normalizeLlmModel(llmModel),
+      messages: [
+        {
+          role: "system",
+          content:
+            `Generate exactly ONE integration checkpoint question for a slow reading session. ` +
+            `The question must require synthesizing the section text with the Phase 0 argument map — ` +
+            `NOT factual trivia, NOT "who is the author", NOT "summarize in one sentence". ` +
+            `Respond with ONLY the question, no quotes, no numbering. Language: ${studyLang}.`,
+        },
+        {
+          role: "user",
+          content:
+            `Section heading: ${section?.title || "Section"}\n\n` +
+            `Argument map:\n${mapSummary}\n\n` +
+            `Section text read:\n${String(sectionText || "").slice(0, 80000)}`,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 120,
+    });
+
+    const cleaned = normalizeCheckpointQuestion(question);
+    if (isWeakCheckpointQuestion(cleaned)) {
+      return buildCheckpointQuestionTemplate(section, argumentMap, studyLang);
+    }
+    return cleaned;
+  } catch {
+    return buildCheckpointQuestionTemplate(section, argumentMap, studyLang);
+  }
 }

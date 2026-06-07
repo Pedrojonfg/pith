@@ -27,7 +27,7 @@ import {
   toggleSidebar,
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
-import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260528_1";
+import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260607_1";
 
 function clearActiveSessionStorage() {
   try {

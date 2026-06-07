@@ -1,415 +1,333 @@
-# ROADMAP — Slow Mode (Lectura Profunda)
+# ROADMAP — Cloze Detection (20260529-cloze-mode)
 
-**Spec**: `specs/20260528-slow-mode/spec.md`  
-**Plan**: `specs/20260528-slow-mode/plan.md`  
-**Branch**: `20260528-slow-mode`
+> **Feature**: Tercer modo de estudio — pipeline NODE/EDGE + sesión MC mínima  
+> **Spec**: `specs/20260529-cloze-mode/spec.md`  
+> **Plan**: `specs/20260529-cloze-mode/plan.md`  
+> **Branch**: `20260529-cloze-mode`
 
-## Tareas
+---
+
+## Tabla de tareas
 
 | ID | Descripción | Dep. | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | `sessionsByMode` + migración `active_session` | — | S | [ ] |
-| T02 | Selector modo sin preselección + continuar/nueva | T01 | M | [ ] |
-| T03 | Screens Slow + routing `studyMode` | T02 | M | [ ] |
-| T04 | Parser headings + scope picker | T03 | M | [ ] |
-| T05 | Paginación viewport + tests | T04 | L | [ ] |
-| T06 | Fase 0 IA single + map-reduce 60k | T04 | L | [ ] |
-| T07 | Reader UI + tipografía + focus mode | T05, T06 | L | [ ] |
-| T08 | Anotaciones por offset de caracteres | T07 | M | [ ] |
-| T09 | IA Fase 1 anti-spoiler | T08 | M | [ ] |
-| T10 | Modo Crítico + menú tipos | T08 | S | [ ] |
-| T11 | Checkpoints Fase 2 | T08, T06 | M | [ ] |
-| T12 | Fase 3 consolidación (A/B/C) | T08, T06 | L | [ ] |
-| T13 | Grafo + gamificación + flashcards | T12 | L | [ ] |
-| T14 | Export sesión Slow | T12 | M | [ ] |
-| T15 | QA quickstart + cursor-tests | T09–T14 | M | [ ] |
+| T01 | Extender `sessionsByMode` con slot `cloze` + `normalizeStudyMode` | — | S | [x] |
+| T02 | Selector UI: tercer modo Cloze Detection + hints | T01 | S | [x] |
+| T03 | Routing `study.js`: create/resume/nueva sesión cloze | T02 | M | [x] |
+| T04 | `createClozeSession` + upload/normalización sin IA auto | T03 | M | [x] |
+| T05 | `buildClozeEpistemicGraph` + `buildSessionGraph` modo `cloze` | T01 | M | [x] |
+| T06 | `cloze/pipeline.js` — Fase 0 grafo epistémico | T04 | L | [x] |
+| T07 | Pipeline Fases 1–2: análisis semántico + ítems base | T06 | L | [x] |
+| T08 | Pipeline Fases 3–4: distractores L1+L3 + QA | T07 | L | [x] |
+| T09 | UI botón "Generar ítems" + progreso fases 0–4 | T08 | M | [x] |
+| T10 | Sesión MC mínima (`cloze/study.js`) | T09 | L | [x] |
+| T11 | Botón Ver grafo + `cloze-mode.css` | T05, T09 | S | [x] |
+| T12 | cursor-tests + validación quickstart | T10, T11 | M | [x] |
+
+---
 
 ## Grafo de dependencias
 
 ```text
-T01 → T02 → T03 → T04 ─┬→ T05 → T07 → T08 ─┬→ T09 ──────────────┐
-                        │                     ├→ T10 ─────────────┤
-                        └→ T06 ───────────────┘   T11 ────────────┤
-                                        T08 + T06 → T12 ─┬→ T13 ─┴→ T15
-                                                         └→ T14 ────↗
+T01 ─┬→ T02 → T03 → T04 → T06 → T07 → T08 → T09 ─┬→ T10 → T12
+     │                                              └→ T11 ↗
+     └→ T05 ────────────────────────────────────────────────┘
 ```
 
-**Paralelo 1** (tras T04): `T05` y `T06` en dos chats.  
-**Paralelo 2** (tras T08): `T09`, `T10`, `T11` en tres chats.  
-**Paralelo 3** (tras T12): `T13` y `T14` en dos chats.
+**Paralelizable**:
+- Tras **T01**: lanzar **T02** y **T05** en paralelo.
+- Tras **T09**: lanzar **T10** y **T11** en paralelo.
+
+---
 
 ## Orden de ejecución recomendado
 
-1. `T01` → `T02` → `T03` → `T04` (secuencial, un chat o encadenado).
-2. Lanzar **`T05` y `T06` en paralelo**; esperar ambos antes de `T07`.
-3. `T07` → `T08` (secuencial).
-4. Lanzar **`T09`, `T10`, `T11` en paralelo**; esperar los tres antes de `T12`.
-5. `T12` → luego **`T13` y `T14` en paralelo** → `T15`.
+### Oleada 1 (paralelo)
+- **T01** (obligatorio primero)
+- Luego en paralelo: **T02**, **T05**
+
+### Oleada 2 (secuencial)
+- **T03** → **T04** → **T06** → **T07** → **T08** → **T09**
+
+### Oleada 3 (paralelo)
+- **T10** y **T11** en paralelo
+
+### Oleada 4
+- **T12** (cuando T10 y T11 estén hechos)
+
+**Esperar antes de continuar**:
+- Antes de T06: upload cloze guarda sesión con `pipelineStatus: 'normalized'`.
+- Antes de T10: pipeline llega a `ready` con ítems `valid`.
+- Antes de T12: los 3 cursor-tests pasan.
 
 ---
 
-## PROMPT T01 — sessionsByMode + migración
-
-Implementa persistencia dual por modo de estudio según el contrato de sesiones.
-
-**Contexto**
-- Spec: `specs/20260528-slow-mode/spec.md` (FR-011, FR-011a, FR-011b)
-- Contrato: `specs/20260528-slow-mode/contracts/mode-selector-sessions.md`
-- Data model: `specs/20260528-slow-mode/data-model.md`
-
-**Archivos**
-- `src/js/config.js` — añadir `LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode"`
-- `src/js/session.js` — `loadSessionsByMode()`, `storeSessionForMode(mode, session)`, `migrateLegacyActiveSession()`, actualizar `storeActiveSession`/`loadActiveSession` para delegar al slot activo
-
-**Tareas**
-1. Implementar shape `{ rsvp: ActiveSession|null, slow: ActiveSession|null }`.
-2. Migración en bootstrap: si existe `active_session` y no `sessions_by_mode`, copiar a `.rsvp`.
-3. `storeActiveSession` escribe en slot según `session.studyMode` (default `rsvp` si ausente).
-4. Mantener compatibilidad: RSVP existente sigue cargando tras migración.
-
-**Criterio de éxito**
-- Tras migración, sesión RSVP previa sigue cargando; guardar slow no toca slot rsvp.
-
-criterio de éxito: Migración transparente y API `sessionsByMode` funcional. Ejecuta /validate antes de cerrar este mensaje
+## Prompts listos para usar
 
 ---
 
-## PROMPT T02 — Selector de modo + continuar/nueva
+**PROMPT T01 — sessionsByMode.cloze**
 
-Añade UI de selección de modo en pantalla de inicio sin preselección y flujo resume.
+Implementa la persistencia del slot `cloze` en MyLearning (feature `20260529-cloze-mode`).
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/mode-selector-sessions.md`
-- Depende de T01 (`sessionsByMode`)
+**Contexto**: Tercer modo Cloze Detection. Spec: `specs/20260529-cloze-mode/spec.md`. Contrato: `specs/20260529-cloze-mode/contracts/mode-selector-cloze.md`. Data model: `specs/20260529-cloze-mode/data-model.md`.
 
-**Archivos**
-- `index.html` — `screenPlaceholder`: radio/tabs RSVP vs Slow, panel continuar/nueva, toggle Modo Crítico (visible solo en Slow)
-- `src/css/main.css` — estilos selector
-- `src/js/study.js` — handlers elección modo, ocultar blocks UI en Slow
-- `src/js/main.js` — bootstrap no auto-entra a sesión sin elegir modo
+**Archivos a tocar**:
+- `src/js/session.js` — `normalizeStudyMode`, `emptySessionsByMode`, `parseSessionsByModeRaw`, `storeSessionsByMode`
+- `src/js/study.js` — `getStudyModeLabel` si aplica
+- `cursor-tests/20260529_t01-cloze-sessions.mjs` (crear)
 
-**Tareas**
-1. Ningún modo preseleccionado al abrir create screen.
-2. Tras elegir modo: si slot existe → Continuar / Nueva sesión.
-3. Nueva sesión pide confirmación si había slot.
-4. RSVP controls hidden cuando slow seleccionado.
+**Requisitos**:
+1. `normalizeStudyMode('cloze')` → `'cloze'` (mantener `rsvp`/`slow` intactos).
+2. `emptySessionsByMode()` → `{ rsvp: null, slow: null, cloze: null }`.
+3. Parse/store incluyen `cloze`; migración idempotente si `cloze` ausente.
+4. `loadSessionForMode('cloze')` / `storeSessionForMode('cloze', …)` funcionan.
+5. Test: round-trip localStorage con los tres slots.
 
-**Criterio de éxito**
-- SC-001 manual: selector sin default; continuar restaura slot correcto por modo.
+**No tocar**: pipeline IA, UI selector (T02).
 
-criterio de éxito: Flujo modo + resume operativo en UI. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: `node cursor-tests/20260529_t01-cloze-sessions.mjs` pasa; RSVP/Slow slots sin regresión. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Screens Slow + routing studyMode
+**PROMPT T02 — Selector 3 modos UI**
 
-Crea esqueleto de pantallas Slow y enrutamiento por `studyMode`.
+Añade Cloze Detection al selector de modos en la pantalla de creación.
 
-**Contexto**
-- Plan: `specs/20260528-slow-mode/plan.md` (estructura `src/js/slow/`)
-- Data model: fases `scope | phase0 | phase1 | phase3`
+**Contexto**: ROADMAP.md T02. Depende de T01. Contrato: `specs/20260529-cloze-mode/contracts/mode-selector-cloze.md`.
 
-**Archivos**
-- `index.html` — `screenSlowScope`, `screenSlowPhase0`, `screenSlowReader`, `screenSlowPhase3` (estructura mínima)
-- `src/css/slow-mode.css` (nuevo, link en index.html)
-- `src/js/slow/reader.js` (stub exports)
-- `src/js/study.js` — tras upload Slow: `normalize → scope screen` en lugar de generate blocks
-- `src/js/ui.js` — registrar screens en `showScreen`
+**Archivos a tocar**:
+- `index.html` — radio `studyMode` value `cloze`, hint descriptivo
+- `src/css/main.css` — ajustes layout 3 opciones si necesario
+- `src/js/study.js` — `getStudyModeLabel`, `resetModeSelectUi`, hints
 
-**Tareas**
-1. `state.studyMode = 'slow'` al confirmar modo Slow.
-2. Crear `ActiveSession` slow con `slow: { phase: 'scope', ... }` al subir archivo.
-3. Navegación placeholder entre screens según `slow.phase`.
+**Requisitos**:
+1. Tres modos visibles sin preselección: RSVP, Slow Mode, Cloze Detection.
+2. Hint Cloze: recuperación activa con ítems cloze sobre el material.
+3. Al elegir cloze, ocultar controles RSVP (bloques) y Slow (critical mode, scope).
+4. Sin regresión en selección RSVP/Slow.
 
-**Criterio de éxito**
-- Upload en Slow llega a scope screen sin llamar generación de bloques.
-
-criterio de éxito: Routing Slow separado de RSVP sin regresión. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: manual — abrir create screen, ver 3 modos, elegir cada uno y verificar visibilidad de controles. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Headings + scope picker
+**PROMPT T03 — Routing study.js cloze**
 
-Implementa detección de headings y UI de selección de scope.
+Conecta el flujo create/resume/nueva sesión para modo `cloze`.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase0-orientation-ia.md`
-- FR-005, FR-005c
+**Contexto**: ROADMAP.md T03. Depende de T01+T02. Spec FR-001, FR-009.
 
-**Archivos**
-- `src/js/slow/headings.js` (nuevo)
-- `src/js/study.js` o `src/js/slow/reader.js` — wire scope screen
-- `index.html` — lista de scopes en `screenSlowScope`
+**Archivos a tocar**:
+- `src/js/study.js` — `enterCreateScreenForMode`, `wireStudyModeSelector`, `continueSessionBtn`, `newSessionModeBtn`, `updateCreateScreenModeVisibility`, `resumeClozeSession` (nuevo)
+- `src/js/main.js` — bootstrap si aplica
 
-**Tareas**
-1. `parseHeadings(normalizedText, format)` → `{ kind, charStart, charEnd, label }[]`.
-2. UI: documento completo + chapters/sections; mostrar char count; aviso si ≥60000.
-3. Guardar `readingScope` en `slow` al confirmar.
+**Requisitos**:
+1. Elegir cloze + slot existente → panel Continuar / Nueva sesión.
+2. Continuar carga `sessions_by_mode.cloze` en `state.activeSession`.
+3. Nueva sesión reemplaza solo slot `cloze` (confirmación si había sesión).
+4. `state.studyMode = 'cloze'` coherente en todo el flujo.
+5. No implementar aún pipeline ni estudio MC (T04+).
 
-**Criterio de éxito**
-- Ensayo con `##` produce lista de secciones con offsets correctos.
-
-criterio de éxito: Scope picker con offsets válidos. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: continuar/nueva sesión cloze sin cruzar datos con rsvp/slow. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — Paginación viewport + tests
+**PROMPT T04 — createClozeSession + upload**
 
-Motor de paginación por viewport con cache y tests unitarios.
+Crea la sesión cloze y conecta upload/normalización sin IA automática.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/slow-pagination-viewport.md`
-- Research R2
+**Contexto**: ROADMAP.md T04. Contratos: `cloze-pipeline.md` (trigger). Data model: `ClozeSessionData`.
 
-**Archivos**
-- `src/js/slow/pagination.js` (nuevo)
-- `cursor-tests/20260528_t05-pagination.mjs` (nuevo)
+**Archivos a tocar**:
+- `src/js/study.js` — `createClozeSession` (export), handler upload para modo cloze
+- Reutilizar `input-normalization.js` (import dinámico como Slow)
 
-**Tareas**
-1. `computePageBreakpoints(scopeText, containerEl, typography)` vía medida DOM/binary search.
-2. `getPageSlice`, `charOffsetToPage`, cache por tipografía.
-3. Tests: texto corto → N páginas; cambio fontSize altera count pero preserva charStart de página actual.
+**Requisitos**:
+1. `createClozeSession({ normalizedText, normalizedFormat, fileName, … })` → `{ studyMode: 'cloze', cloze: { normalizedText, pipelineStatus: 'normalized', … } }`.
+2. Upload igual que otros modos; **cero** llamadas LLM post-upload.
+3. Tras upload: mostrar botón "Generar ítems" (disabled hasta T09 si hace falta placeholder).
+4. `storeActiveSession` persiste en slot cloze.
 
-**Criterio de éxito**
-- Tests pasan; API exportada lista para T07.
-
-criterio de éxito: Paginación viewport testeada. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: subir .md en modo cloze crea sesión `pipelineStatus: 'normalized'` sin spinner IA. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Fase 0 IA (single + map-reduce)
+**PROMPT T05 — buildClozeEpistemicGraph**
 
-Generación de orientación previa con estrategia híbrida por tamaño de scope.
+Extiende el graph builder modo-agnóstico para grafo epistémico cloze.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase0-orientation-ia.md`
-- Research R5, R6
-- Prompts referencia: `slow_mode_spec.md` sección 10
+**Contexto**: ROADMAP.md T05. Contrato: `specs/20260529-cloze-mode/contracts/cloze-graph-view.md`. Referencia: `src/js/graph/build.js`.
 
-**Archivos**
-- `src/js/slow/phase0.js` (nuevo)
-- `src/js/api.js` o `llm.js` — funciones chat JSON para phase0
-- `index.html` + `study.js` — wire `screenSlowPhase0`, progreso map-reduce
+**Archivos a tocar**:
+- `src/js/graph/build.js` — `buildClozeEpistemicGraph`, rama `mode === 'cloze'` en `buildSessionGraph`
 
-**Tareas**
-1. `generatePhase0Single(scopeText, { criticalMode })` si len &lt; 60000.
-2. `mapReducePhase0(scopeText, boundaries)` si len ≥ 60000.
-3. UI bloques: tesis, mapa, conceptos, pregunta guía (+ críticos si aplica).
-4. Error red: Reintentar + Continuar sin orientación (`phase0Status: 'skipped'`).
+**Requisitos**:
+1. `buildClozeEpistemicGraph(session)` lee `session.cloze.epistemicGraph`.
+2. Mapea nodos/aristas a formato canvas existente (`nodes`, `edges`, `kind: 'cloze'`).
+3. `buildSessionGraph(session, { mode: 'cloze' })` devuelve grafo visualizable.
+4. No leer grafos RSVP/Slow.
+5. Grafo vacío si `epistemicGraph` null.
 
-**Criterio de éxito**
-- Ensayo corto genera Fase 0 en una llamada; texto largo muestra progreso por sección.
-
-criterio de éxito: Fase 0 híbrida funcional con fallback skip. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: unit test manual con grafo mock en cursor-test o console; `mountMaterialGraphScreen` acepta output. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Reader UI + tipografía + focus
+**PROMPT T06 — Pipeline Fase 0**
 
-Pantalla de lectura paginada Fase 1 con layout del diseño.
+Implementa generación de grafo epistémico (Fase 0) en `cloze/pipeline.js`.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase1-reader-ia.md` (layout)
-- Depende T05 (pagination) y T06 (phase0 → phase1 transition)
+**Contexto**: ROADMAP.md T06. Diseño: `cloze_mode_spec.md` § Fase 0. Research R4.
 
-**Archivos**
-- `src/js/slow/reader.js`
-- `src/css/slow-mode.css`
-- `index.html` — `screenSlowReader` completo
+**Archivos a tocar**:
+- `src/js/cloze/pipeline.js` (crear) — `generateEpistemicGraph(text, { llmModel })`
+- `src/js/cloze/normalize.js` (crear) — validación shape mínimo
+- `src/js/llm.js` — usar APIs existentes
 
-**Tareas**
-1. Render página actual desde breakpoints; prev/next + swipe.
-2. Barra progreso discreta; controles tipografía (persistir en `slow.typography`).
-3. Focus mode toggle: oculta sidebar y chrome.
-4. Actualizar `maxReadCharEnd` al cambiar de página.
+**Requisitos**:
+1. Una llamada IA → JSON `{ nodes[], edges[] }` con campos del data-model.
+2. Nodos `importance` 1–5; edges con `sentence_context`.
+3. Función pura testeable; sin DOM.
+4. Export para uso desde `study.js` en T09.
 
-**Criterio de éxito**
-- Lectura 3+ páginas fluida; focus mode deja solo texto + progreso.
-
-criterio de éxito: Reader paginado usable. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: función retorna grafo válido con texto mock o stub LLM en test. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Anotaciones por offset
+**PROMPT T07 — Pipeline Fases 1–2**
 
-Sistema de anotaciones con menú de tipos y marcas en margen.
+Análisis semántico + generación ítems base NODE/EDGE.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/annotation-char-offsets.md`
+**Contexto**: ROADMAP.md T07. `cloze_mode_spec.md` § Fases 1–2.
 
-**Archivos**
-- `src/js/slow/annotations.js` (nuevo)
-- `src/js/slow/reader.js` — integrar selección texto + margen
-- `src/css/slow-mode.css` — marcas por tipo
+**Archivos a tocar**:
+- `src/js/cloze/pipeline.js` — `analyzeSemanticCandidates`, `generateBaseItems`
+- `src/js/cloze/normalize.js` — validación candidatos e ítems base
 
-**Tareas**
-1. `ANNOTATION_TYPES` registry con tier y visibilidad.
-2. Selection → `charStart`/`charEnd` en coords scope.
-3. CRUD anotaciones en `slow.annotations[]`; persistir vía `storeActiveSession`.
-4. Render marcas en margen al pintar página.
+**Requisitos**:
+1. Fase 1: `node_candidates` (importance ≥ 3) + `edge_candidates` con `aptitude_score`.
+2. Fase 2: ítems NODE (DEF/APP/COND/CONTRAST) y EDGE (SOURCE/TARGET/RELATION) con `sentence_with_blank`, offsets.
+3. Texto ≤15k pasa completo; sin distractores aún.
+4. Tipos `item_type` según taxonomía spec.
 
-**Criterio de éxito**
-- Crear anotación `≈` en pág 2, navegar away y back: marca persiste.
-
-criterio de éxito: Anotaciones ancladas por carácter. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: pipeline fases 0→2 encadenables con grafo+texto de prueba. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T09 — IA Fase 1 anti-spoiler
+**PROMPT T08 — Pipeline Fases 3–4**
 
-Sidebar "Preguntar a IA" con contexto limitado a texto leído.
+Distractores L1+L3 y QA con dificultad.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase1-reader-ia.md`
-- Research R7
+**Contexto**: ROADMAP.md T08. Clarify: solo L1+L3, sin vault L2.
 
-**Archivos**
-- `src/js/slow/ai-context.js` (nuevo)
-- `src/js/slow/reader.js` — sidebar IA + overlay respuesta
-- Reutilizar patrones de `guide-chat.js` donde aplique
+**Archivos a tocar**:
+- `src/js/cloze/pipeline.js` — `generateDistractors`, `qaAndCalibrate`
+- `src/js/cloze/normalize.js` — `ClozeOption`, filtro `qa_status`
 
-**Tareas**
-1. `buildIAContext(slow)` = scopeText.slice(0, maxReadCharEnd).
-2. Prompt anti-spoiler; respuesta ≤3 oraciones; overlay dismissable.
-3. Wire `⚑` y `⇑` a prompts específicos.
+**Requisitos**:
+1. Fase 3: 3 distractores + respuesta correcta = 4 opciones; pool L1 del grafo; fallback L3.
+2. Gradiente plausibility high/medium/low.
+3. Fase 4: asignar `difficulty`, `qa_status` (valid/weak/rejected).
+4. Export `getValidItems(items)` → solo `valid`.
+5. Target balance EASY 30% / MEDIUM 50% / HARD 20% documentado en comentario.
 
-**Criterio de éxito**
-- Pregunta sobre final del texto antes de leerlo → IA no revela (SC-003).
-
-criterio de éxito: IA on-demand sin spoilers. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: `cursor-tests/20260529_t03-cloze-valid-items.mjs` pasa con fixtures. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T10 — Modo Crítico + menú tipos
+**PROMPT T09 — UI Generar ítems**
 
-Toggle lectura crítica y menú de anotación extendido.
+Botón y progreso del pipeline; wire en study.js.
 
-**Contexto**
-- FR-016; contrato `annotation-char-offsets.md`
+**Contexto**: ROADMAP.md T09. Contrato: `cloze-pipeline.md`.
 
-**Archivos**
-- `index.html` — toggle en scope o pre-phase0
-- `src/js/slow/annotations.js` — filtrar menú por `criticalMode`
+**Archivos a tocar**:
+- `index.html` — `#clozeGenerateBtn`, `#clozePipelineProgress`
+- `src/js/study.js` — handler async fases 0–4, actualizar `pipelineStatus`, persist
+- `src/css/cloze-mode.css` (crear mínimo)
 
-**Tareas**
-1. `slow.criticalMode` persistido; tipos críticos en menú primario si true.
-2. Fase 0 pide `criticalExaminePoints` cuando activo.
+**Requisitos**:
+1. Botón visible cuando `pipelineStatus === 'normalized'` o `failed`.
+2. Progreso: "Fase N/5: …" durante generación.
+3. Al `ready`: mostrar resumen (N ítems valid) + botón Estudiar.
+4. Error: mensaje + Reintentar desde fase fallida.
+5. Continuar sesión con grafo+items ready omite regeneración.
 
-**Criterio de éxito**
-- Con crítico ON, menú muestra `⊘ ↯ ⚠ ★ ⇑` sin abrir `···`.
-
-criterio de éxito: Modo Crítico afecta menú y Fase 0. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T11 — Checkpoints Fase 2
-
-Chips de checkpoint dismissable al fin de sección.
-
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase2-checkpoints.md`
-
-**Archivos**
-- `src/js/slow/checkpoints.js` (nuevo)
-- `src/js/slow/reader.js` — timer 10s + chip UI
-
-**Tareas**
-1. Detectar última página de `SectionBoundary`.
-2. Timer 10s → mostrar chip; dismiss → `checkpointsDismissed`.
-3. Respuesta → anotación `→`.
-
-**Criterio de éxito**
-- SC-005: dismiss no bloquea; responder crea anotación.
-
-criterio de éxito: Checkpoints opcionales operativos. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: flujo manual upload → Generar → ready con API key real. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T12 — Fase 3 consolidación
+**PROMPT T10 — Sesión MC cloze**
 
-Módulos A/B/C post-lectura.
+Pantalla de estudio multiple-choice reutilizando patrones review.
 
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase3-consolidation.md`
+**Contexto**: ROADMAP.md T10. Contrato: `cloze-study-session.md`.
 
-**Archivos**
-- `src/js/slow/phase3.js` (nuevo)
-- `index.html` — `screenSlowPhase3`
+**Archivos a tocar**:
+- `src/js/cloze/study.js` (crear)
+- `index.html` — `#screenClozeStudy`
+- `src/js/study.js` — navegación a estudio
+- Reutilizar: `shuffle-options.js`, `markdown.js`, patrones de `review.js`
 
-**Tareas**
-1. Módulo A: diff phase0 vs anotaciones (offset ±200).
-2. Módulo B: preguntas retrieval por tipo de anotación (IA).
-3. Módulo C: integración nodos `[Pedro:]` al grafo/diccionario.
-4. Botón "Lectura completa" en reader → phase3.
+**Requisitos**:
+1. Cola solo ítems `qa_status === 'valid'`.
+2. Oración con hueco + 4 opciones barajadas.
+3. Feedback inmediato; avanzar `studyIndex`; persistir stats.
+4. Reanudar restaura índice y orden (`studyOrder`).
+5. Sin SR. Sin romper review RSVP.
 
-**Criterio de éxito**
-- Flujo completo Fase 0→1→3 en ensayo corto de prueba.
-
-criterio de éxito: Fase 3 tres módulos navegables. Ejecuta /validate antes de cerrar este mensaje
-
----
-
-## PROMPT T13 — Grafo + gamificación + flashcards
-
-Depth score, hallazgos, vista grafo enriquecida, flashcards.
-
-**Contexto**
-- Contrato: `specs/20260528-slow-mode/contracts/phase3-consolidation.md`
-- `slow_mode_spec.md` secciones 11 y 8
-
-**Archivos**
-- `src/js/slow/gamification.js` (nuevo)
-- `src/js/dictionary.js` — nodos usuario
-- Integración flashcards existente (grep `flashcard` / review)
-
-**Tareas**
-1. Depth score tabla diseño; solo en Fase 3.
-2. Hallazgos silenciosos vs visibles (mapa rellenable).
-3. `graphEnrichedUnlocked` tras completar Fase 3.
-4. Convertir anotaciones a flashcards.
-
-**Criterio de éxito**
-- SC-006, SC-007, SC-008 verificables manualmente.
-
-criterio de éxito: Gamificación y flashcards integrados. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: completar ≥10 ítems; recargar y continuar mismo índice. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T14 — Export sesión Slow
+**PROMPT T11 — Ver grafo + CSS**
 
-Extender export Markdown con contenido Slow.
+Botón ver grafo y estilos mínimos del modo.
 
-**Archivos**
-- `src/js/export.js`
+**Contexto**: ROADMAP.md T11. Contrato: `cloze-graph-view.md`. Depende T05+T09.
 
-**Tareas**
-1. Si `studyMode === 'slow'`, export incluye scope, phase0, anotaciones tipadas, depth score.
-2. No romper export RSVP.
+**Archivos a tocar**:
+- `index.html` — botón Ver grafo, contenedor grafo en flujo cloze
+- `src/js/study.js` — `mountMaterialGraphScreen(session, el, { mode: 'cloze' })`
+- `src/css/cloze-mode.css` — progreso, estudio, grafo
+- `sw.js` — cache bust nuevos assets si aplica
 
-**Criterio de éxito**
-- Export mid-session Slow produce `.md` legible con anotaciones.
+**Requisitos**:
+1. Botón visible cuando `epistemicGraph` existe.
+2. Reutilizar `mountMaterialGraphScreen` — no nuevo canvas.
+3. Estilos coherentes con app existente.
 
-criterio de éxito: Export Slow sin regresión RSVP. Ejecuta /validate antes de cerrar este mensaje
+criterio de éxito: tras generar, Ver grafo muestra nodos del material. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T15 — QA quickstart + cursor-tests
+**PROMPT T12 — Tests + quickstart QA**
 
-Cierra QA del feature completo.
+Cierra QA del feature con cursor-tests y quickstart.
 
-**Contexto**
-- `specs/20260528-slow-mode/quickstart.md`
+**Contexto**: ROADMAP.md T12. `specs/20260529-cloze-mode/quickstart.md`.
 
-**Archivos**
-- `cursor-tests/20260528_t15-sessions-migration.mjs` (nuevo, si no cubierto en T01)
-- Verificar tests T05; añadir test anti-spoiler slice si falta
+**Archivos a tocar**:
+- `cursor-tests/20260529_t01-cloze-sessions.mjs` (si incompleto)
+- `cursor-tests/20260529_t02-cloze-pipeline-status.mjs` (crear)
+- `cursor-tests/20260529_t03-cloze-valid-items.mjs` (crear)
 
-**Tareas**
-1. Ejecutar checklist quickstart (10 escenarios).
-2. Añadir tests faltantes para migración y `maxReadCharEnd`.
-3. Documentar resultados en comentario de commit o nota breve.
+**Requisitos**:
+1. Tests cubren: slot cloze, transiciones pipelineStatus, filtro valid items.
+2. Ejecutar quickstart §1–8 manualmente documentando resultados.
+3. Verificar regresión RSVP/Slow §8.
 
-**Criterio de éxito**
-- Quickstart 1–9 pasan; RSVP regresión OK; tests cursor verdes.
+criterio de éxito: los 3 cursor-tests pasan; quickstart §1–7 verificados. Ejecuta /validate antes de cerrar este mensaje.
 
-criterio de éxito: Feature Slow Mode verificado end-to-end. Ejecuta /validate antes de cerrar este mensaje
+---
+
+## Instrucción de ejecución
+
+1. **Lanzar primero**: PROMPT **T01** (solo).
+2. **En paralelo**: PROMPT **T02** + **T05** (cuando T01 esté hecho).
+3. **Secuencial**: T03 → T04 → T06 → T07 → T08 → T09.
+4. **En paralelo**: T10 + T11 (cuando T09 esté hecho).
+5. **Cerrar**: T12.
+
+**Tiempo estimado**: T06–T08 son el cuello de botella (prompts IA + validación JSON).
+
+**Siguiente comando Spec Kit**: `/speckit-tasks` para generar `tasks.md` formal (opcional; este ROADMAP ya es ejecutable).

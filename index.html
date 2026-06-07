@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="src/css/main.css" />
     <link rel="stylesheet" href="src/css/sidebar.css" />
     <link rel="stylesheet" href="src/css/slow-mode.css" />
+    <link rel="stylesheet" href="src/css/cloze-mode.css" />
     <link rel="stylesheet" href="src/css/graph.css" />
   </head>
   <body>
@@ -251,6 +252,13 @@
                   <span class="study-mode-option-body">
                     <strong>Slow Mode</strong>
                     <span class="hint">Dense argument — paginated reading, annotations, phases 0–3.</span>
+                  </span>
+                </label>
+                <label class="study-mode-option">
+                  <input type="radio" name="studyMode" value="cloze" />
+                  <span class="study-mode-option-body">
+                    <strong>Cloze Detection</strong>
+                    <span class="hint">Active recall — cloze NODE/EDGE items generated from your material.</span>
                   </span>
                 </label>
               </div>
@@ -514,6 +522,18 @@
 
               <div id="generateBlocksError" class="error" hidden></div>
             </form>
+
+            <div id="clozeSessionPanel" class="cloze-session-panel" hidden>
+              <p id="clozePipelineProgress" class="hint cloze-pipeline-progress" aria-live="polite"></p>
+              <p id="clozeReadySummary" class="hint" hidden></p>
+              <div class="row cloze-action-row">
+                <button type="button" id="clozeGenerateBtn" class="btn-primary">Generar ítems</button>
+                <button type="button" id="clozeStudyBtn" class="btn-primary" hidden>Estudiar</button>
+                <button type="button" id="clozeViewGraphBtn" class="btn-secondary" hidden>Ver grafo</button>
+              </div>
+              <p id="clozePipelineError" class="error" hidden></p>
+              <div id="clozeGraphMount" class="cloze-graph-mount" hidden></div>
+            </div>
 
             <div class="divider"></div>
 
@@ -1155,6 +1175,16 @@
               <button type="button" id="slowGraphBackBtn">Back</button>
               <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export graph</button>
             </div>
+          </div>
+        </section>
+
+        <section id="screenClozeStudy" class="screen cloze-screen" aria-hidden="true" aria-label="Cloze study">
+          <div class="card cloze-study-card">
+            <div class="cloze-study-header">
+              <button type="button" id="clozeStudyBackBtn" class="create-back-btn">← Back</button>
+              <span id="clozeStudyMeta" class="hint"></span>
+            </div>
+            <div id="clozeStudyContent" class="cloze-study-content"></div>
           </div>
         </section>
       </div>

@@ -2,8 +2,11 @@ import { parseHeadings } from "./headings.js?v=20260528_1";
 import { getPageSlice, charOffsetToPage } from "./pagination.js?v=20260528_1";
 import { addAnnotation } from "./annotations.js?v=20260528_1";
 import { storeActiveSession } from "../session.js?v=20260527_1";
+import { generateCheckpointQuestion } from "./phase0.js?v=20260528_1";
+import { getStudyLanguage } from "../ui.js?v=20260525_1";
 
 const CHECKPOINT_DELAY_MS = 10000;
+export const CHECKPOINT_CHIP_LABEL = "[≡ CHECKPOINT · 30 seg]";
 
 /** Section boundaries within scope coordinates. */
 export function buildSectionBoundaries(scopeText, format) {
@@ -30,6 +33,7 @@ export function isLastPageOfSection(breakpoints, pageIndex, section) {
 
 let checkpointTimer = null;
 let checkpointEl = null;
+let checkpointGen = 0;
 
 export function clearCheckpointTimer() {
   if (checkpointTimer) clearTimeout(checkpointTimer);
@@ -53,11 +57,46 @@ export function maybeScheduleCheckpoint(session, breakpoints, pageIndex, onAnswe
   if (!section) return;
 
   checkpointTimer = setTimeout(() => {
-    showCheckpointChip(session, section, onAnswer);
+    void showCheckpointChip(session, section, onAnswer);
   }, CHECKPOINT_DELAY_MS);
 }
 
-function showCheckpointChip(session, section, onAnswer) {
+function dismissCheckpoint(session, section) {
+  session.slow.checkpointsDismissed = [...(session.slow.checkpointsDismissed || []), section.id];
+  storeActiveSession(session);
+  if (checkpointEl) checkpointEl.hidden = true;
+}
+
+function getSectionText(session, section) {
+  const slow = session?.slow;
+  const scopeText = String(slow?.normalizedTextFull || "").slice(
+    slow?.readingScope?.charStart || 0,
+    slow?.readingScope?.charEnd,
+  );
+  return scopeText.slice(section.charStart, section.charEnd);
+}
+
+export async function resolveCheckpointQuestion(session, section) {
+  const slow = session?.slow;
+  if (!slow) return "";
+  const cached = slow.checkpointQuestions?.[section.id];
+  if (cached) return cached;
+
+  const question = await generateCheckpointQuestion({
+    section,
+    argumentMap: slow.phase0?.argumentMap,
+    sectionText: getSectionText(session, section),
+    llmModel: session.llmModel || session._meta?.llm_model,
+    phase0Skipped: slow.phase0Status === "skipped",
+  });
+
+  slow.checkpointQuestions = { ...(slow.checkpointQuestions || {}), [section.id]: question };
+  storeActiveSession(session);
+  return question;
+}
+
+async function showCheckpointChip(session, section, onAnswer) {
+  const gen = ++checkpointGen;
   if (!checkpointEl) {
     checkpointEl = document.createElement("div");
     checkpointEl.id = "slowCheckpointChip";
@@ -65,19 +104,27 @@ function showCheckpointChip(session, section, onAnswer) {
     document.body.appendChild(checkpointEl);
   }
   checkpointEl.innerHTML = "";
-  const label = document.createElement("span");
-  label.textContent = `[≡ CHECKPOINT · ${section.title}]`;
   const dismiss = document.createElement("button");
   dismiss.type = "button";
+  dismiss.className = "slow-checkpoint-dismiss";
+  dismiss.setAttribute("aria-label", "Dismiss checkpoint");
   dismiss.textContent = "×";
-  dismiss.addEventListener("click", () => {
-    session.slow.checkpointsDismissed = [...(session.slow.checkpointsDismissed || []), section.id];
-    storeActiveSession(session);
-    checkpointEl.hidden = true;
-  });
+  dismiss.addEventListener("click", () => dismissCheckpoint(session, section));
+
+  const label = document.createElement("span");
+  label.className = "slow-checkpoint-label";
+  label.textContent = CHECKPOINT_CHIP_LABEL;
+
+  const questionEl = document.createElement("p");
+  questionEl.className = "slow-checkpoint-question";
+  questionEl.textContent = "…";
+
   const input = document.createElement("input");
   input.type = "text";
-  input.placeholder = "Summarize this section in one sentence…";
+  input.className = "slow-checkpoint-input";
+  const lang = getStudyLanguage() || "English";
+  input.placeholder = /spanish|español|^es/i.test(lang) ? "Tu respuesta…" : "Your answer…";
+
   const send = document.createElement("button");
   send.type = "button";
   send.textContent = "→";
@@ -90,12 +137,11 @@ function showCheckpointChip(session, section, onAnswer) {
       charEnd: section.charEnd,
       userText: text,
     });
-    session.slow.checkpointsDismissed = [...(session.slow.checkpointsDismissed || []), section.id];
-    storeActiveSession(session);
-    checkpointEl.hidden = true;
+    dismissCheckpoint(session, section);
     if (typeof onAnswer === "function") onAnswer();
   });
-  checkpointEl.append(dismiss, label, input, send);
+
+  checkpointEl.append(label, dismiss, questionEl, input, send);
   checkpointEl.hidden = false;
 
   let startX = 0;
@@ -110,14 +156,19 @@ function showCheckpointChip(session, section, onAnswer) {
     "touchend",
     (e) => {
       const dx = (e.changedTouches?.[0]?.clientX || 0) - startX;
-      if (Math.abs(dx) > 50) {
-        session.slow.checkpointsDismissed = [...(session.slow.checkpointsDismissed || []), section.id];
-        storeActiveSession(session);
-        checkpointEl.hidden = true;
-      }
+      if (Math.abs(dx) > 50) dismissCheckpoint(session, section);
     },
     { once: true, passive: true },
   );
+
+  try {
+    const question = await resolveCheckpointQuestion(session, section);
+    if (gen !== checkpointGen || checkpointEl.hidden) return;
+    questionEl.textContent = question;
+  } catch {
+    if (gen !== checkpointGen || checkpointEl.hidden) return;
+    questionEl.textContent = "…";
+  }
 }
 
 export { charOffsetToPage };

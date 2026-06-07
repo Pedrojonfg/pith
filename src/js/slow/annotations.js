@@ -1,5 +1,7 @@
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
+export const IA_QUERY_TYPE = "ia-query";
+
 export const ANNOTATION_TYPES = [
   { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
   { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question", hotkey: "2" },
@@ -38,7 +40,13 @@ export function newAnnotationId() {
     : `a_${Date.now().toString(36)}`;
 }
 
-export function addAnnotation(session, { type, charStart, charEnd, userText = "" }) {
+export function isIAQueryAnnotation(ann) {
+  if (!ann) return false;
+  if (ann.type === IA_QUERY_TYPE || ann.isIAQuery) return true;
+  return (ann.type === "⚑" || ann.type === "⇑") && Boolean(ann.aiReply);
+}
+
+export function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
   if (!session?.slow) return null;
   const scopeLen =
     Number(session.slow.readingScope?.charEnd) - Number(session.slow.readingScope?.charStart);
@@ -52,12 +60,23 @@ export function addAnnotation(session, { type, charStart, charEnd, userText = ""
     charEnd: end,
     userText: String(userText || "").trim(),
     createdAt: Date.now(),
-    aiReply: null,
+    aiReply: aiReply != null ? String(aiReply) : null,
     graphLinks: [],
   };
+  if (type === IA_QUERY_TYPE) entry.isIAQuery = true;
   if (!Array.isArray(session.slow.annotations)) session.slow.annotations = [];
   session.slow.annotations.push(entry);
   return entry;
+}
+
+export function addIAQueryAnnotation(session, { userText, charStart, charEnd, aiReply = null }) {
+  return addAnnotation(session, {
+    type: IA_QUERY_TYPE,
+    charStart,
+    charEnd,
+    userText,
+    aiReply,
+  });
 }
 
 export function updateAnnotation(session, id, patch) {
@@ -78,6 +97,30 @@ export function deleteAnnotation(session, id) {
   return true;
 }
 
+export function findAnnotation(session, id) {
+  const list = session?.slow?.annotations;
+  if (!Array.isArray(list)) return null;
+  return list.find((a) => a.id === id) || null;
+}
+
+/** @returns {{ termId: string, relation: string } | null} */
+export function addGraphLink(session, annotationId, { termId, relation } = {}) {
+  const ann = findAnnotation(session, annotationId);
+  if (!ann) return null;
+  const tid = String(termId || "").trim();
+  if (!tid) return null;
+  const entry = { termId: tid, relation: String(relation || "").trim() };
+  if (!Array.isArray(ann.graphLinks)) ann.graphLinks = [];
+  ann.graphLinks.push(entry);
+  return entry;
+}
+
+export function addLiteratureGraphLink(session, annotationId, note) {
+  const rel = String(note || "").trim();
+  if (!rel) return null;
+  return addGraphLink(session, annotationId, { termId: "literature", relation: rel });
+}
+
 export function annotationsOnPage(annotations, pageSlice) {
   const { charStart, charEnd } = pageSlice;
   return (annotations || []).filter(
@@ -95,4 +138,33 @@ export function annotationMarkClass(type) {
     "⚠": "critical",
   };
   return map[type] || "approx";
+}
+
+/** Critical types that trigger steel-man nudge on confirm (T07). */
+export const STEELMAN_NUDGE_TYPES = new Set(["⊘", "↯", "⚠"]);
+
+/** Prior annotation types that satisfy steel-man prerequisite (T07). */
+export const STEELMAN_PRECURSOR_TYPES = new Set(["⇑", "≈"]);
+
+/**
+ * True if a ⇑/≈ annotation with user text exists within ±windowChars of target.
+ */
+export function hasSteelManPrecursorNearby(annotations, targetAnn, windowChars = 500) {
+  if (!targetAnn) return false;
+  const list = Array.isArray(annotations) ? annotations : [];
+  const lo = Math.max(0, (Number(targetAnn.charStart) || 0) - windowChars);
+  const hi = (Number(targetAnn.charEnd) || 0) + windowChars;
+  return list.some((a) => {
+    if (a.id === targetAnn.id) return false;
+    if (!STEELMAN_PRECURSOR_TYPES.has(a.type)) return false;
+    if (!String(a.userText || "").trim()) return false;
+    const aStart = Number(a.charStart) || 0;
+    const aEnd = Number(a.charEnd) || aStart;
+    return aEnd > lo && aStart < hi;
+  });
+}
+
+export function shouldShowSteelManNudge(annotations, targetAnn, windowChars = 500) {
+  if (!targetAnn || !STEELMAN_NUDGE_TYPES.has(targetAnn.type)) return false;
+  return !hasSteelManPrecursorNearby(annotations, targetAnn, windowChars);
 }

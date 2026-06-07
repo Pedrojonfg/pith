@@ -331,16 +331,69 @@ export function buildSlowPhase0Graph(session) {
   return { nodes: g.nodes, edges: g.edges, kind: "slow_phase0" };
 }
 
+function clozeNodeId(epistemicId) {
+  return `cloze:${String(epistemicId || "").trim()}`;
+}
+
+/**
+ * Cloze epistemic graph from pipeline Fase 0 (session.cloze only).
+ * @param {object} session
+ */
+export function buildClozeEpistemicGraph(session) {
+  const epistemicGraph = session?.cloze?.epistemicGraph;
+  if (!epistemicGraph || typeof epistemicGraph !== "object") {
+    return { nodes: [], edges: [], kind: "cloze" };
+  }
+
+  const g = createGraphBuilder();
+  const rawNodes = Array.isArray(epistemicGraph.nodes) ? epistemicGraph.nodes : [];
+  const rawEdges = Array.isArray(epistemicGraph.edges) ? epistemicGraph.edges : [];
+
+  for (const node of rawNodes) {
+    const id = String(node?.id || "").trim();
+    const text = String(node?.text || "").trim();
+    if (!id || !text) continue;
+    const canvasNode = {
+      id: clozeNodeId(id),
+      label: text,
+      layer: "concept",
+      epistemicId: id,
+    };
+    const importance = Number(node?.importance);
+    if (Number.isFinite(importance) && importance >= 1 && importance <= 5) {
+      canvasNode.importance = importance;
+    }
+    const nodeType = String(node?.type || "").trim();
+    if (nodeType) canvasNode.epistemicType = nodeType;
+    g.addNode(canvasNode);
+  }
+
+  for (const edge of rawEdges) {
+    const sourceId = String(edge?.source_id || "").trim();
+    const targetId = String(edge?.target_id || "").trim();
+    if (!sourceId || !targetId || sourceId === targetId) continue;
+    const edgeType = String(edge?.type || "relates").trim() || "relates";
+    g.addEdge(clozeNodeId(sourceId), clozeNodeId(targetId), edgeType);
+  }
+
+  g.sortNodes();
+  return { nodes: g.nodes, edges: g.edges, kind: "cloze" };
+}
+
 /**
  * Mode-agnostic entry: pick the best graph for the current context.
  * @param {object} session
- * @param {{ conceptInventory?: object[], blockIndex?: object[], mode?: 'auto'|'rsvp'|'slow'|'slow_phase0'|'slow_enriched' }} [options]
+ * @param {{ conceptInventory?: object[], blockIndex?: object[], mode?: 'auto'|'rsvp'|'slow'|'slow_phase0'|'slow_enriched'|'cloze' }} [options]
  */
 export function buildSessionGraph(session, options = {}) {
   const mode = String(options.mode || "auto").trim();
   const blockIndex = options.blockIndex ?? session?._meta?.material_graph?.blockIndex ?? null;
   const conceptInventory =
     options.conceptInventory ?? session?._meta?.material_graph?.conceptInventory ?? null;
+
+  if (mode === "cloze") {
+    return buildClozeEpistemicGraph(session);
+  }
 
   if (mode === "slow_phase0") {
     return buildSlowPhase0Graph(session);
