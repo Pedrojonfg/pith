@@ -70,6 +70,7 @@ import {
   prefetchState,
   buildBlockConfigKey,
   generateQuestionsOnlyForIndex,
+  generateQuestionsBlockForIndex,
   recordResponse,
   resolveBlockQuestionConfig,
   resolveRegenMode,
@@ -85,6 +86,7 @@ import {
   setOnPrefetchReady,
   getPrefetchedBlock,
   hasGeneratedBlockContent,
+  isQuestionsStudyMode,
   normalizeBlockJson,
   ensureSessionResponseState,
   applyAssessmentResults,
@@ -136,6 +138,7 @@ import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
 import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260607_1";
 import { enterClozeStudyScreen, wireClozeStudyHandlers } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
+import { startReviewFromSessionBlocks } from "./review.js?v=20260525_1";
 
 export function createClozeSession({
   normalizedText,
@@ -227,6 +230,7 @@ function getSelectedStudyModeRadio() {
 function getStudyModeLabel(mode) {
   if (mode === "slow") return "Slow Mode";
   if (mode === "cloze") return "Cloze Detection";
+  if (mode === "questions") return "Questions";
   return "RSVP";
 }
 
@@ -271,11 +275,13 @@ function updateCreateScreenModeVisibility(mode) {
   const isSlow = mode === "slow";
   const isRsvp = mode === "rsvp";
   const isCloze = mode === "cloze";
+  const isQuestions = mode === "questions";
+  const showBlockConfig = isRsvp || isQuestions;
   if (els.rsvpOnlyControls) els.rsvpOnlyControls.hidden = !isRsvp;
-  if (els.rsvpBlocksSection) els.rsvpBlocksSection.hidden = !isRsvp;
+  if (els.rsvpBlocksSection) els.rsvpBlocksSection.hidden = !showBlockConfig;
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
-  if (els.blocksInput) els.blocksInput.required = isRsvp;
+  if (els.blocksInput) els.blocksInput.required = showBlockConfig;
   if (els.generateBlocksBtn) {
     els.generateBlocksBtn.textContent =
       isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
@@ -542,6 +548,18 @@ function resumeRsvpSession(session) {
   const n = Math.max(1, Number(session?.n_blocks) || 1);
   if (els.sessionReadyMeta) {
     els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+  }
+  setFullPackEntryCta(n);
+  showScreen("ready");
+}
+
+function resumeQuestionsSession(session) {
+  state.activeSession = session;
+  state.studyMode = "questions";
+  storeActiveSession(session);
+  const n = Math.max(1, Number(session?.n_blocks) || 1);
+  if (els.sessionReadyMeta) {
+    els.sessionReadyMeta.textContent = `Questions session ready. Blocks: ${n}`;
   }
   setFullPackEntryCta(n);
   showScreen("ready");
@@ -1153,6 +1171,7 @@ function wireStudyModeSelector() {
     if (!session) return;
     if (mode === "slow") resumeSlowSession(session);
     else if (mode === "cloze") resumeClozeSession(session);
+    else if (mode === "questions") resumeQuestionsSession(session);
     else resumeRsvpSession(session);
   });
 
@@ -1894,6 +1913,11 @@ function refreshUiOnPrefetchReady() {
 function renderTransitionSneakPeek(o, finishedIdx) {
   if (!o?.sneakPeekWrap || !o?.sneakPeekText) return;
   if (!Number.isFinite(finishedIdx)) return;
+  if (isQuestionsStudyMode(state.activeSession)) {
+    o.sneakPeekWrap.hidden = true;
+    o.sneakPeekText.textContent = "";
+    return;
+  }
 
   const nextIndex = finishedIdx + 1;
   const expectedKey = String(o.expectedPrefetchConfigKey || "");
@@ -2083,8 +2107,15 @@ function getOrCreateTransitionOverlay() {
   adjustBtn.textContent = "Adjust next block";
   adjustBtn.className = "btn-secondary";
 
+  const reviewBlockBtn = document.createElement("button");
+  reviewBlockBtn.type = "button";
+  reviewBlockBtn.textContent = "Review block questions";
+  reviewBlockBtn.className = "btn-secondary";
+  reviewBlockBtn.hidden = true;
+
   defaultActions.appendChild(continueBtn);
   defaultActions.appendChild(adjustBtn);
+  defaultActions.appendChild(reviewBlockBtn);
 
   const row = document.createElement("div");
   row.className = "row";
@@ -2180,6 +2211,7 @@ function getOrCreateTransitionOverlay() {
     nextSocValue,
     continueBtn,
     adjustBtn,
+    reviewBlockBtn,
     confirmBtn,
     backBtn,
     retryBtn,
@@ -2200,50 +2232,54 @@ async function ensureBlockGenerated(blockIndex) {
     throw new Error("Missing offline block data.");
   }
 
-  const llmModel = getSessionLlmModel(state.activeSession);
-  assertLlmKeyPresent(llmModel);
-
-  const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
-  if (!blocksListText) throw new Error("Missing confirmed blocks list.");
-
-  const blockTitle = getBlockTitleFromList(blockIndex);
-  const materialChunk = getBlockChunkFromIndex(blockIndex);
-  if (!materialChunk) {
-    throw new Error("Missing block chunk for this session. Please regenerate blocks.");
-  }
-
   const cfg = resolveBlockQuestionConfig(blockIndex);
   if ((cfg.n_test || 0) <= 0 && (cfg.n_socratic || 0) <= 0) {
     console.warn(`Block ${blockIndex + 1}: invalid question config (n_test=0 and n_socratic=0).`);
   }
 
-  const blockRequest = {
-    llmModel,
-    blocksListText,
-    materialText: materialChunk,
-    blockIndex,
-    blockTitle,
-    language: getStudyLanguage(),
-    n_test: cfg.n_test,
-    n_socratic: cfg.n_socratic,
-    explanation_profile: cfg.explanation_profile,
-    gap_focus: cfg.gap_focus,
-    include_connection_questions: cfg.include_connection_questions,
-  };
+  let cleaned = null;
+  if (isQuestionsStudyMode(state.activeSession)) {
+    cleaned = await generateQuestionsBlockForIndex(blockIndex, cfg);
+  } else {
+    const llmModel = getSessionLlmModel(state.activeSession);
+    assertLlmKeyPresent(llmModel);
 
-  let obj = null;
-  try {
-    obj = await deepSeekGenerateBlockJson(blockRequest);
-  } catch (err) {
-    const message = err?.message ? String(err.message) : String(err);
-    if (!message.includes("valid JSON")) throw err;
-    obj = await deepSeekGenerateBlockJson(blockRequest);
+    const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
+    if (!blocksListText) throw new Error("Missing confirmed blocks list.");
+
+    const blockTitle = getBlockTitleFromList(blockIndex);
+    const materialChunk = getBlockChunkFromIndex(blockIndex);
+    if (!materialChunk) {
+      throw new Error("Missing block chunk for this session. Please regenerate blocks.");
+    }
+
+    const blockRequest = {
+      llmModel,
+      blocksListText,
+      materialText: materialChunk,
+      blockIndex,
+      blockTitle,
+      language: getStudyLanguage(),
+      n_test: cfg.n_test,
+      n_socratic: cfg.n_socratic,
+      explanation_profile: cfg.explanation_profile,
+      gap_focus: cfg.gap_focus,
+      include_connection_questions: cfg.include_connection_questions,
+    };
+
+    let obj = null;
+    try {
+      obj = await deepSeekGenerateBlockJson(blockRequest);
+    } catch (err) {
+      const message = err?.message ? String(err.message) : String(err);
+      if (!message.includes("valid JSON")) throw err;
+      obj = await deepSeekGenerateBlockJson(blockRequest);
+    }
+
+    warnBlockGenerationProfileMismatch(obj, cfg);
+    cleaned = normalizeBlockJson(obj, cfg, blockIndex);
+    cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
   }
-
-  warnBlockGenerationProfileMismatch(obj, cfg);
-
-  const cleaned = normalizeBlockJson(obj, cfg, blockIndex);
-  cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
 
   const testCount = cleaned.questions.filter((q) => q && typeof q === "object" && q.type === "test")
     .length;
@@ -2407,6 +2443,13 @@ async function startTestBlock() {
     els.testRsvpSkipBtn.disabled = false;
   }
 
+  if (isQuestionsStudyMode(state.activeSession)) {
+    showScreen("test");
+    updateStudyProgressUi();
+    showQuestions(state.activeBlockIndex);
+    return;
+  }
+
   beginRsvpForCurrentBlock({
     onDone: () => {
       showScreen("test");
@@ -2434,6 +2477,13 @@ async function startSocraticBlock() {
   } finally {
     setSocraticLoading(false);
     els.socraticStatus.textContent = "";
+  }
+
+  if (isQuestionsStudyMode(state.activeSession)) {
+    showScreen("socratic");
+    updateStudyProgressUi();
+    showQuestions(state.activeBlockIndex);
+    return;
   }
 
   beginRsvpForCurrentBlock({
@@ -2751,6 +2801,22 @@ async function finishQuestions(blockIndex) {
 
   renderNextCfgUi();
 
+  if (o.reviewBlockBtn) {
+    const showReview = isQuestionsStudyMode(state.activeSession);
+    o.reviewBlockBtn.hidden = !showReview;
+    o.reviewBlockBtn.onclick = () => {
+      if (!showReview) return;
+      stopOverlayPoll();
+      setTransitionOverlayOpen(false);
+      try {
+        startReviewFromSessionBlocks({ blockIndices: [idx], reviewType: "both" });
+      } catch (err) {
+        setTestError(err?.message ? String(err.message) : String(err));
+        showScreen("test");
+      }
+    };
+  }
+
   const setStatusPreparing = () => {
     o.statusBarText.textContent = "Preparing next block…";
     o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
@@ -2962,11 +3028,15 @@ async function finishQuestions(blockIndex) {
           data = await getPrefetchedBlock(nextIndex, { configKey: keyOf(nextCfg) });
         } else if (mode === "questions_only") {
           o.status.textContent = "Regenerating questions…";
-          data = await generateQuestionsOnlyForIndex(nextIndex, {
-            n_test: nextCfg.n_test,
-            n_socratic: nextCfg.n_socratic,
-            baseBlock,
-          });
+          if (isQuestionsStudyMode(state.activeSession)) {
+            data = await generateQuestionsBlockForIndex(nextIndex, nextCfg);
+          } else {
+            data = await generateQuestionsOnlyForIndex(nextIndex, {
+              n_test: nextCfg.n_test,
+              n_socratic: nextCfg.n_socratic,
+              baseBlock,
+            });
+          }
           updatePrefetchSlot(data, nextCfg);
           setPrefetchIndicator("ready");
           setStatusReady();
@@ -4548,6 +4618,7 @@ export function wireStudyHandlers() {
       clearGuideChatStorage({ removeAllStored: true });
 
       const sessionObj = initActiveSessionFromBlocksList({
+        mode: normalizeStudyMode(state.studyMode),
         nBlocks,
         blocksListText: confirmedBlocksListText,
         includeConnectionQuestions: state.includeConnectionQuestions,

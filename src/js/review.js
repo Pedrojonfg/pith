@@ -12,7 +12,7 @@ import {
   LS_REVIEW_SESSION_MD_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
 } from "./config.js?v=20260525_1";
-import { clampInt, getMissedTestQuestions, state } from "./session.js?v=20260527_1";
+import { clampInt, getMissedTestQuestions, getTotalBlocksSafe, isQuestionsStudyMode, state } from "./session.js?v=20260527_1";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
@@ -520,6 +520,52 @@ function normalizeReviewQuestion(q) {
   return shuffleTestQuestionOptions(normalizeTestQuestion({ ...obj, type: "test", question }));
 }
 
+function collectQuestionsFromSessionBlocks(blockIndices, typeFilter = "both") {
+  const blocks = Array.isArray(state.activeSession?.blocks) ? state.activeSession.blocks : [];
+  const rt = String(typeFilter || "both").trim().toLowerCase();
+  const out = [];
+  for (const bi of blockIndices) {
+    const idx = Math.max(0, Math.floor(Number(bi) || 0));
+    const block = blocks[idx];
+    if (!block || typeof block !== "object") continue;
+    const qs = Array.isArray(block.questions) ? block.questions : [];
+    for (const q of qs) {
+      if (!q || typeof q !== "object") continue;
+      const t = String(q.type || "").trim().toLowerCase();
+      if (rt === "test" && t !== "test") continue;
+      if (rt === "socratic" && t !== "socratic") continue;
+      const norm = normalizeReviewQuestion(q);
+      if (norm) out.push(norm);
+    }
+  }
+  return out;
+}
+
+/** Start review using questions already generated in the active session (Questions mode / block review). */
+export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = "both" } = {}) {
+  const rt = type === "test" || type === "socratic" ? type : "both";
+  const indices = Array.isArray(blockIndices)
+    ? blockIndices.map((i) => Math.max(0, Math.floor(Number(i) || 0)))
+    : [];
+  if (!indices.length) {
+    throw new Error("Select at least one block to review.");
+  }
+  const collected = collectQuestionsFromSessionBlocks(indices, rt);
+  if (!collected.length) {
+    throw new Error("No questions available for review in the selected blocks.");
+  }
+
+  resetReviewRun();
+  reviewType = rt;
+  reviewQuestions = collected;
+  reviewIndex = 0;
+  reviewCorrect = 0;
+  reviewTestTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
+  reviewAnswers = new Array(reviewQuestions.length).fill(null);
+  showScreen("review");
+  renderReviewQuestion();
+}
+
 function renderReviewQuestion() {
   clearReviewError();
   const total = reviewQuestions.length;
@@ -822,7 +868,19 @@ async function startReviewGeneration() {
 
 export function wireReviewHandlers() {
   if (els.reviewSessionBtn) {
-    els.reviewSessionBtn.addEventListener("click", () => showReviewConfig());
+    els.reviewSessionBtn.addEventListener("click", () => {
+      if (isQuestionsStudyMode(state.activeSession)) {
+        const total = Math.max(1, getTotalBlocksSafe());
+        const indices = Array.from({ length: total }, (_, i) => i);
+        try {
+          startReviewFromSessionBlocks({ blockIndices: indices, reviewType: "both" });
+          return;
+        } catch {
+          // fall through to config screen if no questions yet
+        }
+      }
+      showReviewConfig();
+    });
   }
 
   els.reviewTypeTestBtn.addEventListener("click", () => setReviewType("test"));
