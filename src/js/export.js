@@ -15,7 +15,7 @@ import {
   state,
   ensureSessionResponseState,
 } from "./session.js?v=20260527_1";
-import { isOfflineMode } from "./main.js?v=20260525_1";
+import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 
 function sanitizeFilenameStem(name) {
@@ -215,7 +215,9 @@ function buildSlowMarkdown(session) {
   for (const a of slow.annotations || []) {
     lines.push(`- ${a.type} [${a.charStart}-${a.charEnd}] ${a.userText || ""}`);
   }
-  const depth = slow.depthScore || computeDepthScore(slow.annotations);
+  const depth =
+    slow.depthScore ||
+    computeDepthScore(slow.annotations, { criticalMode: Boolean(slow.criticalMode) });
   lines.push("");
   lines.push("## Depth score");
   lines.push(`Total: ${depth.total}`);

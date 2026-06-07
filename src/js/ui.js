@@ -1,7 +1,7 @@
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
 import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
-import { isOfflineMode } from "./main.js?v=20260525_1";
+import { isOfflineMode } from "./offline.js?v=20260606_1";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;
@@ -662,10 +662,19 @@ export function getStudyLanguage() {
   return "English";
 }
 
+function resolveModeSelectScreenEl() {
+  if (els.screenModeSelect) return els.screenModeSelect;
+  const el = document.getElementById("screenModeSelect");
+  if (el) els.screenModeSelect = el;
+  return el;
+}
+
 export function showScreen(which) {
   const showSetup = which === "setup";
   const showModeSelect = which === "modeSelect";
-  const showCreate = which === "create";
+  const modeSelectEl = showModeSelect ? resolveModeSelectScreenEl() : els.screenModeSelect;
+  const showModeSelectScreen = showModeSelect && !!modeSelectEl;
+  const showCreate = which === "create" || (showModeSelect && !modeSelectEl);
   const showBlocks = which === "blocks";
   const showAssessment = which === "assessment";
   const showAssessmentGenerating = which === "assessmentGenerating";
@@ -687,7 +696,7 @@ export function showScreen(which) {
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
-  els.screenModeSelect?.setAttribute("aria-hidden", String(!showModeSelect));
+  if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
@@ -733,7 +742,7 @@ export function showScreen(which) {
     setTimeout(() => els.apiKeyInput.focus(), 0);
   }
 
-  if (showModeSelect) {
+  if (showModeSelectScreen) {
     setTimeout(() => {
       const firstMode = document.querySelector('input[name="studyMode"]');
       if (firstMode) firstMode.focus();
@@ -777,6 +786,12 @@ export function showScreen(which) {
     els.testFeedback.textContent = "";
     els.testNextBtn.hidden = true;
     els.testNextBtn.textContent = "";
+  }
+
+  const anyVisible = document.querySelector('.screen[aria-hidden="false"]');
+  if (!anyVisible) {
+    console.warn(`showScreen("${which}"): no visible screen — falling back to setup`);
+    els.screenApiSetup.setAttribute("aria-hidden", "false");
   }
 }
 
