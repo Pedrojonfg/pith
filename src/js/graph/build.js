@@ -181,9 +181,19 @@ export function collectTextConceptsFromLists(sessionConcepts = [], conceptsToFin
 }
 
 function edgeTypeForAnnotation(type) {
-  if (type === "⊘") return "refuta";
-  if (type === "↯" || type === "⚠") return "cuestiona";
+  if (type === "⊘") return "contradicts";
+  if (type === "★" || type === "⇑") return "supports";
+  if (type === "↯" || type === "⚠") return "contradicts";
   if (RELATES_TYPES.has(type)) return "relates";
+  return "relates";
+}
+
+function edgeTypeForGraphLink(ann, link) {
+  const relation = String(link?.relation || "").trim();
+  if (relation === "supports" || relation === "contradicts" || relation === "instantiates") {
+    return relation;
+  }
+  if (ann?.type === "≈") return "instantiates";
   return "relates";
 }
 
@@ -248,7 +258,7 @@ export function buildSlowEnrichedGraphFromInputs(inputs = {}) {
             : `[Texto] ${termId.replace(/_/g, " ")}`;
         g.addNode({ id: textNodeId(termId), label, layer: "text", termId });
       }
-      g.addEdge(uid, textNodeId(termId), "relates");
+      g.addEdge(uid, textNodeId(termId), edgeTypeForGraphLink(ann, link));
     }
 
     const needsArgLink =

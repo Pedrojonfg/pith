@@ -6,9 +6,6 @@ import {
 } from "./config.js?v=20260525_1";
 import {
   buildResumePayload,
-  gapLabelsForBlock,
-  getBlockResumeStatus,
-  getMissedTestQuestions,
   hasGeneratedBlockContent,
   normalizeGapsByBlock,
   parseBlockTitlesFromList,
@@ -19,6 +16,17 @@ import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
 import { buildSessionGraph } from "./graph/adapters.js?v=20260607_2";
+import {
+  appendSourceOfTruthAndResumeCapsule,
+  buildExportFrontmatter,
+  defaultFindingReviewPriority,
+  defaultGapReviewPriority,
+  extractTopTensions,
+  inferErrorType,
+  isTestResponseIncorrect,
+  resolveSocraticMode,
+  resolveStudentSynthesis,
+} from "./export-format.js?v=20260607_1";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -116,20 +124,22 @@ export function formatAssessmentGapsExportSection(assessmentMeta, { titleMap = {
   const sortedIds = [...blockIds].sort((a, b) => Number(a) - Number(b));
   for (const blockId of sortedIds) {
     const entries = Array.isArray(gapsByBlock[blockId]) ? gapsByBlock[blockId] : [];
-    const labels = gapLabelsForBlock(gapsByBlock, blockId);
-    if (!labels.length) continue;
+    if (!entries.length) continue;
     anyGaps = true;
     const title =
       titleMap[blockId] != null && String(titleMap[blockId]).trim()
         ? String(titleMap[blockId]).trim()
         : `Block ${blockId}`;
-    const parts = entries.map((entry) => {
+    const weakBlocks = Array.isArray(assessmentMeta.weak_blocks) ? assessmentMeta.weak_blocks : [];
+    const blockIsWeak = weakBlocks.some((id) => String(id) === String(blockId));
+    lines.push(`- **Block ${blockId} — ${title}**`);
+    for (const entry of entries) {
       const label = String(entry?.label || "").trim();
-      if (!label) return "";
-      if (entry?.source === "user") return `${label} (edited)`;
-      return label;
-    }).filter(Boolean);
-    lines.push(`- **Block ${blockId} — ${title}**: ${parts.join("; ")}`);
+      if (!label) continue;
+      const edited = entry?.source === "user" ? " (edited)" : "";
+      const priority = defaultGapReviewPriority(entry, { blockIsWeak });
+      lines.push(`  - ${label}${edited} · review_priority: ${priority}`);
+    }
   }
 
   if (!anyGaps) lines.push("- (none recorded)");
@@ -223,35 +233,27 @@ function formatGraphLinks(links) {
     .join(", ");
 }
 
-/** Append Phase 0, enriched, and RSVP material graphs when data exists. */
+/** Append enriched (Slow) or material (Fast) graph — single graph section with delimiters. */
 export function appendGraphSections(lines, session, lang = "English") {
-  const graphs = [];
-
-  const blockIndex = session?._meta?.material_graph?.blockIndex;
-  if (Array.isArray(blockIndex) && blockIndex.length) {
-    const rsvpGraph = buildSessionGraph(session, { mode: "rsvp" });
-    if (rsvpGraph.nodes.length) graphs.push(rsvpGraph);
-  }
-
-  if (session?.slow?.phase0) {
-    const phase0Graph = buildSessionGraph(session, { mode: "slow_phase0" });
-    if (phase0Graph.nodes.length) graphs.push(phase0Graph);
-  }
-
+  const isSlow = session?.studyMode === "slow" && session?.slow;
   const annotations = Array.isArray(session?.slow?.annotations) ? session.slow.annotations : [];
   const hasUserAnnotations = annotations.some((a) => String(a?.userText || "").trim());
-  if (hasUserAnnotations || session?.slow?.graphEnrichedUnlocked) {
-    const enrichedGraph = buildSessionGraph(session, { mode: "slow_enriched" });
-    if (enrichedGraph.nodes.length) graphs.push(enrichedGraph);
+
+  let graph = null;
+  if (isSlow && (hasUserAnnotations || session.slow.graphEnrichedUnlocked)) {
+    graph = buildSessionGraph(session, { mode: "slow_enriched" });
+  } else if (!isSlow) {
+    const blockIndex = session?._meta?.material_graph?.blockIndex;
+    if (Array.isArray(blockIndex) && blockIndex.length) {
+      graph = buildSessionGraph(session, { mode: "rsvp" });
+    }
   }
 
-  const seenKinds = new Set();
-  for (const graph of graphs) {
-    const kind = String(graph?.kind || "graph");
-    if (seenKinds.has(kind)) continue;
-    seenKinds.add(kind);
-    lines.push(buildGraphSubgraphMarkdown(graph, lang));
-  }
+  if (!graph?.nodes?.length) return;
+
+  lines.push("<!-- graph-section -->");
+  lines.push(buildGraphSubgraphMarkdown(graph, lang));
+  lines.push("<!-- /graph-section -->");
 }
 
 function appendPhase0Section(lines, phase0) {
@@ -328,7 +330,10 @@ function appendFindingsSection(lines, findings) {
     const term = String(f?.conceptTerm || "").trim();
     const text = String(f?.userText || "").trim();
     const revealed = f?.revealedInPhase1 ? " (revealed in Phase 1)" : "";
-    lines.push(`- **${term || "concept"}**${revealed}: ${text || "—"}`);
+    const priority = defaultFindingReviewPriority(f);
+    lines.push(
+      `- **${term || "concept"}**${revealed}: ${text || "—"} · review_priority: ${priority}`,
+    );
   }
   lines.push("");
 }
@@ -393,6 +398,8 @@ function buildSlowMarkdown(session) {
   const scope = slow.readingScope || {};
   const lang = String(safe.language || "English").trim() || "English";
   const lines = [];
+  lines.push(buildExportFrontmatter(safe, { mode: "slow" }));
+  lines.push("");
   lines.push("# Slow Mode Session");
   lines.push(`Material: ${safe.materialMeta?.fileName || "—"}`);
   lines.push(`Language: ${lang}`);
@@ -406,14 +413,29 @@ function buildSlowMarkdown(session) {
   appendFindingsSection(lines, slow.findings);
   appendAnnotationsSection(lines, slow.annotations);
   appendDepthScoreSection(lines, safe, slow.depthScore);
+
+  const topTensions = extractTopTensions(slow.annotations, { lang });
+  if (topTensions.length) {
+    lines.push("## Top tensions");
+    lines.push("");
+    lines.push(...topTensions);
+    lines.push("");
+  }
+
   appendConceptDictionarySection(lines, safe);
   appendGraphSections(lines, safe, lang);
+
+  const synthesis = resolveStudentSynthesis(safe);
+  lines.push("## Student synthesis");
+  lines.push("");
+  lines.push(synthesis || "(No synthesis recorded.)");
+  lines.push("");
 
   const resumePayload = buildResumePayload(safe, {
     activeBlockIndex: state.activeBlockIndex,
     activeQuestionIndex: state.activeQuestionIndex,
   });
-  lines.push(encodeResumeCapsule(resumePayload));
+  appendSourceOfTruthAndResumeCapsule(lines, encodeResumeCapsule(resumePayload));
 
   return `${lines.join("\n").trim()}\n`;
 }
@@ -447,6 +469,8 @@ export function buildMarkdown(session) {
       : {};
 
   const lines = [];
+  lines.push(buildExportFrontmatter(safe, { mode: "fast" }));
+  lines.push("");
   lines.push(`# Study Session — ${dateStr}`);
   lines.push(
     `Questions per block: ${Number(resumePayload.n_test) || 0} test + ${Number(resumePayload.n_socratic) || 0} socratic`,
@@ -502,19 +526,6 @@ export function buildMarkdown(session) {
       const isPending = n.meta?.fromPendingComment === true;
       const label = isPending ? "Pending comment" : "Note";
       lines.push(`- **${label}:** ${n.content}`);
-    }
-  }
-
-  const missed = getMissedTestQuestions(safe);
-  if (missed.length) {
-    lines.push("");
-    lines.push("## Missed questions (to review)");
-    for (const m of missed) {
-      const q = m.question ? `Q: ${m.question}` : "Q: (missing)";
-      lines.push(`- **Block ${Number(m.blockIndex) + 1}, Q${Number(m.questionIndex) + 1}:** ${q}`);
-      lines.push(`  - Your answer: ${m.user_answer || "(blank)"}`);
-      lines.push(`  - Correct: ${m.correct_answer || "(unknown)"}`);
-      if (m.feedback) lines.push(`  - Feedback: ${m.feedback}`);
     }
   }
 
@@ -592,33 +603,6 @@ export function buildMarkdown(session) {
     lines.push("");
   }
 
-  lines.push("## Session Plan");
-  lines.push("");
-  lines.push(
-    "To **resume** this session later: use *Resume saved session* with the **original material file** plus this markdown export.",
-  );
-  lines.push("");
-  const plan = Array.isArray(resumePayload.blocks_plan) ? resumePayload.blocks_plan : [];
-  const nPlan = Math.max(1, Number(resumePayload.n_blocks) || 1);
-  for (let bi = 0; bi < nPlan; bi += 1) {
-    const planRow = plan[bi];
-    const title = planRow ? String(planRow.title || "").trim() : `Block ${bi + 1}`;
-    const summary = planRow ? String(planRow.summary || "").trim() : "";
-    const blk = resumePayload.blocks && resumePayload.blocks[bi] ? resumePayload.blocks[bi] : null;
-    const st = getBlockResumeStatus({
-      block: blk,
-      blockIndex: bi,
-      mode: "",
-      responses: resumePayload._responses,
-    });
-    const sumShort =
-      summary.length > 220 ? `${summary.slice(0, 217).trim()}…` : summary;
-    lines.push(
-      `- **Block ${bi + 1} — ${title}** · ${st.label}${sumShort ? ` · *${sumShort}*` : ""}`,
-    );
-  }
-  lines.push("");
-
   for (let bi = 0; bi < nBlocksExport; bi += 1) {
     const b = blocks[bi] && typeof blocks[bi] === "object" ? blocks[bi] : {};
     if (!hasGeneratedBlockContent(b)) continue;
@@ -640,14 +624,17 @@ export function buildMarkdown(session) {
 
     for (let qi = 0; qi < qs.length; qi += 1) {
       const q = qs[qi] && typeof qs[qi] === "object" ? qs[qi] : {};
+      const qType = String(q.type || "").trim().toLowerCase();
       const qText = String(q.question || "").trim();
       const r = qResp[String(qi)] || {};
       const userAns = r.user_answer != null ? String(r.user_answer).trim() : "";
       const fb = r.feedback != null ? String(r.feedback).trim() : "";
       const correct = r.correct_answer != null ? String(r.correct_answer).trim() : "";
+      const answeredAt = String(r.answered_at || "").trim();
 
       lines.push(`**Q:** ${qText}`);
       lines.push(`**A (user):** ${userAns || ""}`);
+      if (answeredAt) lines.push(`**answered_at:** ${answeredAt}`);
 
       const fbLine = fb
         ? correct
@@ -657,6 +644,13 @@ export function buildMarkdown(session) {
           ? correct
           : "";
       lines.push(`**Feedback:** ${fbLine}`);
+
+      if (qType === "test" && isTestResponseIncorrect(r)) {
+        lines.push(`- error_type: ${inferErrorType(r, qText)}`);
+      }
+      if (qType === "socratic") {
+        lines.push(`- socratic_mode: ${resolveSocraticMode(r, q)}`);
+      }
       lines.push("");
     }
 
@@ -719,7 +713,13 @@ export function buildMarkdown(session) {
     lines.push("");
   }
 
-  lines.push(encodeResumeCapsule(resumePayload));
+  const synthesis = resolveStudentSynthesis(safe);
+  lines.push("## Student synthesis");
+  lines.push("");
+  lines.push(synthesis || "(No synthesis recorded.)");
+  lines.push("");
+
+  appendSourceOfTruthAndResumeCapsule(lines, encodeResumeCapsule(resumePayload));
 
   return lines.join("\n").trim() + "\n";
 }

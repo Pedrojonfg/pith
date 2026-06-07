@@ -1,4 +1,5 @@
 import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260606_1";
+import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260607_1";
 import { getStudyLanguage } from "../ui.js?v=20260525_1";
 import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
 import { renderGraphCanvas } from "./canvas.js";
@@ -40,7 +41,7 @@ export function buildGraphSubgraphMarkdown(graph, lang = "English") {
   }
   lines.push(es ? "### Enlaces" : "### Edges");
   for (const e of graph?.edges || []) {
-    lines.push(`- ${e.from} → ${e.to} (${e.type})`);
+    lines.push(formatGraphEdgeMarkdown(e.from, e.to, e.type, lang));
   }
   lines.push("");
   return lines.join("\n");
