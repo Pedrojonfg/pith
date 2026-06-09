@@ -55,6 +55,16 @@
  * @property {string[]} warnings
  */
 
+/**
+ * @typedef {Object} HierarchyNode
+ * @property {string} title
+ * @property {1|2|3} level
+ * @property {number} startOffset
+ * @property {number} endOffset
+ * @property {string} [summary]
+ * @property {HierarchyNode[]} children
+ */
+
 let blockSeq = 0;
 
 /** @param {Partial<TextBlock> & Pick<TextBlock, "text"|"source">} partial */

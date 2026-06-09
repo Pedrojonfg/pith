@@ -9,11 +9,17 @@ import {
 } from "./api.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
+  getApiKeyForLlmModel,
   getLlmCallingLabel,
   getSessionLlmModel,
+  llmChatCompletions,
   LLM_MODEL_DEEPSEEK,
   normalizeLlmModel,
 } from "./llm.js?v=20260525_1";
+import {
+  buildDocumentHierarchy,
+  hasMarkdownHeadings,
+} from "./normalization/hierarchy.js?v=20260609_1";
 import {
   normalizeTestQuestion,
   shuffleTestQuestionOptions,
@@ -198,6 +204,7 @@ export function createSlowSession({
     rev: 0,
     language: lang,
     llmModel: normalizeLlmModel(llmModel),
+    docHierarchy: null,
     materialMeta: {
       fileName: String(fileName || "").trim(),
       originalFormat: String(originalFormat || "").trim(),
@@ -620,12 +627,68 @@ function groupScopeOptionsHierarchical(options) {
   return { full, l1, childrenByParent, sections };
 }
 
+function slowHierarchyLoadingActive(session) {
+  return Boolean(session?._docHierarchyLoading);
+}
+
+async function populateDocumentHierarchy(session, markdownText, llmModel) {
+  const text = String(markdownText || "");
+  const needsLlm = text.length >= 3000 && !hasMarkdownHeadings(text);
+  let llmFn = null;
+  if (needsLlm && getApiKeyForLlmModel(llmModel)) {
+    llmFn = async ({ systemPrompt, userPrompt, temperature, maxTokens, signal }) =>
+      llmChatCompletions({
+        llmModel: normalizeLlmModel(llmModel),
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        signal,
+      });
+  }
+
+  if (needsLlm && !llmFn) {
+    session.docHierarchy = null;
+    return;
+  }
+
+  if (needsLlm && llmFn) {
+    session._docHierarchyLoading = true;
+    if (state.activeSession === session) {
+      renderSlowScopeScreen(session);
+    }
+  }
+
+  try {
+    session.docHierarchy = await buildDocumentHierarchy(text, llmFn, { useCache: true });
+  } finally {
+    session._docHierarchyLoading = false;
+    storeActiveSession(session);
+    if (state.activeSession === session) {
+      renderSlowScopeScreen(session);
+    }
+  }
+}
+
 function renderSlowScopeScreen(session) {
   const slow = session?.slow;
   if (!slow) return;
+
+  if (els.slowScopeHierarchyLoading) {
+    const loading = slowHierarchyLoadingActive(session);
+    els.slowScopeHierarchyLoading.hidden = !loading;
+    if (loading) {
+      els.slowScopeHierarchyLoading.textContent =
+        "Analyzing document structure…";
+    }
+  }
+
   const options = buildScopeOptions(slow.normalizedTextFull, slow.normalizedFormat, {
     headingOverrides: slow.headingOverrides || [],
     fallbackSections: slow.fallbackSections || undefined,
+    docHierarchy: session.docHierarchy,
   });
   const listEl = els.slowScopeList;
   if (!listEl) return;
@@ -4540,8 +4603,19 @@ export function wireStudyHandlers() {
         }
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
-        renderSlowScopeScreen(sessionObj);
         showScreen("slowScope");
+        const needsAsyncHierarchy =
+          cleanedText.length >= 3000 && !hasMarkdownHeadings(cleanedText);
+        if (needsAsyncHierarchy) {
+          renderSlowScopeScreen(sessionObj);
+          void populateDocumentHierarchy(sessionObj, cleanedText, llmModel);
+        } else {
+          sessionObj.docHierarchy = await buildDocumentHierarchy(cleanedText, null, {
+            useCache: true,
+          });
+          storeActiveSession(sessionObj);
+          renderSlowScopeScreen(sessionObj);
+        }
       } catch (err) {
         setGenerateError(err?.message ? String(err.message) : String(err));
       } finally {

@@ -1,4 +1,8 @@
 import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260528_1";
+import {
+  flattenHierarchy,
+  getChunksFromHierarchy,
+} from "../normalization/hierarchy.js?v=20260609_1";
 import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260528_1";
 import {
   getActiveSessionLlmModel,
@@ -242,8 +246,29 @@ JSON schema:
 }`;
 }
 
-function buildPhase0UserPrompt(scopeText) {
-  return `Analyze this text and generate Phase 0 orientation JSON.\n\n${String(scopeText || "").trim()}`;
+function buildPhase0UserPrompt(scopeText, treeSummary = "") {
+  const treeBlock = treeSummary
+    ? `\n\nDocument structure (section tree):\n${treeSummary}\n`
+    : "";
+  return `Analyze this text and generate Phase 0 orientation JSON.${treeBlock}\n\n${String(scopeText || "").trim()}`;
+}
+
+function buildHierarchyTreeSummary(docHierarchy, scopeStart, scopeEnd) {
+  if (!docHierarchy?.tree?.length) return "";
+  const flat = flattenHierarchy(docHierarchy.tree, 2).filter(
+    (n) => n.startOffset >= scopeStart && n.startOffset < scopeEnd,
+  );
+  if (!flat.length) return "";
+  return JSON.stringify(
+    flat.map((n) => ({
+      title: n.title,
+      level: n.level,
+      startOffset: n.startOffset - scopeStart,
+      endOffset: Math.min(n.endOffset, scopeEnd) - scopeStart,
+    })),
+    null,
+    0,
+  );
 }
 
 function buildChunkSystemPrompt(language) {
@@ -343,6 +368,18 @@ export function buildSectionBoundariesForScope(session) {
     slow.normalizedTextFull.length,
     Number(scope.charEnd) || slow.normalizedTextFull.length,
   );
+
+  if (session?.docHierarchy?.tree?.length) {
+    return flattenHierarchy(session.docHierarchy.tree, 2)
+      .filter((n) => n.startOffset >= scopeStart && n.startOffset < scopeEnd)
+      .map((n, i) => ({
+        id: `section-${i}`,
+        title: n.title,
+        charStart: n.startOffset - scopeStart,
+        charEnd: Math.min(n.endOffset, scopeEnd) - scopeStart,
+      }));
+  }
+
   const headings = parseHeadings(slow.normalizedTextFull, slow.normalizedFormat);
   const inScope = headings.filter(
     (h) => h.charStart >= scopeStart && h.charStart < scopeEnd,
@@ -362,9 +399,24 @@ export function buildSectionBoundariesForScope(session) {
 /**
  * Split scope text into map-reduce chunks (≤50k chars).
  */
-export function buildMapReduceChunks(scopeText, sectionBoundaries, maxChunk = PHASE0_MAX_CHUNK_CHARS) {
+export function buildMapReduceChunks(
+  scopeText,
+  sectionBoundaries,
+  maxChunk = PHASE0_MAX_CHUNK_CHARS,
+  docHierarchy = null,
+) {
   const text = String(scopeText || "");
   if (!text.length) return [];
+
+  if (docHierarchy?.tree?.length) {
+    const scopeStart = 0;
+    const scopedTree = shiftHierarchyTree(docHierarchy.tree, scopeStart, text.length);
+    const hierarchyChunks = getChunksFromHierarchy(scopedTree, text, maxChunk);
+    return hierarchyChunks.map((ch) => ({
+      title: ch.title,
+      text: ch.text,
+    }));
+  }
 
   if (!Array.isArray(sectionBoundaries) || !sectionBoundaries.length) {
     const chunks = [];
@@ -405,6 +457,25 @@ export function buildMapReduceChunks(scopeText, sectionBoundaries, maxChunk = PH
   return chunks;
 }
 
+function shiftHierarchyTree(tree, offset, scopeLen) {
+  function shiftNode(node) {
+    const start = Math.max(0, node.startOffset - offset);
+    const end = Math.min(scopeLen, node.endOffset - offset);
+    const children = Array.isArray(node.children)
+      ? node.children.map(shiftNode).filter((c) => c.endOffset > c.startOffset)
+      : [];
+    return {
+      ...node,
+      startOffset: start,
+      endOffset: end,
+      children,
+    };
+  }
+  return (Array.isArray(tree) ? tree : [])
+    .map(shiftNode)
+    .filter((n) => n.endOffset > n.startOffset);
+}
+
 /**
  * Single-call Phase 0 for scope < 60k chars.
  */
@@ -414,12 +485,13 @@ export async function generatePhase0Single(scopeText, opts = {}) {
     llmModel = getActiveSessionLlmModel(),
     language = "English",
     signal,
+    treeSummary = "",
   } = opts;
   const model = normalizeLlmModel(llmModel);
   const raw = await callPhase0Json({
     llmModel: model,
     systemPrompt: buildPhase0SystemPrompt(language, criticalMode),
-    userPrompt: buildPhase0UserPrompt(scopeText),
+    userPrompt: buildPhase0UserPrompt(scopeText, treeSummary),
     signal,
   });
   const orientation = parsePhase0Orientation(raw, { criticalMode });
@@ -440,9 +512,34 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     normalizedFormat,
     onProgress,
     signal,
+    session = null,
+    treeSummary = "",
   } = opts;
   const model = normalizeLlmModel(llmModel);
-  const chunks = buildMapReduceChunks(scopeText, sectionBoundaries);
+  const text = String(scopeText || "");
+  const scope = session?.slow?.readingScope;
+  const scopeStart = Math.max(0, Number(scope?.charStart) || 0);
+  const scopeEnd = scopeStart + text.length;
+  const resolvedTreeSummary =
+    treeSummary || buildHierarchyTreeSummary(session?.docHierarchy, scopeStart, scopeEnd);
+  const scopedHierarchy =
+    session?.docHierarchy?.tree?.length && scope
+      ? {
+          ...session.docHierarchy,
+          tree: shiftHierarchyTree(
+            session.docHierarchy.tree,
+            scopeStart,
+            text.length,
+          ),
+        }
+      : null;
+
+  const chunks = buildMapReduceChunks(
+    scopeText,
+    sectionBoundaries,
+    PHASE0_MAX_CHUNK_CHARS,
+    scopedHierarchy,
+  );
   if (!chunks.length) {
     throw new Error("Scope text is empty — cannot generate Phase 0.");
   }
@@ -461,7 +558,13 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     const raw = await callPhase0Json({
       llmModel: model,
       systemPrompt: buildChunkSystemPrompt(language),
-      userPrompt: `Section: ${chunks[i].title}\n\n${scopeTextForPhase0IA(chunks[i].text, normalizedFormat)}`,
+      userPrompt: buildPhase0UserPrompt(
+        scopeTextForPhase0IA(chunks[i].text, normalizedFormat),
+        resolvedTreeSummary,
+      ).replace(
+        "Analyze this text",
+        `Analyze this section (${chunks[i].title})`,
+      ),
       max_tokens: 2048,
       signal,
     });
@@ -513,17 +616,22 @@ export async function generatePhase0ForScope(scopeText, session, opts = {}) {
   const iaText = scopeTextForPhase0IA(text, normalizedFormat);
   const boundaries = buildSectionBoundariesForScope(session);
   const criticalMode = Boolean(session?.slow?.criticalMode);
+  const scope = session?.slow?.readingScope;
+  const scopeStart = Math.max(0, Number(scope?.charStart) || 0);
+  const scopeEnd = scopeStart + text.length;
+  const treeSummary = buildHierarchyTreeSummary(session?.docHierarchy, scopeStart, scopeEnd);
   const baseOpts = {
     criticalMode,
     llmModel: session?.llmModel,
     normalizedFormat,
+    treeSummary,
     ...opts,
   };
 
   if (iaText.length < PHASE0_MAP_REDUCE_THRESHOLD) {
-    return generatePhase0Single(iaText, baseOpts);
+    return generatePhase0Single(iaText, { ...baseOpts, treeSummary });
   }
-  return mapReducePhase0(text, boundaries, baseOpts);
+  return mapReducePhase0(text, boundaries, { ...baseOpts, session });
 }
 
 // --- T04: editable Phase 0, fillable map, re-read ---

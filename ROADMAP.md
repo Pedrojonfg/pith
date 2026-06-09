@@ -1,231 +1,167 @@
-# ROADMAP — Section Detection & Normalization Improvements
+# ROADMAP — Document Hierarchy Pre-Index
 
-**Feature**: `20260534-section-detection-impr` | **Spec**: `specs/20260534-section-detection-impr/spec.md` | **Plan**: `specs/20260534-section-detection-impr/plan.md`
+**Feature**: `20260609-doc-hierarchy-index` | **Spec**: `specs/20260609-doc-hierarchy-index/spec.md` | **Plan**: `specs/20260609-doc-hierarchy-index/plan.md`
 
 ## Tabla de tareas
 
-| ID | FIX | Descripción | Deps | Complejidad | Estado |
-|----|-----|-------------|------|-------------|--------|
-| T01 | 01 | Normalización tolerante en `matchOutlineToBlocks` (`pdf-outline.js`) | — | S | [x] |
-| T02 | 02 | Front matter: `front-matter-detector.js` + integración `infer-headings.js` | — | M | [x] |
-| T03 | 03 | Short-circuit outline ≥80 % (`infer-headings.js`) | T01 | S | [x] |
-| T04 | 05 | Artefactos ornamentos/all-caps (`strip-artifacts.js`) | T02 | S | [x] |
-| T05 | 04 | Filtro `MIN_SCOPE_CHARS` en `buildScopeOptions` | T03, T04 | S | [x] |
-| T06 | 06 | Layout multi-columna (`extract-pdf-blocks.js`) | — | L | [x] |
-| T07 | 07 | Dehiphenation post-emisión (`emit-markdown.js`) | — | S | [x] |
-| T08 | 08 | Scope picker jerárquico L1/L2 + formato `~420k` | T05 | M | [x] |
-| T09 | 09 | Modo edición + `headingOverrides` en sesión | T08 | L | [x] |
-| T10 | 10 | Warning `low_heading_confidence` accionable + fallback | T09 | M | [x] |
-| T11 | — | cursor-tests unitarios FIX-01–07 | T01–T07 | M | [x] |
-| T12 | — | QA integración + quickstart closure | T08–T11 | M | [x] |
+| ID | Descripción | Deps | Complejidad | Estado |
+|----|-------------|------|-------------|--------|
+| T01 | `hierarchy.js`: funciones puras (determinístico, trivial, validate, flatten, chunks) | — | M | [x] |
+| T02 | `buildDocumentHierarchy` + prompt LLM + fallback | T01 | M | [x] |
+| T03 | `hierarchy-cache.js` + integración cache | — | S | [x] |
+| T04 | Integración upload: `study.js` + `session.js` + loading UI | T02, T03 | M | [x] |
+| T05 | Scope picker desde árbol (`slow/headings.js`) | T04 | M | [x] |
+| T06 | Paginación respeta fronteras (`slow/pagination.js`, `reader.js`) | T04 | M | [x] |
+| T07 | Chunks Fase 0 + contexto árbol (`slow/phase0.js`) | T04 | M | [x] |
+| T08 | Tests integración + quickstart closure | T05, T06, T07 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T01 → T03 → T05 → T08 → T09 → T10 → T12
-T02 → T04 ↗
-T06 → T11
-T07 → T11
-T05, T08, T09, T10 → T12
-T11 → T12
+T01 → T02 → T04 → T05 → T08
+T03 ↗        ↓ → T06 → T08
+             ↓ → T07 → T08
 ```
 
-**Paralelizables desde inicio**: T01, T02, T06, T07 (hasta 4 agentes)
+**Paralelizables desde inicio**: T01, T03 (hasta 2 agentes)
 
-**Secuenciales críticos**: T01 antes T03; T02 antes T04; T05 antes T08; T08 antes T09
+**Paralelizables tras T04**: T05, T06, T07 (hasta 3 agentes)
+
+**Secuenciales críticos**: T01 antes T02; T02+T03 antes T04; T04 antes T05/T06/T07
 
 ## Orden de ejecución recomendado
 
-### Ola 1 (paralelo — 4 agentes)
-- **T01** outline matching
-- **T02** front matter
-- **T06** multi-columna
-- **T07** dehyphenation
+### Ola 1 (paralelo — 2 agentes)
+- **T01** funciones puras `hierarchy.js`
+- **T03** cache `hierarchy-cache.js`
 
-### Ola 2 (paralelo — 2 agentes, tras Ola 1 parcial)
-- **T03** (necesita T01)
-- **T04** (necesita T02)
+### Ola 2 (1 agente, tras T01)
+- **T02** LLM + `buildDocumentHierarchy`
 
-### Ola 3 (1 agente)
-- **T05** scope min chars
+### Ola 3 (1 agente, tras T02+T03)
+- **T04** integración upload + sesión + UI
 
-### Ola 4 (1 agente)
-- **T08** picker jerárquico
+### Ola 4 (paralelo — 3 agentes, tras T04)
+- **T05** scope picker
+- **T06** paginación
+- **T07** Fase 0 chunks
 
-### Ola 5 (secuencial)
-- **T09** overrides
-- **T10** low confidence UX
-
-### Ola 6 (cierre)
-- **T11** tests (puede empezar tras T07 para tests unitarios)
-- **T12** QA final
+### Ola 5 (cierre)
+- **T08** tests integración + quickstart
 
 ---
 
-## PROMPT T01 — Outline text normalization
+## PROMPT T01 — hierarchy.js funciones puras
 
-Implementa **T01** (FIX-01) del ROADMAP Section Detection.
+Implementa **T01** del ROADMAP Document Hierarchy Pre-Index.
 
-**Contexto**: PDF *Primates y Filósofos* tiene outline perfecto pero `matchOutlineToBlocks` falla porque pdf.js extrae `Introducci6n` vs `Introducción`. Ver `specs/20260534-section-detection-impr/contracts/outline-matching.md`.
+**Contexto**: Feature `20260609-doc-hierarchy-index`. Una sola fuente de verdad estructural (`docHierarchy`) para scope picker, paginación y Fase 0. Ver `specs/20260609-doc-hierarchy-index/contracts/hierarchy-schema.md`.
 
 **Archivos**:
-- `src/js/normalization/pdf-outline.js` — añadir `normalizeForComparison`, `applyEncodingFixups`, `matchScoreFallback`; aplicar en `matchScore` / `matchOutlineToBlocks`
+- `src/js/normalization/hierarchy.js` (NUEVO) — `buildDeterministicHierarchy`, `buildTrivialHierarchy`, `validateHierarchy`, `flattenHierarchy`, `getChunksFromHierarchy`
+- `cursor-tests/20260609_doc-hierarchy-pure.mjs` (NUEVO) — tests primero
 
-**Criterio de éxito**: Con fixture mock outline+block corrupto, match score ≥50; prefijo 15 chars acepta bloques truncados. Ejecuta `/validate` antes de cerrar este mensaje.
+**Sin LLM en esta tarea.** `buildDeterministicHierarchy` parsea líneas `#`/`##`/`###` y calcula offsets. `buildTrivialHierarchy` un nodo raíz. `validateHierarchy` según contrato. `getChunksFromHierarchy` fusiona/divide respetando `maxChunkSize`.
+
+**Criterio de éxito**: tests pasan para determinístico, trivial, validación, flatten y chunks sin pérdida de texto. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Front matter detection
+## PROMPT T02 — LLM buildDocumentHierarchy
 
-Implementa **T02** (FIX-02) del ROADMAP Section Detection.
+Implementa **T02** del ROADMAP Document Hierarchy Pre-Index.
 
-**Contexto**: Páginas 1–9 generan headings basura (ATE, ~II~). Ver `contracts/front-matter-detection.md`.
+**Contexto**: Modo LLM para docs ≥3000 chars sin headings. Ver `specs/20260609-doc-hierarchy-index/contracts/llm-hierarchy-prompt.md`.
 
 **Archivos**:
-- `src/js/normalization/front-matter-detector.js` — **nuevo**: `getFrontMatterPageRange`, `detectFrontMatterPages`
-- `src/js/normalization/infer-headings.js` — filtrar `contentBlocks` con `pageIndex > frontMatterEnd` al inicio del pipeline
-- `src/js/normalization/index.js` — export si necesario
+- `src/js/normalization/hierarchy.js` — añadir `buildDocumentHierarchy(markdownText, llmFn, options)` con selección de modo, prompt, JSON parse, `validateHierarchy`, fallback determinístico
 
-**Criterio de éxito**: Bloques con `pageIndex <= frontMatterEnd` no entran en inferencia; outline strategy salta portada/sumario. Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de T01.** `llmFn` inyectado (no importar `api.js`). Tests con mock `llmFn`.
+
+**Criterio de éxito**: dado fixture paper sin headings, `text.slice(node.startOffset, node.endOffset)` coincide; JSON inválido → fallback determinístico. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Outline short-circuit
+## PROMPT T03 — hierarchy-cache.js
 
-Implementa **T03** (FIX-03) tras **T01**.
+Implementa **T03** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Cache localStorage por hash, TTL 7 días, LRU 20 entradas. Ver `specs/20260609-doc-hierarchy-index/data-model.md` (HierarchyCacheEntry).
 
 **Archivos**:
-- `src/js/normalization/infer-headings.js` — calcular `outlineCoverage`; si ≥0.8, usar solo `outlineMatches` sin `scoreAllBlocks`; siempre `validateHeadingHierarchy`
+- `src/js/normalization/hierarchy-cache.js` (NUEVO) — `hashText`, `getCachedHierarchy`, `setCachedHierarchy`
+- Integrar en `buildDocumentHierarchy` con `useCache: true`
 
-**Criterio de éxito**: coverage=100% → cero headings `source: heuristic`. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: segunda llamada con mismo texto no invoca `llmFn` (test mockeado). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Strip artifacts ornaments
+## PROMPT T04 — Integración upload y sesión
 
-Implementa **T04** (FIX-05) tras **T02**.
+Implementa **T04** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Tras normalizar, generar `session.docHierarchy`. Ver `specs/20260609-doc-hierarchy-index/contracts/consumer-integration.md` §1.
 
 **Archivos**:
-- `src/js/normalization/strip-artifacts.js` — `ORNAMENT_PATTERN`, `ISOLATED_ALLCAPS`, `isArtifact(block, frontMatterEnd)`; marcar `kind: artifact`
-- `src/js/normalization/infer-headings.js` — pasar `frontMatterEnd` a strip phase
+- `src/js/session.js` — `docHierarchy: null` en defaults
+- `src/js/study.js` — llamar `buildDocumentHierarchy` post-upload; cablear `llmFn` desde `llm.js`/`api.js`; loading state no bloqueante
+- `index.html` / CSS mínimo si hace falta indicador de carga en scope picker
 
-**Criterio de éxito**: `~II~`, `PAIDOS`, `ATE` → `kind: artifact`. Ejecuta `/validate` antes de cerrar este mensaje.
+**Sin API key en modo LLM requerido → `docHierarchy = null`.**
+
+**Criterio de éxito**: tras subir doc ≥3000 chars, `session.docHierarchy` válido; loading visible en modo LLM. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — MIN_SCOPE_CHARS filter
+## PROMPT T05 — Scope picker desde árbol
 
-Implementa **T05** (FIX-04) tras **T03** y **T04**.
+Implementa **T05** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Reemplazar heurísticas cuando `docHierarchy` existe. Ver contrato §2.
 
 **Archivos**:
-- `src/js/slow/headings.js` — `MIN_SCOPE_CHARS`, resolución paper/book; filtrar en `buildScopeOptions`; "Full document" siempre primero
+- `src/js/slow/headings.js` — `buildScopeOptions` lee `flattenHierarchy(session.docHierarchy.tree, 2)`; fallback si `null`
+- `src/js/study.js` — pasar `docHierarchy` si necesario
 
-**Criterio de éxito**: Ninguna opción con `charCount < MIN_SCOPE_CHARS` excepto Full. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: paper sin headings muestra árbol inferido en scope picker; sesión sin `docHierarchy` sin regresión. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Multi-column PDF layout
+## PROMPT T06 — Paginación respeta fronteras
 
-Implementa **T06** (FIX-06) — paralelo desde Ola 1.
+Implementa **T06** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Snap ±200 chars a `startOffset` de sección. Ver contrato §3.
 
 **Archivos**:
-- `src/js/normalization/extract-pdf-blocks.js` — `detectColumnLayout`, particionar left/right antes de `groupByY`
+- `src/js/slow/pagination.js` — opción `sectionBoundaries`, `sectionSnapSlack: 200`
+- `src/js/slow/reader.js` — pasar boundaries desde `docHierarchy` (scope-relative)
 
-**Criterio de éxito**: Página bicolumna mock no mezcla texto izquierda/derecha en mismo bloque. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: test con secciones conocidas — cortes en fronteras, no a mitad. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Dehyphenation
+## PROMPT T07 — Chunks Fase 0 desde árbol
 
-Implementa **T07** (FIX-07) — paralelo desde Ola 1.
+Implementa **T07** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Map-reduce usa `getChunksFromHierarchy`; prompt Fase 0 recibe árbol. Ver contrato §4.
 
 **Archivos**:
-- `src/js/normalization/emit-markdown.js` — `dehyphenate(text)` con regex `\w-\n[a-záéíóúüñ]`
-- `src/js/normalization/index.js` o `input-normalization.js` — aplicar como última fase antes de persistir
+- `src/js/slow/phase0.js` — reemplazar chunking arbitrario; contexto estructural en prompts
 
-**Criterio de éxito**: `intrinseca-\nmente` → `intrinsecamente`; `Korsgaard-\nMueller` intacto. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: chunks contiguos, sin solapamiento, cubren texto completo; títulos de sección en cada chunk. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Hierarchical scope picker
+## PROMPT T08 — Tests integración y QA
 
-Implementa **T08** (FIX-08) tras **T05**.
+Implementa **T08** del ROADMAP Document Hierarchy Pre-Index.
+
+**Contexto**: Cierre de feature. Ver `specs/20260609-doc-hierarchy-index/quickstart.md`.
 
 **Archivos**:
-- `src/js/slow/headings.js` — `parentLabel`, `formatCharCount` → `displaySize`
-- `src/js/study.js` — `renderSlowScopeScreen`: agrupar L1/L2, expand/collapse, selección L1 = rango completo
-- CSS mínimo si hace falta en `main.css`
+- `cursor-tests/20260609_doc-hierarchy-integration.mjs` (NUEVO)
+- Casos: headings→determinístico; sin headings→LLM; <3k→trivial; cache; validación fallida→fallback; chunks; scope picker; paginación
 
-**Contratos**: `contracts/scope-picker-ux.md`
-
-**Criterio de éxito**: Picker muestra partes L1 con sub-secciones colapsables; tamaños `~420k`. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T09 — Manual heading overrides
-
-Implementa **T09** (FIX-09) tras **T08**.
-
-**Archivos**:
-- `src/js/slow/headings.js` — `applyHeadingOverrides`, tipos rename/remove/split/merge
-- `src/js/study.js` — botón "Editar secciones", UI acciones, persist `session.slow.headingOverrides`
-
-**Criterio de éxito**: Renombrar/eliminar no muta `normalizedTextFull`; overrides persisten en sesión. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T10 — low_heading_confidence UX
-
-Implementa **T10** (FIX-10) tras **T09**.
-
-**Archivos**:
-- `src/js/slow/headings.js` — `buildEqualLengthSections`
-- `src/js/normalization/infer-headings.js` — attach `fallbackSections` en resultado
-- `src/js/study.js` — banner explicativo, auto-edit mode, botón dividir por longitud
-
-**Criterio de éxito**: TXT >5k sin headings → Full + Sección 1..N + mensaje claro. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T11 — cursor-tests
-
-Implementa **T11** tras T01–T07.
-
-**Archivos** (crear):
-- `cursor-tests/20260609_t01-outline-normalize.mjs`
-- `cursor-tests/20260609_t02-front-matter.mjs`
-- `cursor-tests/20260609_t03-outline-short-circuit.mjs`
-- `cursor-tests/20260609_t04-scope-min-chars.mjs`
-- `cursor-tests/20260609_t05-dehyphenate.mjs`
-- `cursor-tests/20260609_t06-regression-integration.mjs`
-
-**Contratos**: `contracts/regression-fixtures.md`
-
-**Criterio de éxito**: Todos los tests nuevos pasan con `node --import ./cursor-tests/register.mjs`. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T12 — QA closure
-
-Implementa **T12** tras T08–T11.
-
-**Tareas**:
-- Completar checklist `specs/20260534-section-detection-impr/quickstart.md`
-- Regresión `20260608_t01-structure-inference.mjs`
-- Marcar ROADMAP T01–T11 en [x]
-
-**Criterio de éxito**: Quickstart manual verificado; sin regresión migración html_min. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## Instrucción de ejecución
-
-1. **Lanza primero en paralelo** (4 chats): **T01, T02, T06, T07**
-2. **Cuando T01 termine**: **T03** | **Cuando T02 termine**: **T04** (paralelo entre sí)
-3. **Cuando T03+T04 terminen**: **T05**
-4. **Cuando T05 termine**: **T08**
-5. **Secuencial**: **T09** → **T10**
-6. **T11** puede iniciar tras T07 (tests unitarios); integración tras T10
-7. **Cierre**: **T12**
-
-**Tiempo mínimo estimado**: 4 olas (Ola1 paralelo → Ola2-3 pipeline → Ola4-5 UX → Ola6 QA).
+**Criterio de éxito**: todos los cursor-tests pasan; checklist quickstart completo; marcar T01–T08 [x] en este ROADMAP. Ejecuta `/validate` antes de cerrar este mensaje.

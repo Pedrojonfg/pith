@@ -6,6 +6,8 @@
  * `html_min` tag parsing is retained only for legacy sessions.
  */
 
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260609_1";
+
 const DEFAULT_HEADING_FORMAT = "markdown";
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/gm;
 
@@ -216,15 +218,73 @@ export function buildEqualLengthSections(text, opts = {}) {
 }
 
 /**
+ * @param {import("../normalization/types.js").HierarchyNode} node
+ * @param {number} textLen
+ */
+function scopeOptionFromHierarchyNode(node, textLen) {
+  const level = Math.min(3, Math.max(1, Number(node.level) || 1));
+  return {
+    kind: level === 1 ? /** @type {const} */ ("chapter") : /** @type {const} */ ("section"),
+    charStart: node.startOffset,
+    charEnd: node.endOffset,
+    label: node.title,
+    id: slugify(node.title) || `hier-${node.startOffset}`,
+    level,
+    displaySize: formatCharCount(node.endOffset - node.startOffset),
+  };
+}
+
+/**
  * Build selectable scopes: full doc + heading ranges.
  * @param {string} normalizedText
  * @param {'html_min'|'markdown'} [format]
- * @param {{ minScopeChars?: number, documentType?: 'paper'|'book'|'auto', headingOverrides?: HeadingOverride[], fallbackSections?: { id: string, kind: string, charStart: number, charEnd: number, label: string }[] }} [options]
+ * @param {{ minScopeChars?: number, documentType?: 'paper'|'book'|'auto', headingOverrides?: HeadingOverride[], fallbackSections?: { id: string, kind: string, charStart: number, charEnd: number, label: string }[], docHierarchy?: { tree?: import("../normalization/types.js").HierarchyNode[] } | null }} [options]
  * @returns {{ kind: 'full'|'chapter'|'section', charStart: number, charEnd: number, label: string, id: string, level?: number, parentLabel?: string, displaySize?: string }[]}
  */
 export function buildScopeOptions(normalizedText, format = DEFAULT_HEADING_FORMAT, options = {}) {
   const text = String(normalizedText || "");
   const len = text.length;
+
+  if (options.docHierarchy?.tree?.length) {
+    const flat = flattenHierarchy(options.docHierarchy.tree, 2);
+    const optionsList = [
+      {
+        id: "full",
+        kind: /** @type {const} */ ("full"),
+        charStart: 0,
+        charEnd: len,
+        label: "Full document",
+        displaySize: formatCharCount(len),
+      },
+    ];
+
+    const minChars =
+      options.minScopeChars ??
+      resolveMinScopeChars(options.documentType || "auto", [], text);
+
+    for (let i = 0; i < flat.length; i += 1) {
+      const node = flat[i];
+      const charCount = node.endOffset - node.startOffset;
+      if (charCount < minChars) continue;
+
+      let parentLabel;
+      for (let j = i - 1; j >= 0; j -= 1) {
+        const prev = flat[j];
+        if ((prev.level || 2) < (node.level || 2) && prev.startOffset <= node.startOffset) {
+          parentLabel = prev.title;
+          break;
+        }
+      }
+
+      optionsList.push({
+        ...scopeOptionFromHierarchyNode(node, len),
+        parentLabel,
+      });
+    }
+
+    return optionsList;
+  }
+
   let headings = parseHeadings(text, format);
 
   if (options.headingOverrides?.length) {
