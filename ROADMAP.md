@@ -1,167 +1,212 @@
-# ROADMAP — Document Hierarchy Pre-Index
+# ROADMAP — Flow Recommendation
 
-**Feature**: `20260609-doc-hierarchy-index` | **Spec**: `specs/20260609-doc-hierarchy-index/spec.md` | **Plan**: `specs/20260609-doc-hierarchy-index/plan.md`
+**Feature**: `20260609-flow-recommendation` | **Spec**: `specs/20260609-flow-recommendation/spec.md` | **Plan**: `specs/20260609-flow-recommendation/plan.md`
+
+**Prerrequisitos externos**: `20260609-unified-session` T01+T04 · `20260609-doc-hierarchy-index`
 
 ## Tabla de tareas
 
 | ID | Descripción | Deps | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | `hierarchy.js`: funciones puras (determinístico, trivial, validate, flatten, chunks) | — | M | [x] |
-| T02 | `buildDocumentHierarchy` + prompt LLM + fallback | T01 | M | [x] |
-| T03 | `hierarchy-cache.js` + integración cache | — | S | [x] |
-| T04 | Integración upload: `study.js` + `session.js` + loading UI | T02, T03 | M | [x] |
-| T05 | Scope picker desde árbol (`slow/headings.js`) | T04 | M | [x] |
-| T06 | Paginación respeta fronteras (`slow/pagination.js`, `reader.js`) | T04 | M | [x] |
-| T07 | Chunks Fase 0 + contexto árbol (`slow/phase0.js`) | T04 | M | [x] |
-| T08 | Tests integración + quickstart closure | T05, T06, T07 | M | [x] |
+| T01 | `analyzer.js` — `analyzeText` → TextMetrics | — | M | [x] |
+| T02 | Extensión `hierarchy.js` — `pedagogical_meta` + fallback | — | M | [x] |
+| T03 | `recommender.js` — tabla de decisión + tiempos | T01, T02 | M | [x] |
+| T04 | `tracker.js` — progreso y override | T03 | M | [x] |
+| T05 | `session-store` — `modeRecommendation` + `updateRecommendation` | unified T01 | S | [x] |
+| T06 | Integración `study.js` — cálculo y lifecycle | T04, T05, unified T04 | M | [x] |
+| T07 | Panel de recomendación UI | T06 | M | [x] |
+| T08 | Tests integración + quickstart closure | T07 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T01 → T02 → T04 → T05 → T08
-T03 ↗        ↓ → T06 → T08
-             ↓ → T07 → T08
+T01 ──┐
+      ├──→ T03 → T04 ──┐
+T02 ──┘                ├──→ T06 → T07 → T08
+T05 (unified T01) ─────┘
 ```
 
-**Paralelizables desde inicio**: T01, T03 (hasta 2 agentes)
+**Paralelizables desde inicio**: T01 + T02 + T05 (si unified-session T01 listo)
 
-**Paralelizables tras T04**: T05, T06, T07 (hasta 3 agentes)
-
-**Secuenciales críticos**: T01 antes T02; T02+T03 antes T04; T04 antes T05/T06/T07
+**Secuenciales críticos**: T03 → T04 → T06 → T07 → T08
 
 ## Orden de ejecución recomendado
 
-### Ola 1 (paralelo — 2 agentes)
-- **T01** funciones puras `hierarchy.js`
-- **T03** cache `hierarchy-cache.js`
+### Ola 1 — Núcleo puro (paralelo hasta 3 agentes)
+- **T01** analyzer
+- **T02** hierarchy pedagogical meta
+- **T05** session-store field (si no existe aún)
 
-### Ola 2 (1 agente, tras T01)
-- **T02** LLM + `buildDocumentHierarchy`
+### Ola 2 — Recomendación (1 agente, tras T01+T02)
+- **T03** recommender
 
-### Ola 3 (1 agente, tras T02+T03)
-- **T04** integración upload + sesión + UI
+### Ola 3 — Tracking (1 agente, tras T03)
+- **T04** tracker
 
-### Ola 4 (paralelo — 3 agentes, tras T04)
-- **T05** scope picker
-- **T06** paginación
-- **T07** Fase 0 chunks
+### Ola 4 — Orquestación (1 agente, tras T04+T05+unified T04)
+- **T06** study.js
 
-### Ola 5 (cierre)
+### Ola 5 — UI (1 agente, tras T06)
+- **T07** panel
+
+### Ola 6 — Cierre
 - **T08** tests integración + quickstart
 
----
-
-## PROMPT T01 — hierarchy.js funciones puras
-
-Implementa **T01** del ROADMAP Document Hierarchy Pre-Index.
-
-**Contexto**: Feature `20260609-doc-hierarchy-index`. Una sola fuente de verdad estructural (`docHierarchy`) para scope picker, paginación y Fase 0. Ver `specs/20260609-doc-hierarchy-index/contracts/hierarchy-schema.md`.
-
-**Archivos**:
-- `src/js/normalization/hierarchy.js` (NUEVO) — `buildDeterministicHierarchy`, `buildTrivialHierarchy`, `validateHierarchy`, `flattenHierarchy`, `getChunksFromHierarchy`
-- `cursor-tests/20260609_doc-hierarchy-pure.mjs` (NUEVO) — tests primero
-
-**Sin LLM en esta tarea.** `buildDeterministicHierarchy` parsea líneas `#`/`##`/`###` y calcula offsets. `buildTrivialHierarchy` un nodo raíz. `validateHierarchy` según contrato. `getChunksFromHierarchy` fusiona/divide respetando `maxChunkSize`.
-
-**Criterio de éxito**: tests pasan para determinístico, trivial, validación, flatten y chunks sin pérdida de texto. Ejecuta `/validate` antes de cerrar este mensaje.
+**MVP mínimo útil**: T01–T06 — recomendación calculada y persistida (sin panel visual).
 
 ---
 
-## PROMPT T02 — LLM buildDocumentHierarchy
+## PROMPT T01 — analyzer.js
 
-Implementa **T02** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T01** del ROADMAP Flow Recommendation.
 
-**Contexto**: Modo LLM para docs ≥3000 chars sin headings. Ver `specs/20260609-doc-hierarchy-index/contracts/llm-hierarchy-prompt.md`.
+**Contexto**: Feature `20260609-flow-recommendation`. Función pura que extrae métricas del markdown sin LLM. Ver `specs/20260609-flow-recommendation/contracts/analyzer-api.md` y `data-model.md` (TextMetrics).
 
 **Archivos**:
-- `src/js/normalization/hierarchy.js` — añadir `buildDocumentHierarchy(markdownText, llmFn, options)` con selección de modo, prompt, JSON parse, `validateHierarchy`, fallback determinístico
+- `src/js/recommendation/analyzer.js` (NUEVO) — `analyzeText(markdownText)`
+- `cursor-tests/20260609_flow-recommendation-analyzer.mjs` (NUEVO)
 
-**Depende de T01.** `llmFn` inyectado (no importar `api.js`). Tests con mock `llmFn`.
+**Casos de test mínimos**:
+- Paper filosófico sin headings → señales de densidad/estructura
+- Apuntes primera persona → `firstPersonRatio` detectado
+- Paper con citas `[1]` → `hasBibliography: true`
+- Texto < 2k chars → `sizeCategory: 'tiny'`
+- 4+ casos adicionales (math, definitions, headings, vocab académico ES/EN)
 
-**Criterio de éxito**: dado fixture paper sin headings, `text.slice(node.startOffset, node.endOffset)` coincide; JSON inválido → fallback determinístico. Ejecuta `/validate` antes de cerrar este mensaje.
+**Sin cambios en study.js ni hierarchy en esta tarea.**
+
+**Criterio de éxito**: 8+ tests pasan; `analyzeText` es pura y determinística. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — hierarchy-cache.js
+## PROMPT T02 — hierarchy pedagogical meta
 
-Implementa **T03** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T02** del ROADMAP Flow Recommendation.
 
-**Contexto**: Cache localStorage por hash, TTL 7 días, LRU 20 entradas. Ver `specs/20260609-doc-hierarchy-index/data-model.md` (HierarchyCacheEntry).
+**Contexto**: Extender `buildDocumentHierarchy` para devolver `pedagogicalMeta` sin llamada LLM adicional. Ver `specs/20260609-flow-recommendation/contracts/hierarchy-pedagogical-meta.md`.
 
 **Archivos**:
-- `src/js/normalization/hierarchy-cache.js` (NUEVO) — `hashText`, `getCachedHierarchy`, `setCachedHierarchy`
-- Integrar en `buildDocumentHierarchy` con `useCache: true`
+- `src/js/normalization/hierarchy.js` — prompt JSON `{ tree, pedagogical_meta }`, parse, `buildDeterministicPedagogicalMeta`, retorno con `pedagogicalMeta`
+- `src/js/normalization/hierarchy-cache.js` — cachear `pedagogicalMeta` en hits LLM
+- Tests en `cursor-tests/` o extender tests hierarchy existentes
 
-**Criterio de éxito**: segunda llamada con mismo texto no invoca `llmFn` (test mockeado). Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de T01** solo para `buildDeterministicPedagogicalMeta` (import `analyzeText`).
+
+**Criterio de éxito**: paper filosófico vía LLM (o mock) → `pedagogicalMeta.genre === 'philosophical'` y `argumentativeDensity >= 4`; modo determinístico devuelve meta sin LLM. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Integración upload y sesión
+## PROMPT T03 — recommender.js
 
-Implementa **T04** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T03** del ROADMAP Flow Recommendation.
 
-**Contexto**: Tras normalizar, generar `session.docHierarchy`. Ver `specs/20260609-doc-hierarchy-index/contracts/consumer-integration.md` §1.
+**Contexto**: Tabla de decisión determinística. Ver `specs/20260609-flow-recommendation/contracts/recommender-api.md` y `data-model.md`.
 
 **Archivos**:
-- `src/js/session.js` — `docHierarchy: null` en defaults
-- `src/js/study.js` — llamar `buildDocumentHierarchy` post-upload; cablear `llmFn` desde `llm.js`/`api.js`; loading state no bloqueante
-- `index.html` / CSS mínimo si hace falta indicador de carga en scope picker
+- `src/js/recommendation/recommender.js` (NUEVO) — `computeModeRecommendation`, `computeStepTimes`, `TIME_FACTORS`, mapa `genreLabel` ES
+- `cursor-tests/20260609_flow-recommendation-recommender.mjs` (NUEVO)
 
-**Sin API key en modo LLM requerido → `docHierarchy = null`.**
+**Depende de T01, T02** (tipos/shapes; puede importar fixtures de test).
 
-**Criterio de éxito**: tras subir doc ≥3000 chars, `session.docHierarchy` válido; loading visible en modo LLM. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: paper filosófico → `primaryFlow[0].mode === 'slow'`; apuntes → `questions` o `rsvp`; tiny → un paso; schema completo sin nulls. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — Scope picker desde árbol
+## PROMPT T04 — tracker.js
 
-Implementa **T05** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T04** del ROADMAP Flow Recommendation.
 
-**Contexto**: Reemplazar heurísticas cuando `docHierarchy` existe. Ver contrato §2.
+**Contexto**: Tracking de progreso sin castigar desviaciones. Ver `specs/20260609-flow-recommendation/contracts/tracker-api.md`.
 
 **Archivos**:
-- `src/js/slow/headings.js` — `buildScopeOptions` lee `flattenHierarchy(session.docHierarchy.tree, 2)`; fallback si `null`
-- `src/js/study.js` — pasar `docHierarchy` si necesario
+- `src/js/recommendation/tracker.js` (NUEVO) — `updateFlowProgress`, `markStepCompleted`, `recordUserOverride`
+- `cursor-tests/20260609_flow-recommendation-tracker.mjs` (NUEVO)
 
-**Criterio de éxito**: paper sin headings muestra árbol inferido en scope picker; sesión sin `docHierarchy` sin regresión. Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de T03.**
+
+**Criterio de éxito**: sesión mock con `modes.slow.phase === 3` completada → `completedSteps: ['step_slow_1']`, `currentStepIndex: 1`; override setea `userOverride: true`. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Paginación respeta fronteras
+## PROMPT T05 — session-store modeRecommendation
 
-Implementa **T06** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T05** del ROADMAP Flow Recommendation.
 
-**Contexto**: Snap ±200 chars a `startOffset` de sección. Ver contrato §3.
+**Contexto**: Persistir recomendación en capa shared. Ver `specs/20260609-flow-recommendation/contracts/consumer-integration.md` §session-store.
 
 **Archivos**:
-- `src/js/slow/pagination.js` — opción `sectionBoundaries`, `sectionSnapSlack: 200`
-- `src/js/slow/reader.js` — pasar boundaries desde `docHierarchy` (scope-relative)
+- `src/js/session-types.js` — `modeRecommendation` en SharedLayer + validación laxa
+- `src/js/session-store.js` — default `null`, `updateRecommendation(docId, rec)`
+- Test en `cursor-tests/20260609_flow-recommendation-tracker.mjs` o CRUD extendido
 
-**Criterio de éxito**: test con secciones conocidas — cortes en fronteras, no a mitad. Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de unified-session T01.** Paralelizable con T01–T04.
+
+**Criterio de éxito**: `createSession` incluye `modeRecommendation: null`; `updateRecommendation` persiste y rehidrata. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Chunks Fase 0 desde árbol
+## PROMPT T06 — study.js integración
 
-Implementa **T07** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T06** del ROADMAP Flow Recommendation.
 
-**Contexto**: Map-reduce usa `getChunksFromHierarchy`; prompt Fase 0 recibe árbol. Ver contrato §4.
+**Contexto**: Orquestar cálculo post-normalización y lifecycle de modos. Ver `specs/20260609-flow-recommendation/contracts/consumer-integration.md`.
 
 **Archivos**:
-- `src/js/slow/phase0.js` — reemplazar chunking arbitrario; contexto estructural en prompts
+- `src/js/study.js` — tras upload: `analyzeText` + `computeModeRecommendation`; en load: `updateFlowProgress`; on enter/exit mode: override + progress
 
-**Criterio de éxito**: chunks contiguos, sin solapamiento, cubren texto completo; títulos de sección en cada chunk. Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de T04, T05, unified-session T04.**
+
+**Criterio de éxito**: subir documento nuevo → `session.shared.modeRecommendation` poblado antes de elegir modo; sesión existente no recalcula flujo. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## PROMPT T07 — Panel UI
+
+Implementa **T07** del ROADMAP Flow Recommendation.
+
+**Contexto**: Panel no bloqueante en pantalla de selección de modo. Ver `specs/20260609-flow-recommendation/contracts/recommendation-ui.md`.
+
+**Archivos**:
+- `index.html` — markup `#recommendationPanel` y hijos
+- `src/js/study.js` — `renderRecommendationPanel`, wire CTAs
+- `src/css/main.css` — estilos mínimos steps lineales
+
+**Depende de T06.**
+
+**Criterio de éxito**: paper filosófico → panel "Slow → Cloze → Revisión" con tiempo y razón; click override RSVP → abre RSVP y `userOverride: true`. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
 ## PROMPT T08 — Tests integración y QA
 
-Implementa **T08** del ROADMAP Document Hierarchy Pre-Index.
+Implementa **T08** del ROADMAP Flow Recommendation.
 
-**Contexto**: Cierre de feature. Ver `specs/20260609-doc-hierarchy-index/quickstart.md`.
+**Contexto**: Cierre feature. Ver `specs/20260609-flow-recommendation/quickstart.md`.
 
 **Archivos**:
-- `cursor-tests/20260609_doc-hierarchy-integration.mjs` (NUEVO)
-- Casos: headings→determinístico; sin headings→LLM; <3k→trivial; cache; validación fallida→fallback; chunks; scope picker; paginación
+- `cursor-tests/20260609_flow-recommendation-integration.mjs` (NUEVO)
+- Casos: upload → recomendación; override; sesión existente; tiempo ~83 min para 10k palabras slow; fallback sin LLM
 
-**Criterio de éxito**: todos los cursor-tests pasan; checklist quickstart completo; marcar T01–T08 [x] en este ROADMAP. Ejecuta `/validate` antes de cerrar este mensaje.
+**Depende de T07.**
+
+**Criterio de éxito**: todos los cursor-tests pasan; checklist quickstart QA-1–QA-7; marcar T01–T08 [x] en este ROADMAP. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+# ROADMAP — Unified Cross-Mode Session (referencia)
+
+**Feature**: `20260609-unified-session` | **Spec**: `specs/20260609-unified-session/spec.md`
+
+> Feature prerequisito. Ver spec/plan en `specs/20260609-unified-session/`. T01–T04 bloqueantes para flow-recommendation T06.
+
+| ID | Descripción | Estado |
+|----|-------------|--------|
+| T01 | session-store CRUD | [x] |
+| T02 | Migración V1→V2 | [x] |
+| T03 | session.js wrapper | [x] |
+| T04 | study.js DocumentSession | [x] |
+| T05 | Slow escribe shared | [x] |
+| T06 | Cloze lee shared | [x] |
+| T07 | adapters.js shared | [x] |
+| T08 | Pantalla documentos | [x] |
+| T09 | Tests integración + QA | [x] |

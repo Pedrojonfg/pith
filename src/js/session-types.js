@@ -3,6 +3,37 @@
  * @see specs/20260609-unified-session/data-model.md
  */
 
+/**
+ * @typedef {'tiny'|'short'|'medium'|'long'|'very_long'} SizeCategory
+ */
+
+/**
+ * @typedef {object} TextMetrics
+ * @property {number} charCount
+ * @property {number} wordCount
+ * @property {number} estimatedReadTimeMin
+ * @property {{ hasExplicitHeadings: boolean, headingDensity: number, avgParagraphLength: number, longParagraphRatio: number }} structureSignals
+ * @property {{ hasBibliography: boolean, hasMathNotation: boolean, hasDefinitionPatterns: boolean, academicVocabDensity: number, firstPersonRatio: number }} contentSignals
+ * @property {SizeCategory} sizeCategory
+ */
+
+/**
+ * @typedef {'philosophical'|'scientific_theoretical'|'scientific_empirical'|'essay'|'lecture_notes'|'textbook_chapter'|'unknown'} PedagogicalGenre
+ */
+
+/**
+ * @typedef {'understand_argument'|'memorize_facts'|'learn_procedure'|'survey_field'} PrimaryLearningGoal
+ */
+
+/**
+ * @typedef {object} PedagogicalMeta
+ * @property {PedagogicalGenre} genre
+ * @property {1|2|3|4|5} argumentativeDensity
+ * @property {1|2|3|4|5} conceptualLoad
+ * @property {PrimaryLearningGoal} primaryLearningGoal
+ * @property {string} genreReasoning
+ */
+
 const MODE_KEYS = ["rsvp", "slow", "cloze", "questions"];
 
 const STOPWORDS = new Set([
@@ -131,6 +162,14 @@ export function validateDocumentSession(session) {
     if (hasRef) {
       if (!sh.rawMarkdownRef.storageKey || typeof sh.rawMarkdownRef.storageKey !== "string") {
         errors.push("rawMarkdownRef.storageKey required");
+      }
+    }
+    if (sh.modeRecommendation != null) {
+      const rec = sh.modeRecommendation;
+      if (typeof rec !== "object" || Array.isArray(rec)) {
+        errors.push("shared.modeRecommendation must be an object");
+      } else if (!Array.isArray(rec.primaryFlow)) {
+        errors.push("shared.modeRecommendation.primaryFlow must be an array");
       }
     }
   }

@@ -2,6 +2,7 @@
  * Document hierarchy pre-index: deterministic tree, validation, flatten, chunks.
  */
 
+import { analyzeText } from "../recommendation/analyzer.js";
 import {
   getCachedHierarchy,
   hashText,
@@ -16,7 +17,7 @@ const SUMMARY_MIN_CHARS = 8000;
  * @param {string} markdownText
  * @param {((args: { systemPrompt: string, userPrompt: string, temperature: number, maxTokens: number, signal?: AbortSignal }) => Promise<string>) | null} llmFn
  * @param {{ useCache?: boolean, textHash?: string, minLlmChars?: number, includeSummary?: boolean, signal?: AbortSignal }} [options]
- * @returns {Promise<{ method: 'llm'|'deterministic'|'trivial', tree: import("./types.js").HierarchyNode[], textHash: string, generatedAt: number, fromCache?: boolean } | null>}
+ * @returns {Promise<{ method: 'llm'|'deterministic'|'trivial', tree: import("./types.js").HierarchyNode[], pedagogicalMeta: import("../session-types.js").PedagogicalMeta | null, textHash: string, generatedAt: number, fromCache?: boolean } | null>}
  */
 export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) {
   const text = String(markdownText ?? "");
@@ -30,6 +31,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     return {
       method: "deterministic",
       tree: buildDeterministicHierarchy(text),
+      pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       textHash,
       generatedAt,
     };
@@ -39,6 +41,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     return {
       method: "trivial",
       tree: buildTrivialHierarchy(text),
+      pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       textHash,
       generatedAt,
     };
@@ -54,6 +57,9 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       return {
         method: /** @type {'llm'} */ (cached.method || "llm"),
         tree: /** @type {import("./types.js").HierarchyNode[]} */ (cached.tree),
+        pedagogicalMeta:
+          cached.pedagogicalMeta ??
+          buildDeterministicPedagogicalMeta(analyzeText(text)),
         textHash,
         generatedAt,
         fromCache: true,
@@ -72,39 +78,42 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       signal: options.signal,
     });
   } catch {
-    return {
-      method: "deterministic",
-      tree: buildDeterministicHierarchy(text),
-      textHash,
-      generatedAt,
-    };
+    return deterministicFallback(text, textHash, generatedAt);
   }
 
   const tree = parseLlmHierarchyTree(raw);
   if (!tree) {
-    return {
-      method: "deterministic",
-      tree: buildDeterministicHierarchy(text),
-      textHash,
-      generatedAt,
-    };
+    return deterministicFallback(text, textHash, generatedAt);
   }
 
   const validation = validateHierarchy(tree, text.length);
   if (!validation.valid) {
-    return {
-      method: "deterministic",
-      tree: buildDeterministicHierarchy(text),
-      textHash,
-      generatedAt,
-    };
+    return deterministicFallback(text, textHash, generatedAt);
   }
+
+  const pedagogicalMeta =
+    parsePedagogicalMetaFromLlm(raw) ?? buildDeterministicPedagogicalMeta(analyzeText(text));
 
   if (useCache) {
-    setCachedHierarchy(textHash, { tree, method: "llm" });
+    setCachedHierarchy(textHash, { tree, method: "llm", pedagogicalMeta });
   }
 
-  return { method: "llm", tree, textHash, generatedAt };
+  return { method: "llm", tree, pedagogicalMeta, textHash, generatedAt };
+}
+
+/**
+ * @param {string} text
+ * @param {string} textHash
+ * @param {number} generatedAt
+ */
+function deterministicFallback(text, textHash, generatedAt) {
+  return {
+    method: "deterministic",
+    tree: buildDeterministicHierarchy(text),
+    pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+    textHash,
+    generatedAt,
+  };
 }
 
 const HIERARCHY_SYSTEM_PROMPT =
@@ -131,6 +140,14 @@ REGLAS ESTRICTAS:
 - level 1 = sección principal, level 2 = subsección, máximo level 3.
 - Si el texto no tiene estructura clara, devuelve un solo nodo raíz con el título inferido del contenido.
 ${summaryRule}
+- Además del árbol, devuelve "pedagogical_meta" al mismo nivel que el array raíz del árbol:
+  - genre: philosophical | scientific_theoretical | scientific_empirical | essay | lecture_notes | textbook_chapter | unknown
+  - argumentative_density: 1-5
+  - conceptual_load: 1-5
+  - primary_learning_goal: understand_argument | memorize_facts | learn_procedure | survey_field
+  - reasoning: string, máx 20 palabras
+
+Formato respuesta JSON: { "tree": [...], "pedagogical_meta": { ... } }
 
 TEXTO (longitud: ${text.length} chars):
 ${text}
@@ -138,28 +155,187 @@ ${text}
 RESPUESTA (solo JSON):`;
 }
 
+const PEDAGOGICAL_GENRES = new Set([
+  "philosophical",
+  "scientific_theoretical",
+  "scientific_empirical",
+  "essay",
+  "lecture_notes",
+  "textbook_chapter",
+  "unknown",
+]);
+
+const PRIMARY_LEARNING_GOALS = new Set([
+  "understand_argument",
+  "memorize_facts",
+  "learn_procedure",
+  "survey_field",
+]);
+
+/**
+ * @param {string} raw
+ * @returns {import("../session-types.js").PedagogicalMeta | null}
+ */
+export function parsePedagogicalMetaFromLlm(raw) {
+  const parsed = parseLlmJson(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+  const meta =
+    /** @type {Record<string, unknown>} */ (parsed).pedagogical_meta ??
+    /** @type {Record<string, unknown>} */ (parsed).pedagogicalMeta;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+
+  const m = /** @type {Record<string, unknown>} */ (meta);
+  const genreRaw = String(m.genre || "").trim();
+  const genre = PEDAGOGICAL_GENRES.has(genreRaw) ? genreRaw : "unknown";
+
+  const goalRaw = String(m.primary_learning_goal ?? m.primaryLearningGoal ?? "").trim();
+  const primaryLearningGoal = PRIMARY_LEARNING_GOALS.has(goalRaw)
+    ? goalRaw
+    : "survey_field";
+
+  const reasoning = String(m.reasoning ?? m.genreReasoning ?? "").trim();
+  const genreReasoning = truncateWords(reasoning || "Clasificación pedagógica del LLM", 20);
+
+  return {
+    genre: /** @type {import("../session-types.js").PedagogicalGenre} */ (genre),
+    argumentativeDensity: clampDensity(m.argumentative_density ?? m.argumentativeDensity),
+    conceptualLoad: clampDensity(m.conceptual_load ?? m.conceptualLoad),
+    primaryLearningGoal: /** @type {import("../session-types.js").PrimaryLearningGoal} */ (
+      primaryLearningGoal
+    ),
+    genreReasoning,
+  };
+}
+
+/**
+ * @param {import("../session-types.js").TextMetrics} textMetrics
+ * @returns {import("../session-types.js").PedagogicalMeta}
+ */
+export function buildDeterministicPedagogicalMeta(textMetrics) {
+  const content = textMetrics?.contentSignals ?? {};
+  const structure = textMetrics?.structureSignals ?? {};
+  const firstPersonRatio = Number(content.firstPersonRatio) || 0;
+  const academicVocabDensity = Number(content.academicVocabDensity) || 0;
+  const longParagraphRatio = Number(structure.longParagraphRatio) || 0;
+
+  /** @type {import("../session-types.js").PedagogicalGenre} */
+  let genre = "unknown";
+  let genreReasoning = "Señales insuficientes para clasificar el género";
+
+  if (firstPersonRatio > 0.03) {
+    genre = "lecture_notes";
+    genreReasoning = "Alta proporción de primera persona, típico de apuntes";
+  } else if (content.hasBibliography && content.hasMathNotation) {
+    genre = "scientific_empirical";
+    genreReasoning = "Citas bibliográficas y notación matemática";
+  } else if (academicVocabDensity > 0.05 && longParagraphRatio > 0.25) {
+    genre = "philosophical";
+    genreReasoning = "Vocabulario académico denso y párrafos largos argumentativos";
+  } else if (content.hasBibliography) {
+    genre = "scientific_theoretical";
+    genreReasoning = "Referencias bibliográficas sin señales empíricas fuertes";
+  } else if (structure.hasExplicitHeadings && content.hasDefinitionPatterns) {
+    genre = "textbook_chapter";
+    genreReasoning = "Estructura con headings y patrones de definición";
+  } else if (firstPersonRatio > 0.01) {
+    genre = "essay";
+    genreReasoning = "Tono ensayístico con voz personal moderada";
+  }
+
+  const argumentativeDensity = clampDensity(
+    genre === "philosophical"
+      ? 4 + (academicVocabDensity > 0.08 ? 1 : 0)
+      : genre === "lecture_notes"
+        ? 2
+        : genre === "scientific_empirical"
+          ? 2
+          : genre === "essay"
+            ? 3
+            : 3,
+  );
+
+  const conceptualLoad = clampDensity(
+    1 + academicVocabDensity * 40 + (content.hasMathNotation ? 1 : 0),
+  );
+
+  /** @type {import("../session-types.js").PrimaryLearningGoal} */
+  const primaryLearningGoal =
+    genre === "philosophical" || genre === "essay"
+      ? "understand_argument"
+      : genre === "lecture_notes" || genre === "textbook_chapter"
+        ? "memorize_facts"
+        : genre === "scientific_empirical"
+          ? "survey_field"
+          : "survey_field";
+
+  return {
+    genre,
+    argumentativeDensity,
+    conceptualLoad,
+    primaryLearningGoal,
+    genreReasoning,
+  };
+}
+
 /**
  * @param {string} raw
  * @returns {import("./types.js").HierarchyNode[] | null}
  */
 export function parseLlmHierarchyTree(raw) {
+  const parsed = parseLlmJson(raw);
+  if (!parsed) return null;
+
+  let roots = null;
+  if (Array.isArray(parsed)) {
+    roots = parsed;
+  } else if (parsed && typeof parsed === "object") {
+    const tree = /** @type {Record<string, unknown>} */ (parsed).tree;
+    roots = Array.isArray(tree) ? tree : [parsed];
+  }
+  if (!roots) return null;
+  return normalizeParsedNodes(roots);
+}
+
+/**
+ * @param {string} raw
+ * @returns {unknown | null}
+ */
+function parseLlmJson(raw) {
   const stripped = String(raw || "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
   if (!stripped) return null;
-
-  let parsed;
   try {
-    parsed = JSON.parse(stripped);
+    return JSON.parse(stripped);
   } catch {
     return null;
   }
+}
 
-  const roots = Array.isArray(parsed) ? parsed : parsed && typeof parsed === "object" ? [parsed] : null;
-  if (!roots) return null;
-  return normalizeParsedNodes(roots);
+/**
+ * @param {unknown} value
+ * @returns {1|2|3|4|5}
+ */
+function clampDensity(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return 3;
+  return /** @type {1|2|3|4|5} */ (Math.min(5, Math.max(1, n)));
+}
+
+/**
+ * @param {string} text
+ * @param {number} maxWords
+ */
+function truncateWords(text, maxWords) {
+  const words = String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length <= maxWords) return words.join(" ");
+  return words.slice(0, maxWords).join(" ");
 }
 
 /**
