@@ -188,7 +188,7 @@ export function validateHeadingHierarchy(headings) {
 
 /**
  * @param {TextBlock[]} blocks
- * @param {{ format?: string, outline?: HeadingCandidate[], pageHeights?: number[] }} [opts]
+ * @param {{ format?: string, outline?: HeadingCandidate[], pageHeights?: number[], outlineCoverage?: number }} [opts]
  * @returns {{ headings: HeadingCandidate[], bodyFontSize: number }}
  */
 export function inferHeadings(blocks, opts = {}) {
@@ -205,6 +205,23 @@ export function inferHeadings(blocks, opts = {}) {
     for (const oh of opts.outline) {
       outlineByBlock.set(oh.blockId, oh);
     }
+  }
+
+  if ((opts.outlineCoverage ?? 0) >= 0.8 && opts.outline?.length) {
+    for (const oh of opts.outline) {
+      candidates.push({
+        label: oh.label,
+        level: oh.level,
+        score: oh.score ?? 100,
+        source: "outline",
+        blockId: oh.blockId,
+        charStart: 0,
+        charEnd: 0,
+      });
+    }
+    const deduped = dedupeHeadings(candidates);
+    const validated = validateHeadingHierarchy(deduped);
+    return { headings: validated, bodyFontSize };
   }
 
   /** @type {TextBlock[]} */

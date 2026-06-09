@@ -26,6 +26,23 @@ const EDITORIAL_PATTERNS = [
   /cambridge university press/i,
 ];
 
+export const ORNAMENT_PATTERN = /^[\s\W]{1,20}$/u;
+export const ROMAN_ORNAMENT = /^~[IVXLC]+~$/i;
+export const ISOLATED_ALLCAPS = /^[A-ZÁÉÍÓÚÑÜ]{3,15}$/;
+
+/**
+ * @param {TextBlock} block
+ * @param {number} [frontMatterEnd]
+ */
+export function isArtifact(block, frontMatterEnd = -1) {
+  const text = String(block.text || "");
+  const trim = text.trim();
+  if (ORNAMENT_PATTERN.test(text)) return true;
+  if (ROMAN_ORNAMENT.test(trim)) return true;
+  if (block.pageIndex <= frontMatterEnd && ISOLATED_ALLCAPS.test(trim)) return true;
+  return false;
+}
+
 /**
  * @param {string} text
  */
@@ -115,13 +132,14 @@ function matchEditorial(line) {
 
 /**
  * @param {TextBlock[]} blocks
- * @param {{ format?: string, pageHeights?: number[], headerZoneRatio?: number, footerZoneRatio?: number, headingBlockIds?: Set<string> }} [opts]
+ * @param {{ format?: string, pageHeights?: number[], headerZoneRatio?: number, footerZoneRatio?: number, headingBlockIds?: Set<string>, frontMatterEnd?: number }} [opts]
  */
 export function stripArtifacts(blocks, opts = {}) {
   const headerRatio = opts.headerZoneRatio ?? DEFAULT_HEADER_RATIO;
   const footerRatio = opts.footerZoneRatio ?? DEFAULT_FOOTER_RATIO;
   const pageHeights = opts.pageHeights || [];
   const headingIds = opts.headingBlockIds || new Set();
+  const frontMatterEnd = opts.frontMatterEnd ?? -1;
   const warnings = [];
   let artifactsRemoved = 0;
   let bodyZoneRejections = 0;
@@ -160,6 +178,11 @@ export function stripArtifacts(blocks, opts = {}) {
 
   const result = blocks.map((block) => {
     if (block.kind === "artifact") return block;
+
+    if (isArtifact(block, frontMatterEnd)) {
+      artifactsRemoved += 1;
+      return { ...block, kind: "artifact" };
+    }
 
     const pageHeight = pageHeights[block.pageIndex] || defaultPageHeight;
     const lines = String(block.text || "").split(/\n/);

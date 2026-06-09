@@ -1,109 +1,113 @@
-# Implementation Plan: Slow Mode Reader Desktop UX
+# Implementation Plan: [FEATURE]
 
-**Branch**: `20260533-slow-reader-desktop` | **Date**: 2026-06-09 | **Spec**: [spec.md](./spec.md)
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Diagnóstico UX lector Slow Mode — layout móvil en contenedor 840px, texto plano, toolbar incompleta, chrome global visible.
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-Rediseñar `screenSlowReader` para **escritorio primero sin romper móvil**: layout full-bleed, grid texto+margen+sidebar, render markdown con offsets preservados, toolbar con página N/M y teclado, focus mode automático, overlays responsivos.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: JavaScript (ES modules), CSS3, HTML5  
-**Primary Dependencies**: `markdown.js` (marked), DOM APIs (`matchMedia`, `Range`, `TreeWalker`), módulos existentes `reader.js`, `sidebar.js`, `pagination.js`  
-**Storage**: `session.slow` en localStorage vía `session.js` — sin nuevos campos obligatorios  
-**Testing**: `cursor-tests/20260533_t*.mjs` + [quickstart.md](./quickstart.md) manual  
-**Target Platform**: Desktop ≥1024px (foco); móvil &lt;768px sin regresión  
-**Project Type**: SPA vanilla (`index.html`, `src/js/slow/*`, `src/css/slow-mode.css`)  
-**Performance Goals**: Recalc paginación &lt;200ms en resize; render página &lt;16ms  
-**Constraints**: No frameworks; preservar contratos anotaciones/IA anti-spoiler; cambios quirúrgicos en slow modules  
-**Scale/Scope**: ~400–600 LOC netas en CSS + reader/sidebar/ui.js
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
+
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
+
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
+
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
+
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
+
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
+
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
+
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
+
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
-*GATE: `.specify/memory/constitution.md` is template-only; project uses `.cursorrules` + existing slow-mode contracts.*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle | Status | Notes |
-|-----------|--------|-------|
-| No new frameworks | PASS | CSS grid + DOM |
-| Preserve session JSON contracts | PASS | Offsets plain text unchanged |
-| Surgical changes | PASS | Scoped to reader screen + ui.showScreen |
-| Mobile-aware | PASS | `@media` dual layout |
-| Test coverage | PASS | cursor-tests + quickstart |
-
-**Post-design re-check**: PASS
+[Gates determined based on constitution file]
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/20260533-slow-reader-desktop/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── contracts/
-│   ├── reader-layout-desktop.md
-│   ├── reader-markdown-render.md
-│   ├── reader-toolbar-keyboard.md
-│   └── reader-responsive-overlays.md
-└── tasks.md             # /speckit-tasks (next step)
+specs/[###-feature]/
+├── plan.md              # This file (/speckit-plan command output)
+├── research.md          # Phase 0 output (/speckit-plan command)
+├── data-model.md        # Phase 1 output (/speckit-plan command)
+├── quickstart.md        # Phase 1 output (/speckit-plan command)
+├── contracts/           # Phase 1 output (/speckit-plan command)
+└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-index.html                    # Move #screenSlowReader outside .container
-src/css/slow-mode.css         # Desktop grid, margin col, responsive overlays
-src/css/main.css              # body.slow-reader-active chrome hide
-src/js/ui.js                  # showScreen: toggle slow-reader-active
-src/js/slow/reader.js         # Markdown render, keyboard, focus auto, margin
-src/js/slow/sidebar.js        # resolveSidebarOpen viewport default
-cursor-tests/20260533_t*.mjs  # Layout, offsets, sidebar default
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: Sin nuevos módulos; opcional extraer `selection-map.js` solo si `reader.js` supera claridad — prefer inline v1.
-
-## Phase 0: Research
-
-Complete — [research.md](./research.md). Root causes: container 840px, textContent render, touch-first UX, sidebar 20vw.
-
-## Phase 1: Design & Contracts
-
-Complete:
-
-- [data-model.md](./data-model.md)
-- [contracts/reader-layout-desktop.md](./contracts/reader-layout-desktop.md)
-- [contracts/reader-markdown-render.md](./contracts/reader-markdown-render.md)
-- [contracts/reader-toolbar-keyboard.md](./contracts/reader-toolbar-keyboard.md)
-- [contracts/reader-responsive-overlays.md](./contracts/reader-responsive-overlays.md)
-- [quickstart.md](./quickstart.md)
-
-**Agent context**: `.cursor/rules/specify-rules.mdc` → this plan.
-
-## Phase 2: Implementation Outline (for /speckit-tasks and ROADMAP)
-
-| ID | Work package | Acceptance |
-|----|--------------|------------|
-| T01 | Full-bleed DOM + `body.slow-reader-active` | Reader outside `.container`; main padding 0 |
-| T02 | Desktop CSS grid + margin column | SC-001; no clipped margin marks |
-| T03 | Hide global chrome in reader | SC-005 |
-| T04 | Toolbar: page indicator, line height, keyboard | SC-004 |
-| T05 | Markdown render + selection offset map | SC-002, SC-003 |
-| T06 | Sidebar desktop: default closed, typography, textarea IA | User Story 5 |
-| T07 | Responsive IA overlay | Desktop modal / mobile sheet |
-| T08 | Focus mode auto on init | User Story 4 |
-| T09 | cursor-tests + quickstart QA | All automated green |
-
-**Execution order**: T01 → (T02 ‖ T03 ‖ T04) → (T05 ‖ T06 ‖ T07) → T08 → T09
-
-**Risk**: T05 offset mapping — mitigar con tests fixture + manual quickstart §5.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
+> **Fill ONLY if Constitution Check has violations that must be justified**
+
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| DOM move for reader section | Break 840px cap | CSS-only breakout fragile with main grid |
-| HTML render + plain offsets | Academic readability | Plain text fails SC-002 |
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
