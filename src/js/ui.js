@@ -272,6 +272,7 @@ export const els = {
   screenSlowPhase3: document.getElementById("screenSlowPhase3"),
   screenSlowGraph: document.getElementById("screenSlowGraph"),
   slowScopeList: document.getElementById("slowScopeList"),
+  slowScopeHierarchyLoading: document.getElementById("slowScopeHierarchyLoading"),
   slowScopeWarningBanner: document.getElementById("slowScopeWarningBanner"),
   slowScopeEditBtn: document.getElementById("slowScopeEditBtn"),
   slowScopeAutoSplitBtn: document.getElementById("slowScopeAutoSplitBtn"),

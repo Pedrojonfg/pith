@@ -35,6 +35,7 @@ import {
   getPageSlice,
   invalidatePaginationCache,
 } from "./pagination.js?v=20260528_1";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260609_1";
 import {
   hideConceptPicker,
   renderSlowSidebar,
@@ -151,6 +152,23 @@ function applyTypographyToMeasureEl(el, typography, usesMd) {
   el.style.boxSizing = "border-box";
 }
 
+function buildReaderSectionBoundaries(session) {
+  const slow = session?.slow;
+  const scope = slow?.readingScope;
+  if (!scope || !session?.docHierarchy?.tree?.length) return [];
+  const scopeStart = Math.max(0, Number(scope.charStart) || 0);
+  const scopeEnd = Math.min(
+    slow.normalizedTextFull.length,
+    Number(scope.charEnd) || slow.normalizedTextFull.length,
+  );
+  return flattenHierarchy(session.docHierarchy.tree, 2)
+    .filter((n) => n.startOffset >= scopeStart && n.startOffset < scopeEnd)
+    .map((n) => ({
+      charStart: n.startOffset - scopeStart,
+      charEnd: Math.min(n.endOffset, scopeEnd) - scopeStart,
+    }));
+}
+
 function recomputeBreakpoints(session) {
   const scopeText = getScopeText(session);
   const container = els.slowReaderPage || document.getElementById("slowReaderPage");
@@ -160,10 +178,13 @@ function recomputeBreakpoints(session) {
   const usesMd = usesMarkdownRender(session);
   const contentHeight = getReaderContentHeight();
   readerState.contentHeightUsed = contentHeight;
+  const sectionBoundaries = buildReaderSectionBoundaries(session);
   readerState.breakpoints = computePageBreakpoints(scopeText, container, session.slow.typography, {
     availableHeight: contentHeight,
     measureMode: usesMd ? "md" : "plain",
     measureContent: buildPaginationMeasureContent(session, session.slow.typography),
+    sectionBoundaries,
+    sectionSnapSlack: sectionBoundaries.length ? 200 : 0,
   });
   if (oldBp.length && session?.slow) {
     session.slow.currentPageIndex = closestPageAfterRecompute(oldBp, oldPage, readerState.breakpoints);

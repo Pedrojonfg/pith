@@ -27,6 +27,23 @@ function cacheKey(scopeText, typography, containerWidth, containerHeight, measur
 /** Small slack so subpixel rounding does not force scroll within a page. */
 const PAGE_HEIGHT_SAFETY_PX = 6;
 
+/**
+ * If a section starts within (cut, cut + slack], snap page end to that boundary.
+ * @param {{ charStart: number }[]} sectionBoundaries
+ */
+export function snapPageEndToSection(cut, sectionBoundaries, slack, textLength) {
+  const end = Math.min(Number(textLength) || 0, Math.max(0, Number(cut) || 0));
+  const slackVal = Math.max(0, Number(slack) || 0);
+  let snap = null;
+  for (const b of sectionBoundaries) {
+    const start = Math.floor(Number(b?.charStart) || 0);
+    if (start > end && start <= end + slackVal) {
+      if (snap === null || start < snap) snap = start;
+    }
+  }
+  return snap !== null ? snap : end;
+}
+
 function applyTypography(el, typography) {
   const t = typography && typeof typography === "object" ? typography : {};
   el.style.fontSize = `${Number(t.fontSizePx) || 15}px`;
@@ -123,12 +140,20 @@ export function computePageBreakpoints(scopeText, containerEl, typography, optio
     return lines * linePx;
   };
 
+  const sectionBoundaries = Array.isArray(options.sectionBoundaries)
+    ? options.sectionBoundaries
+    : [];
+  const sectionSnapSlack = Number(options.sectionSnapSlack) || 0;
+
   const breakpoints = [];
   let charStart = 0;
   let pageIndex = 0;
   while (charStart < text.length) {
     const maxChars = findMaxCharsForPage(text, charStart, fitHeight, measureHeight);
-    const charEnd = Math.min(text.length, charStart + maxChars);
+    let charEnd = Math.min(text.length, charStart + maxChars);
+    if (sectionSnapSlack > 0 && sectionBoundaries.length) {
+      charEnd = snapPageEndToSection(charEnd, sectionBoundaries, sectionSnapSlack, text.length);
+    }
     breakpoints.push({ pageIndex, charStart, charEnd });
     if (charEnd <= charStart) break;
     charStart = charEnd;
