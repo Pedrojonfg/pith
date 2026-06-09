@@ -700,6 +700,70 @@
   cursor: pointer;
 }
 
+/* Inline annotation highlights — soft tint per type; layers blend when overlapping */
+.slow-ann-highlight {
+  border-radius: 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.slow-ann-highlight--approx { background-color: rgba(251, 191, 36, 0.18); }
+.slow-ann-highlight--question { background-color: rgba(96, 165, 250, 0.18); }
+.slow-ann-highlight--explain { background-color: rgba(52, 211, 153, 0.18); }
+.slow-ann-highlight--link { background-color: rgba(34, 211, 238, 0.18); }
+.slow-ann-highlight--flag { background-color: rgba(167, 139, 250, 0.18); }
+.slow-ann-highlight--reject { background-color: rgba(251, 113, 133, 0.18); }
+.slow-ann-highlight--tension { background-color: rgba(251, 146, 60, 0.18); }
+.slow-ann-highlight--weak { background-color: rgba(250, 204, 21, 0.16); }
+.slow-ann-highlight--strong { background-color: rgba(74, 222, 128, 0.18); }
+.slow-ann-highlight--steel { background-color: rgba(129, 140, 248, 0.18); }
+.slow-ann-highlight--pin { background-color: rgba(244, 114, 182, 0.18); }
+.slow-ann-highlight--insight { background-color: rgba(253, 224, 71, 0.16); }
+.slow-ann-highlight--return { background-color: rgba(45, 212, 191, 0.18); }
+.slow-ann-highlight--graph { background-color: rgba(192, 132, 252, 0.18); }
+.slow-ann-highlight--ia-query { background-color: rgba(56, 189, 248, 0.18); }
+.slow-ann-highlight--default { background-color: rgba(148, 163, 184, 0.16); }
+
+.slow-ann-highlight:hover,
+.slow-ann-highlight:focus-visible {
+  outline: none;
+}
+
+.slow-ann-highlight--approx:hover,
+.slow-ann-highlight--approx:focus-visible { background-color: rgba(251, 191, 36, 0.28); }
+.slow-ann-highlight--question:hover,
+.slow-ann-highlight--question:focus-visible { background-color: rgba(96, 165, 250, 0.28); }
+.slow-ann-highlight--explain:hover,
+.slow-ann-highlight--explain:focus-visible { background-color: rgba(52, 211, 153, 0.28); }
+.slow-ann-highlight--link:hover,
+.slow-ann-highlight--link:focus-visible { background-color: rgba(34, 211, 238, 0.28); }
+.slow-ann-highlight--flag:hover,
+.slow-ann-highlight--flag:focus-visible { background-color: rgba(167, 139, 250, 0.28); }
+.slow-ann-highlight--reject:hover,
+.slow-ann-highlight--reject:focus-visible { background-color: rgba(251, 113, 133, 0.28); }
+.slow-ann-highlight--tension:hover,
+.slow-ann-highlight--tension:focus-visible { background-color: rgba(251, 146, 60, 0.28); }
+.slow-ann-highlight--weak:hover,
+.slow-ann-highlight--weak:focus-visible { background-color: rgba(250, 204, 21, 0.26); }
+.slow-ann-highlight--strong:hover,
+.slow-ann-highlight--strong:focus-visible { background-color: rgba(74, 222, 128, 0.28); }
+.slow-ann-highlight--steel:hover,
+.slow-ann-highlight--steel:focus-visible { background-color: rgba(129, 140, 248, 0.28); }
+.slow-ann-highlight--pin:hover,
+.slow-ann-highlight--pin:focus-visible { background-color: rgba(244, 114, 182, 0.28); }
+.slow-ann-highlight--insight:hover,
+.slow-ann-highlight--insight:focus-visible { background-color: rgba(253, 224, 71, 0.26); }
+.slow-ann-highlight--return:hover,
+.slow-ann-highlight--return:focus-visible { background-color: rgba(45, 212, 191, 0.28); }
+.slow-ann-highlight--graph:hover,
+.slow-ann-highlight--graph:focus-visible { background-color: rgba(192, 132, 252, 0.28); }
+.slow-ann-highlight--ia-query:hover,
+.slow-ann-highlight--ia-query:focus-visible { background-color: rgba(56, 189, 248, 0.28); }
+.slow-ann-highlight--default:hover,
+.slow-ann-highlight--default:focus-visible { background-color: rgba(148, 163, 184, 0.26); }
+
 .slow-highlight-pulse {
   background: rgba(99, 102, 241, 0.38);
   border-radius: 2px;

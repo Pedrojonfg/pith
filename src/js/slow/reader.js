@@ -8,7 +8,11 @@ import { askSlowReaderIA } from "./ai-context.js?v=20260528_1";
 import {
   ANNOTATION_TYPES,
   annotationsOnPage,
+  annotationHighlightClass,
   annotationMarkClass,
+  buildAnnotationHighlightSegments,
+  createNestedHighlightSpans,
+  pickPrimaryAnnotation,
   visibleAnnotationTypes,
   findAnnotationTypeByHotkey,
   addAnnotation,
@@ -342,8 +346,79 @@ export function highlightRange(pageEl, slice, charStart, charEnd, slicePlain = "
 
   clearTimeout(highlightRange._timer);
   highlightRange._timer = setTimeout(() => {
-    if (pageEl.isConnected) pageEl.textContent = fullText;
+    const s = stateSession();
+    if (pageEl.isConnected && s?.slow) renderSlowReaderPage(s);
   }, 2000);
+}
+
+function wireInlineHighlight(outerSpan, session, covering) {
+  const pickAnn = () => pickPrimaryAnnotation(covering);
+  outerSpan.setAttribute("role", "button");
+  outerSpan.setAttribute("tabindex", "0");
+  wireLongPress(outerSpan, {
+    onLongPress: (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const ann = pickAnn();
+      if (ann) showAnnotationEditMenu(session, ann, outerSpan.getBoundingClientRect());
+    },
+    onTap: (e) => {
+      e.stopPropagation();
+      const ann = pickAnn();
+      if (!ann) return;
+      if (isIAQueryAnnotation(ann) && ann.aiReply) {
+        showSlowIAOverlayFromAnnotation(ann);
+        return;
+      }
+      navigateToAnnotation(session, ann);
+    },
+  });
+}
+
+function wrapLocalHighlightSegment(pageEl, slicePlain, segStart, segEnd, covering, session) {
+  if (!covering.length || segEnd <= segStart) return;
+
+  const usesHtml = pageEl.classList.contains("md-content");
+  const visiblePlain = pageEl.textContent || "";
+  let startVis = segStart;
+  let endVis = segEnd;
+  if (usesHtml && slicePlain) {
+    startVis = sourceOffsetToVisible(slicePlain, visiblePlain, segStart);
+    endVis = sourceOffsetToVisible(slicePlain, visiblePlain, segEnd);
+  }
+  if (endVis <= startVis) return;
+
+  const startRange = createRangeAtVisibleOffset(pageEl, startVis);
+  const endRange = createRangeAtVisibleOffset(pageEl, endVis);
+  if (!startRange || !endRange) return;
+
+  const domRange = document.createRange();
+  domRange.setStart(startRange.startContainer, startRange.startOffset);
+  domRange.setEnd(endRange.startContainer, endRange.startOffset);
+
+  let contents;
+  try {
+    contents = domRange.extractContents();
+  } catch {
+    return;
+  }
+
+  const current = createNestedHighlightSpans(covering, document, contents);
+
+  wireInlineHighlight(current, session, covering);
+  domRange.insertNode(current);
+}
+
+function applyInlineAnnotationHighlights(session, pageEl, pageSlice, slicePlain) {
+  if (!pageEl || !session?.slow) return;
+  const segments = buildAnnotationHighlightSegments(pageSlice, slicePlain, session.slow.annotations);
+  const highlighted = segments.filter((s) => s.covering.length);
+  if (!highlighted.length) return;
+
+  for (let i = highlighted.length - 1; i >= 0; i -= 1) {
+    const { segStart, segEnd, covering } = highlighted[i];
+    wrapLocalHighlightSegment(pageEl, slicePlain, segStart, segEnd, covering, session);
+  }
 }
 
 /** Proportional Y fallback when Range measurement fails. */
@@ -566,7 +641,7 @@ function measureMarkY(pageEl, marginEl, charOffsetInPage, slicePlain = "") {
   if (!pageEl || !marginEl) return null;
   const plain = slicePlain || pageEl._slowSlicePlain || "";
   let range = null;
-  if (pageEl.classList.contains("md-content") && plain) {
+  if (plain) {
     const visiblePlain = pageEl.textContent || "";
     const visOffset = sourceOffsetToVisible(plain, visiblePlain, charOffsetInPage);
     range = createRangeAtVisibleOffset(pageEl, visOffset);
@@ -956,6 +1031,7 @@ export function renderSlowReaderPage(session, opts = {}) {
       pageEl.textContent = slicePlain;
       pageEl._slowSlicePlain = slicePlain;
     }
+    applyInlineAnnotationHighlights(session, pageEl, slice, slicePlain);
   }
   updateMaxReadCharEnd(session);
   renderProgress(session);
