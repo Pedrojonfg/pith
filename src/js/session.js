@@ -7,6 +7,10 @@ import {
   LS_SESSIONS_BY_MODE_KEY,
   MAX_N_TEST,
 } from "./config.js?v=20260527_1";
+import {
+  getActiveSession as getActiveDocumentSession,
+  saveActiveSession as saveDocumentSession,
+} from "./session-store.js";
 import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
 import {
   deepSeekGenerateBlockJson,
@@ -274,7 +278,7 @@ export function emptySessionsByMode() {
   return { rsvp: null, slow: null, cloze: null, questions: null };
 }
 
-function parseSessionsByModeRaw(raw) {
+export function parseSessionsByModeRaw(raw) {
   if (!raw || !String(raw).trim()) return null;
   try {
     const obj = JSON.parse(raw);
@@ -346,12 +350,34 @@ export function storeSessionsByMode(data) {
 
 export function loadSessionForMode(mode) {
   const slot = normalizeStudyMode(mode);
+  const doc = getActiveDocumentSession();
+  if (doc?.modes) return doc.modes[slot] || null;
   const all = loadSessionsByMode();
   return all[slot] || null;
 }
 
 export function storeSessionForMode(mode, session) {
   const slot = normalizeStudyMode(mode);
+  const doc = getActiveDocumentSession();
+  if (doc?.modes) {
+    if (session && typeof session === "object") {
+      migrateLegacyHtmlMinSession(session);
+      doc.modes[slot] = session;
+    } else {
+      doc.modes[slot] = null;
+    }
+    saveDocumentSession(doc);
+    if (slot === "rsvp" && doc.modes.rsvp) {
+      localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(doc.modes.rsvp));
+    } else if (slot === "rsvp" && !doc.modes.rsvp) {
+      try {
+        localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+    }
+    return;
+  }
   const all = loadSessionsByMode();
   if (session && typeof session === "object") {
     migrateLegacyHtmlMinSession(session);

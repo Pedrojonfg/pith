@@ -22,6 +22,15 @@ export const LS_REVIEW_CONFIG_PREFIX = "review_session_config_";
 export const LS_REVIEW_FLASHCARDS_PREFIX = "review_flashcards_";
 export const LS_SESSION_DEFAULT_Q_CONFIG_KEY = "session_default_q_config";
 
+/** DocumentSession V2 — unified cross-mode storage */
+export const LS_DOC_SESSIONS_KEY = "mylearning_doc_sessions";
+export const LS_ACTIVE_DOC_ID_KEY = "mylearning_active_doc_id";
+export const LS_DOC_TEXT_PREFIX = "mylearning_doc_text_";
+export const LS_V1_BACKUP_KEY = "mylearning_v1_backup";
+
+/** Externalize rawMarkdown when serialized session exceeds this size (bytes). */
+export const DOC_SESSION_SIZE_THRESHOLD = 400 * 1024;
+
 /** Maximum test (MCQ) questions per study block. */
 export const MAX_N_TEST = 10;
 

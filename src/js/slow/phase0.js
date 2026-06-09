@@ -10,6 +10,7 @@ import {
   normalizeLlmModel,
 } from "../llm.js?v=20260525_1";
 import { getStudyLanguage } from "../ui.js?v=20260525_1";
+import { addConceptsToShared, getActiveSession } from "../session-store.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
 export const PHASE0_MAX_CHUNK_CHARS = 50000;
@@ -608,6 +609,28 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
 }
 
 /**
+ * Dual-write Phase 0 concepts to DocumentSession.shared.conceptInventory.
+ * @param {{ conceptsToFind?: { term?: string, authorUsage?: string }[] } | null} phase0
+ */
+export function syncPhase0ConceptsToShared(phase0) {
+  const doc = getActiveSession();
+  if (!doc?.docId || !phase0) return;
+  const concepts = (phase0.conceptsToFind || [])
+    .map((c) => ({
+      label: String(c?.term || "").trim(),
+      definition: String(c?.authorUsage || "").trim(),
+      detectedBy: "slow",
+    }))
+    .filter((c) => c.label);
+  if (!concepts.length) return;
+  try {
+    addConceptsToShared(doc.docId, concepts);
+  } catch (err) {
+    console.warn("[phase0] shared concepts dual-write failed", err);
+  }
+}
+
+/**
  * Pick single vs map-reduce based on scope length.
  */
 export async function generatePhase0ForScope(scopeText, session, opts = {}) {
@@ -628,10 +651,12 @@ export async function generatePhase0ForScope(scopeText, session, opts = {}) {
     ...opts,
   };
 
-  if (iaText.length < PHASE0_MAP_REDUCE_THRESHOLD) {
-    return generatePhase0Single(iaText, { ...baseOpts, treeSummary });
-  }
-  return mapReducePhase0(text, boundaries, { ...baseOpts, session });
+  const orientation =
+    iaText.length < PHASE0_MAP_REDUCE_THRESHOLD
+      ? await generatePhase0Single(iaText, { ...baseOpts, treeSummary })
+      : await mapReducePhase0(text, boundaries, { ...baseOpts, session });
+  syncPhase0ConceptsToShared(orientation);
+  return orientation;
 }
 
 // --- T04: editable Phase 0, fillable map, re-read ---

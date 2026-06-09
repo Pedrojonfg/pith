@@ -414,9 +414,19 @@ function clozeNodeId(epistemicId) {
   return `cloze:${String(epistemicId || "").trim()}`;
 }
 
-/** Cloze epistemic graph from pipeline Fase 0 (session.cloze only). */
-export function buildClozeEpistemicGraph(session) {
-  const epistemicGraph = session?.cloze?.epistemicGraph;
+/** Cloze epistemic graph from pipeline Fase 0 or shared concept inventory. */
+export function buildClozeEpistemicGraph(session, options = {}) {
+  const shared = options.shared ?? session?.shared ?? null;
+  let epistemicGraph = session?.cloze?.epistemicGraph;
+  if ((!epistemicGraph || !epistemicGraph.nodes?.length) && shared?.conceptInventory?.length) {
+    const nodes = shared.conceptInventory.map((c, i) => ({
+      id: String(c.canonicalId || `shared_${i + 1}`),
+      text: String(c.label || "").trim(),
+      type: "CONCEPT",
+      importance: 3,
+    })).filter((n) => n.id && n.text);
+    epistemicGraph = { nodes, edges: [] };
+  }
   if (!epistemicGraph || typeof epistemicGraph !== "object") {
     return { nodes: [], edges: [], kind: "cloze" };
   }

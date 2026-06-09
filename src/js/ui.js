@@ -83,6 +83,10 @@ export const els = {
 
   screenApiSetup: document.getElementById("screenApiSetup"),
   screenModeSelect: document.getElementById("screenModeSelect"),
+  screenDocLibrary: document.getElementById("screenDocLibrary"),
+  docLibraryList: document.getElementById("docLibraryList"),
+  docLibraryBackBtn: document.getElementById("docLibraryBackBtn"),
+  modeSelectDocLibraryBtn: document.getElementById("modeSelectDocLibraryBtn"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenBlocksList: document.getElementById("screenBlocksList"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
@@ -765,6 +769,7 @@ export function showScreen(which) {
   currentScreenId = which;
   const showSetup = which === "setup";
   const showModeSelect = which === "modeSelect";
+  const showDocLibrary = which === "docLibrary";
   const modeSelectEl = showModeSelect ? resolveModeSelectScreenEl() : els.screenModeSelect;
   const showModeSelectScreen = showModeSelect && !!modeSelectEl;
   const showCreate = which === "create" || (showModeSelect && !modeSelectEl);
@@ -791,6 +796,7 @@ export function showScreen(which) {
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
+  els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
@@ -844,6 +850,10 @@ export function showScreen(which) {
       const firstMode = document.querySelector('input[name="studyMode"]');
       if (firstMode) firstMode.focus();
     }, 0);
+  }
+
+  if (showDocLibrary) {
+    setTimeout(() => els.docLibraryBackBtn?.focus?.(), 0);
   }
 
   if (showCreate) {

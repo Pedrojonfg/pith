@@ -1,4 +1,5 @@
 import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260607_1";
+import { addAnnotationToShared, getActiveSession } from "../session-store.js";
 
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
@@ -68,6 +69,20 @@ export function addAnnotation(session, { type, charStart, charEnd, userText = ""
   if (type === IA_QUERY_TYPE) entry.isIAQuery = true;
   if (!Array.isArray(session.slow.annotations)) session.slow.annotations = [];
   session.slow.annotations.push(entry);
+  try {
+    const doc = getActiveSession();
+    if (doc?.docId) {
+      addAnnotationToShared(doc.docId, {
+        type: entry.type,
+        text: entry.userText,
+        offset: entry.charStart,
+        id: entry.id,
+        createdAt: entry.createdAt,
+      });
+    }
+  } catch (err) {
+    console.warn("[annotations] shared dual-write failed", err);
+  }
   return entry;
 }
 

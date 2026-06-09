@@ -272,6 +272,12 @@
               </div>
             </fieldset>
 
+            <div class="doc-library-link-row">
+              <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
+                My documents
+              </button>
+            </div>
+
             <div class="mode-triage-panel">
               <button
                 type="button"
@@ -324,6 +330,24 @@
   RSVP (revisión)</pre>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section
+          id="screenDocLibrary"
+          class="screen doc-library-screen"
+          aria-hidden="true"
+          aria-label="My documents"
+        >
+          <div class="card">
+            <div class="doc-library-header">
+              <button type="button" id="docLibraryBackBtn" class="create-back-btn">
+                ← Back
+              </button>
+              <h1>My documents</h1>
+            </div>
+            <p class="hint">Documents you have studied. Tap one to choose a mode and continue.</p>
+            <div id="docLibraryList" class="doc-library-list" role="list"></div>
           </div>
         </section>
 
