@@ -1,7 +1,7 @@
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml } from "../markdown.js?v=20260525_1";
 import { els, showScreen } from "../ui.js?v=20260525_1";
-import { maybeScheduleCheckpoint, clearCheckpointTimer } from "./checkpoints.js?v=20260528_1";
+import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260528_1";
 import { matchConceptFindings } from "./gamification.js?v=20260528_1";
 import { fillBlankFromAnnotation } from "./phase0.js?v=20260528_1";
 import { askSlowReaderIA } from "./ai-context.js?v=20260528_1";
@@ -43,8 +43,15 @@ import {
 
 const LONG_PRESS_MS = 500;
 
+const SLOW_TYPO_DEFAULTS = {
+  fontSizePx: 15,
+  lineHeight: 1.4,
+  fontFamily: '"DM Sans", sans-serif',
+};
+
 let readerState = {
   breakpoints: [],
+  contentHeightUsed: 0,
   debounceTimer: null,
   pendingSelection: null,
   menuShowSecondary: false,
@@ -94,9 +101,50 @@ function applyTypographyToPage(session) {
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   const t = session?.slow?.typography || {};
   if (!pageEl) return;
-  pageEl.style.fontSize = `${Number(t.fontSizePx) || 18}px`;
-  pageEl.style.lineHeight = String(Number(t.lineHeight) || 1.6);
+  pageEl.style.fontSize = `${Number(t.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx}px`;
+  pageEl.style.lineHeight = String(Number(t.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight);
   pageEl.style.fontFamily = String(t.fontFamily || '"DM Sans", sans-serif');
+}
+
+function getReaderContentHeight() {
+  const content = document.querySelector(".slow-reader-content");
+  if (content && content.clientHeight > 50) return content.clientHeight;
+
+  const main = document.querySelector(".slow-reader-main");
+  const toolbar = document.querySelector(".slow-reader-toolbar");
+  if (main && toolbar) {
+    const style = window.getComputedStyle(main);
+    const padTop = parseFloat(style.paddingTop) || 0;
+    const padBottom = parseFloat(style.paddingBottom) || 0;
+    const gap = parseFloat(style.rowGap || style.gap) || 12;
+    return Math.max(100, main.clientHeight - toolbar.offsetHeight - padTop - padBottom - gap);
+  }
+
+  return Math.max(300, window.innerHeight - 160);
+}
+
+function buildPaginationMeasureContent(session, typography) {
+  const usesMd = usesMarkdownRender(session);
+  return (el, slice) => {
+    applyTypographyToMeasureEl(el, typography, usesMd);
+    if (usesMd) {
+      el.innerHTML = markdownToHtml(slice);
+    } else {
+      el.textContent = slice;
+    }
+  };
+}
+
+function applyTypographyToMeasureEl(el, typography, usesMd) {
+  const t = typography && typeof typography === "object" ? typography : {};
+  el.className = usesMd ? "slow-reader-page md-content" : "slow-reader-page";
+  el.style.fontSize = `${Number(t.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx}px`;
+  el.style.lineHeight = String(Number(t.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight);
+  el.style.fontFamily = String(t.fontFamily || SLOW_TYPO_DEFAULTS.fontFamily);
+  el.style.whiteSpace = usesMd ? "normal" : "pre-wrap";
+  el.style.wordBreak = "break-word";
+  el.style.width = "100%";
+  el.style.boxSizing = "border-box";
 }
 
 function recomputeBreakpoints(session) {
@@ -105,7 +153,14 @@ function recomputeBreakpoints(session) {
   if (!container) return [];
   const oldBp = readerState.breakpoints;
   const oldPage = Number(session?.slow?.currentPageIndex) || 0;
-  readerState.breakpoints = computePageBreakpoints(scopeText, container, session.slow.typography);
+  const usesMd = usesMarkdownRender(session);
+  const contentHeight = getReaderContentHeight();
+  readerState.contentHeightUsed = contentHeight;
+  readerState.breakpoints = computePageBreakpoints(scopeText, container, session.slow.typography, {
+    availableHeight: contentHeight,
+    measureMode: usesMd ? "md" : "plain",
+    measureContent: buildPaginationMeasureContent(session, session.slow.typography),
+  });
   if (oldBp.length && session?.slow) {
     session.slow.currentPageIndex = closestPageAfterRecompute(oldBp, oldPage, readerState.breakpoints);
   }
@@ -120,10 +175,31 @@ function updateMaxReadCharEnd(session) {
 function renderProgress(session) {
   const total = getPageCount(readerState.breakpoints);
   const idx = Number(session?.slow?.currentPageIndex) || 0;
-  const fill = document.getElementById("slowReaderProgressFill");
-  if (fill) fill.style.width = total ? `${((idx + 1) / total) * 100}%` : "0%";
   const indicator = document.getElementById("slowReaderPageIndicator");
-  if (indicator) indicator.textContent = total ? `${idx + 1} / ${total}` : "—";
+  if (indicator) {
+    if (!total) indicator.textContent = "—";
+    else if (total === 1) indicator.textContent = "1 página";
+    else indicator.textContent = `Página ${idx + 1} de ${total}`;
+  }
+}
+
+function renderTypographyLabels(session) {
+  const t = session?.slow?.typography || SLOW_TYPO_DEFAULTS;
+  const fontSize = Number(t.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx;
+  const lineHeight = Number(t.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight;
+  const fontLabel = document.getElementById("slowFontSizeLabel");
+  const lineLabel = document.getElementById("slowLineHeightLabel");
+  if (fontLabel) fontLabel.textContent = `${fontSize}`;
+  if (lineLabel) lineLabel.textContent = lineHeight.toFixed(1);
+}
+
+function applyTypographyChange(session, changes) {
+  if (!session?.slow) return;
+  if (!session.slow.typography) session.slow.typography = { ...SLOW_TYPO_DEFAULTS };
+  Object.assign(session.slow.typography, changes);
+  invalidatePaginationCache();
+  clearTimeout(readerState.debounceTimer);
+  readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(session), 150);
 }
 
 function usesMarkdownRender(session) {
@@ -861,7 +937,7 @@ function renderFillableMapPanel(session) {
   panel.appendChild(list);
 }
 
-export function renderSlowReaderPage(session) {
+export function renderSlowReaderPage(session, opts = {}) {
   if (!session?.slow) return;
   applyTypographyToPage(session);
   recomputeBreakpoints(session);
@@ -883,11 +959,21 @@ export function renderSlowReaderPage(session) {
   }
   updateMaxReadCharEnd(session);
   renderProgress(session);
+  renderTypographyLabels(session);
   renderMarginMarks(session, slice);
   renderFillableMapPanel(session);
   renderSlowSidebar(session, { breakpoints: readerState.breakpoints, scopeText });
   maybeScheduleCheckpoint(session, readerState.breakpoints, idx, () => renderSlowReaderPage(session));
   storeActiveSession(session);
+
+  if (!opts.skipLayoutRetry && isSlowReaderActive()) {
+    requestAnimationFrame(() => {
+      const h = getReaderContentHeight();
+      if (h > 50 && Math.abs(h - readerState.contentHeightUsed) > 4) {
+        renderSlowReaderPage(session, { skipLayoutRetry: true });
+      }
+    });
+  }
 }
 
 export function goToReaderPage(session, pageIndex) {
@@ -897,6 +983,7 @@ export function goToReaderPage(session, pageIndex) {
   hideAnnotationMenu();
   hideAnnotationEditMenu();
   hideConceptPicker();
+  hideCheckpointChip();
   readerState.pendingSelection = null;
   renderSlowReaderPage(session);
 }
@@ -1229,14 +1316,10 @@ export function initSlowReader(session) {
   if (!session?.slow) return;
   session.slow.phase = session.slow.phase === "phase2" ? session.slow.phase : "phase1";
   if (!session.slow.typography) {
-    session.slow.typography = { fontSizePx: 18, lineHeight: 1.6, fontFamily: '"DM Sans", sans-serif' };
+    session.slow.typography = { ...SLOW_TYPO_DEFAULTS };
   }
 
-  const layout = document.getElementById("slowReaderLayout");
-  if (!session.slow.focusModeOptOut) {
-    layout?.classList.add("focus-mode");
-    els.slowFocusModeBtn?.setAttribute("aria-pressed", "true");
-  }
+  document.getElementById("slowReaderLayout")?.classList.remove("focus-mode");
 
   renderSlowReaderPage(session);
   wireSidebarToggle(stateSession);
@@ -1253,23 +1336,10 @@ export function initSlowReader(session) {
     goToReaderPage(stateSession(), (stateSession()?.slow?.currentPageIndex || 0) + 1);
   });
 
-  els.slowFocusModeBtn?.addEventListener("click", () => {
-    const layout = document.getElementById("slowReaderLayout");
-    const pressed = els.slowFocusModeBtn.getAttribute("aria-pressed") === "true";
-    const next = !pressed;
-    els.slowFocusModeBtn.setAttribute("aria-pressed", String(next));
-    layout?.classList.toggle("focus-mode", next);
-    const s = stateSession();
-    if (s?.slow && !next) {
-      s.slow.focusModeOptOut = true;
-      storeActiveSession(s);
-    }
-  });
-
   els.slowReaderCompleteBtn?.addEventListener("click", () => {
     const s = stateSession();
     if (!s?.slow) return;
-    clearCheckpointTimer();
+    hideCheckpointChip();
     s.slow.phase = "phase3";
     storeActiveSession(s);
     showScreen("slowPhase3");
@@ -1327,38 +1397,28 @@ export function initSlowReader(session) {
 
   document.getElementById("slowFontSmallerBtn")?.addEventListener("click", () => {
     const s = stateSession();
-    if (!s?.slow?.typography) return;
-    s.slow.typography.fontSizePx = Math.max(14, (s.slow.typography.fontSizePx || 18) - 2);
-    invalidatePaginationCache();
-    clearTimeout(readerState.debounceTimer);
-    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+    if (!s?.slow) return;
+    const current = Number(s.slow.typography?.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx;
+    applyTypographyChange(s, { fontSizePx: Math.max(12, current - 1) });
   });
   document.getElementById("slowFontLargerBtn")?.addEventListener("click", () => {
     const s = stateSession();
-    if (!s?.slow?.typography) return;
-    s.slow.typography.fontSizePx = Math.min(28, (s.slow.typography.fontSizePx || 18) + 2);
-    invalidatePaginationCache();
-    clearTimeout(readerState.debounceTimer);
-    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+    if (!s?.slow) return;
+    const current = Number(s.slow.typography?.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx;
+    applyTypographyChange(s, { fontSizePx: Math.min(24, current + 1) });
   });
 
   document.getElementById("slowLineSmallerBtn")?.addEventListener("click", () => {
     const s = stateSession();
-    if (!s?.slow?.typography) return;
-    s.slow.typography.lineHeight = Math.max(1.3, Number(s.slow.typography.lineHeight || 1.6) - 0.1);
-    invalidatePaginationCache();
-    storeActiveSession(s);
-    clearTimeout(readerState.debounceTimer);
-    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+    if (!s?.slow) return;
+    const current = Number(s.slow.typography?.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight;
+    applyTypographyChange(s, { lineHeight: Math.max(1.2, Math.round((current - 0.1) * 10) / 10) });
   });
   document.getElementById("slowLineLargerBtn")?.addEventListener("click", () => {
     const s = stateSession();
-    if (!s?.slow?.typography) return;
-    s.slow.typography.lineHeight = Math.min(2.2, Number(s.slow.typography.lineHeight || 1.6) + 0.1);
-    invalidatePaginationCache();
-    storeActiveSession(s);
-    clearTimeout(readerState.debounceTimer);
-    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+    if (!s?.slow) return;
+    const current = Number(s.slow.typography?.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight;
+    applyTypographyChange(s, { lineHeight: Math.min(2.0, Math.round((current + 0.1) * 10) / 10) });
   });
 
   window.addEventListener("resize", () => {

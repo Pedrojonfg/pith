@@ -100,6 +100,7 @@ import {
   getStudyLanguage,
   hideSidebar,
   setBlockReadContentProvider,
+  registerChromeStudyModeResolver,
   setBlockReadSidebarAvailable,
   setFullPackEntryCta,
   setOfflinePackButtonVisibility,
@@ -203,6 +204,7 @@ export function createSlowSession({
       phase: "scope",
       criticalMode: Boolean(criticalMode),
       fillableMapMode: false,
+      checkpointsEnabled: true,
       phase0SeenKey: null,
       phase0SeenReread: false,
       phase0Collapsed: false,
@@ -210,7 +212,7 @@ export function createSlowSession({
       phase0Status: "idle",
       currentPageIndex: 0,
       maxReadCharEnd: 0,
-      typography: { fontSizePx: 18, lineHeight: 1.6, fontFamily: '"DM Sans", sans-serif' },
+      typography: { fontSizePx: 15, lineHeight: 1.4, fontFamily: '"DM Sans", sans-serif' },
       annotations: [],
       findings: [],
       checkpointsDismissed: [],
@@ -628,6 +630,18 @@ function renderSlowScopeScreen(session) {
         const s = state.activeSession;
         if (!s?.slow) return;
         s.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
+        storeActiveSession(s);
+      });
+    }
+  }
+  if (els.slowScopeCheckpoints) {
+    els.slowScopeCheckpoints.checked = slow.checkpointsEnabled !== false;
+    if (!els.slowScopeCheckpoints._wired) {
+      els.slowScopeCheckpoints._wired = true;
+      els.slowScopeCheckpoints.addEventListener("change", () => {
+        const s = state.activeSession;
+        if (!s?.slow) return;
+        s.slow.checkpointsEnabled = Boolean(els.slowScopeCheckpoints.checked);
         storeActiveSession(s);
       });
     }
@@ -1124,6 +1138,9 @@ function wireSlowScopeHandlers() {
     if (!session?.slow?.readingScope) return;
     if (els.slowScopeFillableMap) {
       session.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
+    }
+    if (els.slowScopeCheckpoints) {
+      session.slow.checkpointsEnabled = Boolean(els.slowScopeCheckpoints.checked);
     }
     session.slow.phase = "phase0";
     prepareSlowPhase0Entry(session);
@@ -3411,6 +3428,9 @@ function wireSlowPhase3Handlers() {
 }
 
 export function wireStudyHandlers() {
+  registerChromeStudyModeResolver(() =>
+    normalizeStudyMode(state.studyMode || state.activeSession?.studyMode),
+  );
   setSlowSessionGetter(() => state.activeSession);
   wireStudyModeSelector();
   wireSlowScopeHandlers();
@@ -3594,11 +3614,8 @@ export function wireStudyHandlers() {
       pct,
       skipped: false,
     };
-    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
-    const prevToggleDisplay = sidebarToggleBtn ? sidebarToggleBtn.style.display : "";
-    if (sidebarToggleBtn) sidebarToggleBtn.style.display = "none";
-    hideSidebar();
     document.body.classList.add("assessment-active");
+    hideSidebar();
 
     const o = ensureAssessmentRunnerEls();
     o.root.hidden = false;
@@ -3886,7 +3903,6 @@ export function wireStudyHandlers() {
       assessmentRunnerEls = bindAssessmentRunnerEls(o.root);
       document.body.classList.remove("assessment-active");
       showSidebar();
-      if (sidebarToggleBtn) sidebarToggleBtn.style.display = prevToggleDisplay;
     }
 
     acceptBtn.addEventListener("click", async () => {
@@ -3948,9 +3964,6 @@ export function wireStudyHandlers() {
       return;
     }
 
-    const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
-    const prevToggleDisplay = sidebarToggleBtn ? sidebarToggleBtn.style.display : "";
-
     let currentQ = 0;
     const responses = [];
     let score = 0;
@@ -3973,7 +3986,6 @@ export function wireStudyHandlers() {
       o.root.hidden = true;
       document.body.classList.remove("assessment-active");
       showSidebar();
-      if (sidebarToggleBtn) sidebarToggleBtn.style.display = prevToggleDisplay;
     }
 
     function formatScore(n) {
@@ -4113,9 +4125,8 @@ export function wireStudyHandlers() {
       settleAnswer(letter);
     }
 
-    hideSidebar();
-    if (sidebarToggleBtn) sidebarToggleBtn.style.display = "none";
     document.body.classList.add("assessment-active");
+    hideSidebar();
     o.root.hidden = false;
     document.addEventListener("keydown", onKeyDown);
     renderQuestion();

@@ -93,12 +93,15 @@
 .slow-screen#screenSlowReader {
   width: 100%;
   max-width: none;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .slow-reader-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  min-height: calc(100vh - 96px);
+  height: 100%;
+  min-height: 0;
   width: 100%;
   position: relative;
 }
@@ -112,29 +115,21 @@
   grid-row: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 8px 24px 48px;
-  min-height: calc(100vh - 96px);
+  padding: 8px 24px 16px;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .slow-reader-layout.sidebar-open .slow-reader-main {
   max-width: none;
   margin: 0;
-}
-
-.slow-reader-layout.focus-mode .slow-reader-sidebar,
-.slow-reader-layout.focus-mode .slow-sidebar-tab,
-.slow-reader-layout.focus-mode .slow-reader-toolbar button:not(#slowFocusModeBtn),
-.slow-reader-layout.focus-mode .slow-reader-progress {
-  display: none;
-}
-
-.slow-reader-layout.focus-mode .slow-reader-main {
-  max-width: 680px;
 }
 
 .slow-reader-toolbar {
@@ -154,30 +149,52 @@
   flex-shrink: 0;
 }
 
+.slow-reader-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.slow-reader-typo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 0 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.slow-reader-typo-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  margin-right: 2px;
+}
+
+.slow-reader-typo-value {
+  min-width: 2.2em;
+  text-align: center;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.slow-reader-toolbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
 .slow-reader-page-indicator {
   flex-shrink: 0;
-  min-width: 4.5em;
+  min-width: 7em;
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.65);
   text-align: center;
-}
-
-.slow-reader-progress {
-  flex: 1;
-  min-width: 80px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.slow-reader-progress span {
-  display: block;
-  height: 100%;
-  width: 0%;
-  background: var(--accent, #7dd3fc);
-  transition: width 0.2s ease;
+  white-space: nowrap;
 }
 
 .slow-reader-content {
@@ -185,25 +202,31 @@
   display: flex;
   justify-content: center;
   min-height: 0;
+  overflow: hidden;
 }
 
 .slow-reader-page-wrap {
   position: relative;
   width: 100%;
   max-width: 68ch;
-  min-height: calc(100vh - 200px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .slow-reader-page {
   width: 100%;
-  min-height: calc(100vh - 200px);
-  font-size: 18px;
-  line-height: 1.65;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
   color: rgba(255, 255, 255, 0.92);
   user-select: text;
   cursor: text;
+  box-sizing: border-box;
 }
 
 .slow-reader-margin {
@@ -674,7 +697,12 @@
   border-radius: 999px;
   background: rgba(20, 20, 20, 0.95);
   border: 1px solid var(--border, #333);
-  z-index: 50;
+  z-index: 125;
+  pointer-events: auto;
+}
+
+.slow-checkpoint-chip[hidden] {
+  display: none !important;
 }
 
 .slow-checkpoint-label {
@@ -693,13 +721,22 @@
 
 .slow-checkpoint-dismiss {
   margin-left: auto;
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: var(--muted, #888);
   font-size: 1.25rem;
   line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 4px 8px;
+  position: relative;
+  z-index: 1;
+}
+
+.slow-checkpoint-dismiss:hover,
+.slow-checkpoint-dismiss:focus-visible {
+  color: var(--text, #e5e5e5);
+  outline: none;
 }
 
 .slow-checkpoint-input {
@@ -1601,7 +1638,7 @@
 @media (min-width: 1024px) {
   .slow-reader-layout {
     grid-template-columns: minmax(0, 1fr) 32px;
-    min-height: 100vh;
+    height: 100%;
   }
 
   .slow-reader-layout.sidebar-open {
@@ -1611,17 +1648,14 @@
   .slow-reader-main {
     max-width: min(75ch, 100%);
     margin: 0 auto;
-    padding: 12px 32px 48px;
-    min-height: 100vh;
+    padding: 12px 32px 16px;
+    height: 100%;
+    min-height: 0;
   }
 
   .slow-reader-layout.sidebar-open .slow-reader-main {
     max-width: min(75ch, 100%);
     margin: 0 auto;
-  }
-
-  .slow-reader-layout.focus-mode .slow-reader-main {
-    max-width: min(68ch, 100%);
   }
 
   .slow-reader-margin {

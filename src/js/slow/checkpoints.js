@@ -40,40 +40,62 @@ export function clearCheckpointTimer() {
   checkpointTimer = null;
 }
 
+/** Hide chip, cancel pending timer, and invalidate in-flight async show. */
+export function hideCheckpointChip() {
+  clearCheckpointTimer();
+  checkpointGen += 1;
+  if (checkpointEl) {
+    checkpointEl.hidden = true;
+    checkpointEl.innerHTML = "";
+  }
+}
+
+function scopeTextForSession(session) {
+  const slow = session?.slow;
+  return String(slow?.normalizedTextFull || "").slice(
+    slow?.readingScope?.charStart || 0,
+    slow?.readingScope?.charEnd,
+  );
+}
+
+function dismissCheckpointsOnPage(session, breakpoints, pageIndex) {
+  const slow = session?.slow;
+  if (!slow) return;
+  const sections = buildSectionBoundaries(scopeTextForSession(session), slow.normalizedFormat);
+  const ids = sections
+    .filter((s) => isLastPageOfSection(breakpoints, pageIndex, s))
+    .map((s) => s.id);
+  slow.checkpointsDismissed = [...new Set([...(slow.checkpointsDismissed || []), ...ids])];
+  hideCheckpointChip();
+  storeActiveSession(session);
+}
+
 export function maybeScheduleCheckpoint(session, breakpoints, pageIndex, onAnswer) {
   clearCheckpointTimer();
   const slow = session?.slow;
-  if (!slow || slow.phase !== "phase1") return;
+  if (!slow || slow.phase !== "phase1" || slow.checkpointsEnabled === false) {
+    hideCheckpointChip();
+    return;
+  }
 
-  const scopeText = String(session.slow?.normalizedTextFull || "").slice(
-    slow.readingScope?.charStart || 0,
-    slow.readingScope?.charEnd,
-  );
+  const scopeText = scopeTextForSession(session);
   const sections = buildSectionBoundaries(scopeText, slow.normalizedFormat);
   const dismissed = new Set(slow.checkpointsDismissed || []);
   const section = sections.find(
     (s) => isLastPageOfSection(breakpoints, pageIndex, s) && !dismissed.has(s.id),
   );
-  if (!section) return;
+  if (!section) {
+    hideCheckpointChip();
+    return;
+  }
 
   checkpointTimer = setTimeout(() => {
-    void showCheckpointChip(session, section, onAnswer);
+    void showCheckpointChip(session, section, breakpoints, pageIndex, onAnswer);
   }, CHECKPOINT_DELAY_MS);
 }
 
-function dismissCheckpoint(session, section) {
-  session.slow.checkpointsDismissed = [...(session.slow.checkpointsDismissed || []), section.id];
-  storeActiveSession(session);
-  if (checkpointEl) checkpointEl.hidden = true;
-}
-
 function getSectionText(session, section) {
-  const slow = session?.slow;
-  const scopeText = String(slow?.normalizedTextFull || "").slice(
-    slow?.readingScope?.charStart || 0,
-    slow?.readingScope?.charEnd,
-  );
-  return scopeText.slice(section.charStart, section.charEnd);
+  return scopeTextForSession(session).slice(section.charStart, section.charEnd);
 }
 
 export async function resolveCheckpointQuestion(session, section) {
@@ -95,7 +117,16 @@ export async function resolveCheckpointQuestion(session, section) {
   return question;
 }
 
-async function showCheckpointChip(session, section, onAnswer) {
+async function showCheckpointChip(session, section, breakpoints, pageIndex, onAnswer) {
+  const slow = session?.slow;
+  if (
+    !slow ||
+    slow.checkpointsEnabled === false ||
+    (slow.checkpointsDismissed || []).includes(section.id)
+  ) {
+    return;
+  }
+
   const gen = ++checkpointGen;
   if (!checkpointEl) {
     checkpointEl = document.createElement("div");
@@ -109,7 +140,12 @@ async function showCheckpointChip(session, section, onAnswer) {
   dismiss.className = "slow-checkpoint-dismiss";
   dismiss.setAttribute("aria-label", "Dismiss checkpoint");
   dismiss.textContent = "×";
-  dismiss.addEventListener("click", () => dismissCheckpoint(session, section));
+  const onDismiss = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dismissCheckpointsOnPage(session, breakpoints, pageIndex);
+  };
+  dismiss.addEventListener("click", onDismiss);
 
   const label = document.createElement("span");
   label.className = "slow-checkpoint-label";
@@ -137,7 +173,7 @@ async function showCheckpointChip(session, section, onAnswer) {
       charEnd: section.charEnd,
       userText: text,
     });
-    dismissCheckpoint(session, section);
+    dismissCheckpointsOnPage(session, breakpoints, pageIndex);
     if (typeof onAnswer === "function") onAnswer();
   });
 
@@ -156,7 +192,7 @@ async function showCheckpointChip(session, section, onAnswer) {
     "touchend",
     (e) => {
       const dx = (e.changedTouches?.[0]?.clientX || 0) - startX;
-      if (Math.abs(dx) > 50) dismissCheckpoint(session, section);
+      if (Math.abs(dx) > 50) dismissCheckpointsOnPage(session, breakpoints, pageIndex);
     },
     { once: true, passive: true },
   );

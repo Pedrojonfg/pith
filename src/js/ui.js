@@ -6,6 +6,76 @@ import { isOfflineMode } from "./offline.js?v=20260606_1";
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;
 
+/** @type {() => string} */
+let resolveChromeStudyMode = () => "rsvp";
+
+let currentScreenId = "setup";
+let blockReadWanted = false;
+let guideToggleSuppressed = false;
+
+const SCREENS_WITH_GUIDE_TOGGLE = new Set([
+  "test",
+  "socratic",
+  "between",
+  "review",
+  "reviewGenerating",
+  "reviewSummary",
+  "clozeStudy",
+]);
+
+/** @param {() => string} resolver */
+export function registerChromeStudyModeResolver(resolver) {
+  resolveChromeStudyMode = typeof resolver === "function" ? resolver : () => "rsvp";
+  syncFloatingChrome();
+}
+
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'} */
+function normalizeChromeStudyMode(mode) {
+  const m = String(mode || "").trim();
+  if (m === "slow") return "slow";
+  if (m === "cloze") return "cloze";
+  if (m === "questions") return "questions";
+  return "rsvp";
+}
+
+function syncFloatingChrome() {
+  const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
+  const blockReadBtn = document.getElementById("block-read-toggle-btn");
+  const blockReadSidebar = document.getElementById("block-read-sidebar");
+  const studyMode = normalizeChromeStudyMode(resolveChromeStudyMode());
+  const isSlow = studyMode === "slow";
+  const isRsvp = studyMode === "rsvp";
+  const offline = isOfflineMode();
+  const assessmentActive = document.body.classList.contains("assessment-active");
+
+  const showGuide =
+    !isSlow &&
+    !offline &&
+    !assessmentActive &&
+    !guideToggleSuppressed &&
+    SCREENS_WITH_GUIDE_TOGGLE.has(currentScreenId);
+
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.hidden = !showGuide;
+    sidebarToggleBtn.style.display = "";
+  }
+
+  const showBlockRead =
+    isRsvp &&
+    blockReadWanted &&
+    (currentScreenId === "test" || currentScreenId === "socratic");
+
+  if (blockReadBtn) blockReadBtn.hidden = !showBlockRead;
+  if (blockReadSidebar) {
+    if (!showBlockRead) {
+      blockReadSidebar.hidden = true;
+      closeBlockReadSidebar();
+    } else {
+      blockReadSidebar.hidden = false;
+    }
+  }
+}
+
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
   newSessionBtn: document.getElementById("newSessionBtn"),
@@ -208,6 +278,8 @@ export const els = {
   slowScopeBackBtn: document.getElementById("slowScopeBackBtn"),
   slowScopeFillableMap: document.getElementById("slowScopeFillableMap"),
   slowScopeFillableHint: document.getElementById("slowScopeFillableHint"),
+  slowScopeCheckpoints: document.getElementById("slowScopeCheckpoints"),
+  slowScopeCheckpointsHint: document.getElementById("slowScopeCheckpointsHint"),
   slowPhase0Progress: document.getElementById("slowPhase0Progress"),
   slowPhase0CollapseBtn: document.getElementById("slowPhase0CollapseBtn"),
   slowPhase0Content: document.getElementById("slowPhase0Content"),
@@ -219,7 +291,6 @@ export const els = {
   slowReaderMargin: document.getElementById("slowReaderMargin"),
   slowReaderPrevBtn: document.getElementById("slowReaderPrevBtn"),
   slowReaderNextBtn: document.getElementById("slowReaderNextBtn"),
-  slowFocusModeBtn: document.getElementById("slowFocusModeBtn"),
   slowReaderCompleteBtn: document.getElementById("slowReaderCompleteBtn"),
 
   startStudyingBtn: document.getElementById("startStudyingBtn"),
@@ -480,10 +551,7 @@ function applyOfflineUiRestrictions() {
       llmHint.style.display = offline ? "none" : "";
     }
   }
-  const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
-  if (sidebarToggleBtn) {
-    sidebarToggleBtn.style.display = offline ? "none" : "";
-  }
+  syncFloatingChrome();
 }
 
 function ensurePrefetchDot() {
@@ -608,20 +676,12 @@ export function toggleBlockReadSidebar() {
 }
 
 export function setBlockReadSidebarAvailable(available) {
-  const btn = document.getElementById("block-read-toggle-btn");
-  const sidebar = document.getElementById("block-read-sidebar");
-  if (!btn || !sidebar) return;
-  if (!available) {
-    btn.hidden = true;
-    sidebar.hidden = true;
-    closeBlockReadSidebar();
-    return;
-  }
-  btn.hidden = false;
-  sidebar.hidden = false;
+  blockReadWanted = Boolean(available);
+  syncFloatingChrome();
 }
 
 export function hideSidebar() {
+  guideToggleSuppressed = true;
   const sidebar = document.getElementById("guide-sidebar");
   const toggleBtn = document.getElementById("sidebar-toggle-btn");
   if (sidebar) {
@@ -631,12 +691,13 @@ export function hideSidebar() {
   if (toggleBtn) {
     toggleBtn.disabled = true;
     toggleBtn.setAttribute("aria-disabled", "true");
-    toggleBtn.style.opacity = "0.5";
   }
+  syncFloatingChrome();
 }
 
 export function showSidebar() {
   if (isOfflineMode()) return;
+  guideToggleSuppressed = false;
   const sidebar = document.getElementById("guide-sidebar");
   const toggleBtn = document.getElementById("sidebar-toggle-btn");
   if (sidebar) {
@@ -646,8 +707,8 @@ export function showSidebar() {
   if (toggleBtn) {
     toggleBtn.disabled = false;
     toggleBtn.setAttribute("aria-disabled", "false");
-    toggleBtn.style.opacity = "";
   }
+  syncFloatingChrome();
 }
 
 export function initLanguageUi() {
@@ -697,6 +758,7 @@ function resolveModeSelectScreenEl() {
 }
 
 export function showScreen(which) {
+  currentScreenId = which;
   const showSetup = which === "setup";
   const showModeSelect = which === "modeSelect";
   const modeSelectEl = showModeSelect ? resolveModeSelectScreenEl() : els.screenModeSelect;
@@ -761,6 +823,7 @@ export function showScreen(which) {
     setBlockReadSidebarAvailable(false);
   }
   applyOfflineUiRestrictions();
+  syncFloatingChrome();
 
   if (showSetup) {
     els.apiKeyInput.value = "";
