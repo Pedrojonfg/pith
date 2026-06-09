@@ -18,8 +18,15 @@ import {
 } from "./llm.js?v=20260525_1";
 import {
   buildDocumentHierarchy,
+  buildDeterministicPedagogicalMeta,
   hasMarkdownHeadings,
 } from "./normalization/hierarchy.js?v=20260609_1";
+import { analyzeText } from "./recommendation/analyzer.js?v=20260609_1";
+import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260609_1";
+import {
+  recordUserOverride,
+  updateFlowProgress,
+} from "./recommendation/tracker.js?v=20260609_1";
 import {
   normalizeTestQuestion,
   shuffleTestQuestionOptions,
@@ -156,11 +163,13 @@ import { startReviewFromSessionBlocks } from "./review.js?v=20260525_1";
 import {
   computeDocId,
   createSession,
+  getActiveSession,
   getAllSessions,
   getSession,
   getSmItemsDueToday,
   saveActiveSession as saveDocumentSession,
   setActiveSession,
+  updateRecommendation,
 } from "./session-store.js?v=20260609_1";
 
 /**
@@ -191,6 +200,384 @@ export async function ensureDocumentSessionForUpload(markdown) {
   }
   setActiveSession(docId);
   return doc;
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} recommendation
+ * @returns {Record<string, unknown> | null}
+ */
+export function getRecommendedStep(recommendation) {
+  if (!recommendation || typeof recommendation !== "object") return null;
+  const flow = recommendation.primaryFlow;
+  if (!Array.isArray(flow) || !flow.length) return null;
+  const idx = recommendation.currentStepIndex;
+  if (typeof idx !== "number" || idx < 0 || idx >= flow.length) return null;
+  return flow[idx] ?? null;
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} doc
+ * @param {string} cleanedText
+ * @param {{ pedagogicalMeta?: unknown, method?: string } | null} [hierarchyResult]
+ */
+export function computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult = null) {
+  if (!doc?.docId || doc.shared?.modeRecommendation) return;
+  try {
+    const textMetrics = analyzeText(String(cleanedText || ""));
+    const pedagogicalMeta =
+      hierarchyResult?.pedagogicalMeta ?? buildDeterministicPedagogicalMeta(textMetrics);
+    const method = hierarchyResult?.method === "llm" ? "llm_meta" : "deterministic";
+    const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, { method });
+    doc.shared.modeRecommendation = recommendation;
+    updateRecommendation(doc.docId, recommendation);
+  } catch (err) {
+    console.warn("mode recommendation compute failed", err);
+  }
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
+ */
+export function persistFlowRecommendationProgress(doc = getActiveSession()) {
+  if (!doc?.shared?.modeRecommendation) return;
+  try {
+    const updated = updateFlowProgress(doc.shared.modeRecommendation, doc);
+    doc.shared.modeRecommendation = updated;
+    updateRecommendation(doc.docId, updated);
+  } catch (err) {
+    console.warn("flow recommendation progress sync failed", err);
+  }
+}
+
+/**
+ * @param {string} chosenMode
+ * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
+ */
+export function applyFlowRecommendationOnEnterMode(chosenMode, doc = getActiveSession()) {
+  if (!doc?.shared?.modeRecommendation) return;
+  try {
+    const slot = normalizeStudyMode(chosenMode);
+    const recommendedStep = getRecommendedStep(doc.shared.modeRecommendation);
+    if (recommendedStep && slot !== normalizeStudyMode(recommendedStep.mode)) {
+      const updated = recordUserOverride(doc.shared.modeRecommendation, slot);
+      doc.shared.modeRecommendation = updated;
+      updateRecommendation(doc.docId, updated);
+    }
+  } catch (err) {
+    console.warn("flow recommendation enter mode failed", err);
+  }
+}
+
+/** @type {Record<string, string>} */
+const FLOW_MODE_SHORT_ES = {
+  slow: "Slow",
+  cloze: "Cloze",
+  review: "Revisión",
+  rsvp: "RSVP",
+  questions: "Questions",
+};
+
+/**
+ * @param {string} mode
+ * @returns {string}
+ */
+export function getFlowModeShortLabel(mode) {
+  const slot = normalizeStudyMode(mode);
+  return FLOW_MODE_SHORT_ES[slot] || getStudyModeLabel(slot);
+}
+
+/**
+ * @param {Array<{ estimatedTimeMin?: number }> | null | undefined} steps
+ * @returns {number}
+ */
+export function sumFlowTimeMin(steps) {
+  if (!Array.isArray(steps)) return 0;
+  return steps.reduce((sum, step) => sum + (Number(step?.estimatedTimeMin) || 0), 0);
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} recommendation
+ * @returns {"intro"|"progress"|"hidden"}
+ */
+export function getRecommendationPanelState(recommendation) {
+  if (!recommendation || typeof recommendation !== "object") return "hidden";
+  if (recommendation.userOverride) return "hidden";
+  const completed = Array.isArray(recommendation.completedSteps)
+    ? recommendation.completedSteps
+    : [];
+  if (completed.length > 0) return "progress";
+  const idx = recommendation.currentStepIndex;
+  if (idx === 0 && completed.length === 0) return "intro";
+  return "hidden";
+}
+
+/**
+ * @param {Array<{ id?: string, mode?: string }>} steps
+ * @param {Set<string>} completed
+ * @param {number} currentStepIndex
+ * @returns {string}
+ */
+export function formatProgressFlowLine(steps, completed, currentStepIndex) {
+  if (!Array.isArray(steps) || !steps.length) return "";
+  return steps
+    .map((step, index) => {
+      const short = getFlowModeShortLabel(String(step?.mode || ""));
+      if (step?.id && completed.has(step.id)) return `${short} ✓`;
+      if (index === currentStepIndex) return `${short} (siguiente)`;
+      return short;
+    })
+    .join(" → ");
+}
+
+/**
+ * @param {Array<{ mode?: string }>} steps
+ * @returns {string}
+ */
+export function formatIntroFlowLine(steps) {
+  if (!Array.isArray(steps) || !steps.length) return "";
+  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" → ");
+}
+
+/**
+ * @param {HTMLElement | null | undefined} host
+ * @param {string} line
+ * @param {{ completed?: Set<string>, currentStepIndex?: number, steps?: Array<{ id?: string, mode?: string }> }} [options]
+ */
+function renderFlowStepsElement(host, line, options = {}) {
+  if (!host) return;
+  const { completed, currentStepIndex = -1, steps = [] } = options;
+  if (!completed || currentStepIndex < 0) {
+    host.textContent = line;
+    return;
+  }
+  host.replaceChildren();
+  steps.forEach((step, index) => {
+    if (index > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "recommendation-flow-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "→";
+      host.appendChild(arrow);
+    }
+    const chip = document.createElement("span");
+    chip.className = "recommendation-flow-step";
+    const short = getFlowModeShortLabel(String(step?.mode || ""));
+    if (step?.id && completed.has(step.id)) {
+      chip.classList.add("is-done");
+      chip.textContent = `${short} ✓`;
+    } else if (index === currentStepIndex) {
+      chip.classList.add("is-next");
+      chip.textContent = `${short} (siguiente)`;
+    } else {
+      chip.textContent = short;
+    }
+    host.appendChild(chip);
+  });
+}
+
+/**
+ * @param {string} mode
+ */
+function startReviewFromRecommendation() {
+  const session =
+    loadSessionForMode("questions") ||
+    loadSessionForMode("rsvp") ||
+    loadActiveSession();
+  if (session) {
+    state.activeSession = session;
+    storeActiveSession(session);
+    const total = Math.max(1, getTotalBlocksSafe());
+    const indices = Array.from({ length: total }, (_, i) => i);
+    try {
+      startReviewFromSessionBlocks({ blockIndices: indices, reviewType: "both" });
+      return;
+    } catch {
+      // fall through to review config
+    }
+  }
+  els.reviewSessionBtn?.click();
+}
+
+/**
+ * @param {string} mode
+ */
+function startModeFromRecommendation(mode) {
+  const normalized = normalizeStudyMode(mode);
+  if (normalized === "review") {
+    startReviewFromRecommendation();
+    return;
+  }
+  enterCreateScreenForMode(normalized);
+}
+
+let recommendationPanelWired = false;
+
+function wireRecommendationPanelHandlers() {
+  if (recommendationPanelWired) return;
+  recommendationPanelWired = true;
+
+  const panel = document.getElementById("recommendationPanel");
+  if (!panel) return;
+
+  document.getElementById("recommendationStartBtn")?.addEventListener("click", () => {
+    const doc = getActiveSession();
+    const flow = doc?.shared?.modeRecommendation?.primaryFlow;
+    const first = Array.isArray(flow) ? flow[0] : null;
+    if (first?.mode) startModeFromRecommendation(String(first.mode));
+  });
+
+  document.getElementById("recommendationContinueBtn")?.addEventListener("click", () => {
+    const doc = getActiveSession();
+    const step = getRecommendedStep(doc?.shared?.modeRecommendation);
+    if (step?.mode) startModeFromRecommendation(String(step.mode));
+  });
+
+  document.getElementById("recommendationOverrideSelect")?.addEventListener("change", (event) => {
+    const select = event.target;
+    const mode = select && "value" in select ? String(select.value || "").trim() : "";
+    if (!mode) return;
+    const doc = getActiveSession();
+    if (!doc?.shared?.modeRecommendation) return;
+    const updated = recordUserOverride(doc.shared.modeRecommendation, mode);
+    doc.shared.modeRecommendation = updated;
+    updateRecommendation(doc.docId, updated);
+    renderRecommendationPanel(updated, doc);
+    startModeFromRecommendation(mode);
+    if (select && "value" in select) select.value = "";
+  });
+
+  document.getElementById("recommendationQuickFlow")?.addEventListener("click", (event) => {
+    const trigger = event.target.closest?.("[data-quick-mode]");
+    if (!trigger) return;
+    const mode = trigger.getAttribute("data-quick-mode");
+    if (mode) startModeFromRecommendation(mode);
+  });
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} recommendation
+ * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
+ */
+export function renderRecommendationPanel(recommendation, doc = getActiveSession()) {
+  const panel = document.getElementById("recommendationPanel");
+  if (!panel) return;
+
+  const panelState = getRecommendationPanelState(recommendation);
+  if (panelState === "hidden") {
+    panel.hidden = true;
+    return;
+  }
+
+  const introView = panel.querySelector('[data-recommendation-view="intro"]');
+  const progressView = document.getElementById("recommendationProgress");
+  const genreLabelEl = document.getElementById("recommendationGenreLabel");
+  const flowStepsEl = document.getElementById("recommendationFlowSteps");
+  const reasoningEl = document.getElementById("recommendationReasoning");
+  const startBtn = document.getElementById("recommendationStartBtn");
+  const overrideSelect = document.getElementById("recommendationOverrideSelect");
+  const whyLink = document.getElementById("recommendationWhyLink");
+  const quickFlowEl = document.getElementById("recommendationQuickFlow");
+  const continueBtn = document.getElementById("recommendationContinueBtn");
+  const smBadge = document.getElementById("recommendationSmDueBadge");
+  const progressStepsEl = progressView?.querySelector(".recommendation-progress-steps");
+
+  const primaryFlow = Array.isArray(recommendation?.primaryFlow) ? recommendation.primaryFlow : [];
+  const quickFlow = Array.isArray(recommendation?.quickFlow) ? recommendation.quickFlow : [];
+  const analysis =
+    recommendation?.analysis && typeof recommendation.analysis === "object"
+      ? recommendation.analysis
+      : {};
+  const genreLabel = String(analysis.genreLabel || "Texto académico");
+  const totalMin = sumFlowTimeMin(primaryFlow);
+  const quickMin = sumFlowTimeMin(quickFlow);
+  const whyText = String(recommendation?.reasoning || analysis.genreLabel || "").trim();
+
+  panel.hidden = false;
+
+  if (panelState === "intro") {
+    if (introView) introView.hidden = false;
+    if (progressView) progressView.hidden = true;
+
+    if (genreLabelEl) {
+      genreLabelEl.textContent = `${genreLabel} · ~${totalMin} min flujo completo (aprox.)`;
+    }
+    if (flowStepsEl) {
+      renderFlowStepsElement(flowStepsEl, formatIntroFlowLine(primaryFlow));
+    }
+    if (reasoningEl) {
+      reasoningEl.textContent = String(recommendation?.reasoning || "");
+    }
+    if (startBtn && primaryFlow[0]?.mode) {
+      startBtn.textContent = `Comenzar ${getFlowModeShortLabel(String(primaryFlow[0].mode))}`;
+      startBtn.hidden = false;
+    } else if (startBtn) {
+      startBtn.hidden = true;
+    }
+    if (overrideSelect) overrideSelect.disabled = false;
+    if (whyLink) {
+      whyLink.title = whyText || "Sin explicación adicional.";
+      whyLink.setAttribute("aria-label", `¿Por qué este flujo? ${whyText}`);
+    }
+    if (quickFlowEl) {
+      if (quickFlow.length && quickMin < totalMin) {
+        const labels = quickFlow
+          .map((step) => {
+            const mode = String(step?.mode || "");
+            const label = getFlowModeShortLabel(mode);
+            return `<button type="button" data-quick-mode="${mode}">${label}</button>`;
+          })
+          .join(" → ");
+        quickFlowEl.innerHTML = `¿Tienes menos de ${quickMin} min? → ${labels}`;
+        quickFlowEl.hidden = false;
+      } else {
+        quickFlowEl.hidden = true;
+        quickFlowEl.textContent = "";
+      }
+    }
+    return;
+  }
+
+  if (introView) introView.hidden = true;
+  if (progressView) progressView.hidden = false;
+
+  const completed = new Set(
+    Array.isArray(recommendation?.completedSteps) ? recommendation.completedSteps : [],
+  );
+  const currentStepIndex =
+    typeof recommendation?.currentStepIndex === "number" ? recommendation.currentStepIndex : 0;
+  const progressLine = formatProgressFlowLine(primaryFlow, completed, currentStepIndex);
+
+  if (progressStepsEl) {
+    renderFlowStepsElement(progressStepsEl, progressLine, {
+      completed,
+      currentStepIndex,
+      steps: primaryFlow,
+    });
+  }
+
+  const nextStep = getRecommendedStep(recommendation);
+  if (continueBtn) {
+    if (nextStep?.mode) {
+      continueBtn.textContent = `Continuar con ${getFlowModeShortLabel(String(nextStep.mode))}`;
+      continueBtn.hidden = false;
+    } else {
+      continueBtn.hidden = true;
+    }
+  }
+
+  if (smBadge && doc?.docId) {
+    const reviewPending = primaryFlow.some(
+      (step) => step?.mode === "review" && step?.id && !completed.has(step.id),
+    );
+    const smDue = getSmItemsDueToday(doc.docId).length;
+    if (reviewPending && smDue > 0) {
+      smBadge.textContent = `${smDue} repaso${smDue === 1 ? "" : "s"} pendiente${smDue === 1 ? "" : "s"}`;
+      smBadge.hidden = false;
+    } else {
+      smBadge.hidden = true;
+      smBadge.textContent = "";
+    }
+  }
 }
 
 export function persistModeSliceToDocument(doc, mode, slice) {
@@ -316,8 +703,11 @@ function resetModeSelectUi() {
 }
 
 export function enterModeSelectScreen() {
+  persistFlowRecommendationProgress();
   resetModeSelectUi();
   resetCreateScreenModeUi();
+  const doc = getActiveSession();
+  renderRecommendationPanel(doc?.shared?.modeRecommendation, doc);
   showScreen("modeSelect");
 }
 
@@ -399,6 +789,7 @@ function reopenDocumentFromLibrary(docId) {
 
 function enterCreateScreenForMode(mode) {
   const normalized = normalizeStudyMode(mode);
+  applyFlowRecommendationOnEnterMode(normalized);
   state.studyMode = normalized;
   setStudyModeRadio(normalized);
   if (els.createModeLabel) {
@@ -775,6 +1166,8 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
   if (needsLlm && !llmFn) {
     session.docHierarchy = null;
     syncSlowDocHierarchyToShared(session);
+    const doc = getActiveSession();
+    if (doc) computeAndPersistModeRecommendation(doc, text, null);
     return;
   }
 
@@ -786,8 +1179,11 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
   }
 
   try {
-    session.docHierarchy = await buildDocumentHierarchy(text, llmFn, { useCache: true });
+    const hierarchyResult = await buildDocumentHierarchy(text, llmFn, { useCache: true });
+    session.docHierarchy = hierarchyResult;
     syncSlowDocHierarchyToShared(session);
+    const doc = getActiveSession();
+    if (doc) computeAndPersistModeRecommendation(doc, text, hierarchyResult);
   } finally {
     session._docHierarchyLoading = false;
     storeActiveSession(session);
@@ -1496,6 +1892,7 @@ function wireSlowScopeHandlers() {
   els.slowScopeConfirmBtn?.addEventListener("click", () => {
     const session = state.activeSession;
     if (!session?.slow?.readingScope) return;
+    applyFlowRecommendationOnEnterMode("slow");
     if (els.slowScopeFillableMap) {
       session.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
     }
@@ -1544,6 +1941,7 @@ function wireDocLibraryHandlers() {
 }
 
 function wireStudyModeSelector() {
+  wireRecommendationPanelHandlers();
   wireModeTriagePanel();
   wireDocLibraryHandlers();
 
@@ -1562,6 +1960,7 @@ function wireStudyModeSelector() {
   els.continueSessionBtn?.addEventListener("click", () => {
     const mode = getSelectedStudyModeRadio() || state.studyMode;
     if (!mode) return;
+    applyFlowRecommendationOnEnterMode(mode);
     const session = loadSessionForMode(mode);
     if (!session) return;
     if (mode === "slow") resumeSlowSession(session);
@@ -2223,6 +2622,7 @@ function showSessionComplete() {
   } catch {
     // ignore concept commit errors
   }
+  persistFlowRecommendationProgress();
   syncOfflinePackButtonVisibility();
   showScreen("complete");
 }
@@ -3889,6 +4289,8 @@ export function wireStudyHandlers() {
     els.startStudyingError.textContent = "";
     els.startStudyingStatus.textContent = "";
 
+    const studyMode = normalizeStudyMode(state.studyMode || getSelectedStudyModeRadio());
+    applyFlowRecommendationOnEnterMode(studyMode);
     state.activeSession = loadActiveSession();
     if (!state.activeSession) {
       els.startStudyingError.hidden = false;
@@ -4675,6 +5077,7 @@ export function wireStudyHandlers() {
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
         const doc = await ensureDocumentSessionForUpload(cleanedText);
+        computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
           normalizedFormat,
@@ -4758,10 +5161,12 @@ export function wireStudyHandlers() {
           renderSlowScopeScreen(sessionObj);
           void populateDocumentHierarchy(sessionObj, cleanedText, llmModel);
         } else {
-          sessionObj.docHierarchy = await buildDocumentHierarchy(cleanedText, null, {
+          const hierarchyResult = await buildDocumentHierarchy(cleanedText, null, {
             useCache: true,
           });
+          sessionObj.docHierarchy = hierarchyResult;
           syncSlowDocHierarchyToShared(sessionObj);
+          computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult);
           storeActiveSession(sessionObj);
           renderSlowScopeScreen(sessionObj);
         }
@@ -4842,7 +5247,8 @@ export function wireStudyHandlers() {
         throw new Error("File appears to be empty.");
       }
       state.originalMaterialText = cleanedText;
-      await ensureDocumentSessionForUpload(cleanedText);
+      const doc = await ensureDocumentSessionForUpload(cleanedText);
+      computeAndPersistModeRecommendation(doc, cleanedText, null);
 
       const { blockIndex: finalIndex, splitRunMeta, conceptInventory } = await twoPhaseConceptSplit(
         cleanedText,

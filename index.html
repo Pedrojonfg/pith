@@ -238,6 +238,46 @@
             <h1>How do you want to study?</h1>
             <p>Choose a mode to get started. You can switch anytime with the + button.</p>
 
+            <div id="recommendationPanel" class="recommendation-panel" hidden>
+              <div class="recommendation-intro" data-recommendation-view="intro">
+                <p id="recommendationGenreLabel" class="recommendation-genre-label"></p>
+                <div
+                  id="recommendationFlowSteps"
+                  class="recommendation-flow-steps"
+                  aria-label="Flujo sugerido"
+                ></div>
+                <p id="recommendationReasoning" class="recommendation-reasoning"></p>
+                <div class="recommendation-actions">
+                  <button type="button" id="recommendationStartBtn" class="btn-primary"></button>
+                  <label class="recommendation-override-label">
+                    <span class="hint">Otro modo</span>
+                    <select id="recommendationOverrideSelect" aria-label="Elegir otro modo">
+                      <option value="">Ir directamente a…</option>
+                      <option value="rsvp">RSVP</option>
+                      <option value="slow">Slow Mode</option>
+                      <option value="cloze">Cloze Detection</option>
+                      <option value="questions">Questions</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    id="recommendationWhyLink"
+                    class="recommendation-why-link"
+                    aria-describedby="recommendationReasoning"
+                  >
+                    ¿Por qué este flujo?
+                  </button>
+                </div>
+                <p id="recommendationQuickFlow" class="recommendation-quick-flow" hidden></p>
+              </div>
+              <div id="recommendationProgress" class="recommendation-progress" hidden>
+                <p class="recommendation-progress-label">Progreso:</p>
+                <div class="recommendation-progress-steps"></div>
+                <span id="recommendationSmDueBadge" class="recommendation-sm-badge" hidden></span>
+                <button type="button" id="recommendationContinueBtn" class="btn-primary"></button>
+              </div>
+            </div>
+
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
               <legend class="sr-only">Study mode</legend>
               <div class="study-mode-options">

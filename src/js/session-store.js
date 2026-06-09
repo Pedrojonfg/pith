@@ -142,6 +142,7 @@ export async function createSession(rawMarkdown, options = {}) {
       conceptInventory: [],
       annotations: [],
       smItems: [],
+      modeRecommendation: null,
     },
     modes: { rsvp: null, slow: null, cloze: null, questions: null },
   };
@@ -298,6 +299,17 @@ export function addAnnotationToShared(docId, annotation) {
   };
   if (existingIdx >= 0) session.shared.annotations[existingIdx] = entry;
   else session.shared.annotations.push(entry);
+  saveActiveSession(session);
+}
+
+/**
+ * @param {string} docId
+ * @param {object} recommendation
+ */
+export function updateRecommendation(docId, recommendation) {
+  const session = getSession(docId);
+  if (!session) throw new Error("session not found");
+  session.shared.modeRecommendation = recommendation;
   saveActiveSession(session);
 }
 

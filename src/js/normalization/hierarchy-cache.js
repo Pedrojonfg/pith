@@ -69,7 +69,7 @@ export function hashText(text) {
 
 /**
  * @param {string} textHash
- * @returns {{ tree: unknown[], method: string } | null}
+ * @returns {{ tree: unknown[], method: string, pedagogicalMeta?: import("../session-types.js").PedagogicalMeta | null } | null}
  */
 export function getCachedHierarchy(textHash) {
   const hash = String(textHash);
@@ -102,20 +102,27 @@ export function getCachedHierarchy(textHash) {
   }
 
   touchIndex(hash);
-  return { tree: entry.tree, method: entry.method };
+  const out = { tree: entry.tree, method: entry.method };
+  if (entry.pedagogicalMeta != null) {
+    out.pedagogicalMeta = entry.pedagogicalMeta;
+  }
+  return out;
 }
 
 /**
  * @param {string} textHash
- * @param {{ tree: unknown[], method: string }} payload
+ * @param {{ tree: unknown[], method: string, pedagogicalMeta?: import("../session-types.js").PedagogicalMeta | null }} payload
  */
-export function setCachedHierarchy(textHash, { tree, method }) {
+export function setCachedHierarchy(textHash, { tree, method, pedagogicalMeta }) {
   const hash = String(textHash);
   const entry = {
     tree,
     method: String(method),
     cachedAt: Date.now(),
   };
+  if (pedagogicalMeta != null) {
+    entry.pedagogicalMeta = pedagogicalMeta;
+  }
   localStorage.setItem(cacheKey(hash), JSON.stringify(entry));
   touchIndex(hash);
   evictOverflow();
