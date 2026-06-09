@@ -66,6 +66,43 @@
   margin: 0 auto;
 }
 
+.slow-scope-toolbar {
+  margin: 0.5rem 0 0.75rem;
+  gap: 0.5rem;
+}
+
+.slow-scope-parent {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.slow-scope-toggle {
+  flex: 0 0 auto;
+  min-width: 1.75rem;
+  padding: 0.25rem 0.35rem;
+  font-size: 0.75rem;
+}
+
+.slow-scope-child {
+  padding-left: 1.75rem;
+}
+
+.slow-scope-indent {
+  padding-left: 0.75rem;
+}
+
+.slow-scope-edit-actions {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-left: 0.5rem;
+}
+
+.slow-scope-edit-actions .btn-link {
+  font-size: 0.8rem;
+  padding: 0;
+}
+
 .slow-scope-list {
   list-style: none;
   padding: 0;

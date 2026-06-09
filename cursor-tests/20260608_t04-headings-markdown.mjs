@@ -44,7 +44,8 @@ function testLegacyHtmlMin() {
 }
 
 function testBuildScopeOptionsMarkdown() {
-  const md = "# Intro\n\nPara uno.\n\n## Section A\n\nTexto A.\n\n## Section B\n\nTexto B.";
+  const body = "Lorem ipsum dolor sit amet. ".repeat(20);
+  const md = `# Intro\n\n${body}\n\n## Section A\n\n${body}\n\n## Section B\n\n${body}`;
   const headings = parseHeadings(md, "markdown");
   const scopes = buildScopeOptions(md, "markdown");
   assert.equal(scopes[0].kind, "full");
@@ -54,7 +55,8 @@ function testBuildScopeOptionsMarkdown() {
 }
 
 async function testScopePickerHtmlUpload() {
-  const html = `<html><body><p class="Heading1">Capítulo 1</p><p>Texto del cuerpo.</p><p class="Heading2">Sección A</p><p>Más texto.</p></body></html>`;
+  const body = "Texto del cuerpo con suficiente longitud. ".repeat(15);
+  const html = `<html><body><p class="Heading1">Capítulo 1</p><p>${body}</p><p class="Heading2">Sección A</p><p>${body}</p></body></html>`;
   const { normalizedContent } = await normalizeDocumentStructure({ rawContent: html, format: "html" });
   assert.match(normalizedContent, /^# Capítulo 1/m);
   const options = buildScopeOptions(normalizedContent, "markdown");

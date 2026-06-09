@@ -7,9 +7,11 @@ import { createStructureReport, aggregateConfidence } from "./types.js";
 import { stripArtifacts } from "./strip-artifacts.js";
 import { inferHeadings, validateHeadingHierarchy } from "./infer-headings.js";
 import { extractPdfBlocks } from "./extract-pdf-blocks.js";
-import { extractPdfOutline, matchOutlineToBlocks } from "./pdf-outline.js";
+import { extractPdfOutline, matchOutlineToBlocks, computeOutlineCoverage } from "./pdf-outline.js";
+import { getFrontMatterPageRange, detectFrontMatterPages } from "./front-matter-detector.js";
 import { extractHtmlBlocks } from "./extract-html-blocks.js";
-import { emitMarkdown } from "./emit-markdown.js";
+import { emitMarkdown, dehyphenate } from "./emit-markdown.js";
+import { buildEqualLengthSections } from "../slow/headings.js";
 import { createTextBlock } from "./types.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
@@ -71,26 +73,45 @@ async function extractBlocks(rawContent, format) {
  *   structure: StructureReport,
  *   normalizedFormat?: "markdown",
  *   normalizedContent?: string,
+ *   fallbackSections?: ReturnType<typeof buildEqualLengthSections>,
  * }>}
  */
 export async function normalizeDocumentStructure({ rawContent, format }) {
   const fmt = String(format || "").toLowerCase();
   const { blocks: rawBlocks, pageHeights, doc } = await extractBlocks(rawContent, fmt);
 
+  let outline = [];
+  if (doc) {
+    outline = await extractPdfOutline(doc);
+  }
+
+  const totalPages = Math.max(
+    pageHeights.length,
+    ...rawBlocks.map((b) => b.pageIndex + 1),
+    1,
+  );
+
+  const frontMatterEnd =
+    outline.length > 0
+      ? getFrontMatterPageRange(outline).skip
+      : detectFrontMatterPages(rawBlocks, totalPages);
+
   const stripResult = stripArtifacts(rawBlocks, {
     format: fmt,
     pageHeights,
+    frontMatterEnd,
   });
 
+  const contentBlocks = stripResult.blocks.filter((b) => b.pageIndex > frontMatterEnd);
+
   let outlineHeadings = [];
+  let outlineCoverage = 0;
   const warnings = [...(stripResult.warnings || [])];
 
-  if (doc) {
-    const outline = await extractPdfOutline(doc);
-    outlineHeadings = matchOutlineToBlocks(outline, stripResult.blocks);
-    const matchRatio =
-      outline.length > 0 ? outlineHeadings.length / outline.length : 1;
-    if (outline.length > 0 && matchRatio < 0.5) {
+  if (outline.length > 0) {
+    outlineHeadings = matchOutlineToBlocks(outline, contentBlocks);
+    outlineCoverage = computeOutlineCoverage(outlineHeadings, outline);
+    if (outlineCoverage < 0.5) {
       warnings.push("outline_partial");
     }
   }
@@ -99,20 +120,23 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     format: fmt,
     outline: outlineHeadings,
     pageHeights,
+    outlineCoverage,
   });
 
   const headings = validateHeadingHierarchy(inferred);
-
   const emitted = emitMarkdown(stripResult.blocks, headings);
-  const normalizedFormat = "markdown";
-  const normalizedContent = emitted.markdown;
+  const normalizedContent = dehyphenate(emitted.markdown);
   const headingsWithOffsets = emitted.headings;
-
   const totalChars = normalizedContent?.length || 0;
   const confidence = aggregateConfidence(headingsWithOffsets, totalChars);
 
+  let fallbackSections;
   if (totalChars > 5000 && headingsWithOffsets.length === 0) {
     warnings.push("low_heading_confidence");
+    fallbackSections = buildEqualLengthSections(normalizedContent, {
+      targetChunkSize: 5000,
+      labelPrefix: "Sección",
+    });
   }
 
   if (fmt === "pdf" && totalChars < 50) {
@@ -131,9 +155,11 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     blocks: stripResult.blocks,
     headings: headingsWithOffsets,
     structure,
-    normalizedFormat,
+    normalizedFormat: "markdown",
     normalizedContent,
+    fallbackSections,
   };
 }
 
 export { createTextBlock, createStructureReport, emptyStructureReport } from "./types.js";
+export { dehyphenate } from "./emit-markdown.js";

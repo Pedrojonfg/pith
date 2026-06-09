@@ -6,9 +6,9 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260533-slow-reader-desktop/plan.md`
-- **Spec**: `specs/20260533-slow-reader-desktop/spec.md`
-- **Data model**: `specs/20260533-slow-reader-desktop/data-model.md`
-- **Contracts**: `specs/20260533-slow-reader-desktop/contracts/`
+- **Active plan**: `specs/20260534-section-detection-impr/plan.md`
+- **Spec**: `specs/20260534-section-detection-impr/spec.md`
+- **Data model**: `specs/20260534-section-detection-impr/data-model.md`
+- **Contracts**: `specs/20260534-section-detection-impr/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

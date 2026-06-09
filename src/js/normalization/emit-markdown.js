@@ -6,6 +6,15 @@
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
 /**
+ * Join hyphenated line breaks within words (FIX-07).
+ * Preserves names like Korsgaard-\nMueller (uppercase after break).
+ * @param {string} text
+ */
+export function dehyphenate(text) {
+  return String(text || "").replace(/(\w)-\n([a-záéíóúüñ])/gu, "$1$2");
+}
+
+/**
  * @param {TextBlock[]} blocks
  * @param {HeadingCandidate[]} headings
  * @param {{ preserveNumbers?: boolean }} [opts]
@@ -37,7 +46,7 @@ export function emitMarkdown(blocks, headings, opts = {}) {
       parts.push("");
       offset += 1;
     } else {
-      let text = block.text.trim();
+      let text = dehyphenate(block.text.trim());
       if (!text) continue;
       if (block.kind === "list-item") {
         text = `- ${text}`;

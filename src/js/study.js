@@ -112,7 +112,13 @@ import {
   updateFullPackProgressUi,
 } from "./ui.js?v=20260525_1";
 import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260527_1";
-import { buildScopeOptions, scopeCharCount, SCOPE_CHAR_WARN } from "./slow/headings.js?v=20260528_1";
+import {
+  buildScopeOptions,
+  buildEqualLengthSections,
+  scopeCharCount,
+  SCOPE_CHAR_WARN,
+  formatCharCount,
+} from "./slow/headings.js?v=20260609_1";
 import {
   applyFillableMapMode,
   ensurePhase0UserFields,
@@ -220,6 +226,11 @@ export function createSlowSession({
       graphEnrichedUnlocked: false,
       graphNodes: [],
       sidebarOpen: true,
+      headingOverrides: [],
+      structureWarnings: [],
+      fallbackSections: null,
+      scopeEditMode: false,
+      scopeCollapsedParents: {},
     },
   };
 }
@@ -567,17 +578,109 @@ function resumeQuestionsSession(session) {
   showScreen("ready");
 }
 
+function selectSlowScope(session, opt, listEl) {
+  const slow = session?.slow;
+  if (!slow || !opt) return;
+  listEl?.querySelectorAll("button[data-scope-id]").forEach((b) => {
+    b.setAttribute("aria-selected", String(b.dataset.scopeId === opt.id));
+  });
+  slow.readingScope = {
+    id: opt.id,
+    kind: opt.kind,
+    charStart: opt.charStart,
+    charEnd: opt.charEnd,
+    label: opt.label,
+  };
+  const chars = scopeCharCount(opt);
+  if (els.slowScopeConfirmBtn) els.slowScopeConfirmBtn.disabled = false;
+  if (els.slowScopeCharCount) {
+    els.slowScopeCharCount.textContent = `Scope selected: ${formatCharCount(chars)} characters`;
+  }
+  if (els.slowScopeLongWarning) {
+    els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
+    if (!els.slowScopeLongWarning.hidden) {
+      els.slowScopeLongWarning.textContent =
+        "Scope ≥ 60k characters — Phase 0 will use map-reduce by section.";
+    }
+  }
+  storeActiveSession(session);
+}
+
+function groupScopeOptionsHierarchical(options) {
+  const full = options.find((o) => o.kind === "full");
+  const sections = options.filter((o) => o.kind !== "full");
+  const l1 = sections.filter((o) => (o.level || 2) === 1);
+  const childrenByParent = new Map();
+  for (const opt of sections) {
+    if ((opt.level || 2) === 1) continue;
+    const parent = opt.parentLabel || "";
+    if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
+    childrenByParent.get(parent).push(opt);
+  }
+  return { full, l1, childrenByParent, sections };
+}
+
 function renderSlowScopeScreen(session) {
   const slow = session?.slow;
   if (!slow) return;
-  const options = buildScopeOptions(slow.normalizedTextFull, slow.normalizedFormat);
+  const options = buildScopeOptions(slow.normalizedTextFull, slow.normalizedFormat, {
+    headingOverrides: slow.headingOverrides || [],
+    fallbackSections: slow.fallbackSections || undefined,
+  });
   const listEl = els.slowScopeList;
   if (!listEl) return;
   listEl.innerHTML = "";
-  let selectedId = slow.readingScope?.id || null;
 
-  for (const opt of options) {
+  if (els.slowScopeWarningBanner) {
+    const lowConf = (slow.structureWarnings || []).includes("low_heading_confidence");
+    els.slowScopeWarningBanner.hidden = !lowConf;
+    if (lowConf) {
+      els.slowScopeWarningBanner.textContent =
+        "No se detectaron secciones automáticamente. Puedes añadir divisiones manualmente o estudiar el documento completo.";
+    }
+  }
+
+  if (els.slowScopeEditBtn) {
+    els.slowScopeEditBtn.textContent = slow.scopeEditMode ? "Listo" : "Editar secciones";
+    if (!els.slowScopeEditBtn._wired) {
+      els.slowScopeEditBtn._wired = true;
+      els.slowScopeEditBtn.addEventListener("click", () => {
+        const s = state.activeSession;
+        if (!s?.slow) return;
+        s.slow.scopeEditMode = !s.slow.scopeEditMode;
+        storeActiveSession(s);
+        renderSlowScopeScreen(s);
+      });
+    }
+  }
+
+  if (els.slowScopeAutoSplitBtn) {
+    const showAuto =
+      (slow.structureWarnings || []).includes("low_heading_confidence") &&
+      !slow.fallbackSections?.length;
+    els.slowScopeAutoSplitBtn.hidden = !showAuto;
+    if (!els.slowScopeAutoSplitBtn._wired) {
+      els.slowScopeAutoSplitBtn._wired = true;
+      els.slowScopeAutoSplitBtn.addEventListener("click", () => {
+        const s = state.activeSession;
+        if (!s?.slow) return;
+        s.slow.fallbackSections = buildEqualLengthSections(s.slow.normalizedTextFull, {
+          targetChunkSize: 5000,
+          labelPrefix: "Sección",
+        });
+        storeActiveSession(s);
+        renderSlowScopeScreen(s);
+      });
+    }
+  }
+
+  const selectedId = slow.readingScope?.id || null;
+  const editMode = Boolean(slow.scopeEditMode);
+  const { full, l1, childrenByParent } = groupScopeOptionsHierarchical(options);
+
+  function appendScopeRow(opt, { indent = false, child = false } = {}) {
     const li = document.createElement("li");
+    li.className = child ? "slow-scope-child" : indent ? "slow-scope-indent" : "";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.setAttribute("role", "option");
@@ -585,42 +688,110 @@ function renderSlowScopeScreen(session) {
     btn.dataset.charStart = String(opt.charStart);
     btn.dataset.charEnd = String(opt.charEnd);
     btn.dataset.kind = opt.kind;
-    const chars = scopeCharCount(opt);
-    btn.textContent = `${opt.label} (${chars.toLocaleString()} chars)`;
+    const sizeLabel = opt.displaySize || formatCharCount(scopeCharCount(opt));
+    btn.textContent = `${opt.label} (${sizeLabel})`;
     btn.setAttribute("aria-selected", String(selectedId === opt.id));
-    btn.addEventListener("click", () => {
-      listEl.querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", "false"));
-      btn.setAttribute("aria-selected", "true");
-      selectedId = opt.id;
-      slow.readingScope = {
-        id: opt.id,
-        kind: opt.kind,
-        charStart: opt.charStart,
-        charEnd: opt.charEnd,
-        label: opt.label,
-      };
-      if (els.slowScopeConfirmBtn) els.slowScopeConfirmBtn.disabled = false;
-      if (els.slowScopeCharCount) {
-        els.slowScopeCharCount.textContent = `Scope selected: ${chars.toLocaleString()} characters`;
-      }
-      if (els.slowScopeLongWarning) {
-        els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
-        if (!els.slowScopeLongWarning.hidden) {
-          els.slowScopeLongWarning.textContent =
-            "Scope ≥ 60k characters — Phase 0 will use map-reduce by section.";
-        }
-      }
-      storeActiveSession(session);
-    });
+    btn.addEventListener("click", () => selectSlowScope(session, opt, listEl));
+    li.appendChild(btn);
+
+    if (editMode && opt.kind !== "full") {
+      const actions = document.createElement("span");
+      actions.className = "slow-scope-edit-actions";
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.textContent = "Renombrar";
+      renameBtn.className = "btn-link";
+      renameBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const newLabel = window.prompt("Nuevo nombre de sección:", opt.label);
+        if (!newLabel?.trim()) return;
+        slow.headingOverrides = slow.headingOverrides || [];
+        slow.headingOverrides.push({
+          type: "rename",
+          headingId: opt.id,
+          newLabel: newLabel.trim(),
+        });
+        storeActiveSession(session);
+        renderSlowScopeScreen(session);
+      });
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.textContent = "Eliminar";
+      removeBtn.className = "btn-link";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        slow.headingOverrides = slow.headingOverrides || [];
+        slow.headingOverrides.push({ type: "remove", headingId: opt.id });
+        storeActiveSession(session);
+        renderSlowScopeScreen(session);
+      });
+      actions.append(renameBtn, removeBtn);
+      li.appendChild(actions);
+    }
+
+    listEl.appendChild(li);
+    return li;
+  }
+
+  if (full) appendScopeRow(full);
+
+  for (const parent of l1) {
+    const children = childrenByParent.get(parent.label) || [];
+    const collapsed = slow.scopeCollapsedParents?.[parent.id] !== false;
+    const li = document.createElement("li");
+    li.className = "slow-scope-parent";
+
+    if (children.length) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "slow-scope-toggle";
+      toggle.textContent = collapsed ? "▶" : "▼";
+      toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        slow.scopeCollapsedParents = slow.scopeCollapsedParents || {};
+        slow.scopeCollapsedParents[parent.id] = !collapsed;
+        storeActiveSession(session);
+        renderSlowScopeScreen(session);
+      });
+      li.appendChild(toggle);
+    }
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.setAttribute("role", "option");
+    btn.dataset.scopeId = parent.id;
+    btn.dataset.charStart = String(parent.charStart);
+    btn.dataset.charEnd = String(parent.charEnd);
+    btn.dataset.kind = parent.kind;
+    const parentSize = parent.displaySize || formatCharCount(scopeCharCount(parent));
+    btn.textContent = `${parent.label} (${parentSize})`;
+    btn.setAttribute("aria-selected", String(selectedId === parent.id));
+    btn.addEventListener("click", () => selectSlowScope(session, parent, listEl));
     li.appendChild(btn);
     listEl.appendChild(li);
+
+    if (!collapsed && children.length) {
+      for (const child of children) {
+        appendScopeRow(child, { child: true });
+      }
+    }
+  }
+
+  const orphanSections = options.filter(
+    (o) => o.kind !== "full" && (o.level || 2) !== 1 && !o.parentLabel,
+  );
+  for (const opt of orphanSections) {
+    if (l1.some((p) => childrenByParent.get(p.label)?.includes(opt))) continue;
+    appendScopeRow(opt, { indent: true });
   }
 
   if (els.slowScopeConfirmBtn) {
     els.slowScopeConfirmBtn.disabled = !slow.readingScope;
   }
   if (els.slowScopeCharCount && slow.readingScope) {
-    els.slowScopeCharCount.textContent = `Scope selected: ${scopeCharCount(slow.readingScope).toLocaleString()} characters`;
+    const chars = scopeCharCount(slow.readingScope);
+    els.slowScopeCharCount.textContent = `Scope selected: ${formatCharCount(chars)} characters`;
   }
   if (els.slowScopeFillableMap) {
     els.slowScopeFillableMap.checked = Boolean(slow.fillableMapMode);
@@ -1813,10 +1984,8 @@ export async function readAndCleanMaterialText(file) {
       ? await readFileAsArrayBuffer(file)
       : await readFileAsText(file);
 
-  const { normalizedFormat, normalizedContent } = await normalizeStudyMaterial(
-    rawContent,
-    detectedFormat,
-  );
+  const { normalizedFormat, normalizedContent, warnings, fallbackSections } =
+    await normalizeStudyMaterial(rawContent, detectedFormat);
 
   const cleanedText = normalizedContent;
   return {
@@ -1824,6 +1993,8 @@ export async function readAndCleanMaterialText(file) {
     wordCount: countWords(cleanedText),
     originalFormat: detectedFormat,
     normalizedFormat,
+    warnings: warnings || [],
+    fallbackSections: fallbackSections || null,
   };
 }
 
@@ -4341,7 +4512,13 @@ export function wireStudyHandlers() {
       }
       setGenerateLoading(true);
       try {
-        const { cleanedText, normalizedFormat, originalFormat } = await readAndCleanMaterialText(file);
+        const {
+          cleanedText,
+          normalizedFormat,
+          originalFormat,
+          warnings,
+          fallbackSections,
+        } = await readAndCleanMaterialText(file);
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const criticalMode =
           els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
@@ -4354,6 +4531,13 @@ export function wireStudyHandlers() {
           criticalMode,
           language: getStudyLanguage(),
         });
+        if (sessionObj.slow) {
+          sessionObj.slow.structureWarnings = warnings || [];
+          sessionObj.slow.fallbackSections = fallbackSections;
+          if ((warnings || []).includes("low_heading_confidence")) {
+            sessionObj.slow.scopeEditMode = true;
+          }
+        }
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
         renderSlowScopeScreen(sessionObj);

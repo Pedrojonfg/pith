@@ -1091,8 +1091,15 @@
           <div class="card slow-card">
             <h1>Reading scope</h1>
             <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
+            <div id="slowScopeWarningBanner" class="error" hidden role="status"></div>
             <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
             <div id="slowScopeLongWarning" class="error" hidden></div>
+            <div class="row slow-scope-toolbar">
+              <button type="button" id="slowScopeEditBtn" class="btn-secondary">Editar secciones</button>
+              <button type="button" id="slowScopeAutoSplitBtn" class="btn-secondary" hidden>
+                Dividir automáticamente por longitud
+              </button>
+            </div>
             <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
             <label class="slow-scope-fillable-toggle" for="slowScopeFillableMap">
               <input type="checkbox" id="slowScopeFillableMap" />

@@ -6,6 +6,76 @@
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
 /**
+ * @param {string} str
+ */
+export function normalizeForComparison(str) {
+  return String(str || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Encoding fixups for PDF custom font corruption (comparison only).
+ * @param {string} str
+ */
+export function applyEncodingFixups(str) {
+  return String(str || "")
+    .replace(/(?<=\w)6(?=\w)/g, "o")
+    .replace(/(?<=\w)0(?=\w)/g, "o")
+    .replace(/(?<=\w)1(?=\w)/g, "i");
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ */
+function similarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 100;
+  if (a.includes(b) || b.includes(a)) return 80;
+  const wordsA = a.split(/\s+/).filter(Boolean);
+  const wordsB = new Set(b.split(/\s+/).filter(Boolean));
+  if (!wordsA.length) return 0;
+  const matched = wordsA.filter((w) => wordsB.has(w)).length;
+  return Math.round((matched / wordsA.length) * 60);
+}
+
+/**
+ * @param {string} outlineTitle
+ * @param {string} blockText
+ */
+export function matchScore(outlineTitle, blockText) {
+  const normOutline = normalizeForComparison(outlineTitle);
+  const normBlock = normalizeForComparison(applyEncodingFixups(blockText));
+  return similarity(normOutline, normBlock);
+}
+
+/**
+ * @param {string} outlineTitle
+ * @param {string} blockText
+ */
+export function matchScoreFallback(outlineTitle, blockText) {
+  const prefix = normalizeForComparison(outlineTitle).slice(0, 15);
+  if (!prefix) return 0;
+  const normBlock = normalizeForComparison(applyEncodingFixups(blockText));
+  return normBlock.startsWith(prefix) ? 60 : 0;
+}
+
+/**
+ * @param {HeadingCandidate[]} matches
+ * @param {{ title: string }[]} outline
+ */
+export function computeOutlineCoverage(matches, outline) {
+  const total = outline?.length || 0;
+  if (!total) return 0;
+  return matches.length / total;
+}
+
+/**
  * @param {object} doc pdf.js document
  * @returns {Promise<{ title: string, pageIndex: number, level: number, children: object[] }[]>}
  */
@@ -83,15 +153,10 @@ export function matchOutlineToBlocks(outline, blocks) {
     let bestScore = 0;
 
     for (const block of pageBlocks) {
-      const blockText = block.text.trim().toLowerCase();
-      const target = title.toLowerCase();
-      let score = 0;
-      if (blockText === target) score = 100;
-      else if (blockText.includes(target) || target.includes(blockText)) score = 80;
-      else {
-        const words = target.split(/\s+/).filter(Boolean);
-        const matched = words.filter((w) => blockText.includes(w)).length;
-        score = words.length ? Math.round((matched / words.length) * 60) : 0;
+      const blockText = block.text.trim();
+      let score = matchScore(title, blockText);
+      if (score < 50) {
+        score = matchScoreFallback(title, blockText);
       }
       if (score > bestScore) {
         bestScore = score;
@@ -103,7 +168,7 @@ export function matchOutlineToBlocks(outline, blocks) {
       headings.push({
         label: title,
         level: /** @type {1|2|3|4|5|6} */ (entry.level),
-        score: 100,
+        score: bestScore,
         source: "outline",
         blockId: best.id,
         charStart: 0,

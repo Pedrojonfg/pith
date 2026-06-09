@@ -258,6 +258,7 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
       normalizedFormat: "markdown",
       normalizedContent,
       warnings,
+      fallbackSections: pipeline.fallbackSections || null,
       structure: {
         heading_count: pipeline.structure?.headingCount ?? 0,
         confidence: pipeline.structure?.confidence ?? "low",

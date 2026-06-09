@@ -58,16 +58,17 @@ async function testNormalizeStudyMaterialIntegration() {
 }
 
 async function testScopePicker() {
+  const body = "Lorem ipsum dolor sit amet. ".repeat(20);
   const raw = `## Chapter One
 
-Body here.
+${body}
 
 ## Chapter Two
 
-More body.`;
+${body}`;
   const { normalizedContent } = await normalizeDocumentStructure({ rawContent: raw, format: "md" });
   const options = buildScopeOptions(normalizedContent, "markdown");
-  assert.ok(options.length >= 2, "scope options should include headings");
+  assert.ok(options.length >= 3, "scope options should include headings above MIN_SCOPE_CHARS");
 }
 
 async function testParseH4() {
