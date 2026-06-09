@@ -1,250 +1,206 @@
-# ROADMAP — Grafo Académico (Género Textual y Tipado Filosófico)
+# ROADMAP — Slow Mode Reader Desktop UX
 
-**Feature**: `20260530-graph-academic-genre` | **Spec**: `specs/20260530-graph-academic-genre/spec.md` | **Plan**: `specs/20260530-graph-academic-genre/plan.md`
+**Feature**: `20260533-slow-reader-desktop` | **Spec**: `specs/20260533-slow-reader-desktop/spec.md` | **Plan**: `specs/20260533-slow-reader-desktop/plan.md`
 
 ## Tabla de tareas
 
 | ID | Descripción | Deps | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | Tipado de nodos (`nodeType`) en Phase 0 + normalización + labels grafo | — | M | [x] |
-| T02 | Vocabulario de aristas ampliado (`EDGE_TYPES` + `export-format.js`) | — | S | [x] |
-| T03 | Detección `textGenre` en prompts Phase 0 + validación | — | M | [x] |
-| T04 | `buildSlowPhase0Graph` genre-aware (`historically_precedes` vs `sequence`) | T03 | M | [x] |
-| T05 | Deduplicación clusters (`includes`) en prompt + normalización | T01 | S | [x] |
-| T06 | `pruneOrphanNodes` en build.js + view.js | T04 | S | [x] |
-| T07 | Estilos SVG aristas en canvas.js | T02 | S | [x] |
-| T08 | Tests `t15-graph-academic-genre` + quickstart QA | T04,T05,T06,T07 | M | [x] |
+| T01 | Full-bleed: sacar reader del `.container` + `body.slow-reader-active` | — | M | [x] |
+| T02 | Grid desktop 3 columnas (texto \| margen \| sidebar) + CSS responsive | T01 | M | [x] |
+| T03 | Ocultar chrome global (guide, +, API key) en modo lector | T01 | S | [x] |
+| T04 | Toolbar: indicador N/total, interlineado, teclado ←/→ | T01 | M | [x] |
+| T05 | Render markdown en página + mapeo selección → offsets plain | T01 | L | [x] |
+| T06 | Sidebar desktop: default cerrada, tipografía, textarea IA | T02 | M | [x] |
+| T07 | Overlays IA responsivos (modal desktop / sheet móvil) | — | S | [x] |
+| T08 | Focus mode automático al entrar en Fase 1 | T03, T04 | S | [x] |
+| T09 | cursor-tests + QA quickstart | T02–T08 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T03 → T04 → T06 → T08
-T01 → T05 ↗
-T02 → T07 ↗
+T01 → T02 → T06 → T09
+T01 → T03 → T08 → T09
+T01 → T04 → T08 ↗
+T01 → T05 → T09
+T07 (independiente, paralelo desde inicio) → T09
 ```
 
-**Paralelizables desde el inicio**: T01, T02, T03 (tres chats independientes)
+**Paralelizables tras T01**: T02, T03, T04, T05, T07 (hasta 5 agentes)
 
-**Secuenciales**:
-- T04 requiere T03
-- T05 requiere T01
-- T06 requiere T04 (prune sobre grafo genre-aware)
-- T07 requiere T02
-- T08 requiere T04–T07
+**Secuenciales**: T01 primero; T06 tras T02; T08 tras T03+T04; T09 al final
 
 ## Orden de ejecución recomendado
 
-### Ola 1 (paralelo — lanzar 3 chats a la vez)
+### Ola 1 (1 agente — bloqueante)
+- **T01** layout shell full-bleed
 
-1. **T01** — tipado nodos
-2. **T02** — aristas + export
-3. **T03** — género textual Phase 0
+### Ola 2 (paralelo — hasta 5 agentes)
+- **T02** grid desktop + margen
+- **T03** chrome hide
+- **T04** toolbar + keyboard
+- **T05** markdown render + offsets
+- **T07** overlays responsivos
 
-### Ola 2 (paralelo — tras Ola 1)
-
-4. **T04** — tras T03
-5. **T05** — tras T01
-6. **T07** — tras T02
-
-### Ola 3 (secuencial)
-
-7. **T06** — tras T04
+### Ola 3 (paralelo — 2 agentes)
+- **T06** sidebar desktop (necesita T02)
+- **T08** focus auto (necesita T03, T04)
 
 ### Ola 4 (cierre)
-
-8. **T08** — tras T06 y T07
-
----
-
-## PROMPT T01 — Tipado de nodos en capa text
-
-Implementa el **Cambio 1** del feature Grafo Académico: subtipos de nodo en capa `text`.
-
-**Contexto**: El sistema Slow Mode extrae conceptos en Phase 0 (`src/js/slow/phase0.js`) y los renderiza en `buildSlowPhase0GraphFromInputs` (`src/js/graph/build.js`). Hoy todos los nodos van a `layer: "text"` sin distinción.
-
-**Archivos a tocar**:
-- `src/js/slow/phase0.js` — `buildPhase0SystemPrompt`, `buildSynthesisSystemPrompt`, `normalizeConcept`, `validatePhase0Orientation`
-- `src/js/graph/build.js` — `buildSlowPhase0GraphFromInputs`, `collectTextConceptsFromLists`
-- `specs/20260530-graph-academic-genre/contracts/text-node-subtypes.md` (referencia)
-
-**Subtipos**: CONCEPTO, PERSONA, OBRA, MOVIMIENTO, EVENTO.
-
-**Instrucciones prompt** (añadir en sección conceptsToFind):
-```
-Para cada nodo indica su tipo entre corchetes: [CONCEPTO], [PERSONA], [OBRA],
-[MOVIMIENTO] o [EVENTO]. Nunca crees un nodo [PERSONA] para el autor del texto
-que estás analizando. Si el texto contiene su propio nombre como referencia
-bibliográfica, ignóralo como nodo.
-```
-
-**Implementación**:
-1. Campo `nodeType` en JSON schema del prompt y en `normalizeConcept` (parsear también desde prefijo `[TIPO]` en `term`).
-2. Nodos grafo: `label: \`[${nodeType}] ${term}\``, metadata `nodeSubtype`.
-3. Validación: enum conocido; default `CONCEPTO`.
-
-**Criterio de éxito**: `normalizeConcept({ term: "Bildung", authorUsage: "...", nodeType: "CONCEPTO" })` produce nodo con label `[CONCEPTO] Bildung`; prompts actualizados en single y synthesis. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, `specs/20260530-graph-academic-genre/spec.md` FR-003, FR-004.
+- **T09** tests + quickstart QA
 
 ---
 
-## PROMPT T02 — Vocabulario de aristas ampliado
+## PROMPT T01 — Full-bleed layout shell
 
-Implementa el **Cambio 2** (parte datos/export) del feature Grafo Académico.
+Implementa **T01** del ROADMAP Slow Reader Desktop.
 
-**Archivos a tocar**:
-- `src/js/graph/build.js` — exportar `EDGE_TYPES` / constantes; usar en `addEdge` validation opcional
-- `src/js/export-format.js` — extender `EDGE_TYPE_FAMILIES`
-- `specs/20260530-graph-academic-genre/contracts/graph-edge-vocabulary.md` (referencia)
+**Contexto**: El lector `#screenSlowReader` está dentro de `main > .container` (max 840px). Debe ser full-bleed en desktop. Ver diagnóstico en conversación previa y `specs/20260533-slow-reader-desktop/contracts/reader-layout-desktop.md`.
 
-**Tipos nuevos**: `historically_precedes`, `reinterprets`, `constitutes`, `contrasts_with`, `influences` (+ `instantiates` ya parcialmente usado).
+**Archivos**:
+- `index.html` — mover `<section id="screenSlowReader">…</section>` fuera de `.container` (hijo directo de `main`, después del `.container` o antes)
+- `src/js/ui.js` — en `showScreen()`, toggle `document.body.classList.toggle('slow-reader-active', showSlowReader)`
+- `src/css/main.css` — reglas `body.slow-reader-active main { padding: 0; place-items: stretch; }` y `.container` no afecta al reader
+- `src/css/slow-mode.css` — `#screenSlowReader { width: 100%; max-width: none; }`, quitar restricciones `max-width: 760px` en desktop vía media query base prep
 
-**Familias export**:
-- `historically_precedes` → didactic
-- `reinterprets`, `constitutes`, `influences` → semantic
-- `contrasts_with` → argumentative
+**Contratos**: `reader-layout-desktop.md` (DOM structure, chrome section)
 
-**Criterio de éxito**: `formatGraphEdgeMarkdown("a","b","contrasts_with","es")` incluye familia argumentativa; `EDGE_TYPES` contiene los 6 tipos nuevos. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-006, FR-010.
+**Criterio de éxito**: En viewport 1920px el lector ocupa ancho útil de ventana (no card 840px centrada). `body.slow-reader-active` solo con `slowReader` visible. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Detección de género textual Phase 0
+## PROMPT T02 — Grid desktop y columna de margen
 
-Implementa el **Cambio 3** (parte IA/validación) del feature Grafo Académico.
+Implementa **T02** tras **T01**.
 
-**Archivos a tocar**:
-- `src/js/slow/phase0.js` — system prompts (single, chunk synthesis), `validatePhase0Orientation`, `normalizeArgumentMapNode`
-- `specs/20260530-graph-academic-genre/contracts/phase0-text-genre.md` (referencia)
+**Archivos**:
+- `src/css/slow-mode.css` — `@media (min-width: 1024px)`:
+  - Grid: `minmax(0, 1fr) 32px` cerrado; con sidebar `minmax(0, 1fr) 32px minmax(300px, 360px)`
+  - Eliminar `grid-template-columns: minmax(0, 1fr) minmax(200px, 20vw)`
+  - `.slow-reader-main`: en desktop `max-width: min(75ch, 100%)`, centrado en columna texto
+  - `.slow-reader-margin`: quitar `right: -36px`; integrar en columna grid 2
+  - `.slow-reader-page-wrap`: layout para 3 columnas internas si hace falta
 
-**Géneros**: ARGUMENTO_LINEAL, GENEALOGÍA, DEBATE, DEFINICIÓN, ANÁLISIS_DE_CASO.
+**Archivos JS** (solo si necesario para grid column placement):
+- `src/js/slow/reader.js` — ajustar `renderMarginMarks` si cambia estructura DOM del wrap
 
-**Prompt** (al inicio, antes de argumentMap):
-```
-Antes de construir el mapa argumental, clasifica este texto en uno de estos géneros:
-[lista de 5 géneros]
-Devuelve el género detectado como campo "textGenre" en el JSON de Phase 0.
-```
+**Contratos**: `reader-layout-desktop.md`
 
-**Estructuras argumentMap por género** (instruir en prompt):
-- GENEALOGÍA → nodos con `period`
-- DEBATE → nodos con `author`
-- DEFINICIÓN → nodo central + satélites
-- ARGUMENTO_LINEAL → P1/P2/C (actual)
-
-**Validación**: `textGenre` obligatorio en output normalizado; default `ARGUMENTO_LINEAL` si ausente/inválido.
-
-**Map-reduce**: synthesis prompt debe emitir `textGenre` global.
-
-**Criterio de éxito**: `validatePhase0Orientation({ textGenre: "GENEALOGÍA", thesis, argumentMap: [{id:"G1",text:"x",period:"XVIII"}], conceptsToFind: [...3 items], guideQuestion })` retorna objeto válido con `textGenre`. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-001, FR-002, FR-011.
+**Criterio de éxito**: SC-001 — columna lectura ≥60ch sidebar cerrada en 1920px; marcas de margen visibles sin clip. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — buildSlowPhase0Graph genre-aware
+## PROMPT T03 — Ocultar chrome global
 
-Implementa el **Cambio 3** (parte grafo) — aristas según género.
+Implementa **T03** tras **T01** (paralelo con T02/T04/T05).
 
-**Deps**: T03 completado (`textGenre` en phase0).
+**Archivos**:
+- `src/css/main.css` — `body.slow-reader-active .corner-plus, body.slow-reader-active #changeKeyLink, body.slow-reader-active .sidebar-toggle { display: none !important; }`
+- Verificar `src/js/ui.js` ya oculta `#studyProgress` en slow reader
 
-**Archivos a tocar**:
-- `src/js/graph/build.js` — `buildSlowPhase0GraphFromInputs`
-- Opcional: reglas direccionalidad `reinterprets` si T01 ya mergeado
+**Contratos**: `reader-layout-desktop.md` (Chrome visibility table)
 
-**Lógica**:
-```js
-const mapEdgeType =
-  phase0.textGenre === "GENEALOGÍA" ? "historically_precedes" : "sequence";
-// entre nodos consecutivos de argumentMap
-```
-
-**Labels arg nodes**: incluir `period` o `author` en label si presente (ej. `G1 (siglo XVIII): ...`).
-
-**Criterio de éxito**: test manual o unit: phase0 con `textGenre: "GENEALOGÍA"` y 3 nodos mapa → 2 edges `historically_precedes`, 0 `sequence`. Phase0 lineal → edges `sequence`. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-005, contract `phase0-text-genre.md`.
+**Criterio de éxito**: SC-005 — durante lectura no se ven +, Change API key, ni hamburger guide. Al cambiar pantalla vuelven. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — Deduplicación de clusters (includes)
+## PROMPT T04 — Toolbar, página N/M y teclado
 
-Implementa el **Cambio 4** del feature Grafo Académico.
+Implementa **T04** tras **T01** (paralelo).
 
-**Deps**: T01 completado.
+**Archivos**:
+- `index.html` — añadir `<span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite"></span>` en toolbar; botones `#slowLineSmallerBtn` / `#slowLineLargerBtn`
+- `src/js/slow/reader.js` — `renderProgress()` actualiza indicador; handlers line height; en `onSlowReaderKeydown` añadir ArrowLeft/ArrowRight → `goToReaderPage` cuando no hay overlay/input activo
+- `src/css/slow-mode.css` — estilos toolbar desktop (no wrap feo en ≥1024px)
 
-**Archivos a tocar**:
-- `src/js/slow/phase0.js` — prompt conceptsToFind + `normalizeConcept`
-- `src/js/graph/build.js` — propagar `includes` a nodo grafo (tooltip/metadata)
+**Contratos**: `reader-toolbar-keyboard.md`, `data-model.md` (typography)
 
-**Instrucción prompt** (ver `contracts/text-node-subtypes.md`):
-Agrupar conceptos con mismo rol estructural en un nodo con `includes: [...]`.
-
-**Criterio de éxito**: `normalizeConcept` preserva `includes`; nodo grafo tiene campo `includes` cuando aplica. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-003, SC-006.
+**Criterio de éxito**: SC-004 — navegar 10 páginas solo con teclado; indicador muestra `N / total`; lineHeight persiste en sesión. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — pruneOrphanNodes
+## PROMPT T05 — Markdown render y offsets de selección
 
-Implementa el **Cambio 5** del feature Grafo Académico.
+Implementa **T05** tras **T01** (paralelo; el más complejo).
 
-**Deps**: T04 completado.
+**Archivos**:
+- `src/js/slow/reader.js`:
+  - Import `markdownToHtml` from `markdown.js`
+  - `renderSlowReaderPage`: si `normalizedFormat === 'markdown'`, `innerHTML` + clase `md-content`; si no, `textContent`
+  - Nueva función `selectionToScopeOffsetsFromRendered(pageEl, scopePlain, slice)` o equivalente
+  - Actualizar `selectionToScopeOffsets`, `measureMarkY`, `highlightRange` para DOM HTML
+- `src/css/slow-mode.css` — estilos `.slow-reader-page.md-content` (reutilizar `.md-content` de main.css si existe)
 
-**Archivos a tocar**:
-- `src/js/graph/build.js` — `export function pruneOrphanNodes`; llamar al final de `buildSlowPhase0GraphFromInputs` y `buildSlowEnrichedGraphFromInputs`
-- `src/js/graph/view.js` — antes de `persistEnrichedGraph`
-- `specs/20260530-graph-academic-genre/contracts/orphan-prune.md` (referencia)
+**Contratos**: `reader-markdown-render.md`, `specs/20260528-slow-mode/contracts/annotation-char-offsets.md`
 
-**Regla**: conservar nodos `layer === 'user'` aunque sin aristas.
-
-**Criterio de éxito**: grafo con 1 nodo text aislado → tras build queda vacío (excepto user); `console.warn` con conteo. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-008, SC-004.
-
----
-
-## PROMPT T07 — Estilos SVG aristas en canvas
-
-Implementa la parte visual del **Cambio 2**.
-
-**Deps**: T02 completado.
-
-**Archivos a tocar**:
-- `src/js/graph/canvas.js` — `EDGE_COLORS`, stroke dash patterns en render de `<path>`
-- Opcional: leyenda edge types
-
-**Estilos**:
-- Sólida: sequence, historically_precedes, constitutes, influences
-- Punteada: relates, contrasts_with, reinterprets
-- Gruesa punteada: contradicts, refuta, cuestiona
-
-**Criterio de éxito**: SVG paths con `stroke-dasharray` distinto según `data-edge-type`; colores para tipos nuevos. Ejecuta `/validate` antes de cerrar este mensaje.
-
-**Referencia**: `ROADMAP.md`, spec FR-009, contract `graph-edge-vocabulary.md`.
+**Criterio de éxito**: SC-002 y SC-003 — headings visibles; anotación tras selección en texto con negrita conserva offset correcto (probar quickstart §5). Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Tests y QA
+## PROMPT T06 — Sidebar desktop
 
-Cierra el feature con tests automatizados y verificación quickstart.
+Implementa **T06** tras **T02**.
 
-**Deps**: T04, T05, T06, T07 completados.
+**Archivos**:
+- `src/js/slow/sidebar.js` — `resolveSidebarOpen()`: si `undefined` y `matchMedia('(min-width: 1024px)')` → `false`
+- `index.html` — cambiar `#slowSidebarIAInput` a `<textarea rows="3">` o duplicar con progressive enhancement
+- `src/css/slow-mode.css` — tipografía sidebar desktop; tab ☰ solo cuando cerrada
 
-**Archivos a crear/tocar**:
-- `cursor-tests/20260607_t15-graph-academic-genre.mjs` (nuevo)
-- Verificar regresión: `cursor-tests/20260607_t14-graph-refactor.mjs`
-- `specs/20260530-graph-academic-genre/quickstart.md` (seguir escenarios)
+**Contratos**: `reader-layout-desktop.md`, `reader-responsive-overlays.md`
 
-**Tests mínimos**:
-1. `buildSlowPhase0GraphFromInputs` con GENEALOGÍA → `historically_precedes`
-2. `buildSlowPhase0GraphFromInputs` con ARGUMENTO_LINEAL → `sequence`
-3. `pruneOrphanNodes` elimina text huérfano, conserva user
-4. `normalizeConcept` con `nodeType` + `includes`
-5. `formatGraphEdgeMarkdown` para `contrasts_with`
+**Criterio de éxito**: Primera visita desktop: sidebar cerrada; textarea IA usable; fuentes ≥14px en ítems. Ejecuta `/validate` antes de cerrar este mensaje.
 
-**Criterio de éxito**: ambos test files PASS; quickstart escenarios A–D verificados. Ejecuta `/validate` antes de cerrar este mensaje.
+---
 
-**Referencia**: `ROADMAP.md`, `specs/20260530-graph-academic-genre/quickstart.md`.
+## PROMPT T07 — Overlays IA responsivos
+
+Implementa **T07** (paralelo desde inicio, independiente de T02).
+
+**Archivos**:
+- `src/css/slow-mode.css` — `@media (min-width: 1024px)` para `.slow-ia-overlay` centrado y panel `max-width: 560px`; móvil sin cambios
+- `src/js/slow/reader.js` — verificar focus trap y Escape sin regresión
+
+**Contratos**: `reader-responsive-overlays.md`
+
+**Criterio de éxito**: En desktop IA aparece modal centrado; en 375px sigue bottom sheet con swipe. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## PROMPT T08 — Focus mode automático
+
+Implementa **T08** tras **T03** y **T04**.
+
+**Archivos**:
+- `src/js/slow/reader.js` — en `initSlowReader`, activar `focus-mode` y `aria-pressed="true"` salvo `session.slow.focusModeOptOut`
+- Opcional: al desactivar focus, set `focusModeOptOut = true` + `storeActiveSession`
+
+**Contratos**: `reader-toolbar-keyboard.md` (Focus mode auto)
+
+**Criterio de éxito**: Al entrar lectura Fase 1, focus activo sin click manual; usuario puede desactivar. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## PROMPT T09 — Tests y QA
+
+Implementa **T09** tras T02–T08.
+
+**Archivos**:
+- `cursor-tests/20260533_t01-reader-layout.mjs` — assert CSS/DOM: screenSlowReader not inside .container
+- `cursor-tests/20260533_t02-selection-offsets.mjs` — fixture plain+html selection mapping
+- `cursor-tests/20260533_t03-sidebar-default.mjs` — resolveSidebarOpen logic con mock matchMedia
+- Ejecutar regresión pagination slow si existe
+- Completar checklist `specs/20260533-slow-reader-desktop/quickstart.md`
+
+**Criterio de éxito**: Todos los cursor-tests nuevos pasan; quickstart marcado; ROADMAP tareas T01–T08 en [x]. Ejecuta `/validate` antes de cerrar este mensaje.
+
+---
+
+## Instrucción de ejecución
+
+1. **Lanza primero** (1 chat): **PROMPT T01**
+2. **Cuando T01 termine**, lanza en **paralelo** (hasta 5 chats): **T02, T03, T04, T05, T07**
+3. **Cuando T02 termine**: **T06**
+4. **Cuando T03 y T04 terminen**: **T08**
+5. **Cuando todo lo anterior esté [x]**: **T09**
+
+**Tiempo mínimo estimado**: 3 olas (T01 → paralelo → cierre).

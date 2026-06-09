@@ -1,4 +1,5 @@
 import { storeActiveSession } from "../session.js?v=20260527_1";
+import { markdownToHtml } from "../markdown.js?v=20260525_1";
 import { els, showScreen } from "../ui.js?v=20260525_1";
 import { maybeScheduleCheckpoint, clearCheckpointTimer } from "./checkpoints.js?v=20260528_1";
 import { matchConceptFindings } from "./gamification.js?v=20260528_1";
@@ -121,6 +122,90 @@ function renderProgress(session) {
   const idx = Number(session?.slow?.currentPageIndex) || 0;
   const fill = document.getElementById("slowReaderProgressFill");
   if (fill) fill.style.width = total ? `${((idx + 1) / total) * 100}%` : "0%";
+  const indicator = document.getElementById("slowReaderPageIndicator");
+  if (indicator) indicator.textContent = total ? `${idx + 1} / ${total}` : "—";
+}
+
+function usesMarkdownRender(session) {
+  return session?.slow?.normalizedFormat !== "html_min";
+}
+
+/** @param {string} sourcePlain @param {string} visiblePlain */
+function buildVisibleToSourceMap(sourcePlain, visiblePlain) {
+  const map = new Array(visiblePlain.length);
+  let si = 0;
+  for (let vi = 0; vi < visiblePlain.length; vi += 1) {
+    const ch = visiblePlain[vi];
+    while (si < sourcePlain.length && sourcePlain[si] !== ch) si += 1;
+    map[vi] = si < sourcePlain.length ? si : Math.max(0, sourcePlain.length - 1);
+    if (si < sourcePlain.length && sourcePlain[si] === ch) si += 1;
+  }
+  return map;
+}
+
+function sourceOffsetToVisible(sourcePlain, visiblePlain, sourceOffset) {
+  const target = Math.max(0, Math.floor(Number(sourceOffset) || 0));
+  const map = buildVisibleToSourceMap(sourcePlain, visiblePlain);
+  for (let vi = 0; vi < map.length; vi += 1) {
+    if (map[vi] >= target) return vi;
+  }
+  return visiblePlain.length;
+}
+
+function visibleOffsetFromRange(pageEl, range, end = false) {
+  const walker = document.createTreeWalker(pageEl, NodeFilter.SHOW_TEXT);
+  const targetNode = end ? range.endContainer : range.startContainer;
+  const targetOffset = end ? range.endOffset : range.startOffset;
+  let visible = 0;
+  let node = walker.nextNode();
+  while (node) {
+    if (node === targetNode) return visible + targetOffset;
+    visible += node.length;
+    node = walker.nextNode();
+  }
+  return visible;
+}
+
+function createRangeAtVisibleOffset(pageEl, visibleOffset) {
+  const walker = document.createTreeWalker(pageEl, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, Math.floor(Number(visibleOffset) || 0));
+  let node = walker.nextNode();
+  while (node) {
+    if (remaining <= node.length) {
+      const range = document.createRange();
+      const offset = Math.min(remaining, node.length);
+      range.setStart(node, offset);
+      range.setEnd(node, Math.min(offset + 1, node.length));
+      return range;
+    }
+    remaining -= node.length;
+    node = walker.nextNode();
+  }
+  return null;
+}
+
+function selectionToScopeOffsetsFromRendered(pageEl, slice, slicePlain) {
+  const sel = window.getSelection?.();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
+  const range = sel.getRangeAt(0);
+  const visiblePlain = pageEl.textContent || "";
+  const startVisible = visibleOffsetFromRange(pageEl, range, false);
+  const endVisible = visibleOffsetFromRange(pageEl, range, true);
+  if (endVisible <= startVisible) return null;
+  const map = buildVisibleToSourceMap(slicePlain, visiblePlain);
+  const localStart = map[startVisible] ?? startVisible;
+  const endIdx = Math.min(endVisible - 1, map.length - 1);
+  const localEnd = endIdx >= 0 ? (map[endIdx] ?? endIdx) + 1 : localStart + range.toString().length;
+  return {
+    charStart: slice.charStart + localStart,
+    charEnd: slice.charStart + Math.max(localStart + 1, localEnd),
+    selectedText: range.toString(),
+    rect:
+      typeof range.getBoundingClientRect === "function"
+        ? range.getBoundingClientRect()
+        : { top: 0, bottom: 0, left: 0, width: 0, height: 0 },
+  };
 }
 
 /** @returns {{ localStart: number, localEnd: number } | null} */
@@ -132,13 +217,41 @@ export function resolveHighlightLocalRange(slice, charStart, charEnd) {
   return { localStart, localEnd };
 }
 
-export function highlightRange(pageEl, slice, charStart, charEnd) {
+export function highlightRange(pageEl, slice, charStart, charEnd, slicePlain = "") {
   if (!pageEl || !slice) return;
   const local = resolveHighlightLocalRange(slice, charStart, charEnd);
   if (!local) return;
 
-  const fullText = pageEl.textContent || "";
   const { localStart, localEnd } = local;
+  const plain = slicePlain || pageEl._slowSlicePlain || pageEl.textContent || "";
+  const usesHtml = pageEl.classList.contains("md-content");
+
+  if (usesHtml && plain) {
+    const visiblePlain = pageEl.textContent || "";
+    const visStart = sourceOffsetToVisible(plain, visiblePlain, localStart);
+    const visEnd = sourceOffsetToVisible(plain, visiblePlain, localEnd);
+    const startRange = createRangeAtVisibleOffset(pageEl, visStart);
+    const endRange = createRangeAtVisibleOffset(pageEl, visEnd);
+    if (!startRange || !endRange) return;
+    const highlightRangeDom = document.createRange();
+    highlightRangeDom.setStart(startRange.startContainer, startRange.startOffset);
+    highlightRangeDom.setEnd(endRange.startContainer, endRange.startOffset);
+    const span = document.createElement("span");
+    span.className = "slow-highlight-pulse";
+    try {
+      highlightRangeDom.surroundContents(span);
+    } catch {
+      return;
+    }
+    clearTimeout(highlightRange._timer);
+    highlightRange._timer = setTimeout(() => {
+      const s = stateSession();
+      if (pageEl.isConnected && s?.slow) renderSlowReaderPage(s);
+    }, 2000);
+    return;
+  }
+
+  const fullText = pageEl.textContent || "";
   const before = fullText.slice(0, localStart);
   const middle = fullText.slice(localStart, localEnd);
   const after = fullText.slice(localEnd);
@@ -373,15 +486,25 @@ async function handleWordLongPress(session, clientX, clientY) {
   }
 }
 
-function measureMarkY(pageEl, marginEl, charOffsetInPage) {
-  const textNode = pageEl?.firstChild;
-  if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
-  const len = textNode.length;
-  const offset = Math.max(0, Math.min(Math.floor(charOffsetInPage), len));
-  try {
-    const range = document.createRange();
+function measureMarkY(pageEl, marginEl, charOffsetInPage, slicePlain = "") {
+  if (!pageEl || !marginEl) return null;
+  const plain = slicePlain || pageEl._slowSlicePlain || "";
+  let range = null;
+  if (pageEl.classList.contains("md-content") && plain) {
+    const visiblePlain = pageEl.textContent || "";
+    const visOffset = sourceOffsetToVisible(plain, visiblePlain, charOffsetInPage);
+    range = createRangeAtVisibleOffset(pageEl, visOffset);
+  } else {
+    const textNode = pageEl.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return null;
+    const len = textNode.length;
+    const offset = Math.max(0, Math.min(Math.floor(charOffsetInPage), len));
+    range = document.createRange();
     range.setStart(textNode, offset);
     range.setEnd(textNode, Math.min(offset + 1, len));
+  }
+  if (!range) return null;
+  try {
     const rangeRect = range.getBoundingClientRect();
     const marginRect = marginEl.getBoundingClientRect();
     if (!rangeRect.height && !rangeRect.width && rangeRect.top === 0) return null;
@@ -399,9 +522,10 @@ function renderMarginMarks(session, pageSlice) {
   const anns = annotationsOnPage(session.slow.annotations, pageSlice);
   const pageHeight = pageEl?.clientHeight || margin.clientHeight || 400;
 
+  const slicePlain = pageEl?._slowSlicePlain || "";
   anns.forEach((a, index) => {
     const charOffsetInPage = a.charStart - pageSlice.charStart;
-    let y = pageEl ? measureMarkY(pageEl, margin, charOffsetInPage) : null;
+    let y = pageEl ? measureMarkY(pageEl, margin, charOffsetInPage, slicePlain) : null;
     if (y == null || !Number.isFinite(y)) {
       y = computeMarkYFallback(a.charStart, pageSlice, pageHeight, index, anns.length);
     }
@@ -666,7 +790,9 @@ function navigateToAnnotation(session, annotation) {
   goToReaderPage(session, page);
   const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
-  highlightRange(pageEl, slice, annotation.charStart, annotation.charEnd);
+  const scopeText = getScopeText(session);
+  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+  highlightRange(pageEl, slice, annotation.charStart, annotation.charEnd, slicePlain);
 }
 
 setAnnotationNavigator(navigateToAnnotation);
@@ -743,7 +869,18 @@ export function renderSlowReaderPage(session) {
   const slice = getPageSlice(readerState.breakpoints, idx);
   const scopeText = getScopeText(session);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
-  if (pageEl) pageEl.textContent = scopeText.slice(slice.charStart, slice.charEnd);
+  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+  if (pageEl) {
+    if (usesMarkdownRender(session)) {
+      pageEl.classList.add("md-content");
+      pageEl.innerHTML = markdownToHtml(slicePlain);
+      pageEl._slowSlicePlain = slicePlain;
+    } else {
+      pageEl.classList.remove("md-content");
+      pageEl.textContent = slicePlain;
+      pageEl._slowSlicePlain = slicePlain;
+    }
+  }
   updateMaxReadCharEnd(session);
   renderProgress(session);
   renderMarginMarks(session, slice);
@@ -769,6 +906,12 @@ function selectionToScopeOffsets(session) {
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
   const pageEl = els.slowReaderPage;
   if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
+  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
+  const scopeText = getScopeText(session);
+  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+  if (usesMarkdownRender(session)) {
+    return selectionToScopeOffsetsFromRendered(pageEl, slice, slicePlain);
+  }
   const range = sel.getRangeAt(0);
   const pre = range.cloneRange();
   pre.selectNodeContents(pageEl);
@@ -776,7 +919,6 @@ function selectionToScopeOffsets(session) {
   const startInPage = pre.toString().length;
   const selected = range.toString().length;
   if (selected <= 0) return null;
-  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
   return {
     charStart: slice.charStart + startInPage,
     charEnd: slice.charStart + startInPage + selected,
@@ -1056,6 +1198,16 @@ function onSlowReaderKeydown(e) {
     return;
   }
 
+  const activeTag = document.activeElement?.tagName;
+  const inFormField = activeTag === "INPUT" || activeTag === "TEXTAREA";
+
+  if (!inFormField && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    const idx = Number(session.slow.currentPageIndex) || 0;
+    e.preventDefault();
+    goToReaderPage(session, e.key === "ArrowLeft" ? idx - 1 : idx + 1);
+    return;
+  }
+
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (!readerState.pendingSelection) return;
 
@@ -1080,6 +1232,12 @@ export function initSlowReader(session) {
     session.slow.typography = { fontSizePx: 18, lineHeight: 1.6, fontFamily: '"DM Sans", sans-serif' };
   }
 
+  const layout = document.getElementById("slowReaderLayout");
+  if (!session.slow.focusModeOptOut) {
+    layout?.classList.add("focus-mode");
+    els.slowFocusModeBtn?.setAttribute("aria-pressed", "true");
+  }
+
   renderSlowReaderPage(session);
   wireSidebarToggle(stateSession);
   setIAReplyViewer(showSlowIAOverlayFromAnnotation);
@@ -1101,6 +1259,11 @@ export function initSlowReader(session) {
     const next = !pressed;
     els.slowFocusModeBtn.setAttribute("aria-pressed", String(next));
     layout?.classList.toggle("focus-mode", next);
+    const s = stateSession();
+    if (s?.slow && !next) {
+      s.slow.focusModeOptOut = true;
+      storeActiveSession(s);
+    }
   });
 
   els.slowReaderCompleteBtn?.addEventListener("click", () => {
@@ -1179,6 +1342,25 @@ export function initSlowReader(session) {
     readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
   });
 
+  document.getElementById("slowLineSmallerBtn")?.addEventListener("click", () => {
+    const s = stateSession();
+    if (!s?.slow?.typography) return;
+    s.slow.typography.lineHeight = Math.max(1.3, Number(s.slow.typography.lineHeight || 1.6) - 0.1);
+    invalidatePaginationCache();
+    storeActiveSession(s);
+    clearTimeout(readerState.debounceTimer);
+    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+  });
+  document.getElementById("slowLineLargerBtn")?.addEventListener("click", () => {
+    const s = stateSession();
+    if (!s?.slow?.typography) return;
+    s.slow.typography.lineHeight = Math.min(2.2, Number(s.slow.typography.lineHeight || 1.6) + 0.1);
+    invalidatePaginationCache();
+    storeActiveSession(s);
+    clearTimeout(readerState.debounceTimer);
+    readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 150);
+  });
+
   window.addEventListener("resize", () => {
     const s = stateSession();
     if (!s?.slow || els.screenSlowReader?.getAttribute("aria-hidden") !== "false") return;
@@ -1199,4 +1381,10 @@ function stateSession() {
   return sessionGetter ? sessionGetter() : null;
 }
 
-export { charOffsetToPage, getPageSlice };
+export {
+  buildVisibleToSourceMap,
+  sourceOffsetToVisible,
+  selectionToScopeOffsetsFromRendered,
+  charOffsetToPage,
+  getPageSlice,
+};

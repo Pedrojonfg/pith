@@ -1,9 +1,13 @@
 /**
  * Heading detection for Slow Mode scope picker.
  * Offsets are in normalizedTextFull coordinates.
+ *
+ * Markdown `#{1,6}` is the primary path for new normalized content.
+ * `html_min` tag parsing is retained only for legacy sessions.
  */
 
-const MARKDOWN_HEADING = /^(#{1,3})\s+(.+)$/gm;
+const DEFAULT_HEADING_FORMAT = "markdown";
+const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/gm;
 
 function slugify(text) {
   return String(text || "")
@@ -43,9 +47,10 @@ function parseMarkdownHeadings(normalizedText) {
   return matches;
 }
 
+/** @deprecated Legacy sessions only; new uploads use markdown. */
 function parseHtmlMinHeadings(normalizedText) {
   const text = String(normalizedText || "");
-  const re = /<h([1-3])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  const re = /<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi;
   const matches = [];
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -72,7 +77,7 @@ function parseHtmlMinHeadings(normalizedText) {
  * @returns {{ kind: 'chapter'|'section', charStart: number, charEnd: number, label: string, level?: number }[]}
  */
 export function parseHeadings(normalizedText, format) {
-  const fmt = String(format || "markdown").trim();
+  const fmt = String(format || DEFAULT_HEADING_FORMAT).trim().toLowerCase();
   const raw =
     fmt === "html_min"
       ? parseHtmlMinHeadings(normalizedText)
@@ -84,7 +89,7 @@ export function parseHeadings(normalizedText, format) {
  * Build selectable scopes: full doc + heading ranges.
  * @returns {{ kind: 'full'|'chapter'|'section', charStart: number, charEnd: number, label: string, id: string }[]}
  */
-export function buildScopeOptions(normalizedText, format) {
+export function buildScopeOptions(normalizedText, format = DEFAULT_HEADING_FORMAT) {
   const text = String(normalizedText || "");
   const len = text.length;
   const headings = parseHeadings(text, format);

@@ -1,12 +1,13 @@
 /**
- * Study material normalization (FR-013, FR-014).
- * html → html_min; pdf|txt|md → markdown.
+ * Study material normalization (FR-013, FR-014, v3 markdown canonical).
+ * pdf|html|txt|md → markdown (single normalized format).
  */
+
+import { normalizeDocumentStructure } from "./normalization/index.js";
 
 export const SUPPORTED_INPUT_FORMATS = Object.freeze(["pdf", "html", "txt", "md"]);
 
-const PDFJS_VERSION = "4.4.168";
-const PDFJS_BASE = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build`;
+import { loadPdfJs as loadPdfJsInternal } from "./normalization/pdf-loader.js";
 
 export class UnsupportedFormatError extends Error {
   constructor(message, detectedFormat = "") {
@@ -187,17 +188,8 @@ export function cleanupMarkdown(md) {
   return out.trim();
 }
 
-let pdfjsModulePromise = null;
-
-async function loadPdfJs() {
-  if (!pdfjsModulePromise) {
-    pdfjsModulePromise = import(`${PDFJS_BASE}/pdf.min.mjs`).then((mod) => {
-      const pdfjs = mod.default ?? mod;
-      pdfjs.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}/pdf.worker.min.mjs`;
-      return pdfjs;
-    });
-  }
-  return pdfjsModulePromise;
+export async function loadPdfJs() {
+  return loadPdfJsInternal();
 }
 
 /** @param {ArrayBuffer} buffer */
@@ -222,7 +214,12 @@ export async function extractPdfPlainText(buffer) {
 /**
  * @param {string|ArrayBuffer} rawContent
  * @param {"pdf"|"html"|"txt"|"md"} detectedFormat
- * @returns {Promise<{ normalizedFormat: "html_min"|"markdown", normalizedContent: string, warnings: string[] }>}
+ * @returns {Promise<{
+ *   normalizedFormat: "markdown",
+ *   normalizedContent: string,
+ *   warnings: string[],
+ *   structure: { heading_count: number, confidence: string, artifacts_removed: number },
+ * }>}
  */
 export async function normalizeStudyMaterial(rawContent, detectedFormat) {
   const format = String(detectedFormat || "").toLowerCase();
@@ -233,45 +230,45 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
     );
   }
 
-  const warnings = [];
+  if (format === "pdf" && !(rawContent instanceof ArrayBuffer)) {
+    throw new NormalizationError("PDF input must be read as binary.", format);
+  }
 
-  if (format === "html") {
-    const html = typeof rawContent === "string" ? rawContent : "";
-    const normalizedContent = toMinimalHtml(html);
+  try {
+    const pipeline = await normalizeDocumentStructure({ rawContent, format });
+    let normalizedContent = pipeline.normalizedContent || "";
+
+    if (format === "md") {
+      normalizedContent = cleanupMarkdown(normalizedContent);
+    }
+
     if (!normalizedContent.trim()) {
-      throw new NormalizationError("HTML file appears empty after cleanup.", format);
+      const emptyMsg =
+        format === "html"
+          ? "HTML file appears empty after cleanup."
+          : format === "md"
+            ? "Markdown file appears empty."
+            : "File appears empty after normalization.";
+      throw new NormalizationError(emptyMsg, format);
     }
-    return { normalizedFormat: "html_min", normalizedContent, warnings };
-  }
 
-  let text = "";
-  if (format === "pdf") {
-    if (!(rawContent instanceof ArrayBuffer)) {
-      throw new NormalizationError("PDF input must be read as binary.", format);
-    }
-    try {
-      text = await extractPdfPlainText(rawContent);
-    } catch (err) {
-      throw new NormalizationError(
-        err?.message ? String(err.message) : "Failed to extract text from PDF.",
-        format,
-      );
-    }
-  } else {
-    text = typeof rawContent === "string" ? rawContent : "";
-  }
+    const warnings = [...(pipeline.structure?.warnings || [])];
 
-  if (format === "md") {
-    const normalizedContent = cleanupMarkdown(text);
-    if (!normalizedContent.trim()) {
-      throw new NormalizationError("Markdown file appears empty.", format);
-    }
-    return { normalizedFormat: "markdown", normalizedContent, warnings };
+    return {
+      normalizedFormat: "markdown",
+      normalizedContent,
+      warnings,
+      structure: {
+        heading_count: pipeline.structure?.headingCount ?? 0,
+        confidence: pipeline.structure?.confidence ?? "low",
+        artifacts_removed: pipeline.structure?.artifactsRemoved ?? 0,
+      },
+    };
+  } catch (err) {
+    if (err instanceof NormalizationError || err instanceof UnsupportedFormatError) throw err;
+    throw new NormalizationError(
+      err?.message ? String(err.message) : "Failed to normalize study material.",
+      format,
+    );
   }
-
-  const normalizedContent = plainTextToMarkdown(text);
-  if (!normalizedContent.trim()) {
-    throw new NormalizationError("File appears empty after normalization.", format);
-  }
-  return { normalizedFormat: "markdown", normalizedContent, warnings };
 }

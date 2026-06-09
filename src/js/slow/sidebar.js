@@ -80,8 +80,11 @@ export function collectDictionaryTerms(session, sessionConcepts = []) {
 }
 
 export function resolveSidebarOpen(session) {
-  if (session?.slow?.sidebarOpen === undefined) return true;
-  return Boolean(session.slow.sidebarOpen);
+  if (session?.slow?.sidebarOpen !== undefined) return Boolean(session.slow.sidebarOpen);
+  if (typeof window !== "undefined" && window.matchMedia?.("(min-width: 1024px)")?.matches) {
+    return false;
+  }
+  return true;
 }
 
 function layoutEl() {
@@ -232,7 +235,7 @@ export function wireSidebarIAInput(getSession, onSubmit) {
   if (!input || typeof onSubmit !== "function") return;
   iaInputWired = true;
   input.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
+    if (e.key !== "Enter" || e.shiftKey) return;
     e.preventDefault();
     const query = input.value.trim();
     if (!query) return;

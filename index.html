@@ -1124,67 +1124,6 @@
           </div>
         </section>
 
-        <section id="screenSlowReader" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode reader">
-          <div class="slow-reader-layout" id="slowReaderLayout">
-            <div class="slow-reader-main">
-              <div class="slow-reader-toolbar">
-                <button type="button" id="slowReaderPrevBtn" aria-label="Previous page">←</button>
-                <button type="button" id="slowFontSmallerBtn" aria-label="Smaller text">A−</button>
-                <button type="button" id="slowFontLargerBtn" aria-label="Larger text">A+</button>
-                <div id="slowReaderProgress" class="slow-reader-progress" aria-hidden="true"><span id="slowReaderProgressFill"></span></div>
-                <button type="button" id="slowReaderNextBtn" aria-label="Next page">→</button>
-                <button type="button" id="slowFocusModeBtn" aria-pressed="false">Focus</button>
-                <button type="button" id="slowReaderCompleteBtn">Reading complete</button>
-              </div>
-              <div class="slow-reader-content">
-                <div class="slow-reader-page-wrap">
-                  <div id="slowReaderPage" class="slow-reader-page" aria-live="polite"></div>
-                  <div id="slowReaderMargin" class="slow-reader-margin"></div>
-                </div>
-              </div>
-            </div>
-            <aside id="slowReaderSidebar" class="slow-reader-sidebar" aria-label="Panel de lectura">
-              <header class="slow-sidebar-header">
-                <button
-                  type="button"
-                  id="slowSidebarCollapseBtn"
-                  class="slow-sidebar-collapse-btn"
-                  aria-label="Ocultar panel"
-                  title="Ocultar panel"
-                >
-                  ›
-                </button>
-              </header>
-              <div class="slow-sidebar-scroll">
-                <section class="slow-sidebar-section" aria-labelledby="slowSidebarAnnHeading">
-                  <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">Mis anotaciones</h3>
-                  <div id="slowSidebarAnnotations" class="slow-sidebar-annotations"></div>
-                </section>
-                <section class="slow-sidebar-section" aria-labelledby="slowSidebarDictHeading">
-                  <h3 id="slowSidebarDictHeading" class="slow-sidebar-section-title">Diccionario</h3>
-                  <ul id="slowSidebarDictionary" class="slow-sidebar-dictionary"></ul>
-                </section>
-                <section class="slow-sidebar-section" aria-labelledby="slowSidebarIAHeading">
-                  <h3 id="slowSidebarIAHeading" class="slow-sidebar-section-title">Preguntar a IA</h3>
-                  <div id="slowSidebarIA" class="slow-sidebar-ia">
-                    <input
-                      type="text"
-                      id="slowSidebarIAInput"
-                      class="slow-sidebar-ia-input"
-                      placeholder="Escribe una pregunta… Enter para enviar"
-                      aria-label="Preguntar a IA sobre el texto leído"
-                    />
-                    <ul id="slowSidebarIAQueries" class="slow-sidebar-ia-queries"></ul>
-                  </div>
-                </section>
-              </div>
-            </aside>
-            <button type="button" id="slowSidebarTab" class="slow-sidebar-tab" hidden aria-label="Mostrar panel">
-              ☰
-            </button>
-          </div>
-        </section>
-
         <section id="screenSlowPhase3" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode consolidation">
           <div class="card slow-card">
             <h1>Consolidation (Phase 3)</h1>
@@ -1221,6 +1160,70 @@
           </div>
         </section>
       </div>
+
+      <section id="screenSlowReader" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode reader">
+        <div class="slow-reader-layout" id="slowReaderLayout">
+          <div class="slow-reader-main">
+            <div class="slow-reader-toolbar">
+              <button type="button" id="slowReaderPrevBtn" aria-label="Previous page">←</button>
+              <span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite"></span>
+              <button type="button" id="slowFontSmallerBtn" aria-label="Smaller text">A−</button>
+              <button type="button" id="slowFontLargerBtn" aria-label="Larger text">A+</button>
+              <button type="button" id="slowLineSmallerBtn" aria-label="Decrease line height">↕−</button>
+              <button type="button" id="slowLineLargerBtn" aria-label="Increase line height">↕+</button>
+              <div id="slowReaderProgress" class="slow-reader-progress" aria-hidden="true"><span id="slowReaderProgressFill"></span></div>
+              <button type="button" id="slowReaderNextBtn" aria-label="Next page">→</button>
+              <button type="button" id="slowFocusModeBtn" aria-pressed="false">Focus</button>
+              <button type="button" id="slowReaderCompleteBtn">Reading complete</button>
+            </div>
+            <div class="slow-reader-content">
+              <div class="slow-reader-page-wrap">
+                <div id="slowReaderPage" class="slow-reader-page" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+          <div id="slowReaderMargin" class="slow-reader-margin" aria-hidden="true"></div>
+          <aside id="slowReaderSidebar" class="slow-reader-sidebar" aria-label="Panel de lectura">
+            <header class="slow-sidebar-header">
+              <button
+                type="button"
+                id="slowSidebarCollapseBtn"
+                class="slow-sidebar-collapse-btn"
+                aria-label="Ocultar panel"
+                title="Ocultar panel"
+              >
+                ›
+              </button>
+            </header>
+            <div class="slow-sidebar-scroll">
+              <section class="slow-sidebar-section" aria-labelledby="slowSidebarAnnHeading">
+                <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">Mis anotaciones</h3>
+                <div id="slowSidebarAnnotations" class="slow-sidebar-annotations"></div>
+              </section>
+              <section class="slow-sidebar-section" aria-labelledby="slowSidebarDictHeading">
+                <h3 id="slowSidebarDictHeading" class="slow-sidebar-section-title">Diccionario</h3>
+                <ul id="slowSidebarDictionary" class="slow-sidebar-dictionary"></ul>
+              </section>
+              <section class="slow-sidebar-section" aria-labelledby="slowSidebarIAHeading">
+                <h3 id="slowSidebarIAHeading" class="slow-sidebar-section-title">Preguntar a IA</h3>
+                <div id="slowSidebarIA" class="slow-sidebar-ia">
+                  <textarea
+                    id="slowSidebarIAInput"
+                    class="slow-sidebar-ia-input"
+                    rows="3"
+                    placeholder="Escribe una pregunta… Enter para enviar"
+                    aria-label="Preguntar a IA sobre el texto leído"
+                  ></textarea>
+                  <ul id="slowSidebarIAQueries" class="slow-sidebar-ia-queries"></ul>
+                </div>
+              </section>
+            </div>
+          </aside>
+          <button type="button" id="slowSidebarTab" class="slow-sidebar-tab" hidden aria-label="Mostrar panel">
+            ☰
+          </button>
+        </div>
+      </section>
     </main>
 
     <div

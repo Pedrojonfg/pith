@@ -754,6 +754,7 @@ export function showScreen(which) {
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
+  document.body.classList.toggle("slow-reader-active", showSlowReader);
   if (!showTest && !showSocratic) {
     setBlockReadSidebarAvailable(false);
   } else if (showTest && els.testQaView?.hidden) {
