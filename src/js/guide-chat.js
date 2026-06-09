@@ -135,12 +135,7 @@ function buildSessionContext({ activeSession, currentBlockIndex }) {
 }
 
 export function initGuideChat() {
-  const toggleBtn = document.getElementById("sidebar-toggle-btn");
-  if (isOfflineMode()) {
-    if (toggleBtn) toggleBtn.style.display = "none";
-    return;
-  }
-  if (toggleBtn) toggleBtn.style.display = "";
+  if (isOfflineMode()) return;
   const activeSession = getActiveSessionFromStorage();
   if (!activeSession) {
     clearGuideChatStorage();

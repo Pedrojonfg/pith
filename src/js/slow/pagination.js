@@ -7,21 +7,30 @@ const cache = new Map();
 function typographyKey(typography, containerWidth) {
   const t = typography && typeof typography === "object" ? typography : {};
   return [
-    Number(t.fontSizePx) || 18,
-    Number(t.lineHeight) || 1.6,
+    Number(t.fontSizePx) || 15,
+    Number(t.lineHeight) || 1.4,
     String(t.fontFamily || "DM Sans"),
     Math.floor(Number(containerWidth) || 0),
   ].join("|");
 }
 
-function cacheKey(scopeText, typography, containerWidth) {
-  return `${scopeText.length}:${typographyKey(typography, containerWidth)}:${String(scopeText).slice(0, 64)}`;
+function cacheKey(scopeText, typography, containerWidth, containerHeight, measureMode) {
+  return [
+    scopeText.length,
+    typographyKey(typography, containerWidth),
+    Math.floor(Number(containerHeight) || 0),
+    measureMode || "plain",
+    String(scopeText).slice(0, 64),
+  ].join(":");
 }
+
+/** Small slack so subpixel rounding does not force scroll within a page. */
+const PAGE_HEIGHT_SAFETY_PX = 6;
 
 function applyTypography(el, typography) {
   const t = typography && typeof typography === "object" ? typography : {};
-  el.style.fontSize = `${Number(t.fontSizePx) || 18}px`;
-  el.style.lineHeight = String(Number(t.lineHeight) || 1.6);
+  el.style.fontSize = `${Number(t.fontSizePx) || 15}px`;
+  el.style.lineHeight = String(Number(t.lineHeight) || 1.4);
   el.style.fontFamily = String(t.fontFamily || '"DM Sans", sans-serif');
   el.style.whiteSpace = "pre-wrap";
   el.style.wordBreak = "break-word";
@@ -55,15 +64,23 @@ function findMaxCharsForPage(scopeText, start, containerHeight, measureHeight) {
 }
 
 /**
+ * @param {object} [options]
+ * @param {number} [options.availableHeight] Visible reading area height (px)
+ * @param {(el: HTMLElement, slice: string) => void} [options.measureContent] Render slice like the live page
+ * @param {string} [options.measureMode] Cache discriminator, e.g. "md" | "plain"
  * @returns {{ pageIndex: number, charStart: number, charEnd: number }[]}
  */
-export function computePageBreakpoints(scopeText, containerEl, typography) {
+export function computePageBreakpoints(scopeText, containerEl, typography, options = {}) {
   const text = String(scopeText || "");
   if (!text.length) return [{ pageIndex: 0, charStart: 0, charEnd: 0 }];
 
   const width = Math.max(200, Number(containerEl?.clientWidth) || 600);
-  const height = Math.max(100, Number(containerEl?.clientHeight) || 480);
-  const key = cacheKey(text, typography, width);
+  const height = Math.max(
+    100,
+    Number(options.availableHeight ?? containerEl?.clientHeight) || 480,
+  );
+  const measureMode = options.measureMode || (options.measureContent ? "custom" : "plain");
+  const key = cacheKey(text, typography, width, height, measureMode);
   if (cache.has(key)) return cache.get(key);
 
   const measureRoot =
@@ -77,6 +94,7 @@ export function computePageBreakpoints(scopeText, containerEl, typography) {
       el.style.left = "-9999px";
       el.style.top = "0";
       el.style.width = `${width}px`;
+      el.style.boxSizing = "border-box";
       applyTypography(el, typography);
       containerEl?.appendChild?.(el);
       return el;
@@ -84,12 +102,20 @@ export function computePageBreakpoints(scopeText, containerEl, typography) {
 
   applyTypography(measureRoot, typography);
   measureRoot.style.width = `${width}px`;
-  const fontSize = Number(typography?.fontSizePx) || 18;
-  const lineHeight = Number(typography?.lineHeight) || 1.6;
+  const fontSize = Number(typography?.fontSizePx) || 15;
+  const lineHeight = Number(typography?.lineHeight) || 1.4;
   const linePx = fontSize * lineHeight;
+  const fitHeight = Math.max(50, height - PAGE_HEIGHT_SAFETY_PX);
+  const renderSlice = typeof options.measureContent === "function" ? options.measureContent : null;
 
   const measureHeight = (slice) => {
-    measureRoot.textContent = slice;
+    if (renderSlice) {
+      renderSlice(measureRoot, slice);
+    } else {
+      measureRoot.className = "";
+      measureRoot.innerHTML = "";
+      measureRoot.textContent = slice;
+    }
     const h = measureRoot.scrollHeight || measureRoot.offsetHeight || 0;
     if (h > 0) return h;
     const charsPerLine = Math.max(16, Math.floor(width / (fontSize * 0.5)));
@@ -101,7 +127,7 @@ export function computePageBreakpoints(scopeText, containerEl, typography) {
   let charStart = 0;
   let pageIndex = 0;
   while (charStart < text.length) {
-    const maxChars = findMaxCharsForPage(text, charStart, height, measureHeight);
+    const maxChars = findMaxCharsForPage(text, charStart, fitHeight, measureHeight);
     const charEnd = Math.min(text.length, charStart + maxChars);
     breakpoints.push({ pageIndex, charStart, charEnd });
     if (charEnd <= charStart) break;

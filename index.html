@@ -121,6 +121,7 @@
       class="sidebar-toggle"
       aria-label="Open guide"
       type="button"
+      hidden
     >
       <svg
         width="22"
@@ -1098,6 +1099,13 @@
               Mapa rellenable
             </label>
             <p class="hint" id="slowScopeFillableHint">Completa premisas y conclusión mientras lees (Fase 1).</p>
+            <label class="slow-scope-fillable-toggle" for="slowScopeCheckpoints">
+              <input type="checkbox" id="slowScopeCheckpoints" checked />
+              Checkpoints de sección
+            </label>
+            <p class="hint" id="slowScopeCheckpointsHint">
+              Preguntas breves al final de cada sección durante la lectura (siempre opcionales).
+            </p>
             <div class="row">
               <button type="button" id="slowScopeConfirmBtn" class="btn-primary" disabled>Continue →</button>
               <button type="button" id="slowScopeBackBtn">Back</button>
@@ -1165,16 +1173,25 @@
         <div class="slow-reader-layout" id="slowReaderLayout">
           <div class="slow-reader-main">
             <div class="slow-reader-toolbar">
-              <button type="button" id="slowReaderPrevBtn" aria-label="Previous page">←</button>
-              <span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite"></span>
-              <button type="button" id="slowFontSmallerBtn" aria-label="Smaller text">A−</button>
-              <button type="button" id="slowFontLargerBtn" aria-label="Larger text">A+</button>
-              <button type="button" id="slowLineSmallerBtn" aria-label="Decrease line height">↕−</button>
-              <button type="button" id="slowLineLargerBtn" aria-label="Increase line height">↕+</button>
-              <div id="slowReaderProgress" class="slow-reader-progress" aria-hidden="true"><span id="slowReaderProgressFill"></span></div>
-              <button type="button" id="slowReaderNextBtn" aria-label="Next page">→</button>
-              <button type="button" id="slowFocusModeBtn" aria-pressed="false">Focus</button>
-              <button type="button" id="slowReaderCompleteBtn">Reading complete</button>
+              <nav class="slow-reader-nav" aria-label="Paginación">
+                <button type="button" id="slowReaderPrevBtn" aria-label="Página anterior" title="Página anterior (←)">←</button>
+                <span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite" title="El texto se divide en pantallas según el tamaño de la ventana"></span>
+                <button type="button" id="slowReaderNextBtn" aria-label="Página siguiente" title="Página siguiente (→)">→</button>
+              </nav>
+              <div class="slow-reader-typo" role="group" aria-label="Tamaño de texto">
+                <span class="slow-reader-typo-label">Texto</span>
+                <button type="button" id="slowFontSmallerBtn" aria-label="Reducir tamaño de texto" title="Reducir tamaño de texto">−</button>
+                <span id="slowFontSizeLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
+                <button type="button" id="slowFontLargerBtn" aria-label="Aumentar tamaño de texto" title="Aumentar tamaño de texto">+</button>
+              </div>
+              <div class="slow-reader-typo" role="group" aria-label="Interlineado">
+                <span class="slow-reader-typo-label">Espacio</span>
+                <button type="button" id="slowLineSmallerBtn" aria-label="Reducir interlineado" title="Reducir espacio entre líneas">−</button>
+                <span id="slowLineHeightLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
+                <button type="button" id="slowLineLargerBtn" aria-label="Aumentar interlineado" title="Aumentar espacio entre líneas">+</button>
+              </div>
+              <div class="slow-reader-toolbar-spacer" aria-hidden="true"></div>
+              <button type="button" id="slowReaderCompleteBtn">Lectura completa</button>
             </div>
             <div class="slow-reader-content">
               <div class="slow-reader-page-wrap">
