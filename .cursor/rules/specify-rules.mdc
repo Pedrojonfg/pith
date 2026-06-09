@@ -6,9 +6,9 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260530-graph-academic-genre/plan.md`
-- **Spec**: `specs/20260530-graph-academic-genre/spec.md`
-- **Data model**: `specs/20260530-graph-academic-genre/data-model.md`
-- **Contracts**: `specs/20260530-graph-academic-genre/contracts/`
+- **Active plan**: `specs/20260533-slow-reader-desktop/plan.md`
+- **Spec**: `specs/20260533-slow-reader-desktop/spec.md`
+- **Data model**: `specs/20260533-slow-reader-desktop/data-model.md`
+- **Contracts**: `specs/20260533-slow-reader-desktop/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

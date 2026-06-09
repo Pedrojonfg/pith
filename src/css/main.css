@@ -94,6 +94,17 @@ main {
   padding: 40px 32px;
 }
 
+body.slow-reader-active main {
+  padding: 0;
+  place-items: stretch;
+}
+
+body.slow-reader-active .corner-plus,
+body.slow-reader-active #changeKeyLink,
+body.slow-reader-active .sidebar-toggle {
+  display: none !important;
+}
+
 .container {
   width: 100%;
   max-width: var(--content-max);

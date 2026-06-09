@@ -50,8 +50,9 @@ async function testHtmlNormalize() {
     "<html><body><p>Hi</p></body></html>",
     "html",
   );
-  assert.equal(normalizedFormat, "html_min");
-  assert.match(normalizedContent, /<p>Hi<\/p>/);
+  assert.equal(normalizedFormat, "markdown");
+  assert.ok(!/<[a-z][\s\S]*>/i.test(normalizedContent), "no HTML tags in normalized output");
+  assert.match(normalizedContent, /Hi/);
 }
 
 async function testTxtNormalize() {

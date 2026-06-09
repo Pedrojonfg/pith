@@ -26,6 +26,7 @@ import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explan
 import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
+import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 
 export { getStoredGeminiKey, saveGeminiKey };
 
@@ -307,10 +308,21 @@ export function migrateLegacyActiveSession() {
   }
 }
 
+function migrateLoadedSession(session) {
+  if (!session || typeof session !== "object") return session;
+  return migrateLegacyHtmlMinSession(session);
+}
+
 export function loadSessionsByMode() {
   migrateLegacyActiveSession();
   const parsed = parseSessionsByModeRaw(localStorage.getItem(LS_SESSIONS_BY_MODE_KEY));
-  return parsed || emptySessionsByMode();
+  const base = parsed || emptySessionsByMode();
+  return {
+    rsvp: base.rsvp,
+    slow: base.slow ? migrateLoadedSession(base.slow) : null,
+    cloze: base.cloze ? migrateLoadedSession(base.cloze) : null,
+    questions: base.questions,
+  };
 }
 
 export function storeSessionsByMode(data) {
@@ -341,7 +353,12 @@ export function loadSessionForMode(mode) {
 export function storeSessionForMode(mode, session) {
   const slot = normalizeStudyMode(mode);
   const all = loadSessionsByMode();
-  all[slot] = session && typeof session === "object" ? session : null;
+  if (session && typeof session === "object") {
+    migrateLegacyHtmlMinSession(session);
+    all[slot] = session;
+  } else {
+    all[slot] = null;
+  }
   storeSessionsByMode(all);
 }
 
