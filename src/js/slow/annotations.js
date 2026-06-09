@@ -130,16 +130,95 @@ export function annotationsOnPage(annotations, pageSlice) {
   );
 }
 
+/** CSS slug per annotation type for inline highlights (one distinct color each). */
+export const ANNOTATION_HIGHLIGHT_CLASS = {
+  "≈": "approx",
+  "?": "question",
+  "→": "explain",
+  "⟷": "link",
+  "⚑": "flag",
+  "⊘": "reject",
+  "↯": "tension",
+  "⚠": "weak",
+  "★": "strong",
+  "⇑": "steel",
+  "📌": "pin",
+  "⚡": "insight",
+  "↩": "return",
+  "🔗": "graph",
+  [IA_QUERY_TYPE]: "ia-query",
+};
+
+export function annotationHighlightClass(type) {
+  return ANNOTATION_HIGHLIGHT_CLASS[type] || "default";
+}
+
 export function annotationMarkClass(type) {
-  const map = {
-    "?": "question",
-    "≈": "approx",
-    "→": "explain",
-    "⊘": "critical",
-    "↯": "critical",
-    "⚠": "critical",
-  };
-  return map[type] || "approx";
+  if (["⊘", "↯", "⚠"].includes(type)) return "critical";
+  return annotationHighlightClass(type);
+}
+
+/** When several annotations cover the same span, prefer the most recent. */
+export function pickPrimaryAnnotation(covering) {
+  if (!Array.isArray(covering) || !covering.length) return null;
+  if (covering.length === 1) return covering[0];
+  return covering.reduce((a, b) => ((a.createdAt || 0) >= (b.createdAt || 0) ? a : b));
+}
+
+/**
+ * Build nested highlight spans (inner = older, outer = newer) for layered overlap tint.
+ * @param {Document} doc
+ * @param {Node} contents — text or fragment to wrap
+ */
+export function createNestedHighlightSpans(covering, doc, contents) {
+  const sorted = [...covering].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  let current = contents;
+  for (const ann of sorted) {
+    const span = doc.createElement("span");
+    span.className = `slow-ann-highlight slow-ann-highlight--${annotationHighlightClass(ann.type)}`;
+    span.dataset.annId = ann.id;
+    span.title = ann.userText || ann.type;
+    span.appendChild(current);
+    current = span;
+  }
+  return current;
+}
+
+/**
+ * Split page plain text into segments with covering annotations (for inline highlights).
+ * @returns {Array<{ segStart: number, segEnd: number, text: string, covering: object[] }>}
+ */
+export function buildAnnotationHighlightSegments(pageSlice, slicePlain, annotations) {
+  const anns = annotationsOnPage(annotations, pageSlice)
+    .map((a) => ({
+      ...a,
+      localStart: a.charStart - pageSlice.charStart,
+      localEnd: a.charEnd - pageSlice.charStart,
+    }))
+    .filter((a) => a.localStart < a.localEnd);
+  if (!anns.length) return [];
+
+  const pageLen = slicePlain.length;
+  const boundaries = new Set([0, pageLen]);
+  for (const a of anns) {
+    boundaries.add(a.localStart);
+    boundaries.add(a.localEnd);
+  }
+  const points = [...boundaries].sort((x, y) => x - y);
+  const segments = [];
+  for (let i = 0; i < points.length - 1; i += 1) {
+    const segStart = points[i];
+    const segEnd = points[i + 1];
+    if (segStart >= segEnd) continue;
+    const covering = anns.filter((a) => a.localStart <= segStart && a.localEnd >= segEnd);
+    segments.push({
+      segStart,
+      segEnd,
+      text: slicePlain.slice(segStart, segEnd),
+      covering,
+    });
+  }
+  return segments;
 }
 
 /** Critical types that trigger steel-man nudge on confirm (T07). */
