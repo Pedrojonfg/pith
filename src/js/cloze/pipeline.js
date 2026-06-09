@@ -1,4 +1,5 @@
 import { llmChatCompletions } from "../llm.js?v=20260525_1";
+import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260609_1";
 import {
   getValidItems,
   mergeItemOptions,
@@ -274,21 +275,94 @@ Target distribution among valid items: ~30% easy, ~50% medium, ~20% hard.`;
   }).filter(Boolean);
 }
 
+/**
+ * Build epistemic graph nodes from shared concept inventory (skip LLM phase 0).
+ * @param {object} shared
+ */
+export function epistemicGraphFromShared(shared) {
+  const concepts = Array.isArray(shared?.conceptInventory) ? shared.conceptInventory : [];
+  const nodes = concepts.map((c, i) => {
+    const id = String(c?.canonicalId || `shared_${i + 1}`).trim();
+    const text = String(c?.label || "").trim();
+    if (!id || !text) return null;
+    const imp = Number(c?.importance);
+    const importance =
+      Number.isFinite(imp) && imp >= 1 && imp <= 5
+        ? Math.round(imp)
+        : Number.isFinite(imp) && imp <= 1
+          ? Math.max(1, Math.min(5, Math.round(imp * 5)))
+          : 3;
+    return {
+      id,
+      text,
+      type: "CONCEPT",
+      importance,
+      semantic_cluster: "shared",
+    };
+  }).filter(Boolean);
+  return normalizeEpistemicGraph({ nodes, edges: [] }) || { nodes: [], edges: [] };
+}
+
+function shouldSkipClozePhase0(session, doc) {
+  const retrySkip = Boolean(
+    session?.cloze?.epistemicGraph?.nodes?.length &&
+      String(session?.cloze?.pipelineStatus || "") === "failed",
+  );
+  if (retrySkip) return { skip: true, fromShared: false };
+
+  const shared = doc?.shared;
+  const slowSlice = doc?.modes?.slow;
+  const slowPayload = slowSlice?.slow && typeof slowSlice.slow === "object" ? slowSlice.slow : slowSlice;
+  const fromSlow =
+    slowPayload?.graphEnrichedUnlocked === true ||
+    (shared?.conceptInventory?.length ?? 0) >= 5;
+  return { skip: fromSlow, fromShared: fromSlow };
+}
+
+function persistClozeItemsToShared(docId, items) {
+  if (!docId || !Array.isArray(items)) return;
+  const valid = getValidItems(items);
+  for (const item of valid) {
+    if (!item?.id) continue;
+    try {
+      upsertSmItem(docId, {
+        id: `cloze:${item.id}`,
+        sourceMode: "cloze",
+        question: String(item.blank_text || item.stem || "").trim(),
+        answer: String(item.correct_answer || item.answer || "").trim(),
+        distractors: (item.options || [])
+          .filter((o) => o && !o.correct)
+          .map((o) => String(o.text || "").trim())
+          .filter(Boolean),
+        easeFactor: 2.5,
+        interval: 0,
+        nextReview: Date.now(),
+        reviewCount: 0,
+      });
+    } catch (err) {
+      console.warn("[cloze] upsertSmItem failed", err);
+    }
+  }
+}
+
 export async function runClozePipelinePhases(text, session, handlers = {}) {
   const llmModel = session?.llmModel;
   const onPhase = typeof handlers.onPhase === "function" ? handlers.onPhase : () => {};
   const signal = handlers.signal;
+  const doc = getActiveSession();
   let epistemicGraph = session?.cloze?.epistemicGraph || null;
   let analysis = session?.cloze?.analysis || null;
   let items = [];
 
-  const skipPhase0 = Boolean(
-    epistemicGraph?.nodes?.length && String(session?.cloze?.pipelineStatus || "") === "failed",
-  );
+  const { skip: skipPhase0, fromShared } = shouldSkipClozePhase0(session, doc);
 
   if (!skipPhase0) {
     onPhase(0, "phase0", { epistemicGraph: null });
     epistemicGraph = await generateEpistemicGraph(text, { llmModel, signal });
+    onPhase(0, "phase0", { epistemicGraph });
+  } else if (fromShared && !epistemicGraph?.nodes?.length) {
+    onPhase(0, "phase0", { epistemicGraph: null });
+    epistemicGraph = epistemicGraphFromShared(doc?.shared);
     onPhase(0, "phase0", { epistemicGraph });
   }
 
@@ -307,6 +381,10 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
   onPhase(4, "phase4", { epistemicGraph, analysis, items });
   items = await qaAndCalibrate(items, { llmModel, signal });
   onPhase(4, "phase4", { epistemicGraph, analysis, items });
+
+  if (doc?.docId) {
+    persistClozeItemsToShared(doc.docId, items);
+  }
 
   return { epistemicGraph, analysis, items, validItems: getValidItems(items) };
 }

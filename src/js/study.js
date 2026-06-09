@@ -135,6 +135,7 @@ import {
   savePhase0Cache,
   slugGraphTermId,
   generatePhase0ForScope,
+  syncPhase0ConceptsToShared,
 } from "./slow/phase0.js?v=20260528_1";
 import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260528_1";
 import { initPhase3Screen } from "./slow/phase3.js?v=20260528_1";
@@ -152,6 +153,52 @@ import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pi
 import { enterClozeStudyScreen, wireClozeStudyHandlers } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
 import { startReviewFromSessionBlocks } from "./review.js?v=20260525_1";
+import {
+  computeDocId,
+  createSession,
+  getAllSessions,
+  getSession,
+  getSmItemsDueToday,
+  saveActiveSession as saveDocumentSession,
+  setActiveSession,
+} from "./session-store.js?v=20260609_1";
+
+/**
+ * Resolve or create DocumentSession for uploaded markdown; set active doc pointer.
+ * @param {string} markdown
+ */
+/** Mirror slow slice docHierarchy onto active DocumentSession.shared. */
+export function syncSlowDocHierarchyToShared(slowSession) {
+  const doc = getActiveSession();
+  if (!doc) return;
+  doc.shared.docHierarchy = slowSession?.docHierarchy ?? null;
+  saveDocumentSession(doc);
+}
+
+export async function ensureDocumentSessionForUpload(markdown) {
+  const text = String(markdown || "");
+  const docId = await computeDocId(text);
+  let doc = getSession(docId);
+  if (!doc) {
+    doc = await createSession(text, { docId });
+  } else if (doc.shared.rawMarkdown !== text) {
+    doc.shared.rawMarkdown = text;
+    doc.shared.docMeta = {
+      ...doc.shared.docMeta,
+      charCount: text.length,
+    };
+    saveDocumentSession(doc);
+  }
+  setActiveSession(docId);
+  return doc;
+}
+
+export function persistModeSliceToDocument(doc, mode, slice) {
+  if (!doc?.modes) return;
+  const slot = normalizeStudyMode(mode);
+  doc.modes[slot] = slice;
+  saveDocumentSession(doc);
+}
 
 export function createClozeSession({
   normalizedText,
@@ -272,6 +319,82 @@ export function enterModeSelectScreen() {
   resetModeSelectUi();
   resetCreateScreenModeUi();
   showScreen("modeSelect");
+}
+
+function escapeDocLibraryHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatDocLibraryDate(ts) {
+  const n = Number(ts);
+  if (!Number.isFinite(n) || n <= 0) return "—";
+  return new Date(n).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatDocLibraryModes(modes) {
+  if (!modes.length) return "No modes yet";
+  return modes.map((mode) => getStudyModeLabel(mode)).join(", ");
+}
+
+/** @returns {{ docId: string, title: string, modes: string[], smDue: number, updatedAt: number }[]} */
+export function buildDocLibraryRows() {
+  return getAllSessions().map((doc) => ({
+    docId: doc.docId,
+    title: doc.shared?.docMeta?.titleInferred || "Untitled document",
+    modes: Object.entries(doc.modes || {})
+      .filter(([, value]) => value != null)
+      .map(([key]) => key),
+    smDue: getSmItemsDueToday(doc.docId).length,
+    updatedAt: doc.updatedAt || 0,
+  }));
+}
+
+export function renderDocLibrary() {
+  const container = els.docLibraryList;
+  if (!container) return;
+
+  const rows = buildDocLibraryRows();
+  if (!rows.length) {
+    container.innerHTML = '<p class="doc-library-empty hint">No documents studied yet.</p>';
+    return;
+  }
+
+  container.innerHTML = rows
+    .map((row) => {
+      const smDueHtml =
+        row.smDue > 0
+          ? `<span class="doc-library-sm-due">${row.smDue} due today</span>`
+          : "";
+      return `<button type="button" class="doc-library-item" data-doc-id="${escapeDocLibraryHtml(row.docId)}" role="listitem">
+        <span class="doc-library-title">${escapeDocLibraryHtml(row.title)}</span>
+        <span class="doc-library-meta">
+          <span class="doc-library-modes">${escapeDocLibraryHtml(formatDocLibraryModes(row.modes))}</span>
+          ${smDueHtml}
+          <span class="doc-library-date">${escapeDocLibraryHtml(formatDocLibraryDate(row.updatedAt))}</span>
+        </span>
+      </button>`;
+    })
+    .join("");
+}
+
+export function enterDocLibraryScreen() {
+  renderDocLibrary();
+  showScreen("docLibrary");
+}
+
+function reopenDocumentFromLibrary(docId) {
+  const id = String(docId || "").trim();
+  if (!id || !getSession(id)) return;
+  setActiveSession(id);
+  enterModeSelectScreen();
 }
 
 function enterCreateScreenForMode(mode) {
@@ -651,6 +774,7 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
 
   if (needsLlm && !llmFn) {
     session.docHierarchy = null;
+    syncSlowDocHierarchyToShared(session);
     return;
   }
 
@@ -663,6 +787,7 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
 
   try {
     session.docHierarchy = await buildDocumentHierarchy(text, llmFn, { useCache: true });
+    syncSlowDocHierarchyToShared(session);
   } finally {
     session._docHierarchyLoading = false;
     storeActiveSession(session);
@@ -1359,6 +1484,7 @@ function prepareSlowPhase0Entry(session) {
     slow.phase0 = applyFillableMapMode(ensurePhase0UserFields(cached), slow.fillableMapMode);
     slow.phase0Status = "ready";
     slow.phase0Error = null;
+    syncPhase0ConceptsToShared(slow.phase0);
   } else {
     slow.phase0Status = "idle";
     slow.phase0 = null;
@@ -1400,8 +1526,26 @@ function wireModeTriagePanel() {
   });
 }
 
+function wireDocLibraryHandlers() {
+  els.modeSelectDocLibraryBtn?.addEventListener("click", () => {
+    enterDocLibraryScreen();
+  });
+
+  els.docLibraryBackBtn?.addEventListener("click", () => {
+    enterModeSelectScreen();
+  });
+
+  els.docLibraryList?.addEventListener("click", (event) => {
+    const item = event.target.closest?.(".doc-library-item");
+    if (!item) return;
+    const docId = item.getAttribute("data-doc-id");
+    if (docId) reopenDocumentFromLibrary(docId);
+  });
+}
+
 function wireStudyModeSelector() {
   wireModeTriagePanel();
+  wireDocLibraryHandlers();
 
   document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {
     radio.addEventListener("change", () => {
@@ -4530,6 +4674,7 @@ export function wireStudyHandlers() {
         const { cleanedText, normalizedFormat, originalFormat } = await readAndCleanMaterialText(file);
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+        const doc = await ensureDocumentSessionForUpload(cleanedText);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
           normalizedFormat,
@@ -4538,6 +4683,7 @@ export function wireStudyHandlers() {
           llmModel,
           language: getStudyLanguage(),
         });
+        persistModeSliceToDocument(doc, "cloze", sessionObj);
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
         if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
@@ -4585,6 +4731,7 @@ export function wireStudyHandlers() {
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const criticalMode =
           els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
+        const doc = await ensureDocumentSessionForUpload(cleanedText);
         const sessionObj = createSlowSession({
           normalizedText: cleanedText,
           normalizedFormat,
@@ -4601,6 +4748,7 @@ export function wireStudyHandlers() {
             sessionObj.slow.scopeEditMode = true;
           }
         }
+        persistModeSliceToDocument(doc, "slow", sessionObj);
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
         showScreen("slowScope");
@@ -4613,6 +4761,7 @@ export function wireStudyHandlers() {
           sessionObj.docHierarchy = await buildDocumentHierarchy(cleanedText, null, {
             useCache: true,
           });
+          syncSlowDocHierarchyToShared(sessionObj);
           storeActiveSession(sessionObj);
           renderSlowScopeScreen(sessionObj);
         }
@@ -4693,6 +4842,7 @@ export function wireStudyHandlers() {
         throw new Error("File appears to be empty.");
       }
       state.originalMaterialText = cleanedText;
+      await ensureDocumentSessionForUpload(cleanedText);
 
       const { blockIndex: finalIndex, splitRunMeta, conceptInventory } = await twoPhaseConceptSplit(
         cleanedText,

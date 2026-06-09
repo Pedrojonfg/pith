@@ -1,4 +1,5 @@
 import { getSortedSessionConcepts } from "../dictionary.js?v=20260606_1";
+import { getActiveSession } from "../session-store.js?v=20260609_1";
 import { getScopeText } from "../slow/reader.js?v=20260528_1";
 import {
   buildClozeEpistemicGraph,
@@ -13,18 +14,46 @@ import {
  * @param {object|null} session
  * @param {object} [overrides]
  */
+function mapSharedAnnotations(shared) {
+  const list = Array.isArray(shared?.annotations) ? shared.annotations : [];
+  return list.map((a) => ({
+    id: a.id,
+    type: a.type,
+    charStart: Number(a.offset ?? a.charStart ?? 0),
+    charEnd: Number(a.offset ?? a.charStart ?? 0) + String(a.text || "").length,
+    userText: String(a.text || a.userText || ""),
+    createdAt: a.createdAt,
+  }));
+}
+
 export function resolveEnrichedGraphInputs(session, overrides = {}) {
+  const doc = overrides.shared ? null : getActiveSession();
+  const shared = overrides.shared ?? doc?.shared ?? session?.shared ?? null;
   const phase0 = overrides.phase0 ?? session?.slow?.phase0 ?? null;
   const sessionConcepts =
     overrides.sessionConcepts ?? (session ? getSortedSessionConcepts() : []);
-  const conceptsToFind = overrides.conceptsToFind ?? phase0?.conceptsToFind ?? [];
+  const sharedConcepts = Array.isArray(shared?.conceptInventory)
+    ? shared.conceptInventory.map((c) => ({
+        term: c.label,
+        definition: c.definition,
+        canonicalId: c.canonicalId,
+      }))
+    : [];
+  const conceptsToFind =
+    overrides.conceptsToFind ??
+    (sharedConcepts.length ? sharedConcepts : phase0?.conceptsToFind ?? []);
+
+  const sharedAnns = mapSharedAnnotations(shared);
+  const slowAnns = session?.slow?.annotations ?? [];
 
   return {
     textConcepts:
       overrides.textConcepts ??
       collectTextConceptsFromLists(sessionConcepts, conceptsToFind),
     argumentMap: overrides.argumentMap ?? phase0?.argumentMap ?? [],
-    annotations: overrides.annotations ?? session?.slow?.annotations ?? [],
+    annotations:
+      overrides.annotations ??
+      (sharedAnns.length ? sharedAnns : slowAnns),
     scopeText: overrides.scopeText ?? (session ? getScopeText(session) : ""),
     fillableBlanks: overrides.fillableBlanks ?? phase0?.fillableBlanks ?? [],
     charProximity: overrides.charProximity,
@@ -60,7 +89,8 @@ export function buildSessionGraph(session, options = {}) {
     options.conceptInventory ?? session?._meta?.material_graph?.conceptInventory ?? null;
 
   if (mode === "cloze") {
-    return buildClozeEpistemicGraph(session);
+    const shared = options.shared ?? getActiveSession()?.shared ?? session?.shared ?? null;
+    return buildClozeEpistemicGraph(session, { shared });
   }
 
   if (mode === "slow_phase0") {
