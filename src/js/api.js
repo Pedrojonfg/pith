@@ -702,6 +702,57 @@ Be concise. Respond in {language}.`.replace("{language}", language);
   });
 }
 
+export async function deepSeekGenerateBlockBridge({
+  llmModel,
+  apiKey: _legacyApiKey,
+  language,
+  finishedBlockTitle,
+  finishedBlockSummary,
+  finishedBlockRecap,
+  nextBlockTitle,
+  nextBlockSummary,
+  finishedBlockIndex,
+  nextBlockIndex,
+  totalBlocks,
+  blocksOutline,
+}) {
+  const lang = String(language || "English").trim() || "English";
+  const systemPrompt = `You write brief transition previews between study blocks in an RSVP reading app.
+The student just finished one block and is about to start the next.
+
+Write exactly 3 or 4 short sentences in plain text (no markdown, no bullets, no headings).
+- Briefly acknowledge what was covered in the block they just finished.
+- Explain how that connects to or motivates the upcoming block.
+- Optionally hint where this fits in the overall session structure.
+Be concise, warm, and direct. Do not repeat block titles verbatim unless needed for clarity.
+Respond entirely in ${lang}.`;
+
+  const parts = [
+    `Session: ${Math.max(1, Number(totalBlocks) || 1)} blocks total.`,
+    `Just finished block ${Math.max(1, Math.floor(Number(finishedBlockIndex) || 0) + 1)}: "${String(finishedBlockTitle || "").trim()}"`,
+  ];
+  const fSummary = String(finishedBlockSummary || "").trim();
+  if (fSummary) parts.push(`Finished block plan: ${fSummary}`);
+  const recap = String(finishedBlockRecap || "").trim();
+  if (recap) parts.push(`What they read: ${recap}`);
+  parts.push(
+    `Up next — block ${Math.max(1, Math.floor(Number(nextBlockIndex) || 0) + 1)}: "${String(nextBlockTitle || "").trim()}"`,
+  );
+  const nSummary = String(nextBlockSummary || "").trim();
+  if (nSummary) parts.push(`Next block plan: ${nSummary}`);
+  const outline = String(blocksOutline || "").trim();
+  if (outline) parts.push(`Full outline:\n${outline}`);
+
+  return llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: parts.join("\n") },
+    ],
+    temperature: 0.3,
+  });
+}
+
 function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
   const chunkRule = compact
     ? '- Set "chunk" to "" for every block.'

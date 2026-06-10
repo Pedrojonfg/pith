@@ -37,8 +37,11 @@ const idxDict = studySrc.indexOf("card.appendChild(dictionaryWrap)");
 assert(idxSneak >= 0 && idxDict >= 0 && idxSneak < idxDict, "sneakPeekWrap is appended before dictionaryWrap");
 
 // --- Static: placeholder + ready rendering ---
-assert(studySrc.includes("Preparando siguiente bloque…"), "placeholder text exists in study.js");
-assert(studySrc.includes("extractSneakPeek("), "study.js uses extractSneakPeek");
+assert(studySrc.includes("Preparing next block…"), "block preparing placeholder exists in study.js");
+assert(studySrc.includes("Writing transition preview…"), "bridge preparing placeholder exists in study.js");
+assert(studySrc.includes("bridgePrefetchState"), "study.js reads bridge prefetch state");
+assert(studySrc.includes("extractSneakPeek("), "study.js keeps extractSneakPeek as fallback");
+assert(studySrc.includes("triggerBridgePrefetch("), "study.js can start bridge generation");
 assert(
   studySrc.includes("renderTransitionSneakPeek(o, finishedIdx)") || studySrc.includes("renderTransitionSneakPeek(o, idx)"),
   "study.js triggers sneak peek rendering from refresh/poll logic",

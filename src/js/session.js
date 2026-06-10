@@ -13,12 +13,14 @@ import {
 } from "./session-store.js";
 import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
 import {
+  deepSeekGenerateBlockBridge,
   deepSeekGenerateBlockJson,
   deepSeekRegenerateBlockQuestions,
   generateBlockFromChunk,
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
-} from "./api.js?v=20260527_1";
+} from "./api.js?v=20260610_1";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
@@ -2548,9 +2550,129 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
 }
 
 let onPrefetchReady = null;
+let onBridgeReady = null;
 
 export function setOnPrefetchReady(fn) {
   onPrefetchReady = typeof fn === "function" ? fn : null;
+}
+
+export function setOnBridgeReady(fn) {
+  onBridgeReady = typeof fn === "function" ? fn : null;
+}
+
+export let bridgePrefetchState = {
+  finishedBlockIndex: null,
+  nextBlockIndex: null,
+  configKey: "",
+  status: "idle", // idle | generating | ready | failed
+  text: "",
+  error: null,
+};
+
+function notifyBridgeReady() {
+  if (typeof onBridgeReady === "function") {
+    try {
+      onBridgeReady();
+    } catch (err) {
+      console.warn("notifyBridgeReady: onBridgeReady failed", err);
+    }
+  }
+}
+
+function invalidateBridgePrefetch() {
+  bridgePrefetchState = {
+    finishedBlockIndex: null,
+    nextBlockIndex: null,
+    configKey: "",
+    status: "idle",
+    text: "",
+    error: null,
+  };
+}
+
+function normalizeBridgeText(raw) {
+  const text = String(raw || "")
+    .trim()
+    .replace(/^```(?:text|markdown)?\s*/i, "")
+    .replace(/\s*```\s*$/i, "")
+    .trim();
+  return extractSneakPeek(text, 4);
+}
+
+export function triggerBridgePrefetch(finishedBlockIndex, nextBlockIndex, nextBlockData, configKey) {
+  if (isOfflineMode()) return;
+  if (isQuestionsStudyMode(state.activeSession)) return;
+
+  const finishedIdx = Math.max(0, Math.floor(Number(finishedBlockIndex) || 0));
+  const nextIdx = Math.max(0, Math.floor(Number(nextBlockIndex) || 0));
+  const key = String(configKey || "");
+
+  const alreadyGeneratingSame =
+    bridgePrefetchState.status === "generating" &&
+    bridgePrefetchState.finishedBlockIndex === finishedIdx &&
+    bridgePrefetchState.nextBlockIndex === nextIdx &&
+    bridgePrefetchState.configKey === key;
+  if (alreadyGeneratingSame) return;
+
+  bridgePrefetchState = {
+    finishedBlockIndex: finishedIdx,
+    nextBlockIndex: nextIdx,
+    configKey: key,
+    status: "generating",
+    text: "",
+    error: null,
+  };
+
+  const llmModel = getSessionLlmModel(state.activeSession);
+  try {
+    assertLlmKeyPresent(llmModel);
+  } catch (err) {
+    bridgePrefetchState.status = "failed";
+    bridgePrefetchState.error = err;
+    notifyBridgeReady();
+    return;
+  }
+
+  const finishedBlock = getBlock(finishedIdx);
+  const finishedTitle = getBlockTitleSafe(finishedIdx);
+  const finishedSummary = getBlockSummaryFromList(finishedIdx);
+  const finishedRecap = extractSneakPeek(String(finishedBlock?.explanation || ""), 2);
+  const nextTitle =
+    String(nextBlockData?.title || "").trim() || getBlockTitleSafe(nextIdx);
+  const nextSummary = getBlockSummaryFromList(nextIdx);
+  const blocksOutline = String(state.activeSession?.blocks_list_text || "").trim();
+
+  void deepSeekGenerateBlockBridge({
+    llmModel,
+    language: getStudyLanguage(),
+    finishedBlockTitle: finishedTitle,
+    finishedBlockSummary: finishedSummary,
+    finishedBlockRecap: finishedRecap,
+    nextBlockTitle: nextTitle,
+    nextBlockSummary: nextSummary,
+    finishedBlockIndex: finishedIdx,
+    nextBlockIndex: nextIdx,
+    totalBlocks: getTotalBlocksSafe(),
+    blocksOutline,
+  })
+    .then((raw) => {
+      if (bridgePrefetchState.finishedBlockIndex !== finishedIdx) return;
+      if (bridgePrefetchState.nextBlockIndex !== nextIdx) return;
+      if (bridgePrefetchState.configKey !== key) return;
+      const text = normalizeBridgeText(raw);
+      bridgePrefetchState.status = text ? "ready" : "failed";
+      bridgePrefetchState.text = text;
+      bridgePrefetchState.error = text ? null : new Error("Empty bridge preview");
+      notifyBridgeReady();
+    })
+    .catch((err) => {
+      if (bridgePrefetchState.finishedBlockIndex !== finishedIdx) return;
+      if (bridgePrefetchState.nextBlockIndex !== nextIdx) return;
+      if (bridgePrefetchState.configKey !== key) return;
+      bridgePrefetchState.status = "failed";
+      bridgePrefetchState.error = err;
+      notifyBridgeReady();
+    });
 }
 
 export function applyPrefetchReadySideEffects(blockIndex, data, cfg) {
@@ -2588,6 +2710,7 @@ export function applyPrefetchReadySideEffects(blockIndex, data, cfg) {
 }
 
 export function invalidatePrefetch() {
+  invalidateBridgePrefetch();
   prefetchState = {
     blockIndex: null,
     status: "idle",
@@ -2653,6 +2776,9 @@ export function triggerPrefetch(blockIndex, opts = {}) {
       applyPrefetchReadySideEffects(idx, result, cfg);
       prefetchState.status = "ready";
       prefetchState.data = result;
+      if (idx >= 1) {
+        triggerBridgePrefetch(idx - 1, idx, result, configKey);
+      }
     })
     .catch((err) => {
       if (prefetchState.blockIndex !== idx) return;
