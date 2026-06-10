@@ -234,68 +234,9 @@
           aria-hidden="true"
           aria-label="Choose study mode"
         >
-          <div class="card">
-            <h1>How do you want to study?</h1>
-            <p>Choose a mode to get started. You can switch anytime with the + button.</p>
-
-            <div class="flow-recommend-upload">
-              <button type="button" id="flowRecommendBtn" class="btn-primary flow-recommend-btn">
-                Recommend my study flow
-              </button>
-              <input
-                type="file"
-                id="flowRecommendFileInput"
-                class="sr-only"
-                accept=".pdf,.html,.txt,.md"
-                aria-hidden="true"
-                tabindex="-1"
-              />
-              <p class="hint flow-recommend-hint">
-                Upload your material and we suggest a path — e.g. Slow → Cloze → Review, depending on the text.
-              </p>
-              <span id="flowRecommendStatus" class="flow-recommend-status" role="status"></span>
-              <p id="flowRecommendError" class="flow-recommend-error" role="alert" hidden></p>
-            </div>
-
-            <div id="recommendationPanel" class="recommendation-panel" hidden>
-              <div class="recommendation-intro" data-recommendation-view="intro">
-                <p id="recommendationGenreLabel" class="recommendation-genre-label"></p>
-                <div
-                  id="recommendationFlowSteps"
-                  class="recommendation-flow-steps"
-                  aria-label="Suggested study flow"
-                ></div>
-                <p id="recommendationReasoning" class="recommendation-reasoning"></p>
-                <div class="recommendation-actions">
-                  <button type="button" id="recommendationStartBtn" class="btn-primary"></button>
-                  <label class="recommendation-override-label">
-                    <span class="hint">Another mode</span>
-                    <select id="recommendationOverrideSelect" aria-label="Choose another mode">
-                      <option value="">Go directly to…</option>
-                      <option value="rsvp">RSVP</option>
-                      <option value="slow">Slow Mode</option>
-                      <option value="cloze">Cloze Detection</option>
-                      <option value="questions">Questions</option>
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    id="recommendationWhyLink"
-                    class="recommendation-why-link"
-                    aria-describedby="recommendationReasoning"
-                  >
-                    Why this flow?
-                  </button>
-                </div>
-                <p id="recommendationQuickFlow" class="recommendation-quick-flow" hidden></p>
-              </div>
-              <div id="recommendationProgress" class="recommendation-progress" hidden>
-                <p class="recommendation-progress-label">Progress:</p>
-                <div class="recommendation-progress-steps"></div>
-                <span id="recommendationSmDueBadge" class="recommendation-sm-badge" hidden></span>
-                <button type="button" id="recommendationContinueBtn" class="btn-primary"></button>
-              </div>
-            </div>
+          <div class="card mode-select-card">
+            <h1>Choose a study mode</h1>
+            <p class="mode-select-lead">Pick how you want to work with your material. Switch anytime with <strong>+</strong>.</p>
 
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
               <legend class="sr-only">Study mode</legend>
@@ -371,18 +312,18 @@
               <span id="createModeLabel" class="create-mode-badge"></span>
             </div>
             <h1>Configure your session</h1>
-            <p>Upload your material and adjust settings for this mode.</p>
+            <p class="create-screen-lead">Upload your material, then generate or continue.</p>
 
             <div id="modeResumePanel" class="mode-resume-panel" hidden>
               <p id="modeResumeHint" class="hint"></p>
-              <div class="row">
+              <div class="row mode-resume-actions">
                 <button type="button" id="continueSessionBtn" class="btn-primary">Continue session</button>
                 <button type="button" id="newSessionModeBtn">New session</button>
               </div>
             </div>
 
-            <form id="generateBlocksForm" hidden>
-              <label for="fileInput">File</label>
+            <form id="generateBlocksForm" class="create-form" hidden>
+              <label for="fileInput">Material file</label>
               <input
                 id="fileInput"
                 name="file"
@@ -392,61 +333,12 @@
               />
               <div class="hint" id="fileExtractHint" aria-live="polite"></div>
 
-              <div id="rsvpOnlyControls">
-              <div style="text-align: center; margin-top: 10px; color: var(--muted)">-- OR --</div>
-              <div class="row" style="margin-top: 8px">
-                <button type="button" id="loadOfflinePackBtn" style="opacity: 0.85">
-                  📦 Load offline pack
-                </button>
-                <span class="hint" id="offlinePackStatus" role="status"></span>
-              </div>
-              <div class="import-index-row">
-                <button id="import-index-btn" class="btn-secondary btn-small" type="button">
-                  📋 Import existing index
-                </button>
-                <span id="import-index-label" class="muted-label"></span>
-              </div>
-              <input
-                id="import-index-file"
-                name="importIndexFile"
-                type="file"
-                accept=".json,.txt"
-                style="display:none"
-              />
-              <input
-                id="offlinePackInput"
-                name="offlinePack"
-                type="file"
-                accept=".md,.markdown,.txt,text/markdown"
-                hidden
-                aria-hidden="true"
-                tabindex="-1"
-              />
-              <div id="offlinePackError" class="error" hidden></div>
-              </div>
-
-              <div id="slowOnlyControls" hidden>
-                <div class="divider"></div>
-                <div class="toggle" role="group" aria-label="Critical reading mode">
-                  <button type="button" id="criticalModeToggleBtn" aria-pressed="false">
-                    Critical reading mode
-                  </button>
-                </div>
-                <div class="hint" id="criticalModeHint" style="margin-top: 6px">
-                  Prioritizes critical annotations and steel-manning while you read.
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
               <label for="llmModelSelect">Model</label>
               <select id="llmModelSelect" name="llmModel" aria-label="LLM for this session">
                 <option value="deepseek" selected>DeepSeek (default)</option>
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
               </select>
               <div class="hint">Used for all API calls in this new session.</div>
-
-              <div class="divider"></div>
 
               <label for="languageSelect">Language</label>
               <select
@@ -455,109 +347,105 @@
                 aria-label="Study language"
               ></select>
 
-              <div id="rsvpBlocksSection">
-              <div class="divider"></div>
-
-              <label for="blocksInput">Blocks</label>
-              <input
-                id="blocksInput"
-                name="blocks"
-                type="number"
-                min="5"
-                max="60"
-                step="1"
-                value="20"
-                required
-              />
-
-              <div class="divider"></div>
-
-              <label for="studyNotesInput">
-                Comments / study focus (optional)
-              </label>
-              <textarea
-                id="studyNotesInput"
-                name="studyNotes"
-                placeholder="E.g. Focus only on topics with direct application to Art History. Ignore unrelated sections. Use concise, exam-style titles."
-                rows="4"
-                spellcheck="true"
-              ></textarea>
-
-              <div class="divider"></div>
-
-              <label>Questions per block</label>
-              <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
-                <button type="button" id="nTestMinusBtn" aria-label="Decrease test questions">
-                  −
-                </button>
-                <div
-                  id="nTestValue"
-                  style="min-width: 22px; text-align: center; font-variant-numeric: tabular-nums"
-                  aria-label="Test questions per block"
-                >
-                  2
+              <div id="slowOnlyControls" class="create-slow-options" hidden>
+                <div class="toggle" role="group" aria-label="Critical reading mode">
+                  <button type="button" id="criticalModeToggleBtn" aria-pressed="false">
+                    Critical reading mode
+                  </button>
                 </div>
-                <button type="button" id="nTestPlusBtn" aria-label="Increase test questions">
-                  +
-                </button>
-                <span class="hint" style="margin-left: 6px">Test questions</span>
-              </div>
-
-              <div class="row" style="margin-top: 0; gap: 12px; align-items: center">
-                <button
-                  type="button"
-                  id="nSocraticMinusBtn"
-                  aria-label="Decrease socratic questions"
-                >
-                  −
-                </button>
-                <div
-                  id="nSocraticValue"
-                  style="min-width: 22px; text-align: center; font-variant-numeric: tabular-nums"
-                  aria-label="Socratic questions per block"
-                >
-                  1
+                <div class="hint" id="criticalModeHint">
+                  Prioritizes critical annotations and steel-manning while you read.
                 </div>
-                <button
-                  type="button"
-                  id="nSocraticPlusBtn"
-                  aria-label="Increase socratic questions"
-                >
-                  +
-                </button>
-                <span class="hint" style="margin-left: 6px">Socratic questions</span>
               </div>
 
-              <div style="height: 6px"></div>
+              <details id="rsvpImportDetails" class="form-collapsible" hidden>
+                <summary>Offline pack &amp; index import</summary>
+                <div id="rsvpOnlyControls" class="form-collapsible-body">
+                  <div class="row">
+                    <button type="button" id="loadOfflinePackBtn">Load offline pack</button>
+                    <span class="hint" id="offlinePackStatus" role="status"></span>
+                  </div>
+                  <div class="import-index-row">
+                    <button id="import-index-btn" class="btn-secondary btn-small" type="button">
+                      Import existing index
+                    </button>
+                    <span id="import-index-label" class="muted-label"></span>
+                  </div>
+                  <input
+                    id="import-index-file"
+                    name="importIndexFile"
+                    type="file"
+                    accept=".json,.txt"
+                    hidden
+                    aria-hidden="true"
+                    tabindex="-1"
+                  />
+                  <input
+                    id="offlinePackInput"
+                    name="offlinePack"
+                    type="file"
+                    accept=".md,.markdown,.txt,text/markdown"
+                    hidden
+                    aria-hidden="true"
+                    tabindex="-1"
+                  />
+                  <div id="offlinePackError" class="error" hidden></div>
+                </div>
+              </details>
 
-              <div class="toggle" role="group" aria-label="Connection question type">
-                <button
-                  type="button"
-                  id="connectionQuestionsToggleBtn"
-                  aria-pressed="true"
-                >
-                  Connection questions with prior blocks (blocks 2..N)
-                </button>
-              </div>
-              <div
-                class="hint"
-                id="connectionQuestionsToggleSubtitle"
-                style="margin-top: 6px"
-                hidden
-              >
-                Off: connection questions will not be generated for blocks.
-              </div>
+              <details id="rsvpAdvancedDetails" class="form-collapsible" hidden>
+                <summary>Blocks, comments &amp; questions</summary>
+                <div id="rsvpBlocksSection" class="form-collapsible-body">
+                  <label for="blocksInput">Blocks</label>
+                  <input
+                    id="blocksInput"
+                    name="blocks"
+                    type="number"
+                    min="5"
+                    max="60"
+                    step="1"
+                    value="20"
+                    required
+                  />
 
-              <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
-              </div>
+                  <label for="studyNotesInput">Comments / study focus (optional)</label>
+                  <textarea
+                    id="studyNotesInput"
+                    name="studyNotes"
+                    placeholder="E.g. Focus on exam-relevant topics only. Skip unrelated sections."
+                    rows="2"
+                    spellcheck="true"
+                  ></textarea>
 
-              <div class="row">
-                <button type="submit" id="generateBlocksBtn" class="btn-primary">
-                  Generate blocks
-                </button>
+                  <label>Questions per block</label>
+                  <div class="row create-q-row">
+                    <button type="button" id="nTestMinusBtn" aria-label="Decrease test questions">−</button>
+                    <div id="nTestValue" class="create-q-value" aria-label="Test questions per block">2</div>
+                    <button type="button" id="nTestPlusBtn" aria-label="Increase test questions">+</button>
+                    <span class="hint">Test questions</span>
+                  </div>
+                  <div class="row create-q-row">
+                    <button type="button" id="nSocraticMinusBtn" aria-label="Decrease socratic questions">−</button>
+                    <div id="nSocraticValue" class="create-q-value" aria-label="Socratic questions per block">1</div>
+                    <button type="button" id="nSocraticPlusBtn" aria-label="Increase socratic questions">+</button>
+                    <span class="hint">Socratic questions</span>
+                  </div>
+                  <div class="toggle" role="group" aria-label="Connection question type">
+                    <button type="button" id="connectionQuestionsToggleBtn" aria-pressed="true">
+                      Connection questions with prior blocks (blocks 2..N)
+                    </button>
+                  </div>
+                  <div class="hint" id="connectionQuestionsToggleSubtitle" hidden>
+                    Off: connection questions will not be generated for blocks.
+                  </div>
+                  <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
+                </div>
+              </details>
+
+              <div class="row create-submit-row">
+                <button type="submit" id="generateBlocksBtn" class="btn-primary">Generate blocks</button>
                 <span class="hint" id="generateBlocksStatus" role="status"></span>
               </div>
-
               <div id="generateBlocksError" class="error" hidden></div>
             </form>
 
@@ -565,71 +453,67 @@
               <p id="clozePipelineProgress" class="hint cloze-pipeline-progress" aria-live="polite"></p>
               <p id="clozeReadySummary" class="hint" hidden></p>
               <div class="row cloze-action-row">
-                <button type="button" id="clozeGenerateBtn" class="btn-primary">Generar ítems</button>
-                <button type="button" id="clozeStudyBtn" class="btn-primary" hidden>Estudiar</button>
-                <button type="button" id="clozeExportBtn" class="btn-secondary" hidden>Exportar ítems (.md)</button>
-                <button type="button" id="clozeViewGraphBtn" class="btn-secondary" hidden>Ver grafo</button>
+                <button type="button" id="clozeGenerateBtn" class="btn-primary">Generate items</button>
+                <button type="button" id="clozeStudyBtn" class="btn-primary" hidden>Study</button>
+                <button type="button" id="clozeExportBtn" class="btn-secondary" hidden>Export items (.md)</button>
+                <button type="button" id="clozeViewGraphBtn" class="btn-secondary" hidden>View graph</button>
               </div>
               <p id="clozePipelineError" class="error" hidden></p>
               <div id="clozeGraphMount" class="cloze-graph-mount" hidden></div>
             </div>
 
-            <div id="clozeImportSection" class="cloze-import-section" hidden>
-              <div class="divider"></div>
-              <h2 style="margin-bottom: 8px">Importar ítems cloze</h2>
-              <p class="subtle" style="margin-top: 0">
-                Sube uno o varios archivos <strong>.md</strong> exportados desde Cloze Detection
-                (pack cloze). Se combinarán en una sola sesión de estudio.
-              </p>
-              <label for="clozeImportInput">Archivos de ítems (.md)</label>
-              <input
-                id="clozeImportInput"
-                name="clozeImport"
-                type="file"
-                accept=".md,.markdown,.txt,text/markdown"
-                multiple
-              />
-              <div class="hint" id="clozeImportHint" aria-live="polite"></div>
-              <div class="row" style="margin-top: 10px">
-                <button type="button" id="clozeImportBtn" class="btn-primary">
-                  Importar y preparar sesión
-                </button>
-                <span class="hint" id="clozeImportStatus" role="status"></span>
+            <details id="clozeImportSection" class="form-collapsible" hidden>
+              <summary>Import cloze items</summary>
+              <div class="form-collapsible-body">
+                <p class="subtle form-collapsible-intro">
+                  Upload one or more <strong>.md</strong> files exported from Cloze Detection.
+                  They will be merged into a single study session.
+                </p>
+                <label for="clozeImportInput">Item files (.md)</label>
+                <input
+                  id="clozeImportInput"
+                  name="clozeImport"
+                  type="file"
+                  accept=".md,.markdown,.txt,text/markdown"
+                  multiple
+                />
+                <div class="hint" id="clozeImportHint" aria-live="polite"></div>
+                <div class="row">
+                  <button type="button" id="clozeImportBtn" class="btn-primary">Import and prepare session</button>
+                  <span class="hint" id="clozeImportStatus" role="status"></span>
+                </div>
+                <div id="clozeImportError" class="error" hidden></div>
               </div>
-              <div id="clozeImportError" class="error" hidden></div>
-            </div>
+            </details>
 
-            <div class="divider"></div>
-
-            <h2 style="margin-bottom: 8px">Resume saved session</h2>
-            <p class="subtle" style="margin-top: 0">
-              Upload the <strong>original</strong> material and your latest
-              <strong>exported</strong> markdown (must include the resume footer).
-            </p>
-
-            <label for="resumeMaterialInput">Original material file</label>
-            <input
-              id="resumeMaterialInput"
-              name="resumeMaterial"
-              type="file"
-              accept=".pdf,.html,.txt,.md"
-            />
-
-            <div style="height: 10px"></div>
-
-            <label for="resumeMdInput">Session markdown</label>
-            <input
-              id="resumeMdInput"
-              name="resumeMd"
-              type="file"
-              accept=".md,.markdown,.txt,text/markdown"
-            />
-
-            <div class="row" style="margin-top: 10px">
-              <button type="button" id="resumeSessionBtn">Resume session</button>
-              <span class="hint" id="resumeSessionStatus" role="status"></span>
-            </div>
-            <div id="resumeSessionError" class="error" hidden></div>
+            <details id="resumeSessionDetails" class="form-collapsible">
+              <summary>Resume saved session</summary>
+              <div class="form-collapsible-body">
+                <p class="subtle form-collapsible-intro">
+                  Upload the <strong>original</strong> material and your latest
+                  <strong>exported</strong> markdown (must include the resume footer).
+                </p>
+                <label for="resumeMaterialInput">Original material file</label>
+                <input
+                  id="resumeMaterialInput"
+                  name="resumeMaterial"
+                  type="file"
+                  accept=".pdf,.html,.txt,.md"
+                />
+                <label for="resumeMdInput">Session markdown</label>
+                <input
+                  id="resumeMdInput"
+                  name="resumeMd"
+                  type="file"
+                  accept=".md,.markdown,.txt,text/markdown"
+                />
+                <div class="row">
+                  <button type="button" id="resumeSessionBtn">Resume session</button>
+                  <span class="hint" id="resumeSessionStatus" role="status"></span>
+                </div>
+                <div id="resumeSessionError" class="error" hidden></div>
+              </div>
+            </details>
           </div>
         </section>
 
@@ -1126,23 +1010,23 @@
             <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
             <div id="slowScopeLongWarning" class="error" hidden></div>
             <div class="row slow-scope-toolbar">
-              <button type="button" id="slowScopeEditBtn" class="btn-secondary">Editar secciones</button>
+              <button type="button" id="slowScopeEditBtn" class="btn-secondary">Edit sections</button>
               <button type="button" id="slowScopeAutoSplitBtn" class="btn-secondary" hidden>
-                Dividir automáticamente por longitud
+                Auto-split by length
               </button>
             </div>
             <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
             <label class="slow-scope-fillable-toggle" for="slowScopeFillableMap">
               <input type="checkbox" id="slowScopeFillableMap" />
-              Mapa rellenable
+              Fillable argument map
             </label>
-            <p class="hint" id="slowScopeFillableHint">Completa premisas y conclusión mientras lees (Fase 1).</p>
+            <p class="hint" id="slowScopeFillableHint">Fill in premises and conclusion as you read (Phase 1).</p>
             <label class="slow-scope-fillable-toggle" for="slowScopeCheckpoints">
               <input type="checkbox" id="slowScopeCheckpoints" checked />
-              Checkpoints de sección
+              Section checkpoints
             </label>
             <p class="hint" id="slowScopeCheckpointsHint">
-              Preguntas breves al final de cada sección durante la lectura (siempre opcionales).
+              Brief questions at the end of each section while reading (always optional).
             </p>
             <div class="row">
               <button type="button" id="slowScopeConfirmBtn" class="btn-primary" disabled>Continue →</button>
@@ -1211,25 +1095,25 @@
         <div class="slow-reader-layout" id="slowReaderLayout">
           <div class="slow-reader-main">
             <div class="slow-reader-toolbar">
-              <nav class="slow-reader-nav" aria-label="Paginación">
-                <button type="button" id="slowReaderPrevBtn" aria-label="Página anterior" title="Página anterior (←)">←</button>
-                <span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite" title="El texto se divide en pantallas según el tamaño de la ventana"></span>
-                <button type="button" id="slowReaderNextBtn" aria-label="Página siguiente" title="Página siguiente (→)">→</button>
+              <nav class="slow-reader-nav" aria-label="Pagination">
+                <button type="button" id="slowReaderPrevBtn" aria-label="Previous page" title="Previous page (←)">←</button>
+                <span id="slowReaderPageIndicator" class="slow-reader-page-indicator" aria-live="polite" title="Text is split into pages based on window size"></span>
+                <button type="button" id="slowReaderNextBtn" aria-label="Next page" title="Next page (→)">→</button>
               </nav>
-              <div class="slow-reader-typo" role="group" aria-label="Tamaño de texto">
-                <span class="slow-reader-typo-label">Texto</span>
-                <button type="button" id="slowFontSmallerBtn" aria-label="Reducir tamaño de texto" title="Reducir tamaño de texto">−</button>
+              <div class="slow-reader-typo" role="group" aria-label="Text size">
+                <span class="slow-reader-typo-label">Text</span>
+                <button type="button" id="slowFontSmallerBtn" aria-label="Smaller text" title="Smaller text">−</button>
                 <span id="slowFontSizeLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
-                <button type="button" id="slowFontLargerBtn" aria-label="Aumentar tamaño de texto" title="Aumentar tamaño de texto">+</button>
+                <button type="button" id="slowFontLargerBtn" aria-label="Larger text" title="Larger text">+</button>
               </div>
-              <div class="slow-reader-typo" role="group" aria-label="Interlineado">
-                <span class="slow-reader-typo-label">Espacio</span>
-                <button type="button" id="slowLineSmallerBtn" aria-label="Reducir interlineado" title="Reducir espacio entre líneas">−</button>
+              <div class="slow-reader-typo" role="group" aria-label="Line height">
+                <span class="slow-reader-typo-label">Space</span>
+                <button type="button" id="slowLineSmallerBtn" aria-label="Tighter lines" title="Tighter line spacing">−</button>
                 <span id="slowLineHeightLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
-                <button type="button" id="slowLineLargerBtn" aria-label="Aumentar interlineado" title="Aumentar espacio entre líneas">+</button>
+                <button type="button" id="slowLineLargerBtn" aria-label="Looser lines" title="Looser line spacing">+</button>
               </div>
               <div class="slow-reader-toolbar-spacer" aria-hidden="true"></div>
-              <button type="button" id="slowReaderCompleteBtn">Lectura completa</button>
+              <button type="button" id="slowReaderCompleteBtn">Reading complete</button>
             </div>
             <div class="slow-reader-content">
               <div class="slow-reader-page-wrap">
@@ -1238,43 +1122,43 @@
             </div>
           </div>
           <div id="slowReaderMargin" class="slow-reader-margin" aria-hidden="true"></div>
-          <aside id="slowReaderSidebar" class="slow-reader-sidebar" aria-label="Panel de lectura">
+          <aside id="slowReaderSidebar" class="slow-reader-sidebar" aria-label="Reading panel">
             <header class="slow-sidebar-header">
               <button
                 type="button"
                 id="slowSidebarCollapseBtn"
                 class="slow-sidebar-collapse-btn"
-                aria-label="Ocultar panel"
-                title="Ocultar panel"
+                aria-label="Hide panel"
+                title="Hide panel"
               >
                 ›
               </button>
             </header>
             <div class="slow-sidebar-scroll">
               <section class="slow-sidebar-section" aria-labelledby="slowSidebarAnnHeading">
-                <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">Mis anotaciones</h3>
+                <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">My annotations</h3>
                 <div id="slowSidebarAnnotations" class="slow-sidebar-annotations"></div>
               </section>
               <section class="slow-sidebar-section" aria-labelledby="slowSidebarDictHeading">
-                <h3 id="slowSidebarDictHeading" class="slow-sidebar-section-title">Diccionario</h3>
+                <h3 id="slowSidebarDictHeading" class="slow-sidebar-section-title">Dictionary</h3>
                 <ul id="slowSidebarDictionary" class="slow-sidebar-dictionary"></ul>
               </section>
               <section class="slow-sidebar-section" aria-labelledby="slowSidebarIAHeading">
-                <h3 id="slowSidebarIAHeading" class="slow-sidebar-section-title">Preguntar a IA</h3>
+                <h3 id="slowSidebarIAHeading" class="slow-sidebar-section-title">Ask AI</h3>
                 <div id="slowSidebarIA" class="slow-sidebar-ia">
                   <textarea
                     id="slowSidebarIAInput"
                     class="slow-sidebar-ia-input"
                     rows="3"
-                    placeholder="Escribe una pregunta… Enter para enviar"
-                    aria-label="Preguntar a IA sobre el texto leído"
+                    placeholder="Ask a question… Enter to send"
+                    aria-label="Ask AI about the text you're reading"
                   ></textarea>
                   <ul id="slowSidebarIAQueries" class="slow-sidebar-ia-queries"></ul>
                 </div>
               </section>
             </div>
           </aside>
-          <button type="button" id="slowSidebarTab" class="slow-sidebar-tab" hidden aria-label="Mostrar panel">
+          <button type="button" id="slowSidebarTab" class="slow-sidebar-tab" hidden aria-label="Show panel">
             ☰
           </button>
         </div>
