@@ -57,6 +57,15 @@ import {
   renderMcOptionHtml,
 } from "./markdown.js?v=20260525_1";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260526_2";
+import {
+  finishPacedRead,
+  isPacedReaderActive,
+  isPacedReaderPreferred,
+  pacedReaderState,
+  setReadingModePref,
+  startPacedReadForText,
+  wirePacedReaderHandlers,
+} from "./paced-reader.js?v=20260610_1";
 import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import {
@@ -3318,6 +3327,56 @@ function beginRsvpForCurrentBlock({ onDone }) {
   startRsvpForText(block.explanation || "", onDone);
 }
 
+function beginPacedReadForCurrentBlock({ onDone }) {
+  const blocks = getBlocksSafe();
+  const block = blocks[state.activeBlockIndex];
+  if (!block) {
+    const msg = "Missing block.";
+    setSocraticError(msg);
+    els.testError.hidden = false;
+    els.testError.textContent = msg;
+    return;
+  }
+  setBlockReadSidebarAvailable(false);
+  startPacedReadForText(block.explanation || "", {
+    title: getBlockTitleSafe(state.activeBlockIndex),
+    onDone,
+  });
+}
+
+function beginBlockReading({ onDone }) {
+  if (isPacedReaderPreferred()) beginPacedReadForCurrentBlock({ onDone });
+  else beginRsvpForCurrentBlock({ onDone });
+}
+
+function switchBlockReadingToPaced() {
+  const blocks = getBlocksSafe();
+  const block = blocks[state.activeBlockIndex];
+  const text =
+    (typeof rsvpState.sourceExplanation === "string" && rsvpState.sourceExplanation) ||
+    block?.explanation ||
+    "";
+  const onDone = rsvpState.onDone || pacedReaderState.onDone;
+  const title = getBlockTitleSafe(state.activeBlockIndex);
+
+  cancelRsvpTimer();
+  setRsvpOverlayActive(false);
+  setReadingModePref("paced");
+
+  startPacedReadForText(text, { title, onDone });
+}
+
+function switchBlockReadingToRsvp() {
+  const text = pacedReaderState.sourceText || "";
+  const onDone = pacedReaderState.onDone;
+  const title = getBlockTitleSafe(state.activeBlockIndex);
+
+  finishPacedRead({ skipCallback: true });
+  setReadingModePref("rsvp");
+  setRsvpBlockTitle(title);
+  startRsvpForText(text, onDone, { skipCountdown: true });
+}
+
 async function startTestBlock() {
   clearTestError();
   setTestMeta();
@@ -3354,7 +3413,7 @@ async function startTestBlock() {
     return;
   }
 
-  beginRsvpForCurrentBlock({
+  beginBlockReading({
     onDone: () => {
       showScreen("test");
       updateStudyProgressUi();
@@ -3390,7 +3449,7 @@ async function startSocraticBlock() {
     return;
   }
 
-  beginRsvpForCurrentBlock({
+  beginBlockReading({
     onDone: () => {
       showScreen("socratic");
       updateStudyProgressUi();
@@ -5983,6 +6042,10 @@ export function wireStudyHandlers() {
       finishRsvp();
       return;
     }
+    if (isPacedReaderActive()) {
+      finishPacedRead();
+      return;
+    }
     showTestQuestions();
     renderTestQuestion();
   });
@@ -5996,7 +6059,7 @@ export function wireStudyHandlers() {
       state.activeSession.active_question_index = 0;
       storeActiveSession(state.activeSession);
     }
-    beginRsvpForCurrentBlock({
+    beginBlockReading({
       onDone: () => {
         showScreen("test");
         updateStudyProgressUi();
@@ -6107,6 +6170,8 @@ export function wireStudyHandlers() {
   });
 
   wireRsvpHandlers();
+  wirePacedReaderHandlers({ onSwitchToRsvp: switchBlockReadingToRsvp });
+  els.rsvpSwitchToPacedBtn?.addEventListener("click", switchBlockReadingToPaced);
 
   if (els.resumeSessionBtn) {
     els.resumeSessionBtn.addEventListener("click", async () => {

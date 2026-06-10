@@ -1,4 +1,4 @@
-const CACHE_NAME = "mylearning-v14";
+const CACHE_NAME = "mylearning-v15";
 
 const STATIC_ASSETS = [
   "/",
@@ -14,6 +14,7 @@ const STATIC_ASSETS = [
   "/src/js/session.js",
   "/src/js/study.js",
   "/src/js/rsvp.js",
+  "/src/js/paced-reader.js",
   "/src/js/export.js",
   "/src/js/resume.js",
   "/src/js/ui.js",

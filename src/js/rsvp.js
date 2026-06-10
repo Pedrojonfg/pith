@@ -1285,7 +1285,7 @@ export function setWordsPerFlash(nextWpf) {
   persistRsvpDefaults();
 }
 
-export function startRsvpForText(explanationText, onDone) {
+export function startRsvpForText(explanationText, onDone, { skipCountdown = false } = {}) {
   bumpPlaybackGen();
   cancelRsvpTimer();
 
@@ -1325,14 +1325,24 @@ export function startRsvpForText(explanationText, onDone) {
   els.rsvpWpm.value = String(rsvpState.wpm);
   els.rsvpWpmLabel.textContent = String(rsvpState.wpm);
   setWpfUi(rsvpState.wordsPerFlash);
-  els.rsvpChunk.textContent = "3...";
-  els.rsvpPlayPauseBtn.textContent = "Pause";
   updateRsvpProgressUi();
 
   // Pre-render all math chunks during the 3-second countdown so the first
   // flash is always instant (no MathJax async latency mid-playback).
   void preRenderMathChunks(rsvpState.chunks, rsvpState.playbackGen);
 
+  if (skipCountdown) {
+    els.rsvpChunk.textContent = "";
+    rsvpState.playing = true;
+    rsvpState.countdownActive = false;
+    els.rsvpPlayPauseBtn.textContent = "Pause";
+    syncRsvpFocusMode();
+    beginPlaybackLoop();
+    return;
+  }
+
+  els.rsvpChunk.textContent = "3...";
+  els.rsvpPlayPauseBtn.textContent = "Pause";
   const steps = ["3...", "2...", "1..."];
   let i = 0;
   const countdownGen = rsvpState.playbackGen;
