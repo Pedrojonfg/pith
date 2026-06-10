@@ -9,16 +9,16 @@ import { JSDOM } from "jsdom";
 import { analyzeText } from "../src/js/recommendation/analyzer.js";
 import { computeModeRecommendation } from "../src/js/recommendation/recommender.js";
 
-const FLOW_MODE_SHORT_ES = {
+const FLOW_MODE_SHORT_LABELS = {
   slow: "Slow",
   cloze: "Cloze",
-  review: "Revisión",
+  review: "Review",
   rsvp: "RSVP",
   questions: "Questions",
 };
 
 function getFlowModeShortLabel(mode) {
-  return FLOW_MODE_SHORT_ES[mode] || mode;
+  return FLOW_MODE_SHORT_LABELS[mode] || mode;
 }
 
 function getRecommendationPanelState(recommendation) {
@@ -48,7 +48,7 @@ function formatProgressFlowLine(steps, completed, currentStepIndex) {
     .map((step, index) => {
       const short = getFlowModeShortLabel(String(step?.mode || ""));
       if (step?.id && completed.has(step.id)) return `${short} ✓`;
-      if (index === currentStepIndex) return `${short} (siguiente)`;
+      if (index === currentStepIndex) return `${short} (next)`;
       return short;
     })
     .join(" → ");
@@ -112,9 +112,11 @@ assert(
   "T07: enterModeSelectScreen renders panel",
 );
 assert(studySrc.includes("recordUserOverride(doc.shared.modeRecommendation"), "T07: override persists userOverride");
-assert(studySrc.includes("Comenzar"), "T07: Spanish start CTA copy");
-assert(studySrc.includes("(aprox.)"), "T07: approx suffix on times");
-assert(studySrc.includes("Continuar con"), "T07: Spanish continue CTA copy");
+assert(studySrc.includes("Start "), "T07: English start CTA copy");
+assert(studySrc.includes("(approx.)"), "T07: approx suffix on times");
+assert(studySrc.includes("Continue with"), "T07: English continue CTA copy");
+assert(studySrc.includes("Recommend my study flow"), "T07: English upload CTA");
+assert(studySrc.includes("Why this flow?"), "T07: English why link");
 
 assert(mainCss.includes(".recommendation-panel"), "T07: panel styles in main.css");
 assert(mainCss.includes(".recommendation-flow-step"), "T07: linear step chip styles");
@@ -145,15 +147,15 @@ assert(
 assert(
   formatIntroFlowLine(rec.primaryFlow).includes("Slow") &&
     formatIntroFlowLine(rec.primaryFlow).includes("Cloze"),
-  "intro flow line uses short Spanish labels",
+  "intro flow line uses short English labels",
 );
-assert(getFlowModeShortLabel("review") === "Revisión", "review short label");
+assert(getFlowModeShortLabel("review") === "Review", "review short label");
 assert(sumFlowTimeMin(rec.primaryFlow) > 0, "sumFlowTimeMin positive for philosophical flow");
 
 const completed = new Set(["step_slow_1"]);
 const progressLine = formatProgressFlowLine(rec.primaryFlow, completed, 1);
 assert(progressLine.includes("✓"), "progress line marks completed step");
-assert(progressLine.includes("(siguiente)"), "progress line marks next step");
+assert(progressLine.includes("(next)"), "progress line marks next step");
 
 console.log(`\nT07 flow-recommendation panel-ui: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

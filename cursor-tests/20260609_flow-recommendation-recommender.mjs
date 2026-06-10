@@ -6,7 +6,7 @@ import { analyzeText } from "../src/js/recommendation/analyzer.js";
 import {
   computeModeRecommendation,
   computeStepTimes,
-  GENRE_LABEL_ES,
+  GENRE_LABEL_EN,
   TIME_FACTORS,
 } from "../src/js/recommendation/recommender.js";
 
@@ -108,7 +108,7 @@ function testPhilosophicalPaperSlowFirst() {
     rec.quickFlow.map((s) => s.mode).join(",") === "rsvp,questions",
     "philosophical: quick flow",
   );
-  assert(rec.analysis.genreLabel === GENRE_LABEL_ES.philosophical, "philosophical: genreLabel ES");
+  assert(rec.analysis.genreLabel === GENRE_LABEL_EN.philosophical, "philosophical: genreLabel EN");
   assertFullSchema(rec, "philosophical");
 }
 

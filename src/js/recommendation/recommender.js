@@ -13,37 +13,40 @@ export const TIME_FACTORS = {
 };
 
 /** @type {Record<string, string>} */
-export const GENRE_LABEL_ES = {
-  philosophical: "Texto filosófico argumentativo",
-  scientific_theoretical: "Texto científico teórico",
-  scientific_empirical: "Texto científico empírico",
-  essay: "Ensayo",
-  lecture_notes: "Apuntes de clase",
-  textbook_chapter: "Capítulo de manual",
-  unknown: "Texto académico",
+export const GENRE_LABEL_EN = {
+  philosophical: "Argumentative philosophy text",
+  scientific_theoretical: "Theoretical science text",
+  scientific_empirical: "Empirical science text",
+  essay: "Essay",
+  lecture_notes: "Lecture notes",
+  textbook_chapter: "Textbook chapter",
+  unknown: "Academic text",
 };
+
+/** @deprecated Use GENRE_LABEL_EN */
+export const GENRE_LABEL_ES = GENRE_LABEL_EN;
 
 /** @type {Record<string, { label: string, description: string }>} */
 const MODE_TEMPLATES = {
   slow: {
-    label: "Lectura profunda con anotaciones",
-    description: "Anota lo que no entiendes, marca argumentos clave",
+    label: "Deep reading with annotations",
+    description: "Mark what you do not understand and trace key arguments",
   },
   rsvp: {
-    label: "Lectura rápida RSVP",
-    description: "Recorre el texto a ritmo sostenido antes de evaluarte",
+    label: "RSVP speed reading",
+    description: "Skim the text at a steady pace before self-testing",
   },
   cloze: {
-    label: "Práctica con Cloze",
-    description: "Completa huecos para consolidar conceptos clave",
+    label: "Cloze practice",
+    description: "Fill gaps to consolidate key concepts",
   },
   questions: {
-    label: "Preguntas de comprensión",
-    description: "Responde preguntas para verificar lo que recuerdas",
+    label: "Comprehension questions",
+    description: "Answer questions to check what you remember",
   },
   review: {
-    label: "Revisión espaciada",
-    description: "Repasa con repaso SM-2 lo que ya estudiaste",
+    label: "Spaced review",
+    description: "Revisit material with SM-2 spaced repetition",
   },
 };
 
@@ -127,7 +130,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
       primaryModes: ["slow", "cloze", "review"],
       quickModes: ["rsvp", "questions"],
       reasoning:
-        "Texto argumentativo denso. La lectura profunda antes de practicar evita memorizar sin comprender.",
+        "Dense argumentative text. Deep reading before practice helps you understand instead of memorizing blindly.",
     };
   }
 
@@ -135,7 +138,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
     return {
       primaryModes: ["slow", "cloze", "review"],
       quickModes: ["rsvp", "cloze"],
-      reasoning: "Alta carga conceptual. Necesitas construir el mapa antes de practicar.",
+      reasoning: "High conceptual load. Build the mental map before active practice.",
     };
   }
 
@@ -144,7 +147,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
       primaryModes: ["rsvp", "questions", "cloze"],
       quickModes: ["rsvp", "questions"],
       reasoning:
-        "Texto empírico estructurado. RSVP es eficiente aquí; Cloze para los conceptos clave.",
+        "Structured empirical text. RSVP works well here; use Cloze for the key concepts.",
     };
   }
 
@@ -152,7 +155,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
     return {
       primaryModes: ["rsvp", "questions"],
       quickModes: ["questions"],
-      reasoning: "Apuntes propios: ya los procesaste una vez. Evaluación directa.",
+      reasoning: "Personal notes: you already processed this once. Go straight to retrieval.",
     };
   }
 
@@ -160,7 +163,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
     return {
       primaryModes: ["rsvp", "cloze", "review"],
       quickModes: ["rsvp", "questions"],
-      reasoning: "Manual estructurado. Lectura rápida primero, luego recuperación activa.",
+      reasoning: "Structured textbook material. Skim first, then active retrieval.",
     };
   }
 
@@ -168,7 +171,7 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
     return {
       primaryModes: ["questions"],
       quickModes: ["questions"],
-      reasoning: "Texto corto. Evaluación directa sin pipeline completo.",
+      reasoning: "Short text. Direct assessment without a full multi-mode pipeline.",
     };
   }
 
@@ -177,14 +180,14 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
       primaryModes: ["rsvp", "questions"],
       quickModes: ["questions"],
       reasoning:
-        "Material procedimental. Revisión estructurada es más eficiente que lectura profunda.",
+        "Procedural material. Structured review is more efficient than deep reading.",
     };
   }
 
   return {
     primaryModes: ["rsvp", "questions"],
     quickModes: ["questions"],
-    reasoning: "Flujo conservador.",
+    reasoning: "Conservative default flow.",
   };
 }
 
@@ -243,7 +246,7 @@ export function computeModeRecommendation(textMetrics, pedagogicalMeta, options 
       argumentativeDensity,
       conceptualLoad,
       estimatedReadTimeMin: Number(metrics.estimatedReadTimeMin) || 0,
-      genreLabel: GENRE_LABEL_ES[genre] || GENRE_LABEL_ES.unknown,
+      genreLabel: GENRE_LABEL_EN[genre] || GENRE_LABEL_EN.unknown,
     },
     primaryFlow,
     quickFlow,

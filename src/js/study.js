@@ -220,8 +220,14 @@ export function getRecommendedStep(recommendation) {
  * @param {string} cleanedText
  * @param {{ pedagogicalMeta?: unknown, method?: string } | null} [hierarchyResult]
  */
-export function computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult = null) {
-  if (!doc?.docId || doc.shared?.modeRecommendation) return;
+export function computeAndPersistModeRecommendation(
+  doc,
+  cleanedText,
+  hierarchyResult = null,
+  options = {},
+) {
+  if (!doc?.docId) return;
+  if (doc.shared?.modeRecommendation && !options.force) return;
   try {
     const textMetrics = analyzeText(String(cleanedText || ""));
     const pedagogicalMeta =
@@ -269,10 +275,10 @@ export function applyFlowRecommendationOnEnterMode(chosenMode, doc = getActiveSe
 }
 
 /** @type {Record<string, string>} */
-const FLOW_MODE_SHORT_ES = {
+const FLOW_MODE_SHORT_LABELS = {
   slow: "Slow",
   cloze: "Cloze",
-  review: "Revisión",
+  review: "Review",
   rsvp: "RSVP",
   questions: "Questions",
 };
@@ -283,7 +289,7 @@ const FLOW_MODE_SHORT_ES = {
  */
 export function getFlowModeShortLabel(mode) {
   const slot = normalizeStudyMode(mode);
-  return FLOW_MODE_SHORT_ES[slot] || getStudyModeLabel(slot);
+  return FLOW_MODE_SHORT_LABELS[slot] || getStudyModeLabel(slot);
 }
 
 /**
@@ -323,7 +329,7 @@ export function formatProgressFlowLine(steps, completed, currentStepIndex) {
     .map((step, index) => {
       const short = getFlowModeShortLabel(String(step?.mode || ""));
       if (step?.id && completed.has(step.id)) return `${short} ✓`;
-      if (index === currentStepIndex) return `${short} (siguiente)`;
+      if (index === currentStepIndex) return `${short} (next)`;
       return short;
     })
     .join(" → ");
@@ -367,7 +373,7 @@ function renderFlowStepsElement(host, line, options = {}) {
       chip.textContent = `${short} ✓`;
     } else if (index === currentStepIndex) {
       chip.classList.add("is-next");
-      chip.textContent = `${short} (siguiente)`;
+      chip.textContent = `${short} (next)`;
     } else {
       chip.textContent = short;
     }
@@ -487,7 +493,7 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
     recommendation?.analysis && typeof recommendation.analysis === "object"
       ? recommendation.analysis
       : {};
-  const genreLabel = String(analysis.genreLabel || "Texto académico");
+  const genreLabel = String(analysis.genreLabel || "Academic text");
   const totalMin = sumFlowTimeMin(primaryFlow);
   const quickMin = sumFlowTimeMin(quickFlow);
   const whyText = String(recommendation?.reasoning || analysis.genreLabel || "").trim();
@@ -499,7 +505,7 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
     if (progressView) progressView.hidden = true;
 
     if (genreLabelEl) {
-      genreLabelEl.textContent = `${genreLabel} · ~${totalMin} min flujo completo (aprox.)`;
+      genreLabelEl.textContent = `${genreLabel} · ~${totalMin} min full flow (approx.)`;
     }
     if (flowStepsEl) {
       renderFlowStepsElement(flowStepsEl, formatIntroFlowLine(primaryFlow));
@@ -508,15 +514,15 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
       reasoningEl.textContent = String(recommendation?.reasoning || "");
     }
     if (startBtn && primaryFlow[0]?.mode) {
-      startBtn.textContent = `Comenzar ${getFlowModeShortLabel(String(primaryFlow[0].mode))}`;
+      startBtn.textContent = `Start ${getFlowModeShortLabel(String(primaryFlow[0].mode))}`;
       startBtn.hidden = false;
     } else if (startBtn) {
       startBtn.hidden = true;
     }
     if (overrideSelect) overrideSelect.disabled = false;
     if (whyLink) {
-      whyLink.title = whyText || "Sin explicación adicional.";
-      whyLink.setAttribute("aria-label", `¿Por qué este flujo? ${whyText}`);
+      whyLink.title = whyText || "No additional explanation.";
+      whyLink.setAttribute("aria-label", `Why this flow? ${whyText}`);
     }
     if (quickFlowEl) {
       if (quickFlow.length && quickMin < totalMin) {
@@ -527,7 +533,7 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
             return `<button type="button" data-quick-mode="${mode}">${label}</button>`;
           })
           .join(" → ");
-        quickFlowEl.innerHTML = `¿Tienes menos de ${quickMin} min? → ${labels}`;
+        quickFlowEl.innerHTML = `Only ${quickMin} min? → ${labels}`;
         quickFlowEl.hidden = false;
       } else {
         quickFlowEl.hidden = true;
@@ -558,7 +564,7 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
   const nextStep = getRecommendedStep(recommendation);
   if (continueBtn) {
     if (nextStep?.mode) {
-      continueBtn.textContent = `Continuar con ${getFlowModeShortLabel(String(nextStep.mode))}`;
+      continueBtn.textContent = `Continue with ${getFlowModeShortLabel(String(nextStep.mode))}`;
       continueBtn.hidden = false;
     } else {
       continueBtn.hidden = true;
@@ -571,7 +577,7 @@ export function renderRecommendationPanel(recommendation, doc = getActiveSession
     );
     const smDue = getSmItemsDueToday(doc.docId).length;
     if (reviewPending && smDue > 0) {
-      smBadge.textContent = `${smDue} repaso${smDue === 1 ? "" : "s"} pendiente${smDue === 1 ? "" : "s"}`;
+      smBadge.textContent = `${smDue} review item${smDue === 1 ? "" : "s"} due`;
       smBadge.hidden = false;
     } else {
       smBadge.hidden = true;
@@ -698,8 +704,93 @@ function resetModeSelectUi() {
   document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
     r.checked = false;
   });
-  if (els.modeTriageToggle) els.modeTriageToggle.setAttribute("aria-expanded", "false");
-  if (els.modeTriageBody) els.modeTriageBody.hidden = true;
+  clearFlowRecommendFeedback();
+}
+
+function clearFlowRecommendFeedback() {
+  if (els.flowRecommendStatus) els.flowRecommendStatus.textContent = "";
+  if (els.flowRecommendError) {
+    els.flowRecommendError.hidden = true;
+    els.flowRecommendError.textContent = "";
+  }
+}
+
+function setFlowRecommendLoading(isLoading) {
+  if (els.flowRecommendBtn) {
+    els.flowRecommendBtn.disabled = Boolean(isLoading);
+    els.flowRecommendBtn.textContent = isLoading
+      ? "Analyzing material…"
+      : "Recommend my study flow";
+  }
+  if (els.flowRecommendStatus) {
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
+  }
+}
+
+function setFlowRecommendError(message) {
+  if (!els.flowRecommendError) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    els.flowRecommendError.hidden = true;
+    els.flowRecommendError.textContent = "";
+    return;
+  }
+  els.flowRecommendError.hidden = false;
+  els.flowRecommendError.textContent = text;
+}
+
+/**
+ * Build document hierarchy for flow recommendation (no slow session required).
+ * @param {string} markdownText
+ * @param {string} [llmModel]
+ */
+async function buildHierarchyForFlowRecommendation(markdownText, llmModel) {
+  const text = String(markdownText || "");
+  const needsLlm = text.length >= 3000 && !hasMarkdownHeadings(text);
+  let llmFn = null;
+  const model = normalizeLlmModel(llmModel || getSessionLlmModel());
+  if (needsLlm && getApiKeyForLlmModel(model)) {
+    llmFn = async ({ systemPrompt, userPrompt, temperature, maxTokens, signal }) =>
+      llmChatCompletions({
+        llmModel: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        signal,
+      });
+  }
+  return buildDocumentHierarchy(text, llmFn, { useCache: true });
+}
+
+/**
+ * Upload material from mode-select and compute a fresh study-flow recommendation.
+ * @param {File} file
+ */
+export async function recommendFlowFromUploadedFile(file) {
+  const { cleanedText } = await readAndCleanMaterialText(file);
+  if (!cleanedText.trim()) {
+    throw new Error("The file appears to be empty.");
+  }
+
+  const doc = await ensureDocumentSessionForUpload(cleanedText);
+  const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
+  const hierarchyResult = await buildHierarchyForFlowRecommendation(cleanedText, llmModel);
+
+  if (hierarchyResult) {
+    doc.shared.docHierarchy = hierarchyResult;
+    saveDocumentSession(doc);
+  }
+
+  computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult, { force: true });
+
+  const refreshed = getActiveSession();
+  resetModeSelectUi();
+  renderRecommendationPanel(refreshed?.shared?.modeRecommendation, refreshed);
+  showScreen("modeSelect");
+  return refreshed?.shared?.modeRecommendation ?? null;
 }
 
 export function enterModeSelectScreen() {
@@ -1910,16 +2001,32 @@ function wireSlowScopeHandlers() {
   });
 }
 
-function wireModeTriagePanel() {
-  const toggle = els.modeTriageToggle;
-  const body = els.modeTriageBody;
-  if (!toggle || !body) return;
+function wireFlowRecommendUpload() {
+  const btn = els.flowRecommendBtn;
+  const input = els.flowRecommendFileInput;
+  if (!btn || !input) return;
 
-  toggle.addEventListener("click", () => {
-    const open = toggle.getAttribute("aria-expanded") === "true";
-    const next = !open;
-    toggle.setAttribute("aria-expanded", String(next));
-    body.hidden = !next;
+  btn.addEventListener("click", () => {
+    clearFlowRecommendFeedback();
+    input.click();
+  });
+
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    clearFlowRecommendFeedback();
+    setFlowRecommendLoading(true);
+    try {
+      await recommendFlowFromUploadedFile(file);
+      if (els.flowRecommendStatus) {
+        els.flowRecommendStatus.textContent = "Recommendation ready — see the suggested flow below.";
+      }
+    } catch (err) {
+      setFlowRecommendError(err?.message ? String(err.message) : String(err));
+    } finally {
+      setFlowRecommendLoading(false);
+      input.value = "";
+    }
   });
 }
 
@@ -1942,7 +2049,7 @@ function wireDocLibraryHandlers() {
 
 function wireStudyModeSelector() {
   wireRecommendationPanelHandlers();
-  wireModeTriagePanel();
+  wireFlowRecommendUpload();
   wireDocLibraryHandlers();
 
   document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {

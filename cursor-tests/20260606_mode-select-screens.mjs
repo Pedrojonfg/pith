@@ -37,7 +37,7 @@ const doc = dom.window.document;
 const modeSelectScreen = doc.getElementById("screenModeSelect");
 const createScreen = doc.getElementById("screenPlaceholder");
 const modeSelector = doc.getElementById("studyModeSelector");
-const triageToggle = doc.getElementById("modeTriageToggle");
+const flowRecommendBtn = doc.getElementById("flowRecommendBtn");
 const generateForm = doc.getElementById("generateBlocksForm");
 const backBtn = doc.getElementById("createBackToModesBtn");
 const modeBadge = doc.getElementById("createModeLabel");
@@ -53,7 +53,7 @@ assert(
 
 // --- Happy path: mode picker content only on first screen ---
 assert(modeSelectScreen.contains(modeSelector), "MS: mode selector on mode select screen");
-assert(modeSelectScreen.contains(triageToggle), "MS: triage accordion on mode select screen");
+assert(modeSelectScreen.contains(flowRecommendBtn), "MS: flow recommend button on mode select screen");
 assert(modeSelectScreen.querySelector("h1")?.textContent?.includes("How do you want to study"),
   "MS: mode select heading");
 assert(createScreen.querySelector("h1")?.textContent?.includes("Configure your session"),
@@ -63,7 +63,7 @@ assert(createScreen.querySelector("h1")?.textContent?.includes("Configure your s
 assert(createScreen.contains(backBtn), "MS: back to modes button on configure screen");
 assert(createScreen.contains(modeBadge), "MS: mode badge on configure screen");
 assert(!createScreen.contains(modeSelector), "MS: mode selector absent from configure screen");
-assert(!createScreen.contains(triageToggle), "MS: triage absent from configure screen");
+assert(!createScreen.contains(flowRecommendBtn), "MS: flow recommend absent from configure screen");
 assert(createScreen.contains(generateForm), "MS: upload form on configure screen");
 
 // --- Happy path: navigation wiring in study.js ---
@@ -97,7 +97,7 @@ assert(uiSrc.includes('no visible screen'), "MS: showScreen fallback when all sc
 assert(uiSrc.includes("offline.js"), "MS: isOfflineMode moved out of main.js");
 
 // --- Edge: all mode radios live on mode select screen only ---
-assert(modeRadios.length === 3, "MS: exactly three mode radios (rsvp, slow, cloze)");
+assert(modeRadios.length === 4, "MS: four mode radios (rsvp, slow, cloze, questions)");
 for (const radio of modeRadios) {
   assert(modeSelectScreen.contains(radio), `MS: radio ${radio.value} inside mode select screen`);
 }
@@ -123,15 +123,9 @@ assert(createScreen.getAttribute("aria-hidden") === "false", "MS: create visible
 
 // --- Edge: resetModeSelectUi contract (mirrors study.js) ---
 for (const radio of modeRadios) radio.checked = true;
-const triageBody = doc.getElementById("modeTriageBody");
-triageToggle.setAttribute("aria-expanded", "true");
-triageBody.hidden = false;
 for (const radio of modeRadios) radio.checked = false;
-triageToggle.setAttribute("aria-expanded", "false");
-triageBody.hidden = true;
 assert([...modeRadios].every((r) => !r.checked), "MS: reset clears mode radios");
-assert(triageToggle.getAttribute("aria-expanded") === "false", "MS: reset collapses triage");
-assert(triageBody.hidden === true, "MS: reset hides triage body");
+assert(flowRecommendBtn, "MS: flow recommend button present after reset");
 
 // --- Failure: old combined layout must not regress ---
 assert(
