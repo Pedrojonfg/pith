@@ -26,6 +26,7 @@ export const pacedReaderState = {
 };
 
 let handlersWired = false;
+let pacedMeasureHost = null;
 
 export function loadReadingModePref() {
   try {
@@ -71,8 +72,9 @@ function applyTypographyToPage() {
 }
 
 function getContentHeight() {
+  const minSensible = Math.max(160, Math.floor(window.innerHeight * 0.35));
   const content = document.querySelector(".paced-reader-content");
-  if (content && content.clientHeight > 50) return content.clientHeight;
+  if (content && content.clientHeight >= minSensible) return content.clientHeight;
 
   const main = document.querySelector(".paced-reader-main");
   const toolbar = document.querySelector(".paced-reader-toolbar");
@@ -81,21 +83,51 @@ function getContentHeight() {
     const padTop = parseFloat(style.paddingTop) || 0;
     const padBottom = parseFloat(style.paddingBottom) || 0;
     const gap = parseFloat(style.rowGap || style.gap) || 12;
-    return Math.max(100, main.clientHeight - toolbar.offsetHeight - padTop - padBottom - gap);
+    const derived = main.clientHeight - toolbar.offsetHeight - padTop - padBottom - gap;
+    if (derived >= minSensible) return derived;
   }
 
   return Math.max(300, window.innerHeight - 160);
 }
 
-function buildMeasureContent(typography) {
+function resolvePacedColumnWidth(pageEl) {
+  const measured = Math.max(
+    Number(pageEl?.clientWidth) || 0,
+    Number(pageEl?.closest?.(".paced-reader-page-wrap")?.clientWidth) || 0,
+    Number(document.querySelector(".paced-reader-main")?.clientWidth) || 0,
+  );
+  if (measured >= 120) return Math.min(measured, 68 * 16);
+  return Math.min(Math.max(280, window.innerWidth - 48), 68 * 16);
+}
+
+function ensurePacedMeasureHost(columnWidth) {
+  if (!pacedMeasureHost) {
+    pacedMeasureHost = document.createElement("div");
+    pacedMeasureHost.setAttribute("data-paced-measure-host", "1");
+    pacedMeasureHost.style.position = "absolute";
+    pacedMeasureHost.style.visibility = "hidden";
+    pacedMeasureHost.style.pointerEvents = "none";
+    pacedMeasureHost.style.left = "-9999px";
+    pacedMeasureHost.style.top = "0";
+    pacedMeasureHost.style.boxSizing = "border-box";
+    document.body.appendChild(pacedMeasureHost);
+  }
+  pacedMeasureHost.style.width = `${Math.max(200, Math.floor(Number(columnWidth) || 0))}px`;
+  return pacedMeasureHost;
+}
+
+function buildMeasureContent(typography, columnWidth) {
+  const widthPx = Math.max(200, Math.floor(Number(columnWidth) || 0));
   return (el, slice) => {
-    el.className = "slow-reader-page md-content";
+    el.className = "md-content";
     el.style.fontSize = `${Number(typography.fontSizePx) || TYPO_DEFAULTS.fontSizePx}px`;
     el.style.lineHeight = String(Number(typography.lineHeight) || TYPO_DEFAULTS.lineHeight);
     el.style.fontFamily = String(typography.fontFamily || TYPO_DEFAULTS.fontFamily);
     el.style.whiteSpace = "normal";
     el.style.wordBreak = "break-word";
-    el.style.width = "100%";
+    el.style.width = `${widthPx}px`;
+    el.style.height = "auto";
+    el.style.overflow = "visible";
     el.style.boxSizing = "border-box";
     el.innerHTML = markdownToHtml(slice);
   };
@@ -106,13 +138,20 @@ function recomputeBreakpoints() {
   const pageEl = els.pacedReaderPage;
   if (!pageEl) return [];
   const oldPage = pacedReaderState.currentPageIndex;
+  const columnWidth = resolvePacedColumnWidth(pageEl);
+  const measureContainer = ensurePacedMeasureHost(columnWidth);
   const contentHeight = getContentHeight();
   pacedReaderState.contentHeightUsed = contentHeight;
-  pacedReaderState.breakpoints = computePageBreakpoints(text, pageEl, pacedReaderState.typography, {
-    availableHeight: contentHeight,
-    measureMode: "md",
-    measureContent: buildMeasureContent(pacedReaderState.typography),
-  });
+  pacedReaderState.breakpoints = computePageBreakpoints(
+    text,
+    measureContainer,
+    pacedReaderState.typography,
+    {
+      availableHeight: contentHeight,
+      measureMode: "md-paced",
+      measureContent: buildMeasureContent(pacedReaderState.typography, columnWidth),
+    },
+  );
   const total = getPageCount(pacedReaderState.breakpoints);
   pacedReaderState.currentPageIndex = Math.min(
     Math.max(0, oldPage),
@@ -168,6 +207,7 @@ export function renderPacedReaderPage(opts = {}) {
     requestAnimationFrame(() => {
       const h = getContentHeight();
       if (h > 50 && Math.abs(h - pacedReaderState.contentHeightUsed) > 4) {
+        invalidatePaginationCache();
         renderPacedReaderPage({ skipLayoutRetry: true });
       }
     });
@@ -213,7 +253,8 @@ export function startPacedReadForText(explanationText, { title = "", onDone } = 
   hideSidebar();
   setPacedReaderOverlayActive(true);
   syncBlockTitle();
-  renderPacedReaderPage();
+  invalidatePaginationCache();
+  requestAnimationFrame(() => renderPacedReaderPage());
 }
 
 export function wirePacedReaderHandlers({ onSwitchToRsvp } = {}) {
