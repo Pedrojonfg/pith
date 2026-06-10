@@ -1993,6 +1993,8 @@ function wireStudyModeSelector() {
   });
 }
 
+let splitMergeSummaryEls = null;
+
 function ensureSplitMergeSummaryEls() {
   if (splitMergeSummaryEls) return splitMergeSummaryEls;
   const host = els.screenBlocksList;
