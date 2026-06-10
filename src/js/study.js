@@ -102,6 +102,7 @@ import {
   parseImportedIndexText,
   parseOfflinePackMarkdown,
   prefetchState,
+  bridgePrefetchState,
   buildBlockConfigKey,
   generateQuestionsOnlyForIndex,
   generateQuestionsBlockForIndex,
@@ -120,6 +121,8 @@ import {
   storeActiveSession,
   triggerPrefetch,
   setOnPrefetchReady,
+  setOnBridgeReady,
+  triggerBridgePrefetch,
   getPrefetchedBlock,
   hasGeneratedBlockContent,
   isQuestionsStudyMode,
@@ -2974,17 +2977,59 @@ function renderTransitionSneakPeek(o, finishedIdx) {
 
   const nextIndex = finishedIdx + 1;
   const expectedKey = String(o.expectedPrefetchConfigKey || "");
-  const isReady =
+  const blockReady =
     prefetchState?.blockIndex === nextIndex &&
     prefetchState?.status === "ready" &&
     String(prefetchState?.configKey || "") === expectedKey;
 
-  const placeholder = "Preparing next block…";
+  const bridgeText = String(bridgePrefetchState?.text || "").trim();
+  const bridgeReady =
+    bridgePrefetchState?.finishedBlockIndex === finishedIdx &&
+    bridgePrefetchState?.nextBlockIndex === nextIndex &&
+    bridgePrefetchState?.status === "ready" &&
+    Boolean(bridgeText);
+  const bridgeGenerating =
+    bridgePrefetchState?.finishedBlockIndex === finishedIdx &&
+    bridgePrefetchState?.nextBlockIndex === nextIndex &&
+    bridgePrefetchState?.status === "generating";
 
-  if (!isReady) {
+  if (!blockReady) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = placeholder;
+    o.sneakPeekText.textContent = "Preparing next block…";
+    return;
+  }
+
+  if (bridgeReady) {
+    o.sneakPeekWrap.hidden = false;
+    o.sneakPeekText.className = "";
+    o.sneakPeekText.textContent = bridgeText;
+    return;
+  }
+
+  const bridgeMatchesPair =
+    bridgePrefetchState?.finishedBlockIndex === finishedIdx &&
+    bridgePrefetchState?.nextBlockIndex === nextIndex;
+  if (
+    !bridgeMatchesPair &&
+    bridgePrefetchState?.status !== "generating" &&
+    bridgePrefetchState?.status !== "ready"
+  ) {
+    const nextBlockData = prefetchState?.data || getBlock(nextIndex);
+    if (hasGeneratedBlockContent(nextBlockData)) {
+      triggerBridgePrefetch(
+        finishedIdx,
+        nextIndex,
+        nextBlockData,
+        String(prefetchState?.configKey || expectedKey),
+      );
+    }
+  }
+
+  if (bridgeGenerating) {
+    o.sneakPeekWrap.hidden = false;
+    o.sneakPeekText.className = "hint";
+    o.sneakPeekText.textContent = "Writing transition preview…";
     return;
   }
 
@@ -3039,7 +3084,7 @@ function getOrCreateTransitionOverlay() {
 
   const sneakPeekLabel = document.createElement("div");
   sneakPeekLabel.className = "hint";
-  sneakPeekLabel.textContent = "Next block";
+  sneakPeekLabel.textContent = "What's next";
 
   const sneakPeekText = document.createElement("div");
   sneakPeekText.className = "hint";
@@ -6435,6 +6480,10 @@ export function wireStudyHandlers() {
   }
 
   setOnPrefetchReady(() => {
+    refreshUiOnPrefetchReady();
+  });
+
+  setOnBridgeReady(() => {
     refreshUiOnPrefetchReady();
   });
 
