@@ -2,13 +2,21 @@ import { readFile } from "node:fs/promises";
 const mockMain = new URL("./mock-main.mjs", import.meta.url).href;
 const mockUi = new URL("./mock-ui.mjs", import.meta.url).href;
 
+/** Feature closure suites (validate tooling index). */
+export const FEATURE_TEST_SUITES = Object.freeze({
+  "20260611-rsvp-block-recommend": "cursor-tests/20260611_rsvp-block-recommend.mjs",
+});
+
 /** Strip ?v= cache busters; stub browser-only modules for Node tests. */
 export async function resolve(specifier, context, nextResolve) {
   const base = specifier.split("?")[0];
   if (base.endsWith("/main.js") || base.endsWith("\\main.js")) {
     return { url: mockMain, shortCircuit: true };
   }
-  if (base.endsWith("/ui.js") || base.endsWith("\\ui.js")) {
+  if (
+    (base.endsWith("/ui.js") || base.endsWith("\\ui.js")) &&
+    !specifier.includes("realui=1")
+  ) {
     return { url: mockUi, shortCircuit: true };
   }
   if (specifier.includes("?")) {

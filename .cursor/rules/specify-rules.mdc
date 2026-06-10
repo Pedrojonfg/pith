@@ -6,9 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260609-flow-recommendation/plan.md`
-- **Spec**: `specs/20260609-flow-recommendation/spec.md`
-- **Data model**: `specs/20260609-flow-recommendation/data-model.md`
-- **Contracts**: `specs/20260609-flow-recommendation/contracts/`
+- **Active plan**: `specs/20260611-rsvp-block-recommend/plan.md`
+- **Spec**: `specs/20260611-rsvp-block-recommend/spec.md`
+- **Data model**: `specs/20260611-rsvp-block-recommend/data-model.md`
+- **Contracts**: `specs/20260611-rsvp-block-recommend/contracts/`
+- **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

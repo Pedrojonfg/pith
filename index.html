@@ -238,6 +238,59 @@
             <h1>Choose a study mode</h1>
             <p class="mode-select-lead">Pick how you want to work with your material. Switch anytime with <strong>+</strong>.</p>
 
+            <div id="flowRecommendUpload" class="flow-recommend-upload" hidden>
+              <button type="button" id="flowRecommendBtn" class="btn-primary flow-recommend-btn">
+                Recommend my study flow
+              </button>
+              <input
+                type="file"
+                id="flowRecommendFileInput"
+                class="sr-only"
+                accept=".pdf,.html,.txt,.md"
+              />
+              <p class="flow-recommend-hint hint">
+                Upload a paper or notes to get a personalized study path.
+              </p>
+              <span id="flowRecommendStatus" class="flow-recommend-status" role="status"></span>
+              <p id="flowRecommendError" class="flow-recommend-error" role="alert" hidden></p>
+            </div>
+
+            <div id="recommendationPanel" class="flow-panel recommendation-panel" hidden>
+              <p id="recommendationGenreLabel" class="flow-panel-genre"></p>
+              <p id="recommendationFlowTitle" class="flow-panel-flow-title"></p>
+              <p id="recommendationReasoning" class="flow-panel-reasoning"></p>
+              <div class="flow-panel-actions">
+                <button type="button" id="recommendationStartBtn" class="btn-primary"></button>
+                <label class="flow-override-label">
+                  <span class="hint">Another mode</span>
+                  <select
+                    id="recommendationOverrideSelect"
+                    class="flow-override-select"
+                    aria-label="Go directly to another study mode"
+                  >
+                    <option value="">Go directly to…</option>
+                    <option value="rsvp">RSVP</option>
+                    <option value="slow">Slow Mode</option>
+                    <option value="cloze">Cloze Detection</option>
+                    <option value="questions">Questions</option>
+                  </select>
+                </label>
+              </div>
+              <details id="recommendationWhyDetails" class="flow-why-details">
+                <summary>Why this flow?</summary>
+                <p id="recommendationWhyBody" class="flow-why-body"></p>
+              </details>
+              <p id="recommendationQuickFlow" class="flow-quick-link" hidden></p>
+              <div id="recommendationProgress" class="flow-progress" hidden>
+                <div
+                  id="recommendationProgressSteps"
+                  class="flow-progress-stepper"
+                  role="list"
+                  aria-label="Study flow progress"
+                ></div>
+              </div>
+            </div>
+
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
               <legend class="sr-only">Study mode</legend>
               <div class="study-mode-options">
@@ -397,6 +450,16 @@
                 <summary>Blocks, comments &amp; questions</summary>
                 <div id="rsvpBlocksSection" class="form-collapsible-body">
                   <label for="blocksInput">Blocks</label>
+                  <div class="recommend-blocks-controls">
+                    <button type="button" id="recommendBlocksBtn" class="recommend-blocks-btn">
+                      Recommend block count
+                    </button>
+                    <span
+                      id="recommendBlocksStatus"
+                      class="recommend-blocks-status hint"
+                      role="status"
+                    ></span>
+                  </div>
                   <input
                     id="blocksInput"
                     name="blocks"
@@ -407,6 +470,12 @@
                     value="20"
                     required
                   />
+                  <p
+                    id="recommendBlocksWhy"
+                    class="recommend-blocks-why hint"
+                    hidden
+                    aria-live="polite"
+                  ></p>
 
                   <label for="studyNotesInput">Comments / study focus (optional)</label>
                   <textarea

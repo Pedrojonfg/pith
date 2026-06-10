@@ -45,19 +45,20 @@ assert(indexHtml.includes("Generate items"), "EN: cloze generate button");
 assert(!indexHtml.includes("Generar ítems"), "EN: no Spanish cloze CTA");
 assert(!indexHtml.includes("Recomiéndame"), "EN: no Spanish upload CTA");
 assert(!indexHtml.includes("¿Qué modo elijo?"), "EN: triage removed");
-assert(!indexHtml.includes('id="flowRecommendBtn"'), "EN: flow upload button removed");
-assert(!indexHtml.includes('id="recommendationPanel"'), "EN: recommendation panel removed");
+assert(indexHtml.includes('id="flowRecommendBtn"'), "EN: flow upload button on mode select");
+assert(indexHtml.includes('id="recommendationPanel"'), "EN: recommendation panel on mode select");
+assert(indexHtml.includes("Recommend my study flow"), "EN: flow CTA copy");
 
 const dom = new JSDOM(indexHtml);
 const htmlDoc = dom.window.document;
 const modeSelect = htmlDoc.getElementById("screenModeSelect");
 assert(modeSelect?.querySelector("#studyModeSelector"), "EN: mode selector on mode select");
-assert(!modeSelect?.querySelector("#flowRecommendBtn"), "EN: no upload on mode select");
+assert(modeSelect?.querySelector("#flowRecommendUpload"), "EN: upload wrapper on mode select");
 
 // --- study.js: silent recommendation persist, no panel ---
 assert(studySrc.includes("computeAndPersistModeRecommendation"), "EN: recommendation compute on upload");
-assert(!studySrc.includes("wireFlowRecommendUpload"), "EN: upload wiring removed");
-assert(!studySrc.includes("renderRecommendationPanel"), "EN: panel renderer removed");
+assert(studySrc.includes("wireFlowRecommendUpload"), "EN: upload wiring present");
+assert(studySrc.includes("renderFlowPanel"), "EN: panel renderer present");
 assert(recommenderSrc.includes(GENRE_LABEL_EN.unknown), "EN: genre labels in recommender");
 
 // --- Backend: recommendation still computed and stored ---
@@ -77,7 +78,7 @@ assert(
 );
 
 assert(mainCss.includes(".form-collapsible"), "EN: collapsible section styles");
-assert(!mainCss.includes(".flow-recommend-upload"), "EN: flow upload styles removed");
+assert(mainCss.includes(".flow-recommend-upload"), "EN: flow upload styles present");
 
 console.log(`\n20260610_flow-recommend-upload-en: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

@@ -9,23 +9,22 @@ let blockReadContentProvider = null;
 /** @type {() => string} */
 let resolveChromeStudyMode = () => "rsvp";
 
+/** @type {() => boolean} */
+let resolveChromeHasConcepts = () => false;
+
 let currentScreenId = "setup";
 let blockReadWanted = false;
 let guideToggleSuppressed = false;
 
-const SCREENS_WITH_GUIDE_TOGGLE = new Set([
-  "test",
-  "socratic",
-  "between",
-  "review",
-  "reviewGenerating",
-  "reviewSummary",
-  "clozeStudy",
-]);
-
 /** @param {() => string} resolver */
 export function registerChromeStudyModeResolver(resolver) {
   resolveChromeStudyMode = typeof resolver === "function" ? resolver : () => "rsvp";
+  syncFloatingChrome();
+}
+
+/** @param {() => boolean} resolver */
+export function registerChromeHasConceptsResolver(resolver) {
+  resolveChromeHasConcepts = typeof resolver === "function" ? resolver : () => false;
   syncFloatingChrome();
 }
 
@@ -38,36 +37,69 @@ function normalizeChromeStudyMode(mode) {
   return "rsvp";
 }
 
-function syncFloatingChrome() {
+/**
+ * @typedef {object} ChromeVisibilityContext
+ * @property {string} screenId
+ * @property {string} studyMode
+ * @property {boolean} blockReadWanted
+ * @property {boolean} hasConcepts
+ * @property {boolean} offline
+ * @property {boolean} assessmentActive
+ * @property {boolean} [guideToggleSuppressed]
+ */
+
+/**
+ * Pure chrome visibility rules for floating FABs.
+ * @param {ChromeVisibilityContext} ctx
+ * @returns {{ showBlockReadFab: boolean, showGuideFab: boolean }}
+ */
+export function resolveChromeVisibility(ctx) {
+  const studyMode = normalizeChromeStudyMode(ctx.studyMode);
+  const isRsvp = studyMode === "rsvp";
+  const isClozeOrQuestions = studyMode === "cloze" || studyMode === "questions";
+  const assessmentActive = Boolean(ctx.assessmentActive);
+  const guideToggleSuppressed = Boolean(ctx.guideToggleSuppressed);
+
+  const showBlockReadFab =
+    isRsvp &&
+    Boolean(ctx.blockReadWanted) &&
+    (ctx.screenId === "test" || ctx.screenId === "socratic") &&
+    !assessmentActive;
+
+  const showGuideFab =
+    isClozeOrQuestions &&
+    !ctx.offline &&
+    !assessmentActive &&
+    !guideToggleSuppressed &&
+    (ctx.screenId === "test" ||
+      ctx.screenId === "socratic" ||
+      (ctx.screenId === "between" && Boolean(ctx.hasConcepts)));
+
+  return { showBlockReadFab, showGuideFab };
+}
+
+export function syncFloatingChrome() {
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
   const blockReadBtn = document.getElementById("block-read-toggle-btn");
   const blockReadSidebar = document.getElementById("block-read-sidebar");
-  const studyMode = normalizeChromeStudyMode(resolveChromeStudyMode());
-  const isSlow = studyMode === "slow";
-  const isRsvp = studyMode === "rsvp";
-  const offline = isOfflineMode();
-  const assessmentActive = document.body.classList.contains("assessment-active");
-
-  const showGuide =
-    !isSlow &&
-    !offline &&
-    !assessmentActive &&
-    !guideToggleSuppressed &&
-    SCREENS_WITH_GUIDE_TOGGLE.has(currentScreenId);
+  const { showBlockReadFab, showGuideFab } = resolveChromeVisibility({
+    screenId: currentScreenId,
+    studyMode: resolveChromeStudyMode(),
+    blockReadWanted,
+    hasConcepts: resolveChromeHasConcepts(),
+    offline: isOfflineMode(),
+    assessmentActive: document.body.classList.contains("assessment-active"),
+    guideToggleSuppressed,
+  });
 
   if (sidebarToggleBtn) {
-    sidebarToggleBtn.hidden = !showGuide;
+    sidebarToggleBtn.hidden = !showGuideFab;
     sidebarToggleBtn.style.display = "";
   }
 
-  const showBlockRead =
-    isRsvp &&
-    blockReadWanted &&
-    (currentScreenId === "test" || currentScreenId === "socratic");
-
-  if (blockReadBtn) blockReadBtn.hidden = !showBlockRead;
+  if (blockReadBtn) blockReadBtn.hidden = !showBlockReadFab;
   if (blockReadSidebar) {
-    if (!showBlockRead) {
+    if (!showBlockReadFab) {
       blockReadSidebar.hidden = true;
       closeBlockReadSidebar();
     } else {
@@ -87,6 +119,22 @@ export const els = {
   docLibraryList: document.getElementById("docLibraryList"),
   docLibraryBackBtn: document.getElementById("docLibraryBackBtn"),
   modeSelectDocLibraryBtn: document.getElementById("modeSelectDocLibraryBtn"),
+  flowRecommendUpload: document.getElementById("flowRecommendUpload"),
+  flowRecommendBtn: document.getElementById("flowRecommendBtn"),
+  flowRecommendFileInput: document.getElementById("flowRecommendFileInput"),
+  flowRecommendStatus: document.getElementById("flowRecommendStatus"),
+  flowRecommendError: document.getElementById("flowRecommendError"),
+  recommendationPanel: document.getElementById("recommendationPanel"),
+  recommendationGenreLabel: document.getElementById("recommendationGenreLabel"),
+  recommendationFlowTitle: document.getElementById("recommendationFlowTitle"),
+  recommendationReasoning: document.getElementById("recommendationReasoning"),
+  recommendationStartBtn: document.getElementById("recommendationStartBtn"),
+  recommendationOverrideSelect: document.getElementById("recommendationOverrideSelect"),
+  recommendationWhyDetails: document.getElementById("recommendationWhyDetails"),
+  recommendationWhyBody: document.getElementById("recommendationWhyBody"),
+  recommendationQuickFlow: document.getElementById("recommendationQuickFlow"),
+  recommendationProgress: document.getElementById("recommendationProgress"),
+  recommendationProgressSteps: document.getElementById("recommendationProgressSteps"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenBlocksList: document.getElementById("screenBlocksList"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
@@ -192,6 +240,9 @@ export const els = {
   resumeSessionStatus: document.getElementById("resumeSessionStatus"),
   resumeSessionError: document.getElementById("resumeSessionError"),
   blocksInput: document.getElementById("blocksInput"),
+  recommendBlocksBtn: document.getElementById("recommendBlocksBtn"),
+  recommendBlocksStatus: document.getElementById("recommendBlocksStatus"),
+  recommendBlocksWhy: document.getElementById("recommendBlocksWhy"),
   languageSelect: document.getElementById("languageSelect"),
   studyNotesInput: document.getElementById("studyNotesInput"),
   nTestMinusBtn: document.getElementById("nTestMinusBtn"),

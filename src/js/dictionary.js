@@ -7,6 +7,14 @@ import { state, getBlocksSafe } from "./session.js?v=20260527_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { els } from "./ui.js?v=20260525_1";
 
+/** @type {null | (() => void)} */
+let dictionaryChromeSyncHook = null;
+
+/** @param {() => void} fn */
+export function registerDictionaryChromeSyncHook(fn) {
+  dictionaryChromeSyncHook = typeof fn === "function" ? fn : null;
+}
+
 function normalizeConceptEntry(c) {
   const obj = c && typeof c === "object" ? c : {};
   const term = String(obj.term || "").trim();
@@ -496,6 +504,7 @@ export function updateDictionaryButtonVisibility() {
     els.screenBetweenBlocks.getAttribute("aria-hidden") === "false";
   const okBlock = state.activeBlockIndex >= 1;
   els.dictionaryBtn.hidden = !(any && inSession && okBlock);
+  dictionaryChromeSyncHook?.();
 }
 
 export function renderBetweenBlocksDictionary({ nextBlockIndex }) {

@@ -22,7 +22,18 @@ import {
   hasMarkdownHeadings,
 } from "./normalization/hierarchy.js?v=20260609_1";
 import { analyzeText } from "./recommendation/analyzer.js?v=20260609_1";
+import {
+  computeBlockCountRecommendation,
+  formatBlockCountReasoning,
+} from "./recommendation/block-count-recommender.js?v=20260611_1";
 import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260609_1";
+import {
+  buildBlockSplitFingerprint,
+  getBlockSplitCache,
+  invalidateBlockSplitCache,
+  isBlockSplitCacheValid,
+  setBlockSplitCache,
+} from "./block-split-cache.js";
 import {
   recordUserOverride,
   updateFlowProgress,
@@ -39,6 +50,7 @@ import {
   getConceptHighlightsForBlock,
   getSortedSessionConcepts,
   restoreSessionConceptStorage,
+  registerDictionaryChromeSyncHook,
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
 } from "./dictionary.js?v=20260526_1";
@@ -101,6 +113,8 @@ import {
   shouldTriggerCommentReply,
   describeSplitRunMetaForUi,
   storeDefaultQuestionConfig,
+  runConceptInventory,
+  packInventoryToBlocks,
   twoPhaseConceptSplit,
   state,
   storeActiveSession,
@@ -122,7 +136,9 @@ import {
   getStudyLanguage,
   hideSidebar,
   setBlockReadContentProvider,
+  registerChromeHasConceptsResolver,
   registerChromeStudyModeResolver,
+  syncFloatingChrome,
   setBlockReadSidebarAvailable,
   setFullPackEntryCta,
   setOfflinePackButtonVisibility,
@@ -283,6 +299,405 @@ export function applyFlowRecommendationOnEnterMode(chosenMode, doc = getActiveSe
   }
 }
 
+/** @type {Record<string, string>} */
+const FLOW_MODE_SHORT_LABELS = {
+  slow: "Slow",
+  cloze: "Cloze",
+  review: "Review",
+  rsvp: "RSVP",
+  questions: "Questions",
+};
+
+/**
+ * @param {string} mode
+ * @returns {string}
+ */
+export function getFlowModeShortLabel(mode) {
+  const slot = normalizeStudyMode(mode);
+  return FLOW_MODE_SHORT_LABELS[slot] || getStudyModeLabel(slot);
+}
+
+/**
+ * @param {Array<{ estimatedTimeMin?: number }> | null | undefined} steps
+ * @returns {number}
+ */
+export function sumFlowTimeMin(steps) {
+  if (!Array.isArray(steps)) return 0;
+  return steps.reduce((sum, step) => sum + (Number(step?.estimatedTimeMin) || 0), 0);
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} recommendation
+ * @returns {boolean}
+ */
+function hasValidModeRecommendation(recommendation) {
+  if (!recommendation || typeof recommendation !== "object") return false;
+  const flow = recommendation.primaryFlow;
+  return Array.isArray(flow) && flow.length > 0;
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} doc
+ * @returns {'cta_upload'|'intro'|'progress'|'hidden'}
+ */
+export function resolveFlowPanelViewState(doc) {
+  const recommendation = doc?.shared?.modeRecommendation;
+  if (recommendation && typeof recommendation === "object" && recommendation.userOverride) {
+    return "hidden";
+  }
+  if (hasValidModeRecommendation(recommendation)) {
+    const completed = Array.isArray(recommendation.completedSteps)
+      ? recommendation.completedSteps
+      : [];
+    if (completed.length > 0) return "progress";
+    return "intro";
+  }
+  return "cta_upload";
+}
+
+/**
+ * @param {Array<{ mode?: string }>} steps
+ * @returns {string}
+ */
+export function formatIntroFlowLine(steps) {
+  if (!Array.isArray(steps) || !steps.length) return "";
+  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" → ");
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} recommendation
+ * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
+ * @returns {string}
+ */
+function resolveFlowWhyText(recommendation, doc = getActiveSession()) {
+  const hierarchy = doc?.shared?.docHierarchy;
+  const pedagogical =
+    hierarchy && typeof hierarchy === "object" && hierarchy.pedagogicalMeta
+      ? hierarchy.pedagogicalMeta
+      : null;
+  const genreReasoning =
+    pedagogical && typeof pedagogical === "object"
+      ? String(pedagogical.genreReasoning || "").trim()
+      : "";
+  if (genreReasoning) return genreReasoning;
+  return String(recommendation?.reasoning || "").trim();
+}
+
+/**
+ * @param {HTMLElement | null | undefined} host
+ * @param {Array<{ id?: string, mode?: string, label?: string }>} steps
+ * @param {Set<string>} completed
+ * @param {number} currentStepIndex
+ */
+function renderFlowProgressStepper(host, steps, completed, currentStepIndex) {
+  if (!host) return;
+  host.replaceChildren();
+  steps.forEach((step, index) => {
+    if (index > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "flow-progress-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = "→";
+      host.appendChild(arrow);
+    }
+    const chip = document.createElement("span");
+    chip.className = "flow-progress-step";
+    chip.setAttribute("role", "listitem");
+    const short = getFlowModeShortLabel(String(step?.mode || ""));
+    if (step?.id && completed.has(step.id)) {
+      chip.classList.add("completed");
+      chip.textContent = `${short} ✓`;
+    } else if (index === currentStepIndex) {
+      chip.classList.add("current");
+      chip.setAttribute("aria-current", "step");
+      chip.textContent = short;
+    } else {
+      chip.classList.add("upcoming");
+      chip.textContent = short;
+    }
+    host.appendChild(chip);
+  });
+}
+
+function clearFlowRecommendFeedback() {
+  if (els.flowRecommendStatus) els.flowRecommendStatus.textContent = "";
+  if (els.flowRecommendError) {
+    els.flowRecommendError.hidden = true;
+    els.flowRecommendError.textContent = "";
+  }
+}
+
+function setFlowRecommendLoading(isLoading) {
+  if (els.flowRecommendBtn) {
+    els.flowRecommendBtn.disabled = Boolean(isLoading);
+    els.flowRecommendBtn.textContent = isLoading
+      ? "Analyzing material…"
+      : "Recommend my study flow";
+  }
+  if (els.flowRecommendStatus) {
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
+  }
+}
+
+function setFlowRecommendError(message) {
+  if (!els.flowRecommendError) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    els.flowRecommendError.hidden = true;
+    els.flowRecommendError.textContent = "";
+    return;
+  }
+  els.flowRecommendError.hidden = false;
+  els.flowRecommendError.textContent = text;
+}
+
+/**
+ * Build document hierarchy for flow recommendation (no slow session required).
+ * @param {string} markdownText
+ * @param {string} [llmModel]
+ */
+async function buildHierarchyForFlowRecommendation(markdownText, llmModel) {
+  const text = String(markdownText || "");
+  const needsLlm = text.length >= 3000 && !hasMarkdownHeadings(text);
+  let llmFn = null;
+  const model = normalizeLlmModel(llmModel || getSessionLlmModel());
+  if (needsLlm && getApiKeyForLlmModel(model)) {
+    llmFn = async ({ systemPrompt, userPrompt, temperature, maxTokens, signal }) =>
+      llmChatCompletions({
+        llmModel: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature,
+        max_tokens: maxTokens,
+        signal,
+      });
+  }
+  return buildDocumentHierarchy(text, llmFn, { useCache: true });
+}
+
+/**
+ * Upload material from mode-select and compute a fresh study-flow recommendation.
+ * @param {File} file
+ */
+export async function recommendFlowFromUploadedFile(file) {
+  const { cleanedText } = await readAndCleanMaterialText(file);
+  if (!cleanedText.trim()) {
+    throw new Error("The file appears to be empty.");
+  }
+
+  const doc = await ensureDocumentSessionForUpload(cleanedText);
+  const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
+  const hierarchyResult = await buildHierarchyForFlowRecommendation(cleanedText, llmModel);
+
+  if (hierarchyResult) {
+    doc.shared.docHierarchy = hierarchyResult;
+    saveDocumentSession(doc);
+  }
+
+  computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult, { force: true });
+
+  const refreshed = getActiveSession();
+  resetModeSelectUi();
+  renderFlowPanel(refreshed);
+  showScreen("modeSelect");
+  return refreshed?.shared?.modeRecommendation ?? null;
+}
+
+function startReviewFromRecommendation() {
+  const session =
+    loadSessionForMode("questions") ||
+    loadSessionForMode("rsvp") ||
+    loadActiveSession();
+  if (session) {
+    state.activeSession = session;
+    storeActiveSession(session);
+    const total = Math.max(1, getTotalBlocksSafe());
+    const indices = Array.from({ length: total }, (_, i) => i);
+    try {
+      startReviewFromSessionBlocks({ blockIndices: indices, reviewType: "both" });
+      return;
+    } catch {
+      // fall through to review config
+    }
+  }
+  els.reviewSessionBtn?.click();
+}
+
+/**
+ * @param {string} mode
+ */
+function startModeFromRecommendation(mode) {
+  const normalized = normalizeStudyMode(mode);
+  if (normalized === "review") {
+    startReviewFromRecommendation();
+    return;
+  }
+  enterCreateScreenForMode(normalized);
+}
+
+let flowPanelWired = false;
+
+function wireFlowPanelHandlers() {
+  if (flowPanelWired) return;
+  flowPanelWired = true;
+
+  els.recommendationStartBtn?.addEventListener("click", () => {
+    const doc = getActiveSession();
+    const recommendation = doc?.shared?.modeRecommendation;
+    const viewState = resolveFlowPanelViewState(doc);
+    const step =
+      viewState === "progress"
+        ? getRecommendedStep(recommendation)
+        : Array.isArray(recommendation?.primaryFlow)
+          ? recommendation.primaryFlow[0]
+          : null;
+    if (step?.mode) startModeFromRecommendation(String(step.mode));
+  });
+
+  els.recommendationOverrideSelect?.addEventListener("change", (event) => {
+    const select = event.target;
+    const mode = select && "value" in select ? String(select.value || "").trim() : "";
+    if (!mode) return;
+    const doc = getActiveSession();
+    if (!doc?.shared?.modeRecommendation) return;
+    const updated = recordUserOverride(doc.shared.modeRecommendation, mode);
+    doc.shared.modeRecommendation = updated;
+    updateRecommendation(doc.docId, updated);
+    renderFlowPanel(doc);
+    startModeFromRecommendation(mode);
+    if (select && "value" in select) select.value = "";
+  });
+
+  els.recommendationQuickFlow?.addEventListener("click", (event) => {
+    const trigger = event.target.closest?.("[data-quick-mode]");
+    if (!trigger) return;
+    const mode = trigger.getAttribute("data-quick-mode");
+    if (mode) startModeFromRecommendation(mode);
+  });
+}
+
+export function wireFlowRecommendUpload() {
+  const btn = els.flowRecommendBtn;
+  const input = els.flowRecommendFileInput;
+  if (!btn || !input) return;
+
+  btn.addEventListener("click", () => {
+    clearFlowRecommendFeedback();
+    input.click();
+  });
+
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    clearFlowRecommendFeedback();
+    setFlowRecommendLoading(true);
+    try {
+      await recommendFlowFromUploadedFile(file);
+      if (els.flowRecommendStatus) {
+        els.flowRecommendStatus.textContent = "Recommendation ready — see the suggested flow below.";
+      }
+    } catch (err) {
+      setFlowRecommendError(err?.message ? String(err.message) : String(err));
+    } finally {
+      setFlowRecommendLoading(false);
+      input.value = "";
+    }
+  });
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
+ */
+export function renderFlowPanel(doc = getActiveSession()) {
+  const viewState = resolveFlowPanelViewState(doc);
+  const uploadWrap = els.flowRecommendUpload;
+  const panel = els.recommendationPanel;
+  const recommendation = doc?.shared?.modeRecommendation;
+
+  if (uploadWrap) uploadWrap.hidden = viewState !== "cta_upload";
+  if (panel) panel.hidden = viewState !== "intro" && viewState !== "progress";
+
+  if (viewState === "hidden" || viewState === "cta_upload") return;
+  if (!hasValidModeRecommendation(recommendation) || !panel) return;
+
+  const primaryFlow = Array.isArray(recommendation.primaryFlow) ? recommendation.primaryFlow : [];
+  const quickFlow = Array.isArray(recommendation.quickFlow) ? recommendation.quickFlow : [];
+  const analysis =
+    recommendation.analysis && typeof recommendation.analysis === "object"
+      ? recommendation.analysis
+      : {};
+  const genreLabel = String(analysis.genreLabel || "Academic text");
+  const totalMin = sumFlowTimeMin(primaryFlow);
+  const quickMin = sumFlowTimeMin(quickFlow);
+  const whyText = resolveFlowWhyText(recommendation, doc);
+
+  if (els.recommendationGenreLabel) {
+    els.recommendationGenreLabel.textContent = `${genreLabel} · ~${totalMin} min full flow (approx.)`;
+  }
+  if (els.recommendationFlowTitle) {
+    els.recommendationFlowTitle.textContent = formatIntroFlowLine(primaryFlow);
+  }
+  if (els.recommendationReasoning) {
+    els.recommendationReasoning.textContent = String(recommendation.reasoning || "");
+  }
+  if (els.recommendationWhyBody) {
+    els.recommendationWhyBody.textContent = whyText || "No additional explanation.";
+  }
+
+  const nextStep =
+    viewState === "progress" ? getRecommendedStep(recommendation) : primaryFlow[0];
+  if (els.recommendationStartBtn) {
+    if (nextStep?.mode) {
+      const prefix = viewState === "progress" ? "Continue with" : "Start";
+      els.recommendationStartBtn.textContent = `${prefix} ${getFlowModeShortLabel(String(nextStep.mode))}`;
+      els.recommendationStartBtn.hidden = false;
+    } else {
+      els.recommendationStartBtn.hidden = true;
+    }
+  }
+
+  if (els.recommendationOverrideSelect) {
+    els.recommendationOverrideSelect.disabled = false;
+  }
+
+  if (els.recommendationQuickFlow) {
+    if (quickFlow.length && quickMin < totalMin) {
+      const labels = quickFlow
+        .map((step) => {
+          const mode = String(step?.mode || "");
+          const label = getFlowModeShortLabel(mode);
+          return `<button type="button" data-quick-mode="${mode}">${label}</button>`;
+        })
+        .join(" → ");
+      els.recommendationQuickFlow.innerHTML = `Only ~${quickMin} min? → ${labels}`;
+      els.recommendationQuickFlow.hidden = false;
+    } else {
+      els.recommendationQuickFlow.hidden = true;
+      els.recommendationQuickFlow.textContent = "";
+    }
+  }
+
+  const showStepper = viewState === "intro" || viewState === "progress";
+  if (els.recommendationProgress) {
+    els.recommendationProgress.hidden = !showStepper;
+  }
+  if (els.recommendationProgressSteps && showStepper) {
+    const completed = new Set(
+      Array.isArray(recommendation.completedSteps) ? recommendation.completedSteps : [],
+    );
+    const currentStepIndex =
+      typeof recommendation.currentStepIndex === "number" ? recommendation.currentStepIndex : 0;
+    renderFlowProgressStepper(
+      els.recommendationProgressSteps,
+      primaryFlow,
+      completed,
+      viewState === "intro" ? -1 : currentStepIndex,
+    );
+  }
+}
+
 export function persistModeSliceToDocument(doc, mode, slice) {
   if (!doc?.modes) return;
   const slot = normalizeStudyMode(mode);
@@ -401,12 +816,14 @@ function resetModeSelectUi() {
   document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
     r.checked = false;
   });
+  clearFlowRecommendFeedback();
 }
 
 export function enterModeSelectScreen() {
   persistFlowRecommendationProgress();
   resetModeSelectUi();
   resetCreateScreenModeUi();
+  renderFlowPanel(getActiveSession());
   showScreen("modeSelect");
 }
 
@@ -515,6 +932,8 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = showBlockConfig;
+  if (els.recommendBlocksBtn) els.recommendBlocksBtn.hidden = !isRsvp;
+  if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   if (els.generateBlocksBtn) {
     els.generateBlocksBtn.textContent =
       isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
@@ -1627,6 +2046,8 @@ function wireDocLibraryHandlers() {
 }
 
 function wireStudyModeSelector() {
+  wireFlowPanelHandlers();
+  wireFlowRecommendUpload();
   wireDocLibraryHandlers();
 
   document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {
@@ -1958,6 +2379,157 @@ function setGenerateError(message) {
 function clearGenerateError() {
   els.generateBlocksError.hidden = true;
   els.generateBlocksError.textContent = "";
+}
+
+function clearRecommendBlocksUi() {
+  if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = "";
+  if (els.recommendBlocksWhy) {
+    els.recommendBlocksWhy.textContent = "";
+    els.recommendBlocksWhy.hidden = true;
+  }
+}
+
+function invalidateBlockSplitCacheAndRecommendUi() {
+  invalidateBlockSplitCache();
+  clearRecommendBlocksUi();
+}
+
+function setRecommendLoading(isLoading) {
+  if (els.recommendBlocksBtn) els.recommendBlocksBtn.disabled = isLoading;
+}
+
+function resolveSectionCountFromText(cleanedText) {
+  const headings = String(cleanedText || "").match(/^#{1,6}\s+.+$/gm) || [];
+  return headings.length;
+}
+
+function assembleBlockCountSignals(cleanedText, inventory, textMetrics, pedagogicalMeta) {
+  const content = textMetrics?.contentSignals ?? {};
+  const meta = pedagogicalMeta ?? {};
+  return {
+    conceptCount: Array.isArray(inventory) ? inventory.length : 0,
+    wordCount: textMetrics?.wordCount ?? 0,
+    sectionCount: resolveSectionCountFromText(cleanedText),
+    conceptualLoad: meta.conceptualLoad,
+    argumentativeDensity: meta.argumentativeDensity,
+    genre: meta.genre,
+    firstPersonRatio: content.firstPersonRatio ?? 0,
+    sizeCategory: textMetrics?.sizeCategory,
+  };
+}
+
+async function handleRecommendBlockCount() {
+  const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
+  if (selectedMode !== "rsvp") return;
+
+  if (isOfflineMode()) {
+    if (els.recommendBlocksStatus) {
+      els.recommendBlocksStatus.textContent =
+        "Offline mode is active. Block count recommendation is unavailable.";
+    }
+    return;
+  }
+
+  clearRecommendBlocksUi();
+
+  const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+  try {
+    assertLlmKeyPresent(llmModel);
+  } catch (err) {
+    if (els.recommendBlocksStatus) {
+      els.recommendBlocksStatus.textContent = err?.message ? String(err.message) : String(err);
+    }
+    if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+    return;
+  }
+
+  const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
+  const file = fileList[0];
+  if (!file) {
+    if (els.recommendBlocksStatus) {
+      els.recommendBlocksStatus.textContent =
+        "Please choose a file (.pdf, .html, .txt, or .md).";
+    }
+    return;
+  }
+
+  state.studyNotes = els.studyNotesInput ? String(els.studyNotesInput.value || "") : "";
+  state.pendingLlmModel = llmModel;
+
+  setRecommendLoading(true);
+  try {
+    let cleanedText = String(state.lastCleanedMaterialText || "");
+    let wordCount = Number(state.lastCleanedMaterialWordCount) || 0;
+    if (!cleanedText.trim()) {
+      const material = await readAndCleanMaterialText(file);
+      cleanedText = material.cleanedText;
+      wordCount = material.wordCount;
+      state.lastCleanedMaterialText = cleanedText;
+      state.lastCleanedMaterialWordCount = wordCount;
+      if (els.fileExtractHint) {
+        els.fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+      }
+    }
+    if (!cleanedText.trim()) throw new Error("File appears to be empty.");
+
+    const fingerprint = buildBlockSplitFingerprint({
+      file,
+      studyNotes: String(state.studyNotes || ""),
+      wordCount,
+    });
+    const cache = getBlockSplitCache();
+    let inventory;
+
+    if (isBlockSplitCacheValid(cache, fingerprint)) {
+      inventory = cache.conceptInventory;
+    } else {
+      const { inventory: indexed } = await runConceptInventory(cleanedText, {
+        llmModel,
+        studyNotes: String(state.studyNotes || ""),
+        language: getStudyLanguage(),
+        onProgress: (msg) => {
+          if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
+        },
+      });
+      inventory = indexed;
+      setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
+    }
+
+    const textMetrics = analyzeText(cleanedText);
+    const pedagogicalMeta = buildDeterministicPedagogicalMeta(textMetrics);
+    const signals = assembleBlockCountSignals(
+      cleanedText,
+      inventory,
+      textMetrics,
+      pedagogicalMeta,
+    );
+    const recommendation = computeBlockCountRecommendation(signals);
+
+    setBlockSplitCache({
+      fingerprint,
+      conceptInventory: inventory,
+      recommendation,
+    });
+
+    if (els.blocksInput) els.blocksInput.value = String(recommendation.nBlocks);
+    if (els.recommendBlocksWhy) {
+      els.recommendBlocksWhy.textContent = formatBlockCountReasoning(recommendation);
+      els.recommendBlocksWhy.hidden = false;
+    }
+    if (els.recommendBlocksStatus) {
+      els.recommendBlocksStatus.textContent = `Recommended ${recommendation.nBlocks} blocks`;
+    }
+  } catch (err) {
+    invalidateBlockSplitCache();
+    if (els.recommendBlocksStatus) {
+      els.recommendBlocksStatus.textContent =
+        err?.message && !String(err.message).includes("API key")
+          ? String(err.message)
+          : "Could not recommend block count. Try again or set blocks manually.";
+    }
+  } finally {
+    setRecommendLoading(false);
+  }
 }
 
 function clearOfflinePackError() {
@@ -3945,6 +4517,8 @@ export function wireStudyHandlers() {
   registerChromeStudyModeResolver(() =>
     normalizeStudyMode(state.studyMode || state.activeSession?.studyMode),
   );
+  registerChromeHasConceptsResolver(() => getSortedSessionConcepts().length > 0);
+  registerDictionaryChromeSyncHook(() => syncFloatingChrome());
   setSlowSessionGetter(() => state.activeSession);
   wireStudyModeSelector();
   wireSlowScopeHandlers();
@@ -3970,6 +4544,7 @@ export function wireStudyHandlers() {
     if (session?.studyMode === "cloze") exportClozeItemsMarkdown(session);
   });
   resetCreateScreenModeUi();
+  renderFlowPanel(getActiveSession());
 
   setBlockReadContentProvider(() => {
     const blocks = getBlocksSafe();
@@ -4742,6 +5317,7 @@ export function wireStudyHandlers() {
     const stored = String(localStorage.getItem(LS_STUDY_NOTES_KEY) || "");
     els.studyNotesInput.value = stored;
     state.studyNotes = stored;
+    let studyNotesInvalidationTimer = null;
     els.studyNotesInput.addEventListener("input", () => {
       const v = String(els.studyNotesInput.value || "");
       state.studyNotes = v;
@@ -4750,6 +5326,10 @@ export function wireStudyHandlers() {
       } catch {
         // ignore
       }
+      clearTimeout(studyNotesInvalidationTimer);
+      studyNotesInvalidationTimer = setTimeout(() => {
+        invalidateBlockSplitCacheAndRecommendUi();
+      }, 500);
     });
   }
 
@@ -4761,7 +5341,10 @@ export function wireStudyHandlers() {
       els.fileExtractHint.textContent = "";
       const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
       const file = fileList[0];
-      if (!file) return;
+      if (!file) {
+        invalidateBlockSplitCacheAndRecommendUi();
+        return;
+      }
       els.fileExtractHint.textContent = `Selected: ${String(file.name || "file")} (${formatFileSize(file.size)})`;
       const markerProbe = await file.slice(0, 64 * 1024).text();
       if (String(markerProbe || "").includes("OFFLINE_PACK_V1")) {
@@ -4778,12 +5361,19 @@ export function wireStudyHandlers() {
       state.lastRawMaterialText = "";
       state.lastCleanedMaterialText = "";
       state.lastCleanedMaterialWordCount = 0;
+      invalidateBlockSplitCacheAndRecommendUi();
     } catch {
       els.fileExtractHint.textContent = "";
     }
   });
 
   enableUnifiedMaterialUpload();
+
+  if (els.recommendBlocksBtn) {
+    els.recommendBlocksBtn.addEventListener("click", () => {
+      void handleRecommendBlockCount();
+    });
+  }
 
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -4986,18 +5576,48 @@ export function wireStudyHandlers() {
       const doc = await ensureDocumentSessionForUpload(cleanedText);
       computeAndPersistModeRecommendation(doc, cleanedText, null);
 
-      const { blockIndex: finalIndex, splitRunMeta, conceptInventory } = await twoPhaseConceptSplit(
-        cleanedText,
-        nBlocks,
-        {
-          llmModel,
-          studyNotes: String(state.studyNotes || ""),
-          language: getStudyLanguage(),
-          onProgress: (msg) => {
-            els.generateBlocksStatus.textContent = msg;
-          },
+      const fingerprint = buildBlockSplitFingerprint({
+        file,
+        studyNotes: String(state.studyNotes || ""),
+        wordCount,
+      });
+      const cache = getBlockSplitCache();
+      const splitOpts = {
+        llmModel,
+        studyNotes: String(state.studyNotes || ""),
+        language: getStudyLanguage(),
+        onProgress: (msg) => {
+          els.generateBlocksStatus.textContent = msg;
         },
-      );
+      };
+
+      let finalIndex;
+      let splitRunMeta;
+      let conceptInventory;
+
+      if (isBlockSplitCacheValid(cache, fingerprint)) {
+        const packed = await packInventoryToBlocks(
+          cache.conceptInventory,
+          nBlocks,
+          cleanedText,
+          splitOpts,
+        );
+        finalIndex = packed.blockIndex;
+        splitRunMeta = packed.splitRunMeta;
+        conceptInventory = packed.conceptInventory;
+      } else {
+        const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
+        finalIndex = splitResult.blockIndex;
+        splitRunMeta = splitResult.splitRunMeta;
+        conceptInventory = splitResult.conceptInventory;
+        if (Array.isArray(conceptInventory) && conceptInventory.length > 0) {
+          setBlockSplitCache({
+            fingerprint,
+            conceptInventory,
+            recommendation: cache?.recommendation ?? null,
+          });
+        }
+      }
 
       if (!Array.isArray(finalIndex) || !finalIndex.length) {
         throw new Error(

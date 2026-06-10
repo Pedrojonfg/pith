@@ -113,8 +113,8 @@ assert(studySrc.includes("rsvpImportDetails"), "happy: study wires rsvpImportDet
 assert(studySrc.includes("rsvpAdvancedDetails"), "happy: study wires rsvpAdvancedDetails");
 assert(uiSrc.includes("rsvpImportDetails"), "happy: ui els rsvpImportDetails");
 assert(uiSrc.includes("rsvpAdvancedDetails"), "happy: ui els rsvpAdvancedDetails");
-assert(!studySrc.includes("wireFlowRecommendUpload"), "happy: no flow upload wiring");
-assert(!studySrc.includes("renderRecommendationPanel"), "happy: no panel renderer");
+assert(studySrc.includes("wireFlowRecommendUpload"), "happy: flow upload wiring restored");
+assert(studySrc.includes("renderFlowPanel"), "happy: flow panel renderer");
 
 // --- Happy: English dynamic strings in study.js ---
 assert(studySrc.includes("Generate items"), "happy: cloze generate EN");
@@ -137,22 +137,24 @@ assert(doc.getElementById("blocksInput")?.required, "edge: blocks required for q
 // --- Edge: resume always on configure, never on mode select ---
 assert(!modeSelect?.contains(resumeDetails), "edge: resume not on mode select");
 
-// --- Failure: flow recommendation UI fully removed ---
-const removedIds = [
+// --- Flow panel v2 restored on mode select ---
+const flowPanelIds = [
+  "flowRecommendUpload",
   "flowRecommendBtn",
   "flowRecommendFileInput",
   "recommendationPanel",
   "recommendationStartBtn",
   "recommendationOverrideSelect",
-  "recommendationWhyLink",
+  "recommendationWhyDetails",
 ];
-for (const id of removedIds) {
-  assert(!doc.getElementById(id), `failure: ${id} absent from DOM`);
+for (const id of flowPanelIds) {
+  assert(doc.getElementById(id), `failure: ${id} present in DOM`);
 }
-assert(!indexHtml.includes("Recommend my study flow"), "failure: flow CTA copy removed");
-assert(!indexHtml.includes("Why this flow?"), "failure: why-link copy removed");
-assert(!mainCss.includes(".recommendation-panel"), "failure: recommendation CSS removed");
-assert(!mainCss.includes(".flow-recommend-upload"), "failure: flow upload CSS removed");
+assert(modeSelect?.contains(doc.getElementById("recommendationPanel")), "failure: panel on mode select");
+assert(indexHtml.includes("Recommend my study flow"), "failure: flow CTA copy present");
+assert(indexHtml.includes("Why this flow?"), "failure: why details copy present");
+assert(mainCss.includes(".flow-panel"), "failure: flow panel CSS present");
+assert(mainCss.includes(".flow-recommend-upload"), "failure: flow upload CSS present");
 
 // --- Failure: Spanish user-facing strings removed from index.html ---
 const spanishUiSnippets = [
