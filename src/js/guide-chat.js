@@ -203,6 +203,14 @@ export function refreshGuideContext() {
   paintChatHistory(history);
 }
 
+const GUIDE_SIDEBAR_STYLE = `Response style — this appears in a narrow sidebar chat, not a lecture:
+- Default: short and direct. Most answers fit in 1–4 sentences.
+- Lead with the answer; skip preamble, restating the question, and block recaps unless essential.
+- Use a brief bullet list (≤4 items) only when listing distinct points; avoid nested lists.
+- Expand (up to ~2 short paragraphs) only when the student explicitly asks for depth, examples, or step-by-step explanation, or when a short answer would be misleading for a genuinely multi-part question.
+- Reference block numbers in passing when useful; do not summarize whole blocks.
+- At most one short follow-up question when it deepens thinking — never a list of questions.`;
+
 export function buildGuidePrompt(userMessage, currentBlockIndex) {
   const ctx = window.guideContext || {};
   const sessionContext = String(ctx.sessionContext || "");
@@ -212,7 +220,11 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
 
   const safeUser = String(userMessage || "").trim();
   const currentBlockNote = `Student is currently on block ${idx + 1}`;
-  const systemPrompt = `You are a study guide tutor. Below is the COMPLETE context of the current study session. Answer questions about ANY topic in this session. Be concise, reference specific blocks when relevant, encourage deep thinking. Respond in the same language as the student's latest message.\n\nCOMPLETE SESSION CONTEXT:\n${sessionContext}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
+  const systemPrompt =
+    `You are a study guide tutor. Below is the COMPLETE context of the current study session. Answer questions about ANY topic in this session.\n\n` +
+    `${GUIDE_SIDEBAR_STYLE}\n\n` +
+    `Respond in the same language as the student's latest message.\n\n` +
+    `COMPLETE SESSION CONTEXT:\n${sessionContext}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
 
   return systemPrompt;
 }
@@ -308,7 +320,7 @@ export async function sendGuideMessage(userText, currentBlockIndex) {
 
     const assistantText = await llmChatCompletions({
       llmModel,
-      max_tokens: 1500,
+      max_tokens: 512,
       messages,
       temperature: 0.2,
     });
@@ -367,7 +379,7 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
 
   const assistantText = await llmChatCompletions({
     llmModel,
-    max_tokens: 1500,
+    max_tokens: 512,
     messages,
     temperature: 0.2,
   });
