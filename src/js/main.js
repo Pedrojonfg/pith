@@ -6,6 +6,7 @@ import {
 } from "./dictionary.js?v=20260526_1";
 import { exportSessionMarkdown } from "./export.js?v=20260525_1";
 import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260526_2";
+import { finishPacedRead } from "./paced-reader.js?v=20260610_1";
 import {
   clearGuideChatStorage,
   initGuideChat,
@@ -49,6 +50,7 @@ function clearBlockIndexStorage() {
 function resetToNewSession() {
   cancelRsvpTimer();
   setRsvpOverlayActive(false);
+  finishPacedRead({ skipCallback: true });
   window.offlineMode = false;
   window.offlinePack = null;
 

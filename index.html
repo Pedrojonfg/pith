@@ -1398,6 +1398,81 @@
           Space · Pause · ← → · Flash · Esc · Skip
         </p>
       </div>
+      <button
+        type="button"
+        id="rsvpSwitchToPacedBtn"
+        class="reading-mode-switch"
+        title="Switch to normal paginated reading"
+      >
+        Normal reading
+      </button>
+    </div>
+
+    <div
+      id="pacedReaderOverlay"
+      class="paced-reader-overlay"
+      aria-hidden="true"
+      aria-label="Normal block reader"
+    >
+      <div class="paced-reader-layout">
+        <div class="paced-reader-main">
+          <div class="paced-reader-toolbar">
+            <p id="pacedReaderBlockTitle" class="paced-reader-block-title" hidden></p>
+            <nav class="slow-reader-nav" aria-label="Pagination">
+              <button
+                type="button"
+                id="pacedReaderPrevBtn"
+                aria-label="Previous page"
+                title="Previous page (←)"
+              >
+                ←
+              </button>
+              <span
+                id="pacedReaderPageIndicator"
+                class="slow-reader-page-indicator"
+                aria-live="polite"
+              ></span>
+              <button
+                type="button"
+                id="pacedReaderNextBtn"
+                aria-label="Next page"
+                title="Next page (→)"
+              >
+                →
+              </button>
+            </nav>
+            <div class="slow-reader-typo" role="group" aria-label="Text size">
+              <span class="slow-reader-typo-label">Text</span>
+              <button type="button" id="pacedFontSmallerBtn" aria-label="Smaller text">−</button>
+              <span id="pacedFontSizeLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
+              <button type="button" id="pacedFontLargerBtn" aria-label="Larger text">+</button>
+            </div>
+            <div class="slow-reader-typo" role="group" aria-label="Line height">
+              <span class="slow-reader-typo-label">Space</span>
+              <button type="button" id="pacedLineSmallerBtn" aria-label="Tighter lines">−</button>
+              <span id="pacedLineHeightLabel" class="slow-reader-typo-value" aria-hidden="true"></span>
+              <button type="button" id="pacedLineLargerBtn" aria-label="Looser lines">+</button>
+            </div>
+            <div class="slow-reader-toolbar-spacer" aria-hidden="true"></div>
+            <button type="button" id="pacedReaderContinueBtn" class="btn-primary">
+              Continue to questions
+            </button>
+          </div>
+          <div class="paced-reader-content">
+            <div class="paced-reader-page-wrap">
+              <div id="pacedReaderPage" class="slow-reader-page md-content" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        id="pacedSwitchToRsvpBtn"
+        class="reading-mode-switch"
+        title="Switch to RSVP reading"
+      >
+        RSVP mode
+      </button>
     </div>
 
     <div id="root"></div>

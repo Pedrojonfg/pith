@@ -9,6 +9,8 @@ export const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
 export const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
 export const LS_RSVP_COMPREHENSION_PAUSE_KEY = "rsvp_comprehension_pause";
 export const LS_RSVP_COMPREHENSION_EVERY_KEY = "rsvp_comprehension_every";
+/** `"rsvp"` (default) | `"paced"` — block reading style in fast mode */
+export const LS_RSVP_READING_MODE_KEY = "rsvp_reading_mode";
 export const LS_LAST_EXPORT_STATE_KEY = "last_export_state";
 export const LS_SESSION_CONCEPTS_KEY = "session_concepts";
 export const LS_SESSION_CONCEPTS_BY_BLOCK_KEY = "session_concepts_by_block";
