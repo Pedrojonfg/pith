@@ -37,8 +37,8 @@ const doc = dom.window.document;
 const modeSelectScreen = doc.getElementById("screenModeSelect");
 const createScreen = doc.getElementById("screenPlaceholder");
 const modeSelector = doc.getElementById("studyModeSelector");
-const flowRecommendBtn = doc.getElementById("flowRecommendBtn");
 const generateForm = doc.getElementById("generateBlocksForm");
+const resumeDetails = doc.getElementById("resumeSessionDetails");
 const backBtn = doc.getElementById("createBackToModesBtn");
 const modeBadge = doc.getElementById("createModeLabel");
 const modeRadios = doc.querySelectorAll('input[name="studyMode"]');
@@ -53,8 +53,8 @@ assert(
 
 // --- Happy path: mode picker content only on first screen ---
 assert(modeSelectScreen.contains(modeSelector), "MS: mode selector on mode select screen");
-assert(modeSelectScreen.contains(flowRecommendBtn), "MS: flow recommend button on mode select screen");
-assert(modeSelectScreen.querySelector("h1")?.textContent?.includes("How do you want to study"),
+assert(!doc.getElementById("flowRecommendBtn"), "MS: flow recommend button removed");
+assert(modeSelectScreen.querySelector("h1")?.textContent?.includes("Choose a study mode"),
   "MS: mode select heading");
 assert(createScreen.querySelector("h1")?.textContent?.includes("Configure your session"),
   "MS: configure screen heading");
@@ -63,8 +63,8 @@ assert(createScreen.querySelector("h1")?.textContent?.includes("Configure your s
 assert(createScreen.contains(backBtn), "MS: back to modes button on configure screen");
 assert(createScreen.contains(modeBadge), "MS: mode badge on configure screen");
 assert(!createScreen.contains(modeSelector), "MS: mode selector absent from configure screen");
-assert(!createScreen.contains(flowRecommendBtn), "MS: flow recommend absent from configure screen");
 assert(createScreen.contains(generateForm), "MS: upload form on configure screen");
+assert(createScreen.contains(resumeDetails), "MS: resume collapsible on configure screen");
 
 // --- Happy path: navigation wiring in study.js ---
 assert(studySrc.includes("export function enterModeSelectScreen"), "MS: enterModeSelectScreen exported");
@@ -125,7 +125,6 @@ assert(createScreen.getAttribute("aria-hidden") === "false", "MS: create visible
 for (const radio of modeRadios) radio.checked = true;
 for (const radio of modeRadios) radio.checked = false;
 assert([...modeRadios].every((r) => !r.checked), "MS: reset clears mode radios");
-assert(flowRecommendBtn, "MS: flow recommend button present after reset");
 
 // --- Failure: old combined layout must not regress ---
 assert(
@@ -137,11 +136,11 @@ assert(
   "MS: upload form not on mode select screen",
 );
 assert(
-  !modeSelectScreen.querySelector("#modeResumePanel"),
-  "MS: resume panel not on mode select screen (stays on configure)",
+  !modeSelectScreen.querySelector("#resumeSessionDetails"),
+  "MS: resume collapsible not on mode select screen",
 );
 assert(createScreen.contains(doc.getElementById("modeResumePanel")),
-  "MS: resume panel on configure screen");
+  "MS: continue-session panel on configure screen");
 
 // --- Failure: session-complete / new session exit to mode select ---
 assert(studySrc.includes("enterModeSelectScreen();"), "MS: slow phase3 finish goes to mode select");

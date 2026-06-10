@@ -32,8 +32,12 @@
 }
 
 .study-mode-option:has(input:checked) {
-  border-color: var(--accent, #6366f1);
-  background: rgba(99, 102, 241, 0.08);
+  border-color: var(--accent);
+  background: rgba(125, 211, 252, 0.08);
+}
+
+.study-mode-option:hover {
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .study-mode-option-body {
