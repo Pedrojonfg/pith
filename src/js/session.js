@@ -52,6 +52,7 @@ export const state = {
   activeBlockIndex: 0,
   activeQuestionIndex: 0,
   pendingLlmModel: null,
+  blockSplitCache: null,
 };
 
 export function clampInt(n, min, max, fallback) {
@@ -2004,6 +2005,97 @@ export function describeSplitRunMetaForUi(splitRunMeta) {
   };
 }
 
+export async function runConceptInventory(
+  material,
+  { llmModel, studyNotes, language, onProgress } = {},
+) {
+  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
+  const materialText = String(material || "").trim();
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const progress = (msg) => {
+    if (typeof onProgress === "function" && msg) onProgress(String(msg));
+  };
+
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260525_1");
+
+  progress("Indexing concepts…");
+  const inventory = await deepSeekConceptInventory({
+    llmModel: model,
+    materialText,
+    studyNotes: notes,
+    language: lang,
+  });
+
+  return { inventory, concept_count: inventory.length };
+}
+
+export async function packInventoryToBlocks(
+  inventory,
+  nBlocks,
+  material,
+  { llmModel, studyNotes, language, onProgress } = {},
+) {
+  const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
+  const materialText = String(material || "").trim();
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const progress = (msg) => {
+    if (typeof onProgress === "function" && msg) onProgress(String(msg));
+  };
+
+  const { deepSeekPackConceptsToBlocks } = await import("./api.js?v=20260525_1");
+
+  progress(`Packing ${requested_n} blocks…`);
+  const { blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
+    llmModel: model,
+    inventory,
+    nBlocks: requested_n,
+    studyNotes: notes,
+    language: lang,
+  });
+
+  let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
+  if (!normalized?.length) throw new Error("Pack returned no normalizable blocks.");
+
+  normalized = applyPackMetaCount(normalized, pack_meta);
+  const finalCount = normalized.length;
+  const chunks = splitMaterialIntoBlockChunks(materialText, finalCount);
+  let blockIndex = normalized.map((b, i) => {
+    const src = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
+    const concept_ids = Array.isArray(src.concept_ids)
+      ? src.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
+      : Array.isArray(b.concept_ids)
+        ? b.concept_ids
+        : [];
+    return {
+      ...b,
+      chunk: chunks[i] || "",
+      ...(concept_ids.length ? { concept_ids } : {}),
+    };
+  });
+
+  progress("Checking for duplicates…");
+  const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
+  const concept_count = inventory.length;
+
+  return {
+    blockIndex: dedupResult.blockIndex,
+    conceptInventory: inventory,
+    splitRunMeta: {
+      requested_n,
+      final_n: dedupResult.blockIndex.length,
+      pipeline: "two_phase",
+      concept_count,
+      concept_inventory: inventory,
+      pack_meta,
+      dedup_merges: dedupResult.dedup_merges,
+      dedup_merged_count: dedupResult.merged_count,
+    },
+  };
+}
+
 export async function twoPhaseConceptSplit(
   material,
   nBlocks,
@@ -2046,66 +2138,18 @@ export async function twoPhaseConceptSplit(
   };
 
   try {
-    const {
-      deepSeekConceptInventory,
-      deepSeekPackConceptsToBlocks,
-    } = await import("./api.js?v=20260525_1");
-
-    progress("Indexing concepts…");
-    const inventory = await deepSeekConceptInventory({
-      llmModel: model,
-      materialText,
-      studyNotes: notes,
-      language: lang,
+    const { inventory } = await runConceptInventory(material, {
+      llmModel,
+      studyNotes,
+      language,
+      onProgress,
     });
-    const concept_count = inventory.length;
-
-    progress(`Packing ${requested_n} blocks…`);
-    const { blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
-      llmModel: model,
-      inventory,
-      nBlocks: requested_n,
-      studyNotes: notes,
-      language: lang,
+    return await packInventoryToBlocks(inventory, nBlocks, material, {
+      llmModel,
+      studyNotes,
+      language,
+      onProgress,
     });
-
-    let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
-    if (!normalized?.length) throw new Error("Pack returned no normalizable blocks.");
-
-    normalized = applyPackMetaCount(normalized, pack_meta);
-    const finalCount = normalized.length;
-    const chunks = splitMaterialIntoBlockChunks(materialText, finalCount);
-    let blockIndex = normalized.map((b, i) => {
-      const src = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
-      const concept_ids = Array.isArray(src.concept_ids)
-        ? src.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
-        : Array.isArray(b.concept_ids)
-          ? b.concept_ids
-          : [];
-      return {
-        ...b,
-        chunk: chunks[i] || "",
-        ...(concept_ids.length ? { concept_ids } : {}),
-      };
-    });
-
-    progress("Checking for duplicates…");
-    const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
-
-    return {
-      blockIndex: dedupResult.blockIndex,
-      conceptInventory: inventory,
-      splitRunMeta: {
-        requested_n,
-        final_n: dedupResult.blockIndex.length,
-        pipeline: "two_phase",
-        concept_count,
-        concept_inventory: inventory,
-        pack_meta,
-        dedup_merges: dedupResult.dedup_merges,
-        dedup_merged_count: dedupResult.merged_count,
-      },
-    };
   } catch (err) {
     console.warn("twoPhaseConceptSplit: falling back to mono split", err?.message || err);
     return runFallback();

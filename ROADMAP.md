@@ -1,212 +1,170 @@
-# ROADMAP — Flow Recommendation
+# ROADMAP — RSVP Block Count Recommendation
 
-**Feature**: `20260609-flow-recommendation` | **Spec**: `specs/20260609-flow-recommendation/spec.md` | **Plan**: `specs/20260609-flow-recommendation/plan.md`
+**Feature**: `20260611-rsvp-block-recommend` | **Spec**: `specs/20260611-rsvp-block-recommend/spec.md` | **Plan**: `specs/20260611-rsvp-block-recommend/plan.md`
 
-**Prerrequisitos externos**: `20260609-unified-session` T01+T04 · `20260609-doc-hierarchy-index`
+**Prerrequisitos externos**: `20260609-flow-recommendation` (analyzer + pedagogical meta); pipeline RSVP `twoPhaseConceptSplit`
 
 ## Tabla de tareas
 
 | ID | Descripción | Deps | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | `analyzer.js` — `analyzeText` → TextMetrics | — | M | [x] |
-| T02 | Extensión `hierarchy.js` — `pedagogical_meta` + fallback | — | M | [x] |
-| T03 | `recommender.js` — tabla de decisión + tiempos | T01, T02 | M | [x] |
-| T04 | `tracker.js` — progreso y override | T03 | M | [x] |
-| T05 | `session-store` — `modeRecommendation` + `updateRecommendation` | unified T01 | S | [x] |
-| T06 | Integración `study.js` — cálculo y lifecycle | T04, T05, unified T04 | M | [x] |
-| T07 | Panel de recomendación UI | T06 | M | [x] |
-| T08 | Tests integración + quickstart closure | T07 | M | [x] |
+| T01 | `computeBlockCountRecommendation` — fórmula pura + tests | — | S | [x] |
+| T02 | Refactor `session.js` — `runConceptInventory` + `packInventoryToBlocks` | — | M | [x] |
+| T03 | `blockSplitCache` — fingerprint, validación, invalidación | — | S | [x] |
+| T04 | Markup + CSS — botón Recommend, status, why | — | S | [x] |
+| T05 | Wiring `study.js` — handlers recommend/generate + invalidación | T01–T04 | M | [x] |
+| T06 | Tests integración + quickstart QA closure | T05 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T01 ──┐
-      ├──→ T03 → T04 ──┐
-T02 ──┘                ├──→ T06 → T07 → T08
-T05 (unified T01) ─────┘
+T01 ──────────────┐
+T02 ──────────────┼──→ T05 ──→ T06
+T03 ──────────────┤
+T04 ──────────────┘
 ```
 
-**Paralelizables desde inicio**: T01 + T02 + T05 (si unified-session T01 listo)
+**Paralelizables desde inicio**: T01 + T02 + T03 + T04 (hasta 4 agentes)
 
-**Secuenciales críticos**: T03 → T04 → T06 → T07 → T08
+**Secuenciales críticos**: T05 → T06
 
 ## Orden de ejecución recomendado
 
-### Ola 1 — Núcleo puro (paralelo hasta 3 agentes)
-- **T01** analyzer
-- **T02** hierarchy pedagogical meta
-- **T05** session-store field (si no existe aún)
+### Ola 1 — Fundamentos (paralelo, 4 agentes)
+- **T01** recommender puro (`block-count-recommender.js`)
+- **T02** split refactor (`session.js`)
+- **T03** cache fingerprint (`study.js` o módulo dedicado)
+- **T04** HTML + CSS (`index.html`, `main.css`, `ui.js` refs)
 
-### Ola 2 — Recomendación (1 agente, tras T01+T02)
-- **T03** recommender
+### Ola 2 — Integración (1 agente, tras T01–T04)
+- **T05** handlers + branch generate con cache
 
-### Ola 3 — Tracking (1 agente, tras T03)
-- **T04** tracker
+### Ola 3 — Cierre (1 agente)
+- **T06** cursor-tests + quickstart QA
 
-### Ola 4 — Orquestación (1 agente, tras T04+T05+unified T04)
-- **T06** study.js
-
-### Ola 5 — UI (1 agente, tras T06)
-- **T07** panel
-
-### Ola 6 — Cierre
-- **T08** tests integración + quickstart
-
-**MVP mínimo útil**: T01–T06 — recomendación calculada y persistida (sin panel visual).
+**MVP mínimo útil**: T01 + T02 + T05 — recommend + generate reuse sin UI pulida.
 
 ---
 
-## PROMPT T01 — analyzer.js
+## PROMPT T01 — Block count recommender
 
-Implementa **T01** del ROADMAP Flow Recommendation.
+Implementa **T01** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Feature `20260609-flow-recommendation`. Función pura que extrae métricas del markdown sin LLM. Ver `specs/20260609-flow-recommendation/contracts/analyzer-api.md` y `data-model.md` (TextMetrics).
+**Contexto**: Feature `20260611-rsvp-block-recommend`. Fórmula determinística en `specs/20260611-rsvp-block-recommend/contracts/block-count-recommender-api.md` y `research.md` R3.
 
 **Archivos**:
-- `src/js/recommendation/analyzer.js` (NUEVO) — `analyzeText(markdownText)`
-- `cursor-tests/20260609_flow-recommendation-analyzer.mjs` (NUEVO)
+- `src/js/recommendation/block-count-recommender.js` (NUEVO) — `computeBlockCountRecommendation(signals)`, `formatBlockCountReasoning(rec)`
+- `cursor-tests/20260611_rsvp-block-recommend.mjs` (NUEVO) — sección unit recommender (≥12 casos)
 
-**Casos de test mínimos**:
-- Paper filosófico sin headings → señales de densidad/estructura
-- Apuntes primera persona → `firstPersonRatio` detectado
-- Paper con citas `[1]` → `hasBibliography: true`
-- Texto < 2k chars → `sizeCategory: 'tiny'`
-- 4+ casos adicionales (math, definitions, headings, vocab académico ES/EN)
+**Reglas clave**:
+- Clamp 5–60; sin LLM; exportar `MIN_BLOCKS`, `MAX_BLOCKS`
+- `signalsUsed` y `factors` en output para tests
+- Reasoning EN 1–2 frases
 
-**Sin cambios en study.js ni hierarchy en esta tarea.**
-
-**Criterio de éxito**: 8+ tests pasan; `analyzeText` es pura y determinística. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: suite recommender pasa con `node --import ./cursor-tests/register.mjs`. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — hierarchy pedagogical meta
+## PROMPT T02 — Split phase refactor
 
-Implementa **T02** del ROADMAP Flow Recommendation.
+Implementa **T02** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Extender `buildDocumentHierarchy` para devolver `pedagogicalMeta` sin llamada LLM adicional. Ver `specs/20260609-flow-recommendation/contracts/hierarchy-pedagogical-meta.md`.
+**Contexto**: Separar inventario de pack en `session.js`. Ver `contracts/block-split-cache.md`.
 
 **Archivos**:
-- `src/js/normalization/hierarchy.js` — prompt JSON `{ tree, pedagogical_meta }`, parse, `buildDeterministicPedagogicalMeta`, retorno con `pedagogicalMeta`
-- `src/js/normalization/hierarchy-cache.js` — cachear `pedagogicalMeta` en hits LLM
-- Tests en `cursor-tests/` o extender tests hierarchy existentes
+- `src/js/session.js` — exportar `runConceptInventory`, `packInventoryToBlocks`; `twoPhaseConceptSplit` delega en ambas sin cambiar comportamiento externo actual
 
-**Depende de T01** solo para `buildDeterministicPedagogicalMeta` (import `analyzeText`).
+**Reglas clave**:
+- `runConceptInventory` = solo `deepSeekConceptInventory` + progress "Indexing concepts…"
+- `packInventoryToBlocks` = pack + chunks + dedup (sin re-indexar)
+- Fallback mono split solo en wrapper cuando falle two-phase
 
-**Criterio de éxito**: paper filosófico vía LLM (o mock) → `pedagogicalMeta.genre === 'philosophical'` y `argumentativeDensity >= 4`; modo determinístico devuelve meta sin LLM. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: generate manual RSVP sigue funcionando; exports disponibles para T05. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — recommender.js
+## PROMPT T03 — Block split cache
 
-Implementa **T03** del ROADMAP Flow Recommendation.
+Implementa **T03** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Tabla de decisión determinística. Ver `specs/20260609-flow-recommendation/contracts/recommender-api.md` y `data-model.md`.
+**Contexto**: Cache efímero con fingerprint. Ver `data-model.md` BlockSplitCache.
 
 **Archivos**:
-- `src/js/recommendation/recommender.js` (NUEVO) — `computeModeRecommendation`, `computeStepTimes`, `TIME_FACTORS`, mapa `genreLabel` ES
-- `cursor-tests/20260609_flow-recommendation-recommender.mjs` (NUEVO)
+- `src/js/study.js` (o `src/js/block-split-cache.js` si prefieres módulo) — `buildBlockSplitFingerprint`, `isBlockSplitCacheValid`, `invalidateBlockSplitCache`, `get/setBlockSplitCache`
+- Estado en `state.blockSplitCache`
 
-**Depende de T01, T02** (tipos/shapes; puede importar fixtures de test).
+**Reglas clave**:
+- Fingerprint: file name+size+lastModified + studyNotes + wordCount
+- Invalidar NO al cambiar solo blocksInput
+- Tests fingerprint en `cursor-tests/20260611_rsvp-block-recommend.mjs` (ampliar si T01 ya creó archivo)
 
-**Criterio de éxito**: paper filosófico → `primaryFlow[0].mode === 'slow'`; apuntes → `questions` o `rsvp`; tiny → un paso; schema completo sin nulls. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: funciones puras testeadas; invalidación documentada. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — tracker.js
+## PROMPT T04 — Recommend UI markup
 
-Implementa **T04** del ROADMAP Flow Recommendation.
+Implementa **T04** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Tracking de progreso sin castigar desviaciones. Ver `specs/20260609-flow-recommendation/contracts/tracker-api.md`.
+**Contexto**: DOM IDs en `contracts/recommend-blocks-ui.md`.
 
 **Archivos**:
-- `src/js/recommendation/tracker.js` (NUEVO) — `updateFlowProgress`, `markStepCompleted`, `recordUserOverride`
-- `cursor-tests/20260609_flow-recommendation-tracker.mjs` (NUEVO)
+- `index.html` — `#recommendBlocksBtn`, `#recommendBlocksStatus`, `#recommendBlocksWhy` dentro `#rsvpBlocksSection`
+- `src/css/main.css` — estilos mínimos coherentes con create screen
+- `src/js/ui.js` — refs en `els`
 
-**Depende de T03.**
+**Reglas clave**:
+- Copy EN según contrato
+- `hidden` por defecto en why; botón visible solo RSVP (puede ocultarse vía JS en T05)
+- Sin lógica de recommend en T04 — solo markup + CSS + refs
 
-**Criterio de éxito**: sesión mock con `modes.slow.phase === 3` completada → `completedSteps: ['step_slow_1']`, `currentStepIndex: 1`; override setea `userOverride: true`. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: IDs presentes en index.html; refs en ui.js. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — session-store modeRecommendation
+## PROMPT T05 — Study.js wiring
 
-Implementa **T05** del ROADMAP Flow Recommendation.
+Implementa **T05** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Persistir recomendación en capa shared. Ver `specs/20260609-flow-recommendation/contracts/consumer-integration.md` §session-store.
+**Contexto**: Tras T01–T04. Ver `contracts/consumer-integration.md`.
 
 **Archivos**:
-- `src/js/session-types.js` — `modeRecommendation` en SharedLayer + validación laxa
-- `src/js/session-store.js` — default `null`, `updateRecommendation(docId, rec)`
-- Test en `cursor-tests/20260609_flow-recommendation-tracker.mjs` o CRUD extendido
+- `src/js/study.js` — `handleRecommendBlockCount`, modificar generate handler, invalidación file/notes/mode, visibility recommend btn
 
-**Depende de unified-session T01.** Paralelizable con T01–T04.
+**Flujos**:
+- Recommend: cache hit → skip inventory; miss → `runConceptInventory` → `computeBlockCountRecommendation` → pre-fill blocks
+- Generate: cache valid → `packInventoryToBlocks`; else → `twoPhaseConceptSplit`
+- Invalidate on file/notes change
 
-**Criterio de éxito**: `createSession` incluye `modeRecommendation: null`; `updateRecommendation` persiste y rehidrata. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: QA-REC-1 y QA-REC-2 manuales verificables; manual path sin regresión. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — study.js integración
+## PROMPT T06 — Tests + QA closure
 
-Implementa **T06** del ROADMAP Flow Recommendation.
+Implementa **T06** del ROADMAP RSVP Block Count Recommendation.
 
-**Contexto**: Orquestar cálculo post-normalización y lifecycle de modos. Ver `specs/20260609-flow-recommendation/contracts/consumer-integration.md`.
+**Contexto**: Cerrar feature. Ver `quickstart.md`.
 
 **Archivos**:
-- `src/js/study.js` — tras upload: `analyzeText` + `computeModeRecommendation`; en load: `updateFlowProgress`; on enter/exit mode: override + progress
+- `cursor-tests/20260611_rsvp-block-recommend.mjs` — ampliar: cache invalidation, formula boundaries, exports session
+- `cursor-tests/loader.mjs` — registrar suite si aplica
+- `specs/20260611-rsvp-block-recommend/quickstart.md` — marcar QA checklist
 
-**Depende de T04, T05, unified-session T04.**
+**Casos mínimos**:
+- 12+ recommender unit
+- 4+ fingerprint/cache
+- Smoke: `runConceptInventory` / `packInventoryToBlocks` exported
 
-**Criterio de éxito**: subir documento nuevo → `session.shared.modeRecommendation` poblado antes de elegir modo; sesión existente no recalcula flujo. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T07 — Panel UI
-
-Implementa **T07** del ROADMAP Flow Recommendation.
-
-**Contexto**: Panel no bloqueante en pantalla de selección de modo. Ver `specs/20260609-flow-recommendation/contracts/recommendation-ui.md`.
-
-**Archivos**:
-- `index.html` — markup `#recommendationPanel` y hijos
-- `src/js/study.js` — `renderRecommendationPanel`, wire CTAs
-- `src/css/main.css` — estilos mínimos steps lineales
-
-**Depende de T06.**
-
-**Criterio de éxito**: paper filosófico → panel "Slow → Cloze → Revisión" con tiempo y razón; click override RSVP → abre RSVP y `userOverride: true`. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: suite pasa; quickstart QA-REC-1..7 documentados. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Tests integración y QA
+## Instrucción de ejecución
 
-Implementa **T08** del ROADMAP Flow Recommendation.
+1. **Lanzar en paralelo** (4 chats): PROMPT T01, T02, T03, T04
+2. **Esperar** a que los cuatro terminen
+3. **Lanzar** PROMPT T05
+4. **Lanzar** PROMPT T06 cuando T05 esté listo
 
-**Contexto**: Cierre feature. Ver `specs/20260609-flow-recommendation/quickstart.md`.
-
-**Archivos**:
-- `cursor-tests/20260609_flow-recommendation-integration.mjs` (NUEVO)
-- Casos: upload → recomendación; override; sesión existente; tiempo ~83 min para 10k palabras slow; fallback sin LLM
-
-**Depende de T07.**
-
-**Criterio de éxito**: todos los cursor-tests pasan; checklist quickstart QA-1–QA-7; marcar T01–T08 [x] en este ROADMAP. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-# ROADMAP — Unified Cross-Mode Session (referencia)
-
-**Feature**: `20260609-unified-session` | **Spec**: `specs/20260609-unified-session/spec.md`
-
-> Feature prerequisito. Ver spec/plan en `specs/20260609-unified-session/`. T01–T04 bloqueantes para flow-recommendation T06.
-
-| ID | Descripción | Estado |
-|----|-------------|--------|
-| T01 | session-store CRUD | [x] |
-| T02 | Migración V1→V2 | [x] |
-| T03 | session.js wrapper | [x] |
-| T04 | study.js DocumentSession | [x] |
-| T05 | Slow escribe shared | [x] |
-| T06 | Cloze lee shared | [x] |
-| T07 | adapters.js shared | [x] |
-| T08 | Pantalla documentos | [x] |
-| T09 | Tests integración + QA | [x] |
+**Tiempo total estimado**: 1 ola paralela (4) + 2 secuenciales.
