@@ -377,6 +377,8 @@ from this study index. Rules:
 - 4 options (A/B/C/D), one correct answer.
 - ${MC_OPTION_PARITY_RULES}
 - Questions must test recognition and understanding, not computation.
+- Each question must be answerable from that block's summary alone—do not ask about examples or topics the summary does not explain.
+- For cause-effect questions, the correct option must include causal links the summary does not already make obvious.
 - Cover ALL blocks proportionally. 
   Distribution: {block_id: n_questions, ...}
 - Each question tagged with its block_id.
@@ -1272,15 +1274,22 @@ function getPreviousBlockTitleFromList(blocksListText, blockNumber) {
 }
 
 /** Shared MC distractor rules — reduces "correct answer stands out" cues. */
-export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone.`;
+export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options A–D must look like siblings—same language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four do—or all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone. Exception: when causal completeness requires a longer correct option, distractors stay plausible full clauses but need not pad to match that length.`;
+
+const QUESTION_SCOPE_RULES = `Scope (answerability): The student has ONLY seen this block's explanation and source chunk (plus earlier blocks for connection questions—not later blocks). Every question MUST be solvable from that material alone. Do NOT ask about topics reserved for future blocks, examples only named in the source but not explained in this block's explanation, or cultural/historical references the text does not unpack. Going beyond literal wording is fine ONLY if the reasoning chain is already available in the provided material.`;
+
+const QUESTION_CAUSAL_RULES = `Causal completeness: For "why", "because", "what explains", or cause-effect questions, the correct option must make the reasoning chain answerable without guesswork. If the block explanation already walks through the full chain (premise → intermediate step → conclusion), the correct option may state the conclusion or a key step the explanation makes obvious. If the explanation does NOT spell out intermediate steps, the correct option MUST include the missing causal links (e.g. not just "responsibility" but "because the intellectual's symbolic power creates unavoidable responsibility, which requires political commitment"). Distractors may stay shorter; the correct option should never be a bare label that only makes sense after unstated inference.`;
 
 const QUESTION_PEDAGOGY_RULES = `Questions must test understanding (apply, discriminate, predict)—not verbatim recall of source phrasing.
-For vocabulary blocks: test term-to-meaning or meaning-to-term only; no multi-step application yet.`;
+For vocabulary blocks: test term-to-meaning or meaning-to-term only; no multi-step application yet.
+${QUESTION_SCOPE_RULES}
+${QUESTION_CAUSAL_RULES}`;
 
 const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every test question, even before any student answer exists):
 - Feedback must read as a short conceptual explanation, not as a label for the right option.
 - Start by restating the underlying idea or rule in your own words (without copying any option).
 - Then explain why that idea makes the correct option work, using principle-level reasoning.
+- For cause-effect questions, trace the full reasoning chain in feedback when the correct option is abbreviated—supply any intermediate steps the block did not already make explicit.
 - Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails because…" / "La opción C confunde…".
 - Do NOT copy or closely paraphrase the text of the correct option in the feedback.
 - Avoid giveaway lead-ins such as "The correct answer is…" or naming the correct letter outright.
@@ -1511,7 +1520,7 @@ export function buildBlockGenerationUserContent({
     ? `\nPrevious block title: ${previousTitle}\nUse this title to write the bridge in the very first Hook sentence (first sentence of the first paragraph) so it appears in the sneak preview (first <=4 sentences).`
     : "";
 
-  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}`;
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk above—not from future blocks or unexplained asides in the source.`;
 }
 
 const QUESTIONS_ONLY_JSON_SCHEMA = `{
@@ -1621,7 +1630,9 @@ FIXED EXPLANATION (do not rewrite this explanation; generate questions that test
 ${fixedExplanation}
 
 Source material (verbatim chunk for grounding):
-${String(materialText || "").trim()}${gapBlock}${prevBlockSection}`;
+${String(materialText || "").trim()}${gapBlock}${prevBlockSection}
+
+Question scope: assume the student knows only the FIXED EXPLANATION and source chunk above (plus earlier blocks for connection questions)—not later blocks or unexplained source asides.`;
 }
 
 export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
@@ -1927,7 +1938,8 @@ Rules:
 
 Now generate the review:
 Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
-${testParity}Return ONLY valid JSON array:
+${testParity}${QUESTION_CAUSAL_RULES}
+Return ONLY valid JSON array:
 [{type, question, options?, answer?, feedback?}]
 No preamble, no backticks.`
     .split("{batch_size}")
