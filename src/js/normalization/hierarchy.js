@@ -195,7 +195,7 @@ export function parsePedagogicalMetaFromLlm(raw) {
     : "survey_field";
 
   const reasoning = String(m.reasoning ?? m.genreReasoning ?? "").trim();
-  const genreReasoning = truncateWords(reasoning || "Clasificación pedagógica del LLM", 20);
+  const genreReasoning = truncateWords(reasoning || "LLM pedagogical classification", 20);
 
   return {
     genre: /** @type {import("../session-types.js").PedagogicalGenre} */ (genre),
@@ -221,26 +221,26 @@ export function buildDeterministicPedagogicalMeta(textMetrics) {
 
   /** @type {import("../session-types.js").PedagogicalGenre} */
   let genre = "unknown";
-  let genreReasoning = "Señales insuficientes para clasificar el género";
+  let genreReasoning = "Insufficient signals to classify genre";
 
   if (firstPersonRatio > 0.03) {
     genre = "lecture_notes";
-    genreReasoning = "Alta proporción de primera persona, típico de apuntes";
+    genreReasoning = "High first-person ratio, typical of lecture notes";
   } else if (content.hasBibliography && content.hasMathNotation) {
     genre = "scientific_empirical";
-    genreReasoning = "Citas bibliográficas y notación matemática";
+    genreReasoning = "Bibliographic citations and math notation";
   } else if (academicVocabDensity > 0.05 && longParagraphRatio > 0.25) {
     genre = "philosophical";
-    genreReasoning = "Vocabulario académico denso y párrafos largos argumentativos";
+    genreReasoning = "Dense academic vocabulary and long argumentative paragraphs";
   } else if (content.hasBibliography) {
     genre = "scientific_theoretical";
-    genreReasoning = "Referencias bibliográficas sin señales empíricas fuertes";
+    genreReasoning = "Bibliographic references without strong empirical signals";
   } else if (structure.hasExplicitHeadings && content.hasDefinitionPatterns) {
     genre = "textbook_chapter";
-    genreReasoning = "Estructura con headings y patrones de definición";
+    genreReasoning = "Headings structure with definition patterns";
   } else if (firstPersonRatio > 0.01) {
     genre = "essay";
-    genreReasoning = "Tono ensayístico con voz personal moderada";
+    genreReasoning = "Essay tone with moderate personal voice";
   }
 
   const argumentativeDensity = clampDensity(

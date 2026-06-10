@@ -238,21 +238,40 @@
             <h1>How do you want to study?</h1>
             <p>Choose a mode to get started. You can switch anytime with the + button.</p>
 
+            <div class="flow-recommend-upload">
+              <button type="button" id="flowRecommendBtn" class="btn-primary flow-recommend-btn">
+                Recommend my study flow
+              </button>
+              <input
+                type="file"
+                id="flowRecommendFileInput"
+                class="sr-only"
+                accept=".pdf,.html,.txt,.md"
+                aria-hidden="true"
+                tabindex="-1"
+              />
+              <p class="hint flow-recommend-hint">
+                Upload your material and we suggest a path — e.g. Slow → Cloze → Review, depending on the text.
+              </p>
+              <span id="flowRecommendStatus" class="flow-recommend-status" role="status"></span>
+              <p id="flowRecommendError" class="flow-recommend-error" role="alert" hidden></p>
+            </div>
+
             <div id="recommendationPanel" class="recommendation-panel" hidden>
               <div class="recommendation-intro" data-recommendation-view="intro">
                 <p id="recommendationGenreLabel" class="recommendation-genre-label"></p>
                 <div
                   id="recommendationFlowSteps"
                   class="recommendation-flow-steps"
-                  aria-label="Flujo sugerido"
+                  aria-label="Suggested study flow"
                 ></div>
                 <p id="recommendationReasoning" class="recommendation-reasoning"></p>
                 <div class="recommendation-actions">
                   <button type="button" id="recommendationStartBtn" class="btn-primary"></button>
                   <label class="recommendation-override-label">
-                    <span class="hint">Otro modo</span>
-                    <select id="recommendationOverrideSelect" aria-label="Elegir otro modo">
-                      <option value="">Ir directamente a…</option>
+                    <span class="hint">Another mode</span>
+                    <select id="recommendationOverrideSelect" aria-label="Choose another mode">
+                      <option value="">Go directly to…</option>
                       <option value="rsvp">RSVP</option>
                       <option value="slow">Slow Mode</option>
                       <option value="cloze">Cloze Detection</option>
@@ -265,13 +284,13 @@
                     class="recommendation-why-link"
                     aria-describedby="recommendationReasoning"
                   >
-                    ¿Por qué este flujo?
+                    Why this flow?
                   </button>
                 </div>
                 <p id="recommendationQuickFlow" class="recommendation-quick-flow" hidden></p>
               </div>
               <div id="recommendationProgress" class="recommendation-progress" hidden>
-                <p class="recommendation-progress-label">Progreso:</p>
+                <p class="recommendation-progress-label">Progress:</p>
                 <div class="recommendation-progress-steps"></div>
                 <span id="recommendationSmDueBadge" class="recommendation-sm-badge" hidden></span>
                 <button type="button" id="recommendationContinueBtn" class="btn-primary"></button>
@@ -316,59 +335,6 @@
               <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
                 My documents
               </button>
-            </div>
-
-            <div class="mode-triage-panel">
-              <button
-                type="button"
-                id="modeTriageToggle"
-                class="mode-triage-toggle"
-                aria-expanded="false"
-                aria-controls="modeTriageBody"
-              >
-                ¿Qué modo elijo?
-              </button>
-              <div id="modeTriageBody" class="mode-triage-body" hidden>
-                <table class="mode-triage-matrix">
-                  <caption class="sr-only">Matriz resumida Slow Mode vs RSVP</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Tipo de texto</th>
-                      <th scope="col">Modo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Filosofía, literatura, ensayo</td>
-                      <td><strong>Slow Mode</strong></td>
-                    </tr>
-                    <tr>
-                      <td>Apuntes y resúmenes</td>
-                      <td><strong>RSVP</strong></td>
-                    </tr>
-                    <tr>
-                      <td>Bibliografía extensa (panorama general)</td>
-                      <td><strong>RSVP</strong></td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <p class="mode-triage-heuristic">
-                  ¿<strong>POR QUÉ</strong> cree el autor (<strong>Slow</strong>) o
-                  <strong>QUÉ</strong> cree (<strong>RSVP</strong>)?
-                </p>
-
-                <pre class="mode-triage-flow" aria-label="Flujo recomendado">Bibliografía del tema
-       │
-       ▼
-  RSVP (overview)
-       │
-       ▼
-  Slow Mode (profundidad)
-       │
-       ▼
-  RSVP (revisión)</pre>
-              </div>
             </div>
           </div>
         </section>
