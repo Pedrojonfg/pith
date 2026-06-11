@@ -367,6 +367,14 @@
             <h1>Configure your session</h1>
             <p class="create-screen-lead">Upload your material, then generate or continue.</p>
 
+            <div id="modeMaterialLoadedBanner" class="mode-material-loaded-banner" hidden>
+              <strong class="mode-material-loaded-title">Document ready</strong>
+              <p class="mode-material-loaded-meta hint">
+                Your material is already loaded for this study mode.
+              </p>
+              <p class="mode-material-loaded-doc hint"></p>
+            </div>
+
             <div id="modeResumePanel" class="mode-resume-panel" hidden>
               <p id="modeResumeHint" class="hint"></p>
               <div class="row mode-resume-actions">
@@ -376,15 +384,17 @@
             </div>
 
             <form id="generateBlocksForm" class="create-form" hidden>
-              <label for="fileInput">Material file</label>
-              <input
-                id="fileInput"
-                name="file"
-                type="file"
-                accept=".pdf,.html,.txt,.md"
-                required
-              />
-              <div class="hint" id="fileExtractHint" aria-live="polite"></div>
+              <div id="studyFileInputRow">
+                <label for="fileInput">Material file</label>
+                <input
+                  id="fileInput"
+                  name="file"
+                  type="file"
+                  accept=".pdf,.html,.txt,.md"
+                  required
+                />
+                <div class="hint" id="fileExtractHint" aria-live="polite"></div>
+              </div>
 
               <label for="llmModelSelect">Model</label>
               <select id="llmModelSelect" name="llmModel" aria-label="LLM for this session">

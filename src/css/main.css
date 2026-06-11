@@ -1477,6 +1477,24 @@ body.assessment-active .block-read-sidebar {
   font-size: 14px;
 }
 
+.mode-material-loaded-banner {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.mode-material-loaded-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+
+.mode-material-loaded-doc:empty {
+  display: none;
+}
+
 .create-form {
   display: grid;
   gap: 12px;

@@ -5,6 +5,10 @@ import {
   LS_DOC_TEXT_PREFIX,
 } from "./config.js";
 import {
+  extractSignalsFromBlockSession,
+  mergeAssessmentSignals,
+} from "./assessment-signals.js";
+import {
   computeCanonicalId,
   inferDocMeta,
   normalizeConceptLabel,
@@ -143,6 +147,8 @@ export async function createSession(rawMarkdown, options = {}) {
       annotations: [],
       smItems: [],
       modeRecommendation: null,
+      uploadMeta: null,
+      assessmentSignals: [],
     },
     modes: { rsvp: null, slow: null, cloze: null, questions: null },
   };
@@ -329,8 +335,52 @@ export function upsertSmItem(docId, item) {
 }
 
 /**
- * @param {string} [docId]
+ * @param {string} docId
+ * @param {{ fileName?: string, originalFormat?: string, uploadedAt?: string }|null} meta
  */
+export function setUploadMeta(docId, meta) {
+  const session = getSession(docId);
+  if (!session) throw new Error("session not found");
+  if (meta == null) {
+    session.shared.uploadMeta = null;
+  } else {
+    session.shared.uploadMeta = {
+      fileName: String(meta.fileName || ""),
+      originalFormat: String(meta.originalFormat || ""),
+      uploadedAt: String(meta.uploadedAt || new Date().toISOString()),
+    };
+  }
+  saveActiveSession(session);
+}
+
+/**
+ * @param {string} docId
+ * @param {object} slice
+ * @param {'rsvp'|'questions'} sourceMode
+ */
+export function syncAssessmentSignalsToShared(docId, slice, sourceMode) {
+  const session = getSession(docId);
+  if (!session) throw new Error("session not found");
+  const incoming = extractSignalsFromBlockSession(slice, sourceMode);
+  const existing = Array.isArray(session.shared.assessmentSignals)
+    ? session.shared.assessmentSignals
+    : [];
+  session.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
+  saveActiveSession(session);
+}
+
+/**
+ * @param {string} docId
+ * @returns {import('./session-types.js').AssessmentSignal[]}
+ */
+export function getAssessmentSignals(docId) {
+  const session = getSession(docId);
+  if (!session) return [];
+  return Array.isArray(session.shared.assessmentSignals)
+    ? [...session.shared.assessmentSignals]
+    : [];
+}
+
 export function getSmItemsDueToday(docId) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);

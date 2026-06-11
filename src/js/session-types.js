@@ -34,6 +34,26 @@
  * @property {string} genreReasoning
  */
 
+/**
+ * @typedef {object} UploadMeta
+ * @property {string} fileName
+ * @property {string} originalFormat
+ * @property {string} uploadedAt
+ */
+
+/**
+ * @typedef {object} AssessmentSignal
+ * @property {string} canonicalId
+ * @property {string} conceptLabel
+ * @property {number|null} blockIndex
+ * @property {'rsvp'|'questions'} sourceMode
+ * @property {number} wrongCount
+ * @property {number} correctCount
+ * @property {'wrong'|'correct'} lastResult
+ * @property {number} lastAt
+ * @property {number} weight
+ */
+
 const MODE_KEYS = ["rsvp", "slow", "cloze", "questions"];
 
 const STOPWORDS = new Set([
@@ -171,6 +191,24 @@ export function validateDocumentSession(session) {
       } else if (!Array.isArray(rec.primaryFlow)) {
         errors.push("shared.modeRecommendation.primaryFlow must be an array");
       }
+    }
+    if (sh.uploadMeta != null) {
+      if (typeof sh.uploadMeta !== "object" || Array.isArray(sh.uploadMeta)) {
+        errors.push("shared.uploadMeta must be object or null");
+      } else {
+        if (typeof sh.uploadMeta.fileName !== "string") {
+          errors.push("shared.uploadMeta.fileName must be string");
+        }
+        if (typeof sh.uploadMeta.originalFormat !== "string") {
+          errors.push("shared.uploadMeta.originalFormat must be string");
+        }
+        if (typeof sh.uploadMeta.uploadedAt !== "string") {
+          errors.push("shared.uploadMeta.uploadedAt must be string");
+        }
+      }
+    }
+    if (sh.assessmentSignals != null && !Array.isArray(sh.assessmentSignals)) {
+      errors.push("shared.assessmentSignals must be array");
     }
   }
   if (!session.modes || typeof session.modes !== "object") {

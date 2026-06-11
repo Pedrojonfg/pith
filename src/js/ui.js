@@ -289,6 +289,8 @@ export const els = {
   assessmentGeneratingError: document.getElementById("assessmentGeneratingError"),
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
+  modeMaterialLoadedBanner: document.getElementById("modeMaterialLoadedBanner"),
+  studyFileInputRow: document.getElementById("studyFileInputRow"),
   modeResumePanel: document.getElementById("modeResumePanel"),
   modeResumeHint: document.getElementById("modeResumeHint"),
   rsvpImportDetails: document.getElementById("rsvpImportDetails"),
