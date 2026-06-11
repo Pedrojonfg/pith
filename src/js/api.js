@@ -792,11 +792,27 @@ Return ONLY one JSON object (no markdown, no preamble):
 Cover the full material. Respond entirely in ${lang}.`;
 }
 
-async function callLlmSplit({ llmModel, messages, useJsonObjectMode }) {
+export const CONCEPT_PACK_MAX_TOKENS = 16384;
+
+export function looksLikeTruncatedModelJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  const withoutFence = stripJsonFence(raw);
+  if (!withoutFence.startsWith("{") && !withoutFence.startsWith("[")) return false;
+  try {
+    JSON.parse(withoutFence);
+    return false;
+  } catch {
+    return withoutFence.length > 200;
+  }
+}
+
+async function callLlmSplit({ llmModel, messages, useJsonObjectMode, max_tokens }) {
   return llmChatCompletions({
     llmModel,
     messages,
     temperature: 0.2,
+    max_tokens,
     response_format: useJsonObjectMode ? { type: "json_object" } : undefined,
   });
 }
@@ -1128,7 +1144,7 @@ export async function deepSeekPackConceptsToBlocks({
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
 
-  function buildMessages(compact) {
+  function buildMessages(compact, terse = false) {
     const messages = [
       {
         role: "system",
@@ -1144,38 +1160,41 @@ export async function deepSeekPackConceptsToBlocks({
     if (compact) {
       messages.push({
         role: "user",
-        content: `Pack concepts into ${n} blocks. JSON only.`,
+        content: terse
+          ? `Pack into ${n} blocks. JSON only. Summaries: max 1 sentence each. Signatures: max 5 short terms. No prose outside JSON.`
+          : `Pack concepts into ${n} blocks. JSON only. Keep summaries brief (1-2 sentences).`,
       });
     }
     return messages;
   }
 
   const attempts = [
-    { compact: false, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: false },
+    { compact: false, terse: false, useJsonObjectMode: true },
+    { compact: true, terse: false, useJsonObjectMode: true },
+    { compact: true, terse: true, useJsonObjectMode: true },
+    { compact: true, terse: true, useJsonObjectMode: false },
   ];
 
   let lastRaw = "";
+  let lastTruncated = false;
   for (const attempt of attempts) {
+    const splitOpts = {
+      llmModel: model,
+      messages: buildMessages(attempt.compact, attempt.terse),
+      useJsonObjectMode: attempt.useJsonObjectMode,
+      max_tokens: CONCEPT_PACK_MAX_TOKENS,
+    };
     try {
-      lastRaw = await callLlmSplit({
-        llmModel: model,
-        messages: buildMessages(attempt.compact),
-        useJsonObjectMode: attempt.useJsonObjectMode,
-      });
+      lastRaw = await callLlmSplit(splitOpts);
     } catch (err) {
       if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
-        lastRaw = await callLlmSplit({
-          llmModel: model,
-          messages: buildMessages(attempt.compact),
-          useJsonObjectMode: false,
-        });
+        lastRaw = await callLlmSplit({ ...splitOpts, useJsonObjectMode: false });
       } else {
         throw err;
       }
     }
 
+    lastTruncated = looksLikeTruncatedModelJson(lastRaw);
     const packed = parseConceptPackFromModelResponse(lastRaw, { targetN: n });
     if (packed?.blocks?.length) {
       return packed;
@@ -1184,6 +1203,11 @@ export async function deepSeekPackConceptsToBlocks({
   }
 
   console.warn("Concept pack: all parse attempts failed:", lastRaw.slice(0, 800));
+  if (lastTruncated) {
+    throw new Error(
+      "Model response was cut off before finishing the block pack. Try again, or lower the block count slightly.",
+    );
+  }
   throw new Error(
     "Model returned concept pack JSON we could not parse. Please try generating blocks again.",
   );

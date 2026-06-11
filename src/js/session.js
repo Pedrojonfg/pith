@@ -2123,18 +2123,55 @@ export async function packInventoryToBlocks(
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
-  const { deepSeekPackConceptsToBlocks } = await import("./api.js?v=20260525_1");
+  const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
+    "./api.js?v=20260525_1",
+  );
 
   progress(`Packing ${requested_n} blocks…`);
-  const { blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
-    llmModel: model,
-    inventory,
-    nBlocks: requested_n,
-    maxBlocks: requested_n,
-    studyNotes: notes,
-    language: lang,
-    knowledgeProfile: profile,
-  });
+  let blocks;
+  let pack_meta;
+  try {
+    ({ blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
+      llmModel: model,
+      inventory,
+      nBlocks: requested_n,
+      maxBlocks: requested_n,
+      studyNotes: notes,
+      language: lang,
+      knowledgeProfile: profile,
+    }));
+  } catch (packErr) {
+    console.warn("packInventoryToBlocks: falling back to mono split", packErr?.message || packErr);
+    progress("Using classic split (fallback)…");
+    const parsed = await deepSeekSplitIntoBlocks({
+      llmModel: model,
+      nBlocks: requested_n,
+      materialText,
+      studyNotes: notes,
+      language: lang,
+    });
+    let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
+    if (!fallbackBlocks?.length) throw packErr;
+    const chunks = splitMaterialIntoBlockChunks(materialText, fallbackBlocks.length);
+    const blockIndex = fallbackBlocks.map((b, i) => ({
+      ...b,
+      chunk: chunks[i] || "",
+    }));
+    return {
+      blockIndex,
+      conceptInventory: inventory,
+      splitRunMeta: {
+        requested_n,
+        final_n: blockIndex.length,
+        baseline_n: requested_n,
+        profile_applied: Boolean(profile),
+        pipeline: "fallback_mono",
+        concept_count: inventory.length,
+        concept_inventory: inventory,
+        pack_fallback_reason: String(packErr?.message || packErr),
+      },
+    };
+  }
 
   let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
   if (!normalized?.length) throw new Error("Pack returned no normalizable blocks.");
