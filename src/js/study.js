@@ -12,6 +12,7 @@ import {
 } from "./api.js?v=20260527_1";
 import {
   ASSESSMENT_FLAGS,
+  isAssessmentQuestionsUiEnabled,
   isPrePackingAssessmentEnabled,
 } from "./config/flags.js";
 import {
@@ -1043,7 +1044,7 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
       storeActiveSession(slice);
     }
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
     showScreen("slowScope");
     renderSlowScopeScreen(slice);
@@ -1052,17 +1053,17 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
 
   if (mode === "cloze") {
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    setGenerateBlocksFormHidden(true);
     setMaterialBootstrapUi(true, doc);
     updateClozeSessionPanel(slice);
-    showScreen("create");
+    showCreateScreen();
     return;
   }
 
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-  if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+  setGenerateBlocksFormHidden(false);
   setMaterialBootstrapUi(true, doc);
-  showScreen("create");
+  showCreateScreen();
 }
 
 /**
@@ -1109,7 +1110,7 @@ function enterCreateScreenForMode(mode) {
     els.createModeLabel.textContent = getStudyModeLabel(normalized);
   }
   showModeResumeOrUpload(normalized);
-  showScreen("create");
+  showCreateScreen();
 }
 
 function returnToCreateScreen() {
@@ -1118,12 +1119,30 @@ function returnToCreateScreen() {
   else enterModeSelectScreen();
 }
 
+function resolveActiveCreateMode() {
+  return normalizeStudyMode(state.studyMode || getSelectedStudyModeRadio());
+}
+
+function showCreateScreen() {
+  updateCreateScreenModeVisibility(resolveActiveCreateMode());
+  showScreen("create");
+}
+
+function setGenerateBlocksFormHidden(hidden) {
+  if (els.generateBlocksForm) els.generateBlocksForm.hidden = hidden;
+  if (els.generateBlocksFooter) els.generateBlocksFooter.hidden = hidden;
+  if (!hidden) updateCreateScreenModeVisibility(resolveActiveCreateMode());
+}
+
 function updateCreateScreenModeVisibility(mode) {
   const isSlow = mode === "slow";
   const isRsvp = mode === "rsvp";
   const isCloze = mode === "cloze";
   const isQuestions = mode === "questions";
   const showBlockConfig = isRsvp || isQuestions;
+  if (els.generateBlocksForm) {
+    els.generateBlocksForm.classList.toggle("create-form--slow", isSlow);
+  }
   if (els.rsvpImportDetails) els.rsvpImportDetails.hidden = !isRsvp;
   if (els.rsvpAdvancedDetails) els.rsvpAdvancedDetails.hidden = !showBlockConfig;
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
@@ -1146,7 +1165,7 @@ function updateCreateScreenModeVisibility(mode) {
 function resetCreateScreenModeUi() {
   clearMaterialBootstrapUi();
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-  if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  setGenerateBlocksFormHidden(true);
   if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
   if (els.createModeLabel) els.createModeLabel.textContent = "";
   updateCreateScreenModeVisibility(null);
@@ -1213,10 +1232,10 @@ function resumeClozeSession(session) {
   state.activeSession = session;
   state.studyMode = "cloze";
   storeActiveSession(session);
-  if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+  setGenerateBlocksFormHidden(true);
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   updateClozeSessionPanel(session);
-  showScreen("create");
+  showCreateScreen();
   if (session?.cloze?.pipelineStatus === "ready" && getValidItems(session.cloze.items || []).length > 0) {
     // User can tap Estudiar; optional auto-navigate deferred.
   }
@@ -1316,10 +1335,10 @@ async function importClozePacksFromInput() {
     state.activeSession = sessionObj;
     state.studyMode = "cloze";
     storeActiveSession(sessionObj);
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    setGenerateBlocksFormHidden(true);
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     updateClozeSessionPanel(sessionObj);
-    showScreen("create");
+    showCreateScreen();
     const warn =
       Array.isArray(result.errors) && result.errors.length
         ? ` (${result.errors.length} file(s) skipped)`
@@ -1372,10 +1391,10 @@ function showModeResumeOrUpload(mode) {
         els.modeResumeHint.textContent = `You have a saved ${label} session. Continue where you left off or start fresh.`;
       }
     }
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    setGenerateBlocksFormHidden(true);
   } else {
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+    setGenerateBlocksFormHidden(false);
   }
 }
 
@@ -2294,7 +2313,7 @@ function wireStudyModeSelector() {
     }
     clearMaterialBootstrapUi();
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+    setGenerateBlocksFormHidden(false);
     if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
     state.studyMode = mode;
     state.activeSession = null;
@@ -3714,6 +3733,9 @@ function ensureTestQuestionShuffled(block, q) {
 }
 
 function getActiveQuestionContext() {
+  if (isPrePackingAssessmentRunner()) {
+    return getAssessmentQuestionContext();
+  }
   const blocks = getBlocksSafe();
   const block = blocks[state.activeBlockIndex];
   const { testQs, socQs, allQs } = getBlockOrderedQuestions(block);
@@ -3730,10 +3752,16 @@ function getActiveQuestionContext() {
 function setQuestionProgressUi() {
   const ctx = getActiveQuestionContext();
   const n = Math.max(1, ctx.total);
-  const label = `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
+  const label = isPrePackingAssessmentRunner()
+    ? `Knowledge check · Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
+    : `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
   if (els.testMeta) {
-    const totalBlocks = Math.max(1, getTotalBlocksSafe());
-    els.testMeta.textContent = `${label} · Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+    if (isPrePackingAssessmentRunner()) {
+      els.testMeta.textContent = label;
+    } else {
+      const totalBlocks = Math.max(1, getTotalBlocksSafe());
+      els.testMeta.textContent = `${label} · Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+    }
   }
   if (els.socraticQuestionTitle) {
     els.socraticQuestionTitle.textContent = label;
@@ -3741,6 +3769,10 @@ function setQuestionProgressUi() {
 }
 
 function setTestMeta() {
+  if (isPrePackingAssessmentRunner()) {
+    els.testHeader.textContent = "Document knowledge check";
+    return;
+  }
   const total = Math.max(1, getTotalBlocksSafe());
   const title = getBlockTitleSafe(state.activeBlockIndex);
   els.testHeader.textContent = title;
@@ -3951,6 +3983,10 @@ function renderTestQuestion() {
 }
 
 function handleTestAnswer({ chosen, correct, feedback }) {
+  if (isPrePackingAssessmentRunner()) {
+    handleAssessmentTestAnswer({ chosen, correct, feedback });
+    return;
+  }
   const btns = Array.from(els.testOptions.querySelectorAll("button"));
   for (const b of btns) b.disabled = true;
 
@@ -4040,10 +4076,15 @@ function renderSocraticQuestion() {
   }
 
   const q = ctx.q;
-  const total = Math.max(1, getTotalBlocksSafe());
-  const blockTitle = getBlockTitleSafe(state.activeBlockIndex);
-  els.socraticHeader.textContent = "Socratic";
-  els.socraticMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}: ${blockTitle}`;
+  if (isPrePackingAssessmentRunner()) {
+    els.socraticHeader.textContent = "Document knowledge check";
+    els.socraticMeta.textContent = "";
+  } else {
+    const total = Math.max(1, getTotalBlocksSafe());
+    const blockTitle = getBlockTitleSafe(state.activeBlockIndex);
+    els.socraticHeader.textContent = "Socratic";
+    els.socraticMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}: ${blockTitle}`;
+  }
   setQuestionProgressUi();
   void renderMarkdown(els.socraticQuestionText, String(q.question));
 
@@ -4667,7 +4708,62 @@ let prePackingFlow = null;
 let prePackingDraftMeta = null;
 
 function resetPrePackingFlow() {
+  clearAssessmentChrome();
   prePackingFlow = null;
+}
+
+function resolvePrePackingQuestionConfig() {
+  let n_test = clampInt(state.nTest, 0, MAX_N_TEST, 2);
+  let n_socratic = clampInt(state.nSocratic, 0, 3, 1);
+  const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
+  while (n_test + n_socratic > cap && n_socratic > 0) n_socratic -= 1;
+  while (n_test + n_socratic > cap && n_test > 0) n_test -= 1;
+  return { n_test, n_socratic };
+}
+
+function isPrePackingAssessmentRunner() {
+  return prePackingFlow?.runnerMode === "assessment";
+}
+
+function ensureAssessmentTestQuestionShuffled(block, q) {
+  if (!q || !block || String(q.type || "").trim().toLowerCase() !== "test") return q;
+  if (q._optionsShuffled) return q;
+  const shuffled = shuffleTestQuestionOptions(q);
+  const qs = Array.isArray(block.questions) ? block.questions : null;
+  if (qs) {
+    const i = qs.indexOf(q);
+    if (i >= 0) qs[i] = shuffled;
+  }
+  return shuffled;
+}
+
+function getAssessmentQuestionContext() {
+  const block = prePackingFlow?.assessmentBlock;
+  const { testQs, socQs, allQs } = getBlockOrderedQuestions(block);
+  const total = allQs.length;
+  const globalIndex = Math.max(0, Math.floor(Number(prePackingFlow?.assessmentQuestionIndex) || 0));
+  const rawQ = allQs[globalIndex] || null;
+  const q = block && rawQ ? ensureAssessmentTestQuestionShuffled(block, rawQ) : rawQ;
+  const type = q && typeof q === "object" ? String(q.type || "") : "";
+  const phase = type === "socratic" ? "Socratic" : "Test";
+  const localIndex = type === "socratic" ? Math.max(0, globalIndex - testQs.length) : globalIndex;
+  return { block, testQs, socQs, allQs, total, globalIndex, localIndex, type, phase, q };
+}
+
+function renderAssessmentChrome() {
+  document.body.classList.add("assessment-runner-active");
+  if (els.testAssessmentChrome) els.testAssessmentChrome.hidden = false;
+  if (els.socraticAssessmentChrome) els.socraticAssessmentChrome.hidden = false;
+  if (els.testRestartBlockBtn) els.testRestartBlockBtn.hidden = true;
+  if (els.testRsvpView) els.testRsvpView.hidden = true;
+  if (els.testQaView) els.testQaView.hidden = false;
+}
+
+function clearAssessmentChrome() {
+  document.body.classList.remove("assessment-runner-active");
+  if (els.testAssessmentChrome) els.testAssessmentChrome.hidden = true;
+  if (els.socraticAssessmentChrome) els.socraticAssessmentChrome.hidden = true;
+  if (els.testRestartBlockBtn) els.testRestartBlockBtn.hidden = false;
 }
 
 function stashPrePackingDraftMeta() {
@@ -4735,6 +4831,150 @@ function renderPrePackingAssessmentGraph(inventory) {
   host.textContent = `${graph.nodes.length} concepts · ${graph.edges.length} relations`;
 }
 
+function recordAssessmentResponse(row) {
+  if (!prePackingFlow) return;
+  const responses = Array.isArray(prePackingFlow.assessmentResponses)
+    ? prePackingFlow.assessmentResponses
+    : [];
+  const itemId = String(row?.item_id || "").trim();
+  const existing = responses.findIndex((r) => String(r?.item_id || "") === itemId);
+  if (existing >= 0) responses[existing] = row;
+  else responses.push(row);
+  prePackingFlow.assessmentResponses = responses;
+}
+
+function handleAssessmentTestAnswer({ chosen, correct, feedback }) {
+  const btns = Array.from(els.testOptions.querySelectorAll("button"));
+  for (const b of btns) b.disabled = true;
+
+  const ctx = getActiveQuestionContext();
+  const q = ctx.q;
+  const optText = q?.options && q.options[chosen] != null ? String(q.options[chosen]) : "";
+  const userAnswer = optText ? `${chosen}. ${optText}` : String(chosen || "");
+
+  recordAssessmentResponse({
+    item_id: String(q?.item_id || `test_${ctx.globalIndex}`),
+    questionType: "test",
+    userAnswer,
+    correctAnswer: String(correct || ""),
+    concept_id: String(q?.concept_id || ""),
+    questionText: q?.question != null ? String(q.question) : "",
+  });
+
+  const normalizedChosen = String(chosen || "").trim().toUpperCase();
+  const normalizedCorrect = String(correct || "").trim().toUpperCase();
+  const chosenBtn = btns.find((b) => b.dataset.letter === normalizedChosen);
+  if (chosenBtn) {
+    chosenBtn.classList.add(normalizedChosen === normalizedCorrect ? "is-correct" : "is-wrong");
+  }
+  if (normalizedChosen !== normalizedCorrect) {
+    const correctBtn = btns.find((b) => b.dataset.letter === normalizedCorrect);
+    if (correctBtn) correctBtn.classList.add("is-correct-soft");
+  }
+
+  els.testFeedback.hidden = false;
+  void renderMarkdown(els.testFeedback, feedback || "");
+
+  const isLastGlobal = ctx.globalIndex >= ctx.total - 1;
+  els.testNextBtn.hidden = false;
+  els.testNextBtn.textContent = isLastGlobal ? "Finish assessment" : "Next";
+
+  els.testNextBtn.onclick = () => {
+    if (!isLastGlobal) {
+      prePackingFlow.assessmentQuestionIndex = ctx.globalIndex + 1;
+      const nextCtx = getActiveQuestionContext();
+      if (nextCtx.type === "socratic") {
+        showScreen("socratic");
+        renderSocraticQuestion();
+      } else {
+        renderTestQuestion();
+      }
+      return;
+    }
+    void finishPrePackingAssessment();
+  };
+}
+
+function handleAssessmentSocraticSubmit(answerText) {
+  const ctx = getActiveQuestionContext();
+  const q = ctx.q;
+  if (!q) return;
+
+  recordAssessmentResponse({
+    item_id: String(q?.item_id || `soc_${ctx.globalIndex}`),
+    questionType: "socratic",
+    userAnswer: answerText,
+    concept_id: String(q?.concept_id || ""),
+    questionText: String(q.question || ""),
+  });
+
+  els.socraticResponseBox.hidden = false;
+  els.socraticResponseBox.textContent = "Answer recorded.";
+
+  const isLastQuestion = ctx.globalIndex >= ctx.total - 1;
+  if (!isLastQuestion) {
+    els.socraticNextQuestionBtn.hidden = false;
+  } else {
+    els.socraticNextBlockBtn.hidden = false;
+    els.socraticNextBlockBtn.textContent = "Finish assessment";
+  }
+}
+
+async function enterPrePackingAssessmentRunner() {
+  if (!prePackingFlow) return;
+  const qCfg = resolvePrePackingQuestionConfig();
+  prePackingFlow.runnerMode = "assessment";
+  prePackingFlow.assessmentQuestionIndex = 0;
+  prePackingFlow.assessmentResponses = [];
+
+  clearTestError();
+  els.testFeedback.hidden = true;
+  clearMarkdownContainer(els.testFeedback);
+  els.testNextBtn.hidden = true;
+  els.testOptions.innerHTML = "";
+  clearMarkdownContainer(els.testQuestionText);
+
+  try {
+    if (!prePackingFlow.itemsPromise) {
+      prePackingFlow.itemsPromise = generatePrePackingAssessmentItems({
+        conceptInventory: prePackingFlow.conceptInventory,
+        edges: prePackingFlow.edges || [],
+        materialText: prePackingFlow.cleanedText,
+        n_test: qCfg.n_test,
+        n_socratic: qCfg.n_socratic,
+        llmModel: prePackingFlow.splitOpts?.llmModel,
+        language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
+      });
+    }
+    const items = await prePackingFlow.itemsPromise;
+    const questions = Array.isArray(items) ? items : [];
+    if (!questions.length) {
+      throw new Error("Could not generate assessment items.");
+    }
+
+    prePackingFlow.assessmentItems = questions;
+    prePackingFlow.assessmentBlock = {
+      id: 0,
+      title: "Document knowledge check",
+      explanation: "",
+      questions,
+      _config: { n_test: qCfg.n_test, n_socratic: qCfg.n_socratic },
+    };
+
+    if (els.testHeader) els.testHeader.textContent = "Document knowledge check";
+    showScreen("test");
+    renderAssessmentChrome();
+    showTestQuestions();
+    renderTestQuestion();
+  } catch (err) {
+    clearAssessmentChrome();
+    setTestError(
+      err?.message ? String(err.message) : "Assessment unavailable — packing without profile.",
+    );
+    await handlePrePackingSkip();
+  }
+}
+
 function renderPrePackingAssessmentQuestion() {
   if (!prePackingFlow) return;
   const items = prePackingFlow.assessmentItems || [];
@@ -4776,6 +5016,10 @@ function renderPrePackingAssessmentQuestion() {
 
 async function enterPrePackingAssessmentScreen() {
   if (!prePackingFlow) return;
+  if (isAssessmentQuestionsUiEnabled()) {
+    await enterPrePackingAssessmentRunner();
+    return;
+  }
   renderPrePackingAssessmentGraph(prePackingFlow.conceptInventory);
   prePackingFlow.questionIndex = 0;
   prePackingFlow.responses = [];
@@ -4832,7 +5076,7 @@ async function handlePrePackingSkip() {
     resetPrePackingFlow();
   } catch (err) {
     setGenerateError(err?.message ? String(err.message) : String(err));
-    showScreen("create");
+    showCreateScreen();
   } finally {
     setGenerateLoading(false);
   }
@@ -4883,14 +5127,21 @@ async function advancePrePackingAssessment() {
 
 async function finishPrePackingAssessment() {
   if (!prePackingFlow) return;
+  clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
     els.prePackingAssessmentStatus.textContent = "Evaluating responses…";
   }
   if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = true;
 
+  const assessmentItems =
+    prePackingFlow.assessmentBlock?.questions || prePackingFlow.assessmentItems || [];
+  const assessmentResponses = isPrePackingAssessmentRunner()
+    ? prePackingFlow.assessmentResponses
+    : prePackingFlow.responses;
+
   const profile = await evaluatePrePackingAssessmentResponses({
-    items: prePackingFlow.assessmentItems,
-    responses: prePackingFlow.responses,
+    items: assessmentItems,
+    responses: assessmentResponses,
     conceptInventory: prePackingFlow.conceptInventory,
     llmModel: prePackingFlow.splitOpts?.llmModel,
     language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
@@ -4983,7 +5234,7 @@ async function handlePrePackingAccept() {
     resetPrePackingFlow();
   } catch (err) {
     setGenerateError(err?.message ? String(err.message) : String(err));
-    showScreen("create");
+    showCreateScreen();
   } finally {
     if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = false;
     if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = "";
@@ -5004,7 +5255,7 @@ async function handlePrePackingIgnore() {
     resetPrePackingFlow();
   } catch (err) {
     setGenerateError(err?.message ? String(err.message) : String(err));
-    showScreen("create");
+    showCreateScreen();
   }
 }
 
@@ -6075,9 +6326,9 @@ export function wireStudyHandlers() {
         persistModeSliceToDocument(doc, "cloze", sessionObj);
         state.activeSession = sessionObj;
         storeActiveSession(sessionObj);
-        if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+        setGenerateBlocksFormHidden(true);
         updateClozeSessionPanel(sessionObj);
-        showScreen("create");
+        showCreateScreen();
       } catch (err) {
         setGenerateError(err?.message ? String(err.message) : String(err));
       } finally {
@@ -6583,6 +6834,12 @@ export function wireStudyHandlers() {
     }
   });
 
+  els.assessmentRunnerSkip?.addEventListener("click", () => {
+    void handlePrePackingSkip();
+  });
+  els.assessmentRunnerSkipSocratic?.addEventListener("click", () => {
+    void handlePrePackingSkip();
+  });
   els.prePackingAssessmentSkip?.addEventListener("click", () => {
     void handlePrePackingSkip();
   });
@@ -6847,6 +7104,16 @@ export function wireStudyHandlers() {
   }
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
+    if (isPrePackingAssessmentRunner()) {
+      clearSocraticError();
+      const answer = String(els.socraticAnswer.value || "").trim();
+      if (!answer) {
+        setSocraticError("Please write an answer before submitting.");
+        return;
+      }
+      handleAssessmentSocraticSubmit(answer);
+      return;
+    }
     if (isOfflineMode()) {
       setSocraticError("Offline mode supports test questions only.");
       return;
@@ -6936,6 +7203,21 @@ export function wireStudyHandlers() {
   });
 
   els.socraticNextQuestionBtn.addEventListener("click", () => {
+    if (isPrePackingAssessmentRunner()) {
+      const ctx = getActiveQuestionContext();
+      if (ctx.globalIndex < ctx.total - 1) {
+        prePackingFlow.assessmentQuestionIndex = ctx.globalIndex + 1;
+      }
+      const nextCtx = getActiveQuestionContext();
+      if (nextCtx.type === "test") {
+        showScreen("test");
+        showTestQuestions();
+        renderTestQuestion();
+      } else {
+        renderSocraticQuestion();
+      }
+      return;
+    }
     const ctx = getActiveQuestionContext();
     if (ctx.globalIndex < ctx.total - 1) {
       state.activeQuestionIndex += 1;
@@ -6955,6 +7237,10 @@ export function wireStudyHandlers() {
   });
 
   els.socraticNextBlockBtn.addEventListener("click", () => {
+    if (isPrePackingAssessmentRunner()) {
+      void finishPrePackingAssessment();
+      return;
+    }
     const blocks = getBlocksSafe();
     if (state.activeBlockIndex < blocks.length - 1) {
       void finishQuestions(state.activeBlockIndex);

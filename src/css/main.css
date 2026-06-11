@@ -1188,6 +1188,16 @@ body.assessment-active .block-read-sidebar {
   display: none !important;
 }
 
+body.assessment-runner-active .assessment-runner-chrome {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.assessment-runner-chrome[hidden] {
+  display: none !important;
+}
+
 .assessment-runner {
   position: fixed;
   inset: 0;
@@ -1513,6 +1523,11 @@ body.assessment-active .block-read-sidebar {
   background: var(--panel);
 }
 
+/* Critical reading mode is Slow-only; keep hidden for RSVP/cloze/questions. */
+.create-form:not(.create-form--slow) #slowOnlyControls {
+  display: none !important;
+}
+
 .create-q-row {
   margin-top: 0;
   gap: 10px;
@@ -1525,8 +1540,28 @@ body.assessment-active .block-read-sidebar {
   font-variant-numeric: tabular-nums;
 }
 
+.create-collapsibles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.create-collapsibles--shared {
+  margin-top: 10px;
+}
+
+.create-form:not([hidden]) + #clozeSessionPanel[hidden] + .create-collapsibles--shared {
+  margin-top: 0;
+}
+
+.create-primary-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .create-submit-row {
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .recommend-blocks-controls {
@@ -1558,7 +1593,7 @@ body.assessment-active .block-read-sidebar {
 }
 
 .form-collapsible {
-  margin-top: 8px;
+  margin-top: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 0 12px;
