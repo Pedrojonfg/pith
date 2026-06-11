@@ -161,9 +161,10 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
 
   if (genre === "textbook_chapter") {
     return {
-      primaryModes: ["rsvp", "cloze", "review"],
+      primaryModes: ["rsvp", "cloze", "questions"],
       quickModes: ["rsvp", "questions"],
-      reasoning: "Structured textbook material. Skim first, then active retrieval.",
+      reasoning:
+        "Structured textbook material. Skim first, practice with cloze, then check comprehension with questions.",
     };
   }
 

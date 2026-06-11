@@ -191,6 +191,23 @@ function testArgumentativeDensityTriggersSlow() {
   assert(rec.primaryFlow[0].mode === "slow", "density>=4: slow first without philosophical genre");
 }
 
+function testTextbookChapterRsvpClozeQuestions() {
+  const metrics = analyzeText("Chapter 3: Cell structure. ".repeat(400).trim());
+  const rec = computeModeRecommendation(metrics, {
+    genre: "textbook_chapter",
+    argumentativeDensity: 2,
+    conceptualLoad: 3,
+    primaryLearningGoal: "memorize_facts",
+    genreReasoning: "Structured textbook chapter",
+  });
+
+  assert(
+    rec.primaryFlow.map((s) => s.mode).join(",") === "rsvp,cloze,questions",
+    "textbook_chapter: RSVP then Cloze then Questions",
+  );
+  assertFullSchema(rec, "textbook_chapter");
+}
+
 function testLlmMetaMethod() {
   const metrics = analyzeText(PHILOSOPHICAL_PAPER);
   const rec = computeModeRecommendation(
@@ -213,6 +230,7 @@ testTinySingleStep();
 testTimeFactors();
 testComputeStepTimes();
 testArgumentativeDensityTriggersSlow();
+testTextbookChapterRsvpClozeQuestions();
 testLlmMetaMethod();
 
 console.log(
