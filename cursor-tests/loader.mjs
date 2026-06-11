@@ -7,6 +7,8 @@ export const FEATURE_TEST_SUITES = Object.freeze({
   "20260611-rsvp-block-recommend": "cursor-tests/20260611_rsvp-block-recommend.mjs",
   "20260611-rsvp-assessment-reposition": "cursor-tests/20260611_rsvp-assessment-reposition.mjs",
   "20260612-mode-continuity": "cursor-tests/20260612_mode-continuity.mjs",
+  "20260612-rsvp-assessment-questions-parity":
+    "cursor-tests/20260612_rsvp-assessment-questions-parity.mjs",
 });
 
 /** Strip ?v= cache busters; stub browser-only modules for Node tests. */

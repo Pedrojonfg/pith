@@ -421,6 +421,7 @@
                 </div>
               </div>
 
+              <div class="create-collapsibles">
               <details id="rsvpImportDetails" class="form-collapsible" hidden>
                 <summary>Offline pack &amp; index import</summary>
                 <div id="rsvpOnlyControls" class="form-collapsible-body">
@@ -520,12 +521,7 @@
                   <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
                 </div>
               </details>
-
-              <div class="row create-submit-row">
-                <button type="submit" id="generateBlocksBtn" class="btn-primary">Generate blocks</button>
-                <span class="hint" id="generateBlocksStatus" role="status"></span>
               </div>
-              <div id="generateBlocksError" class="error" hidden></div>
             </form>
 
             <div id="clozeSessionPanel" class="cloze-session-panel" hidden>
@@ -541,6 +537,7 @@
               <div id="clozeGraphMount" class="cloze-graph-mount" hidden></div>
             </div>
 
+            <div class="create-collapsibles create-collapsibles--shared">
             <details id="clozeImportSection" class="form-collapsible" hidden>
               <summary>Import cloze items</summary>
               <div class="form-collapsible-body">
@@ -593,6 +590,22 @@
                 <div id="resumeSessionError" class="error" hidden></div>
               </div>
             </details>
+            </div>
+
+            <div id="generateBlocksFooter" class="create-primary-actions" hidden>
+              <div class="row create-submit-row">
+                <button
+                  type="submit"
+                  id="generateBlocksBtn"
+                  class="btn-primary"
+                  form="generateBlocksForm"
+                >
+                  Generate blocks
+                </button>
+                <span class="hint" id="generateBlocksStatus" role="status"></span>
+              </div>
+              <div id="generateBlocksError" class="error" hidden></div>
+            </div>
           </div>
         </section>
 
@@ -893,6 +906,11 @@
           aria-label="Socratic questions"
         >
           <div class="card">
+            <div class="assessment-runner-chrome row" id="socraticAssessmentChrome" hidden>
+              <button type="button" id="assessmentRunnerSkipSocratic" class="btn-secondary">
+                Skip assessment
+              </button>
+            </div>
             <h1 id="socraticHeader">Socratic</h1>
             <p class="subtle" id="socraticMeta"></p>
 
@@ -933,6 +951,11 @@
           aria-label="Test questions"
         >
           <div class="card">
+            <div class="assessment-runner-chrome row" id="testAssessmentChrome" hidden>
+              <button type="button" id="assessmentRunnerSkip" class="btn-secondary">
+                Skip assessment
+              </button>
+            </div>
             <h1 id="testHeader">Test</h1>
             <p class="subtle" id="testMeta"></p>
 

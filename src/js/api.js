@@ -1,5 +1,5 @@
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
-import { ASSESSMENT_FLAGS } from "./config/flags.js";
+import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
 import {
   buildParagraphFormatOpts,
   enforceExplanationParagraphs,
@@ -13,7 +13,11 @@ import {
   llmChatCompletions,
   normalizeLlmModel,
 } from "./llm.js?v=20260525_1";
-import { shuffleInPlace, shuffleTestQuestionsInList } from "./shuffle-options.js";
+import {
+  normalizeTestQuestion,
+  shuffleInPlace,
+  shuffleTestQuestionsInList,
+} from "./shuffle-options.js";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -2052,6 +2056,356 @@ const PREPACKING_DONT_KNOW_ALIASES = new Set([
 ]);
 
 const MASTERY_LEVELS = new Set(["none", "partial", "full"]);
+const MASTERY_PRIORITY = { none: 0, partial: 1, full: 2 };
+
+const PREPACKING_ASSESSMENT_JSON_SCHEMA = `{
+  questions: [{
+    type: "test" | "socratic",
+    question: string,
+    concept_id: string,
+    item_id?: string,
+    options?: { A, B, C, D },
+    answer?: string,
+    feedback?: string
+  }]
+}`;
+
+function truncateMaterialExcerpt(text, maxChars = 12000) {
+  const s = String(text || "").trim();
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, maxChars)}\n…[truncated]`;
+}
+
+function inventoryIdSet(inventory) {
+  return new Set(
+    (Array.isArray(inventory) ? inventory : [])
+      .map((c) => String(c?.id || c?.concept_id || "").trim())
+      .filter(Boolean),
+  );
+}
+
+/** @param {{ language, n_test, n_socratic, conceptInventory, edges, materialExcerpt }} opts */
+export function buildPrePackingAssessmentSystemPrompt({
+  language,
+  n_test,
+  n_socratic,
+  conceptInventory,
+  edges,
+  materialExcerpt,
+}) {
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const lang = String(language || "English").trim() || "English";
+  const inv = Array.isArray(conceptInventory) ? conceptInventory : [];
+  const edgeList = Array.isArray(edges) ? edges : [];
+  const excerpt = truncateMaterialExcerpt(materialExcerpt);
+
+  return `You will receive a concept inventory and source material excerpt. Generate a document-wide knowledge check before block packing.
+Return a single JSON object with this schema:
+${PREPACKING_ASSESSMENT_JSON_SCHEMA}
+Respond entirely in ${lang}.
+Generate exactly ${nTest} test questions (type: "test") and ${nSocratic} socratic questions (type: "socratic") in the questions array.
+Test questions: 4 options (A/B/C/D), one correct answer letter, and high-value feedback.
+${MC_OPTION_PARITY_RULES}
+${TEST_FEEDBACK_RULES}
+Socratic questions: open-ended, no options, no answer field.
+Order: all test questions first, then all socratic questions.
+If n_test=0 or n_socratic=0, omit that type entirely.
+Each question MUST include concept_id from the inventory (required).
+Prioritize THESIS and ARGUMENT concepts for coverage; include prerequisite edges when useful.
+${QUESTION_PEDAGOGY_RULES}
+Questions must be answerable from the provided material excerpt and concept labels alone.
+Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.
+
+Concept inventory (${inv.length} concepts):
+${JSON.stringify(
+    inv.map((c) => ({
+      id: String(c?.id || c?.concept_id || "").trim(),
+      label: String(c?.label || c?.title || "").trim(),
+      type: String(c?.type || "CONCEPT").trim(),
+    })).filter((c) => c.id),
+  )}
+
+Edges (${edgeList.length}):
+${JSON.stringify(edgeList)}
+
+Material excerpt:
+${excerpt || "(none)"}`;
+}
+
+function unwrapPrePackingQuestions(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (!raw || typeof raw !== "object") return null;
+  for (const key of ["questions", "items", "assessment_items", "data"]) {
+    if (Array.isArray(raw[key])) return raw[key];
+  }
+  return null;
+}
+
+/**
+ * Normalize LLM output to Questions-mode assessment items.
+ * @returns {object[]}
+ */
+export function normalizePrePackingAssessmentQuestions(raw, { n_test, n_socratic, inventory } = {}) {
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const arr = unwrapPrePackingQuestions(raw);
+  if (!Array.isArray(arr) || !arr.length) {
+    throw new Error("Assessment questions array is empty.");
+  }
+
+  const invIds = inventoryIdSet(inventory);
+  const out = [];
+
+  for (let idx = 0; idx < arr.length; idx += 1) {
+    const item = arr[idx];
+    if (!item || typeof item !== "object") {
+      throw new Error(`Assessment question ${idx} is not an object.`);
+    }
+    const type = String(item.type || "").trim().toLowerCase();
+    if (type !== "test" && type !== "socratic") {
+      throw new Error(`Assessment question ${idx} must be type test or socratic.`);
+    }
+    const concept_id = String(item.concept_id || "").trim();
+    if (!concept_id) {
+      throw new Error(`Assessment question ${idx} missing concept_id.`);
+    }
+    if (invIds.size && !invIds.has(concept_id)) {
+      throw new Error(`Assessment question ${idx} concept_id not in inventory.`);
+    }
+    const question = String(item.question || "").trim();
+    if (!question) {
+      throw new Error(`Assessment question ${idx} missing question text.`);
+    }
+    const item_id = String(item.item_id || item.id || `aq_${idx + 1}`).trim();
+    const edge =
+      item.edge && typeof item.edge === "object"
+        ? {
+            from: String(item.edge.from || "").trim(),
+            to: String(item.edge.to || "").trim(),
+          }
+        : undefined;
+
+    if (type === "test") {
+      const normalized = normalizeTestQuestion({
+        ...item,
+        type: "test",
+        question,
+        concept_id,
+        item_id,
+      });
+      const feedback = String(normalized.feedback || "").trim();
+      if (!feedback) {
+        throw new Error(`Assessment test question ${idx} missing feedback.`);
+      }
+      const options = normalized.options;
+      if (!options || !["A", "B", "C", "D"].every((l) => String(options[l] || "").trim())) {
+        throw new Error(`Assessment test question ${idx} needs options A–D.`);
+      }
+      const answer = String(normalized.answer || "").trim().toUpperCase();
+      if (!["A", "B", "C", "D"].includes(answer)) {
+        throw new Error(`Assessment test question ${idx} needs valid answer letter.`);
+      }
+      out.push({
+        type: "test",
+        question,
+        concept_id,
+        item_id,
+        options,
+        answer,
+        feedback,
+        ...(edge?.from && edge?.to ? { edge } : {}),
+      });
+    } else {
+      out.push({
+        type: "socratic",
+        question,
+        concept_id,
+        item_id,
+        ...(edge?.from && edge?.to ? { edge } : {}),
+      });
+    }
+  }
+
+  const testCount = out.filter((q) => q.type === "test").length;
+  const socCount = out.filter((q) => q.type === "socratic").length;
+  if (testCount !== nTest || socCount !== nSocratic) {
+    throw new Error(
+      `Assessment question count mismatch: expected ${nTest} test + ${nSocratic} socratic, got ${testCount} test + ${socCount} socratic.`,
+    );
+  }
+
+  return out;
+}
+
+function extractTestAnswerLetter(userAnswer) {
+  const s = String(userAnswer || "").trim();
+  if (!s) return "";
+  const letterMatch = s.match(/^([A-D])(?:\b|[.\s])/i);
+  if (letterMatch) return letterMatch[1].toUpperCase();
+  if (/^[A-D]$/i.test(s)) return s.toUpperCase();
+  return s.toUpperCase();
+}
+
+function mergeProfileRows(rows) {
+  const map = new Map();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const concept_id = String(row?.concept_id || "").trim();
+    if (!concept_id) continue;
+    let mastery = String(row.mastery || "none").trim().toLowerCase();
+    if (!MASTERY_LEVELS.has(mastery)) mastery = "none";
+    let confidence = Number(row.confidence);
+    if (!Number.isFinite(confidence)) confidence = mastery === "full" ? 0.9 : mastery === "partial" ? 0.5 : 0.1;
+    confidence = Math.min(1, Math.max(0, confidence));
+    const next = { concept_id, mastery, confidence };
+    const existing = map.get(concept_id);
+    if (!existing) {
+      map.set(concept_id, next);
+      continue;
+    }
+    const pNew = MASTERY_PRIORITY[mastery] ?? 0;
+    const pOld = MASTERY_PRIORITY[existing.mastery] ?? 0;
+    if (pNew > pOld) {
+      map.set(concept_id, next);
+    } else if (pNew === pOld) {
+      existing.confidence = Math.max(existing.confidence, confidence);
+    }
+  }
+  return Array.from(map.values());
+}
+
+/** @returns {Array<{ concept_id, mastery, confidence }>} */
+export function scorePrePackingTestResponses(items, responses) {
+  const qs = Array.isArray(items) ? items : [];
+  const resp = Array.isArray(responses) ? responses : [];
+  const testItems = qs.filter((q) => q && String(q.type || "").toLowerCase() === "test");
+  const itemById = new Map();
+  for (const it of testItems) {
+    const id = String(it?.item_id || "").trim();
+    if (id) itemById.set(id, it);
+  }
+
+  const rows = [];
+  for (const r of resp) {
+    const qType = String(r?.questionType || r?.type || "test").trim().toLowerCase();
+    if (qType !== "test" && qType !== "mcq") continue;
+    const item_id = String(r?.item_id || "").trim();
+    const item = itemById.get(item_id);
+    if (!item) continue;
+    const concept_id = String(item.concept_id || "").trim();
+    if (!concept_id) continue;
+
+    const userAnswer = String(r.userAnswer ?? r.answer ?? "").trim();
+    if (isDontKnowAnswer(userAnswer)) {
+      rows.push({ concept_id, mastery: "none", confidence: 0.1 });
+      continue;
+    }
+
+    const chosen = extractTestAnswerLetter(userAnswer);
+    const correct = String(item.answer || "").trim().toUpperCase();
+    if (chosen && correct && chosen === correct) {
+      rows.push({ concept_id, mastery: "partial", confidence: 0.65 });
+    } else {
+      rows.push({ concept_id, mastery: "none", confidence: 0.2 });
+    }
+  }
+
+  return mergeProfileRows(rows);
+}
+
+function isLegacyMcqAssessmentItem(item) {
+  return item && String(item.type || "").trim().toLowerCase() === "mcq";
+}
+
+function normalizeAssessmentResponseRows(responses) {
+  return (Array.isArray(responses) ? responses : []).map((r) => {
+    if (!r || typeof r !== "object") return r;
+    if (r.questionType || r.userAnswer != null) return r;
+    return {
+      item_id: r.item_id,
+      userAnswer: r.answer,
+      questionType: "mcq",
+    };
+  });
+}
+
+async function evaluateSocraticAssessmentResponses({
+  items,
+  responses,
+  conceptInventory,
+  llmModel,
+  language,
+}) {
+  const socItems = (Array.isArray(items) ? items : []).filter(
+    (q) => q && String(q.type || "").toLowerCase() === "socratic",
+  );
+  if (!socItems.length) return [];
+
+  const resp = normalizeAssessmentResponseRows(responses);
+  const byItem = new Map();
+  for (const r of resp) {
+    const id = String(r?.item_id || "").trim();
+    if (id) byItem.set(id, r);
+  }
+
+  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  const labelById = new Map(
+    inventory.map((c) => [
+      String(c?.id || c?.concept_id || "").trim(),
+      String(c?.label || c?.title || "").trim(),
+    ]),
+  );
+
+  const lang = String(language || "English").trim() || "English";
+  const payload = socItems
+    .map((q) => {
+      const id = String(q.item_id || "").trim();
+      const row = byItem.get(id);
+      if (!row) return null;
+      const answer = String(row.userAnswer ?? row.answer ?? "").trim();
+      if (!answer) return null;
+      return {
+        item_id: id,
+        concept_id: String(q.concept_id || "").trim(),
+        concept_label: labelById.get(String(q.concept_id || "").trim()) || "",
+        question: String(q.question || ""),
+        student_answer: answer,
+      };
+    })
+    .filter(Boolean);
+
+  if (!payload.length) return [];
+
+  const systemPrompt = `Evaluate socratic pre-packing assessment answers into mastery rows.
+Rules:
+- Conservative mastery: "full" only with demonstrated precision; "partial" requires real understanding.
+- Unknown / empty answers → mastery "none", low confidence.
+- Output JSON: {"items":[{"concept_id":"...","mastery":"none|partial|full","confidence":0.0-1.0}]}
+Respond in ${lang}.`;
+
+  const content = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify({ items: payload }) },
+    ],
+    temperature: 0.1,
+  });
+
+  const parsed = parseModelJsonValue(content);
+  const itemsRaw =
+    parsed && typeof parsed === "object" && Array.isArray(parsed.items) ? parsed.items : [];
+  return itemsRaw
+    .map((row, idx) => {
+      try {
+        return normalizeProfileItem(row, idx);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
 
 function unwrapAssessmentItemsArray(value) {
   if (Array.isArray(value)) return value;
@@ -2203,26 +2557,34 @@ export function normalizeKnowledgeProfile(raw, { inventory = [], items = [], res
 export async function generatePrePackingAssessmentItems({
   conceptInventory,
   edges,
+  materialText,
+  n_test,
+  n_socratic,
   maxItems,
   llmModel,
   language,
+  legacyMcq,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
   if (!inventory.length) throw new Error("Missing concept inventory.");
-  const cap = Math.max(
-    1,
-    Math.floor(Number(maxItems) || ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX || 7),
-  );
   const lang = String(language || "English").trim() || "English";
-  const minimal = inventory.map((c) => ({
-    id: String(c?.id || c?.concept_id || "").trim(),
-    label: String(c?.label || c?.title || "").trim(),
-    type: String(c?.type || "CONCEPT").trim(),
-  }));
   const edgeList = Array.isArray(edges) ? edges : [];
+  const useLegacy =
+    legacyMcq === true || (!isAssessmentQuestionsUiEnabled() && legacyMcq !== false);
 
-  const systemPrompt = `Generate up to ${cap} multiple-choice assessment items from this concept inventory.
+  if (useLegacy) {
+    const cap = Math.max(
+      1,
+      Math.floor(Number(maxItems) || ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX || 7),
+    );
+    const minimal = inventory.map((c) => ({
+      id: String(c?.id || c?.concept_id || "").trim(),
+      label: String(c?.label || c?.title || "").trim(),
+      type: String(c?.type || "CONCEPT").trim(),
+    }));
+
+    const systemPrompt = `Generate up to ${cap} multiple-choice assessment items from this concept inventory.
 Rules:
 - Cover highest-value concept_ids and important prerequisite edges.
 - Prioritize THESIS and ARGUMENT over TERM.
@@ -2233,19 +2595,62 @@ Return ONLY a JSON array:
 [{"item_id":"a1","concept_id":"c1","question":"...","type":"mcq","options":["..."],"correct":"..."}]
 Respond in ${lang}.`;
 
-  const userPayload = { concepts: minimal.filter((c) => c.id), edges: edgeList };
+    const userPayload = { concepts: minimal.filter((c) => c.id), edges: edgeList };
+    const content = await llmChatCompletions({
+      llmModel: model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+      temperature: 0.2,
+    });
+
+    const parsed = parseModelJsonValue(content);
+    const normalized = normalizeAssessmentItems(parsed);
+    return normalized.slice(0, cap);
+  }
+
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
+  if (nTest + nSocratic <= 0) {
+    throw new Error("Assessment needs at least one question (n_test + n_socratic).");
+  }
+  if (nTest + nSocratic > cap) {
+    throw new Error(`Assessment question count ${nTest + nSocratic} exceeds safety cap ${cap}.`);
+  }
+
+  const systemPrompt = buildPrePackingAssessmentSystemPrompt({
+    language: lang,
+    n_test: nTest,
+    n_socratic: nSocratic,
+    conceptInventory: inventory,
+    edges: edgeList,
+    materialExcerpt: materialText,
+  });
+
   const content = await llmChatCompletions({
     llmModel: model,
+    response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: JSON.stringify(userPayload) },
+      {
+        role: "user",
+        content: JSON.stringify({
+          task: "Generate the knowledge check questions JSON object.",
+        }),
+      },
     ],
     temperature: 0.2,
   });
 
   const parsed = parseModelJsonValue(content);
-  const normalized = normalizeAssessmentItems(parsed);
-  return normalized.slice(0, cap);
+  const normalized = normalizePrePackingAssessmentQuestions(parsed, {
+    n_test: nTest,
+    n_socratic: nSocratic,
+    inventory,
+  });
+  return shuffleTestQuestionsInList(normalized);
 }
 
 export async function evaluatePrePackingAssessmentResponses({
@@ -2255,44 +2660,76 @@ export async function evaluatePrePackingAssessmentResponses({
   llmModel,
   language,
 }) {
-  try {
-    const model = resolveLlmModelArg(llmModel);
-    const qs = Array.isArray(items) ? items : [];
-    const resp = Array.isArray(responses) ? responses : [];
-    const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
-    if (!qs.length) return null;
+  const qs = Array.isArray(items) ? items : [];
+  const resp = normalizeAssessmentResponseRows(responses);
+  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  if (!qs.length) return null;
 
-    const lang = String(language || "English").trim() || "English";
-    const systemPrompt = `Evaluate quiz responses into a knowledge_profile.
+  const legacy = qs.some(isLegacyMcqAssessmentItem);
+  if (legacy) {
+    try {
+      const model = resolveLlmModelArg(llmModel);
+      const lang = String(language || "English").trim() || "English";
+      const systemPrompt = `Evaluate quiz responses into a knowledge_profile.
 Rules:
 - Conservative mastery: "full" only with demonstrated precision; "partial" requires real understanding.
 - Unknown / "No lo sé" answers → mastery "none", low confidence.
 - Output JSON: {"items":[{"concept_id":"...","mastery":"none|partial|full","confidence":0.0-1.0}]}
 Respond in ${lang}.`;
 
-    const payload = {
-      items: qs.map((q) => ({
-        item_id: q.item_id,
-        concept_id: q.concept_id,
-        edge: q.edge,
-        question: q.question,
-        correct: q.correct,
-      })),
-      responses: resp,
-      inventory_ids: inventory.map((c) => String(c?.id || c?.concept_id || "").trim()).filter(Boolean),
-    };
+      const payload = {
+        items: qs.map((q) => ({
+          item_id: q.item_id,
+          concept_id: q.concept_id,
+          edge: q.edge,
+          question: q.question,
+          correct: q.correct,
+        })),
+        responses: resp,
+        inventory_ids: inventory
+          .map((c) => String(c?.id || c?.concept_id || "").trim())
+          .filter(Boolean),
+      };
 
-    const content = await llmChatCompletions({
-      llmModel: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: JSON.stringify(payload) },
-      ],
-      temperature: 0.1,
-    });
+      const content = await llmChatCompletions({
+        llmModel: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: JSON.stringify(payload) },
+        ],
+        temperature: 0.1,
+      });
 
-    const parsed = parseModelJsonValue(content);
-    return normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
+      const parsed = parseModelJsonValue(content);
+      return normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
+    } catch (err) {
+      console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
+      return null;
+    }
+  }
+
+  try {
+    const testRows = scorePrePackingTestResponses(qs, resp);
+    let socraticRows = [];
+    try {
+      socraticRows = await evaluateSocraticAssessmentResponses({
+        items: qs,
+        responses: resp,
+        conceptInventory: inventory,
+        llmModel,
+        language,
+      });
+    } catch (err) {
+      console.warn("Socratic assessment evaluation failed:", err?.message || err);
+    }
+
+    const merged = mergeProfileRows([...testRows, ...socraticRows]);
+    if (!merged.length) return null;
+
+    return normalizeKnowledgeProfile(
+      { items: merged },
+      { inventory, items: qs, responses: resp },
+    );
   } catch (err) {
     console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
     return null;

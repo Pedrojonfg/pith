@@ -1,249 +1,174 @@
-# ROADMAP — RSVP Assessment Reposition
+# ROADMAP — RSVP Assessment Questions Parity
 
-**Feature**: `20260611-rsvp-assessment-reposition` | **Spec**: `specs/20260611-rsvp-assessment-reposition/spec.md` | **Plan**: `specs/20260611-rsvp-assessment-reposition/plan.md`
+**Feature**: `20260612-rsvp-assessment-questions-parity` | **Spec**: `specs/20260612-rsvp-assessment-questions-parity/spec.md` | **Plan**: `specs/20260612-rsvp-assessment-questions-parity/plan.md`
 
-**Prerrequisitos externos**: `20260611-rsvp-block-recommend` (split inventory/pack), `20260612-mode-continuity` (promoción inventario completo a shared)
+**Prerrequisito**: `20260611-rsvp-assessment-reposition` (T01–T09 completos)
 
 ## Tabla de tareas
 
 | ID | Descripción | Deps | Complejidad | Estado |
 |----|-------------|------|-------------|--------|
-| T01 | `config/flags.js` — feature flags + `isPrePackingAssessmentEnabled()` | — | S | [x] |
-| T02 | `session.js` — persistencia `knowledge_profile`, `assessment_skipped`, `packing_ignored_profile` | — | S | [x] |
-| T03 | `api.js` — `generatePrePackingAssessmentItems`, `evaluatePrePackingAssessmentResponses`, normalizers | — | M | [x] |
-| T04 | `api.js` + `session.js` — `packInventoryToBlocks` con `knowledgeProfile`, N techo, `learning_goal` | T02 | M | [x] |
-| T05 | `study.js` — orquestación inventory → assessment gate → pack (flujo principal) | T01–T04 | L | [x] |
-| T06 | UI pantalla Assessment pre-packing (quiz MCQ + skip) | T03, T05 | M | [x] |
-| T07 | UI resultados + packing paralelo + ignorar perfil + diff | T04, T05, T06 | M | [x] |
-| T08 | Desactivar assessment legacy post-packing en RSVP (flag-gated) | T01, T05 | M | [x] |
-| T09 | Tests integración + quickstart QA closure | T05–T08 | M | [x] |
+| T01 | `api.js` — `buildPrePackingAssessmentSystemPrompt` + `normalizePrePackingAssessmentQuestions` + revisar `generatePrePackingAssessmentItems` | — | M | [x] |
+| T02 | `api.js` — `scorePrePackingTestResponses` + evaluador socrático revisado | — | M | [x] |
+| T03 | `flags.js` — `ASSESSMENT_USE_QUESTIONS_UI`, deprecar `ASSESSMENT_ITEMS_MAX` como conteo | T01 | S | [x] |
+| T04 | `study.js` — assessment runner reutilizando `renderTestQuestion` / `renderSocraticQuestion` | T01, T02 | L | [x] |
+| T05 | Eliminar happy-path `screenPrePackingAssessment`; skip chrome en runner | T04 | S | [x] |
+| T06 | Tests + quickstart QA closure | T01–T05 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T01 ──────────────┐
-T02 ──────────────┼──→ T04 ──→ T05 ──→ T06 ──→ T07 ──→ T09
-T03 ──────────────┘              ↘ T08 ↗
+T01 ──→ T03 ──→ T05 ──→ T06
+T02 ──→ T04 ──↗
+T01 ──→ T04
 ```
 
-**Paralelizables desde inicio**: T01 + T02 + T03 (hasta 3 agentes)
+**Paralelizables desde inicio**: T01 + T02 (2 agentes)
 
-**Paralelizables tras T05**: T06 + T08 (2 agentes)
-
-**Secuenciales críticos**: T04 → T05 → T07 → T09
+**Secuenciales críticos**: T04 → T05 → T06
 
 ## Orden de ejecución recomendado
 
-### Ola 1 — Fundamentos (paralelo, 3 agentes)
-- **T01** feature flags
-- **T02** session meta helpers
-- **T03** assessment LLM API
+### Ola 1 — API (paralelo, 2 agentes)
+- **T01** generación Questions-parity
+- **T02** evaluación test + socrática
 
-### Ola 2 — Pack con perfil (1 agente)
-- **T04** packInventoryToBlocks + deepSeekPackConceptsToBlocks
+### Ola 2 — Flags (1 agente)
+- **T03** feature flags
 
-### Ola 3 — Orquestación core (1 agente, bloqueante)
-- **T05** study.js flow wiring
+### Ola 3 — Runner UI (1 agente, bloqueante)
+- **T04** study.js runner mode
 
-### Ola 4 — UI + legacy (paralelo, 2 agentes)
-- **T06** assessment quiz screen
-- **T08** gate legacy post-packing
+### Ola 4 — Cleanup + QA (secuencial)
+- **T05** deprecar pantalla custom
+- **T06** cursor-tests + quickstart
 
-### Ola 5 — Resultados (1 agente)
-- **T07** results screen + parallel + ignorar
-
-### Ola 6 — Cierre (1 agente)
-- **T09** cursor-tests + quickstart QA
-
-**MVP mínimo útil**: T01 + T02 + T03 + T04 + T05 + T06 — quiz pre-packing reduce blockIndex sin pantalla de resultados pulida.
+**MVP mínimo útil**: T01 + T02 + T04 — assessment con formato Questions aunque skip chrome sea básico.
 
 ---
 
-## PROMPT T01 — Feature flags
+## PROMPT T01 — Assessment generation (Questions parity)
 
-Implementa **T01** del ROADMAP RSVP Assessment Reposition.
+Implementa **T01** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Feature `20260611-rsvp-assessment-reposition`. Contrato en `specs/20260611-rsvp-assessment-reposition/contracts/feature-flags.md`.
+**Contexto**: Feature `20260612-rsvp-assessment-questions-parity`. El assessment pre-packing actual genera MCQ mal formateadas; debe usar el mismo schema y reglas que modo Questions. Contrato: `specs/20260612-rsvp-assessment-questions-parity/contracts/assessment-generation.md`.
 
 **Archivos**:
-- `src/js/config/flags.js` (NUEVO) — `ASSESSMENT_FLAGS`, `isPrePackingAssessmentEnabled()`
+- `src/js/api.js` — `buildPrePackingAssessmentSystemPrompt`, `normalizePrePackingAssessmentQuestions`, revisar `generatePrePackingAssessmentItems` para aceptar `n_test`, `n_socratic`, `materialText`
+- `cursor-tests/20260612_rsvp-assessment-questions-parity.mjs` (NUEVO) — tests normalizer (≥8 casos, sin LLM live)
 
 **Reglas clave**:
-- Valores por defecto según spec §7
-- Export named; sin side effects
-- Sin dependencias de DOM
+- Reutilizar `MC_OPTION_PARITY_RULES`, `TEST_FEEDBACK_RULES`, `QUESTION_PEDAGOGY_RULES` de Questions
+- Cada pregunta lleva `concept_id` obligatorio
+- Post-process: `normalizeTestQuestion` + `shuffleTestQuestionsInList`
+- Mantener `normalizeAssessmentItems` legacy para rollback
 
-**Criterio de éxito**: módulo importable desde `study.js`; `isPrePackingAssessmentEnabled()` retorna `true` por defecto. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: normalizer valida counts, concept_id, options A–D, feedback. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Session meta persistence
+## PROMPT T02 — Assessment evaluation
 
-Implementa **T02** del ROADMAP RSVP Assessment Reposition.
+Implementa **T02** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Ver `specs/20260611-rsvp-assessment-reposition/data-model.md` (SessionMeta, KnowledgeProfile).
+**Contexto**: Contrato `specs/20260612-rsvp-assessment-questions-parity/contracts/assessment-evaluation.md`.
 
 **Archivos**:
-- `src/js/session.js` — helpers: `setKnowledgeProfile`, `getKnowledgeProfile`, `setAssessmentSkipped`, `setPackingIgnoredProfile`, defaults en sesión activa
-- `cursor-tests/20260611_rsvp-assessment-reposition.mjs` (NUEVO) — sección meta CRUD (≥6 casos)
+- `src/js/api.js` — `scorePrePackingTestResponses`, revisar `evaluatePrePackingAssessmentResponses` para pipeline test (sync) + socrática (LLM)
+- `cursor-tests/20260612_rsvp-assessment-questions-parity.mjs` — tests scoring (≥6 casos)
 
 **Reglas clave**:
-- Backward compatible; campos opcionales en `_meta`
-- `assessment_skipped` solo en skip de quiz; `packing_ignored_profile` solo en "Ignorar"
-- No filtrar inventario al persistir
+- Test: scoring determinista; dont-know → none
+- Merge por concept_id (max mastery)
+- Fallo LLM socrático: retornar perfil solo de test si hay datos
 
-**Criterio de éxito**: tests meta pasan con `node --import ./cursor-tests/register.mjs`. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: tests scoring pasan con `node --import ./cursor-tests/register.mjs`. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Pre-packing assessment API
+## PROMPT T03 — Feature flags
 
-Implementa **T03** del ROADMAP RSVP Assessment Reposition.
+Implementa **T03** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Contrato `specs/20260611-rsvp-assessment-reposition/contracts/pre-packing-assessment-api.md`.
+**Contexto**: Contrato `specs/20260612-rsvp-assessment-questions-parity/contracts/feature-flags.md`.
 
 **Archivos**:
-- `src/js/api.js` — `generatePrePackingAssessmentItems`, `evaluatePrePackingAssessmentResponses`, `normalizeAssessmentItems`, `normalizeKnowledgeProfile`
-- `cursor-tests/20260611_rsvp-assessment-reposition.mjs` — tests normalizers (≥10 casos, sin LLM live)
+- `src/js/config/flags.js` — `ASSESSMENT_USE_QUESTIONS_UI`, `ASSESSMENT_LEGACY_MCQ_UI`, `isAssessmentQuestionsUiEnabled()`
 
 **Reglas clave**:
-- MCQ v1; "I don't know" manejado en evaluador cuando answer coincide constante UI
-- Evaluator failure retorna `null`
-- `coverage` calculado en normalizer
-- Reutilizar `parseModelJsonValue` / patrones existentes
+- Default: Questions UI on, legacy off
+- `ASSESSMENT_ITEMS_MAX` ya no dirige conteo en study.js (usar n_test + n_socratic)
 
-**Criterio de éxito**: normalizers y validación pasan en cursor-tests. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: helpers importables; defaults correctos. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Pack with knowledge profile
+## PROMPT T04 — Assessment runner UI
 
-Implementa **T04** del ROADMAP RSVP Assessment Reposition.
+Implementa **T04** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Contrato `specs/20260611-rsvp-assessment-reposition/contracts/pack-with-profile.md`. Principio de capas: inventario completo siempre.
-
-**Archivos**:
-- `src/js/api.js` — extender `deepSeekPackConceptsToBlocks` con `knowledgeProfile`, prompt N=techo
-- `src/js/session.js` — extender `packInventoryToBlocks` con `knowledgeProfile` opcional; mapear `learning_goal`, `mastery_adjusted`; `splitRunMeta.profile_applied`
-- `cursor-tests/20260611_rsvp-assessment-reposition.mjs` — invariantes: `final_n <= requested_n`, inventario length unchanged (mock pack)
-
-**Reglas clave**:
-- No omitir prerequisitos dominados si hay dependiente no dominado
-- `ASSESSMENT_MASTERY_THRESHOLD` desde flags
-- Bloques dominados ausentes del índice, no marcados `skipped`
-
-**Criterio de éxito**: tests de invariantes pasan; pack sin profile comportamiento idéntico al actual. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T05 — Study.js flow orchestration
-
-Implementa **T05** del ROADMAP RSVP Assessment Reposition.
-
-**Contexto**: Tras T01–T04. Ver `specs/20260611-rsvp-assessment-reposition/contracts/consumer-integration.md`.
+**Contexto**: Contrato `specs/20260612-rsvp-assessment-questions-parity/contracts/assessment-runner-ui.md`. Depende de T01+T02.
 
 **Archivos**:
-- `src/js/study.js` — refactor handler `generateBlocksForm`: inventory/cache → gate assessment → pack; `PrePackingFlowState` ephemeral; prefetch items tras graph
-- Promover inventario **completo** a shared (`addConceptsToShared`) sin filtrar
-
-**Flujos**:
-- Flag off → path legacy directo a pack (sin regresión)
-- Flag on → assessment gate antes de pack
-- Skip → pack sin profile, `assessment_skipped`
-
-**Criterio de éxito**: con flag on, generate no llama pack antes del assessment (salvo skip). Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T06 — Assessment quiz UI
-
-Implementa **T06** del ROADMAP RSVP Assessment Reposition.
-
-**Contexto**: Contrato `specs/20260611-rsvp-assessment-reposition/contracts/assessment-ui.md`. Depende de T03+T05.
-
-**Archivos**:
-- `index.html` — `#prePackingAssessmentScreen` y elementos hijos
+- `src/js/study.js` — `prePackingFlow.runnerMode`, `enterPrePackingAssessmentRunner`, guards en `getActiveQuestionContext` / `handleTestAnswer`, socratic submit handler
+- `index.html` — skip affordance en test/socratic si necesario (`#assessmentRunnerSkip`)
 - `src/js/ui.js` — refs
-- `src/css/main.css` — `.pre-packing-assessment-*`
-- `src/js/study.js` — render quiz, progress, skip, collect responses → evaluate
 
 **Reglas clave**:
-- Opción "No lo sé" siempre visible
-- Sin timer (diferente del legacy runner)
-- Grafo decorativo reutiliza mount existente
+- Reutilizar `renderTestQuestion` y `renderSocraticQuestion` sin duplicar markup
+- No escribir `recordResponse` de sesión de estudio durante assessment
+- Pasar `n_test`/`n_socratic` desde `resolveBlockQuestionConfig(0)` a generación
+- `materialText` desde `prePackingFlow.cleanedText`
 
-**Criterio de éxito**: QA manual quiz 3+ preguntas navegable; skip llega a pack. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: QA manual — assessment abre pantalla test con botones A–D y feedback. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Results UI + parallel packing
+## PROMPT T05 — Deprecate custom assessment screen
 
-Implementa **T07** del ROADMAP RSVP Assessment Reposition.
+Implementa **T05** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Tras T06. §6.3 spec + `ASSESSMENT_PARALLEL_PACKING`.
+**Contexto**: Tras T04. Happy path no usa `screenPrePackingAssessment`.
 
 **Archivos**:
-- `index.html` — `#prePackingResultsScreen` y botones Accept / Ignore / Detail
-- `src/css/main.css` — `.pre-packing-results-*`
-- `src/js/study.js` — parallel `packingPromise` tras evaluate; diff `hasta N → M`; ignorar re-pack sin profile; omitir pantalla si cero dominados
+- `src/js/study.js` — `enterPrePackingAssessmentScreen` delega a runner cuando `isAssessmentQuestionsUiEnabled()`; legacy path si flag off
+- `src/css/main.css` — `.assessment-runner-chrome` si aplica
 
 **Reglas clave**:
-- Accept confirma bloques ya empaquetados (spinner si pending)
-- Ignorar: `packing_ignored_profile: true`, profile persistido
-- Grafo sigue completo tras accept
+- `ASSESSMENT_LEGACY_MCQ_UI: true` restaura pantalla custom intacta
+- Skip assessment sigue funcionando desde runner
 
-**Criterio de éxito**: QA-AR-1, QA-AR-3, QA-AR-5 de quickstart verificables. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: con flags default, nunca se muestra `screenPrePackingAssessment`. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Legacy assessment removal
+## PROMPT T06 — Tests + QA closure
 
-Implementa **T08** del ROADMAP RSVP Assessment Reposition.
+Implementa **T06** del ROADMAP RSVP Assessment Questions Parity.
 
-**Contexto**: Clarificación 1B. Cuando `isPrePackingAssessmentEnabled()`, RSVP no usa post-packing assessment.
-
-**Archivos**:
-- `src/js/study.js` — ocultar `assessmentChoiceWrap` / no invocar `generateAssessmentQuestions`, `applyAssessmentResults`, gap synthesis inicial en RSVP
-- `index.html` — condicional o hidden por defecto con flag on
-
-**Reglas clave**:
-- Flag off restaura comportamiento legacy intacto
-- Questions mode sin cambios
-- No borrar funciones legacy; solo gate
-
-**Criterio de éxito**: QA-AR-4 — sin assessment post-bloques en RSVP con flag on. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T09 — Tests + QA closure
-
-Implementa **T09** del ROADMAP RSVP Assessment Reposition.
-
-**Contexto**: Cerrar feature. Ver `specs/20260611-rsvp-assessment-reposition/quickstart.md`.
+**Contexto**: Cerrar feature. Ver `specs/20260612-rsvp-assessment-questions-parity/quickstart.md`.
 
 **Archivos**:
-- `cursor-tests/20260611_rsvp-assessment-reposition.mjs` — suite completa (meta, normalizers, pack invariants, smoke orchestration helpers)
+- `cursor-tests/20260612_rsvp-assessment-questions-parity.mjs` — suite completa
 - `cursor-tests/loader.mjs` — registrar suite si aplica
-- `specs/20260611-rsvp-assessment-reposition/quickstart.md` — marcar QA checklist
+- `specs/20260612-rsvp-assessment-questions-parity/quickstart.md` — marcar QA checklist
 
 **Casos mínimos**:
-- 6+ meta CRUD
-- 10+ normalizer unit
-- Pack layer invariants
+- 8+ normalizer unit
+- 6+ scoring unit
 - Flag gate smoke
 
-**Criterio de éxito**: suite pasa; quickstart QA-AR-1..6 documentados. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: suite pasa; QA-AQP-1..5 documentados. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
 ## Instrucción de ejecución
 
-1. **Lanzar en paralelo** (3 chats): PROMPT T01, T02, T03
-2. **Esperar** a que los tres terminen
-3. **Lanzar** PROMPT T04
-4. **Lanzar** PROMPT T05 (bloqueante)
-5. **Lanzar en paralelo** PROMPT T06 y T08
-6. **Lanzar** PROMPT T07 cuando T06 esté listo
-7. **Lanzar** PROMPT T09 cuando T07 y T08 estén listos
+1. **Lanzar en paralelo** (2 chats): PROMPT T01, PROMPT T02
+2. **Esperar** a que ambos terminen
+3. **Lanzar** PROMPT T03
+4. **Lanzar** PROMPT T04 (bloqueante)
+5. **Lanzar** PROMPT T05
+6. **Lanzar** PROMPT T06
 
-**Tiempo total estimado**: 1 ola (3) + 1 secuencial (T04) + 1 secuencial (T05) + 1 ola (2) + 2 secuenciales (T07, T09).
+**Tiempo total estimado**: 1 ola (2) + 1 secuencial (T03) + 1 secuencial (T04) + 2 secuenciales (T05, T06).
