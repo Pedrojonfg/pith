@@ -132,6 +132,12 @@
   filter: brightness(1.06);
 }
 
+/* Author `display:flex` overrides the UA [hidden] rule in Chromium — keep FABs off when hidden. */
+.sidebar-toggle[hidden],
+.block-read-toggle[hidden] {
+  display: none !important;
+}
+
 .sidebar-toggle {
   position: fixed;
   bottom: 2rem;

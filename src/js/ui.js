@@ -53,27 +53,42 @@ function normalizeChromeStudyMode(mode) {
  * @param {ChromeVisibilityContext} ctx
  * @returns {{ showBlockReadFab: boolean, showGuideFab: boolean }}
  */
+const CHROME_GUIDE_STUDY_SCREENS = new Set([
+  "test",
+  "socratic",
+  "between",
+  "review",
+  "reviewGenerating",
+  "reviewSummary",
+  "clozeStudy",
+]);
+
 export function resolveChromeVisibility(ctx) {
   const studyMode = normalizeChromeStudyMode(ctx.studyMode);
   const isRsvp = studyMode === "rsvp";
-  const isClozeOrQuestions = studyMode === "cloze" || studyMode === "questions";
+  const isGuideStudyMode =
+    studyMode === "rsvp" || studyMode === "cloze" || studyMode === "questions";
   const assessmentActive = Boolean(ctx.assessmentActive);
   const guideToggleSuppressed = Boolean(ctx.guideToggleSuppressed);
+  const screenId = String(ctx.screenId || "");
 
   const showBlockReadFab =
     isRsvp &&
     Boolean(ctx.blockReadWanted) &&
-    (ctx.screenId === "test" || ctx.screenId === "socratic") &&
+    (screenId === "test" || screenId === "socratic") &&
     !assessmentActive;
 
+  const onGuideStudyScreen =
+    CHROME_GUIDE_STUDY_SCREENS.has(screenId) &&
+    (screenId !== "between" || Boolean(ctx.hasConcepts)) &&
+    (screenId !== "clozeStudy" || studyMode === "cloze");
+
   const showGuideFab =
-    isClozeOrQuestions &&
+    isGuideStudyMode &&
+    onGuideStudyScreen &&
     !ctx.offline &&
     !assessmentActive &&
-    !guideToggleSuppressed &&
-    (ctx.screenId === "test" ||
-      ctx.screenId === "socratic" ||
-      (ctx.screenId === "between" && Boolean(ctx.hasConcepts)));
+    !guideToggleSuppressed;
 
   return { showBlockReadFab, showGuideFab };
 }
@@ -94,10 +109,15 @@ export function syncFloatingChrome() {
 
   if (sidebarToggleBtn) {
     sidebarToggleBtn.hidden = !showGuideFab;
-    sidebarToggleBtn.style.display = "";
+    if (showGuideFab) sidebarToggleBtn.style.removeProperty("display");
+    else sidebarToggleBtn.style.display = "none";
   }
 
-  if (blockReadBtn) blockReadBtn.hidden = !showBlockReadFab;
+  if (blockReadBtn) {
+    blockReadBtn.hidden = !showBlockReadFab;
+    if (showBlockReadFab) blockReadBtn.style.removeProperty("display");
+    else blockReadBtn.style.display = "none";
+  }
   if (blockReadSidebar) {
     if (!showBlockReadFab) {
       blockReadSidebar.hidden = true;
