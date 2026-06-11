@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260611-rsvp-assessment-reposition/plan.md`
-- **Spec**: `specs/20260611-rsvp-assessment-reposition/spec.md`
-- **Data model**: `specs/20260611-rsvp-assessment-reposition/data-model.md`
-- **Contracts**: `specs/20260611-rsvp-assessment-reposition/contracts/`
+- **Active plan**: `specs/20260612-rsvp-assessment-questions-parity/plan.md`
+- **Spec**: `specs/20260612-rsvp-assessment-questions-parity/spec.md`
+- **Data model**: `specs/20260612-rsvp-assessment-questions-parity/data-model.md`
+- **Contracts**: `specs/20260612-rsvp-assessment-questions-parity/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->
