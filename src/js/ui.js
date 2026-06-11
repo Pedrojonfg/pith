@@ -163,6 +163,10 @@ export const els = {
   screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
   screenSocratic: document.getElementById("screenSocratic"),
   screenTest: document.getElementById("screenTest"),
+  assessmentRunnerSkip: document.getElementById("assessmentRunnerSkip"),
+  assessmentRunnerSkipSocratic: document.getElementById("assessmentRunnerSkipSocratic"),
+  testAssessmentChrome: document.getElementById("testAssessmentChrome"),
+  socraticAssessmentChrome: document.getElementById("socraticAssessmentChrome"),
   screenComplete: document.getElementById("screenComplete"),
   screenReviewConfig: document.getElementById("screenReviewConfig"),
   screenReviewGenerating: document.getElementById("screenReviewGenerating"),
@@ -247,6 +251,7 @@ export const els = {
   reviewSummaryNewBtn: document.getElementById("reviewSummaryNewBtn"),
 
   generateBlocksForm: document.getElementById("generateBlocksForm"),
+  generateBlocksFooter: document.getElementById("generateBlocksFooter"),
   fileInput: document.getElementById("fileInput"),
   fileExtractHint: document.getElementById("fileExtractHint"),
   loadOfflinePackBtn: document.getElementById("loadOfflinePackBtn"),
