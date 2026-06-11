@@ -6306,12 +6306,16 @@ export function wireStudyHandlers() {
       }
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
+      setGenerateLoading(true);
+      els.generateBlocksStatus.textContent = "Reading material…";
       const resolvedCloze = await resolveMaterialForGenerate();
       if (!resolvedCloze) {
+        setGenerateLoading(false);
+        els.generateBlocksStatus.textContent = "";
         setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
         return;
       }
-      setGenerateLoading(true);
+      els.generateBlocksStatus.textContent = "";
       try {
         const { file, cleanedText, normalizedFormat, originalFormat } = resolvedCloze;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
@@ -6356,12 +6360,16 @@ export function wireStudyHandlers() {
         if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
         return;
       }
+      setGenerateLoading(true);
+      els.generateBlocksStatus.textContent = "Reading material…";
       const resolvedSlow = await resolveMaterialForGenerate();
       if (!resolvedSlow) {
+        setGenerateLoading(false);
+        els.generateBlocksStatus.textContent = "";
         setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
         return;
       }
-      setGenerateLoading(true);
+      els.generateBlocksStatus.textContent = "";
       try {
         const {
           file,
@@ -6468,13 +6476,17 @@ export function wireStudyHandlers() {
       return;
     }
 
+    setGenerateLoading(true);
+    els.generateBlocksStatus.textContent = "Reading material…";
+
     const resolvedRsvp = await resolveMaterialForGenerate();
     if (!resolvedRsvp) {
+      setGenerateLoading(false);
+      els.generateBlocksStatus.textContent = "";
       setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
       return;
     }
 
-    setGenerateLoading(true);
     els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
