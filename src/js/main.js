@@ -19,7 +19,7 @@ import {
   saveGeminiKey,
   getStoredGeminiKey,
   state,
-} from "./session.js?v=20260527_1";
+} from "./session.js?v=20260611_2";
 import {
   closeBlockReadSidebar,
   initLanguageUi,

@@ -792,7 +792,26 @@ Return ONLY one JSON object (no markdown, no preamble):
 Cover the full material. Respond entirely in ${lang}.`;
 }
 
-export const CONCEPT_PACK_MAX_TOKENS = 16384;
+/** DeepSeek/Gemini output ceiling for block-pack JSON (large inventories need headroom). */
+export const CONCEPT_PACK_MAX_TOKENS = 8192;
+
+export function slimInventoryForPack(inventory) {
+  return (Array.isArray(inventory) ? inventory : []).map((c) => {
+    if (!c || typeof c !== "object") return c;
+    const row = {
+      id: c.id,
+      order: c.order,
+      title: c.title,
+      scope_one_line: String(c.scope_one_line || c.scope || "").slice(0, 100),
+    };
+    const moduleName = String(c.module || "").trim();
+    if (moduleName) row.module = moduleName;
+    if (Array.isArray(c.prerequisite_ids) && c.prerequisite_ids.length) {
+      row.prerequisite_ids = c.prerequisite_ids;
+    }
+    return row;
+  });
+}
 
 export function looksLikeTruncatedModelJson(text) {
   const raw = String(text || "").trim();
@@ -1042,7 +1061,7 @@ Rules:
 3. Never assign the same concept_id to two blocks.
 4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have at most ${targetN} blocks. Record merges in pack_meta.merges.
 5. If fewer than N blocks are justified: set pack_meta.final_block_count to the actual count (no padding).
-6. Every block: summary, signature (3-10 strings), chunk "" (always empty).${profileBlock}
+6. Every block: summary (max 1 short sentence), signature (3-6 short terms), chunk "" (always empty). Keep total JSON compact.${profileBlock}
 
 Output JSON only:
 {"blocks":[{"id":1,"title":"Overview: ...","summary":"...","signature":["term1"],"concept_ids":[],"chunk":""}],"pack_meta":{"target_n":${targetN},"final_block_count":12,"merges":[{"concept_ids":["c5","c6"],"block_title":"..."}]}}
@@ -1140,7 +1159,7 @@ export async function deepSeekPackConceptsToBlocks({
   const n = Math.max(1, Math.floor(Number(maxBlocks ?? nBlocks) || 1));
   const lang = String(language || "English").trim() || "English";
   const notes = String(studyNotes || "").trim();
-  const inventoryJson = JSON.stringify(Array.isArray(inventory) ? inventory : []);
+  const inventoryJson = JSON.stringify(slimInventoryForPack(inventory));
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
 

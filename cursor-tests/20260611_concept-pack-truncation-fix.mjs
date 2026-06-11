@@ -11,7 +11,9 @@ import {
   CONCEPT_PACK_MAX_TOKENS,
   looksLikeTruncatedModelJson,
   parseConceptPackFromModelResponse,
+  slimInventoryForPack,
 } from "../src/js/api.js";
+import { packInventoryDeterministic } from "../src/js/session.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
@@ -127,6 +129,28 @@ section("T03 api.js pack call contract");
 
 assert(CONCEPT_PACK_MAX_TOKENS >= 8192, "T03 happy: CONCEPT_PACK_MAX_TOKENS is large enough for pack JSON");
 
+const longScope = Array.from({ length: 12 }, (_, i) => ({
+  id: `c${i + 1}`,
+  order: i + 1,
+  title: `Concept ${i + 1}`,
+  scope_one_line: "x".repeat(200),
+  module: i < 4 ? "Intro" : "Ethics",
+}));
+const slim = slimInventoryForPack(longScope);
+assert(
+  slim.every((c) => String(c.scope_one_line).length <= 100),
+  "T03 edge: slimInventoryForPack caps scope_one_line",
+);
+
+const det = packInventoryDeterministic(longScope, 8, "Español");
+assert(det.blocks.length >= 2 && det.blocks.length <= 8, "T06 happy: deterministic pack respects N");
+assert(/^Mapa del curso:/i.test(det.blocks[0].title), "T06 happy: Spanish overview");
+const detIds = new Set(det.blocks.flatMap((b) => b.concept_ids || []));
+assert(detIds.size >= 8, "T06 happy: deterministic pack assigns concepts");
+assert(det.pack_meta.deterministic === true, "T06 contract: pack_meta.deterministic");
+
+assert(packInventoryDeterministic([], 5).blocks.length === 0, "T06 failure: empty inventory → no blocks");
+
 async function testApiSourceContract() {
   const apiSrc = await readFile(join(root, "src/js/api.js"), "utf8");
   assert(apiSrc.includes("max_tokens: CONCEPT_PACK_MAX_TOKENS"), "T03 contract: pack passes max_tokens");
@@ -151,6 +175,9 @@ async function testSessionFallbackContract() {
   assert(sessionSrc.includes("deepSeekSplitIntoBlocks"), "T04 happy: fallback uses mono split");
   assert(sessionSrc.includes("pack_fallback_reason"), "T04 contract: splitRunMeta records fallback reason");
   assert(sessionSrc.includes('pipeline: "fallback_mono"'), "T04 contract: fallback pipeline tag");
+  assert(sessionSrc.includes("packInventoryDeterministic"), "T04 contract: deterministic fallback exists");
+  assert(sessionSrc.includes('api.js?v=20260611_2'), "T04 contract: dynamic api import cache-busted");
+  assert(sessionSrc.includes("deterministic_fallback"), "T04 contract: deterministic_fallback pipeline tag");
 }
 
 // ── T05: consumer contract (study.js still uses packInventoryToBlocks) ──
