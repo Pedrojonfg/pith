@@ -185,10 +185,20 @@ import {
 } from "./graph/view.js?v=20260607_1";
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260528_1";
 import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260607_1";
-import { enterClozeStudyScreen, wireClozeStudyHandlers } from "./cloze/study.js?v=20260607_1";
+import {
+  applyAssessmentPrioritizedOrder,
+  enterClozeStudyScreen,
+  setClozeStudyCompleteExitHandler,
+  wireClozeStudyHandlers,
+} from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
 import { startReviewFromSessionBlocks } from "./review.js?v=20260525_1";
 import {
+  buildModeSliceFromShared,
+  resolveModeEntryState,
+} from "./mode-bootstrap.js?v=20260612_1";
+import {
+  addConceptsToShared,
   computeDocId,
   createSession,
   getActiveSession,
@@ -197,6 +207,8 @@ import {
   getSmItemsDueToday,
   saveActiveSession as saveDocumentSession,
   setActiveSession,
+  setUploadMeta,
+  syncAssessmentSignalsToShared,
   updateRecommendation,
 } from "./session-store.js?v=20260609_1";
 
@@ -485,12 +497,21 @@ async function buildHierarchyForFlowRecommendation(markdownText, llmModel) {
  * @param {File} file
  */
 export async function recommendFlowFromUploadedFile(file) {
-  const { cleanedText } = await readAndCleanMaterialText(file);
+  const { cleanedText, originalFormat } = await readAndCleanMaterialText(file);
   if (!cleanedText.trim()) {
     throw new Error("The file appears to be empty.");
   }
-
   const doc = await ensureDocumentSessionForUpload(cleanedText);
+  setUploadMeta(doc.docId, {
+    fileName: String(file.name || ""),
+    originalFormat: String(originalFormat || ""),
+    uploadedAt: new Date().toISOString(),
+  });
+  state.lastCleanedMaterialText = cleanedText;
+  state.lastCleanedMaterialWordCount = countWords(cleanedText);
+  state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
+  state.materialBootstrapActive = false;
+
   const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
   const hierarchyResult = await buildHierarchyForFlowRecommendation(cleanedText, llmModel);
 
@@ -532,12 +553,7 @@ function startReviewFromRecommendation() {
  * @param {string} mode
  */
 function startModeFromRecommendation(mode) {
-  const normalized = normalizeStudyMode(mode);
-  if (normalized === "review") {
-    startReviewFromRecommendation();
-    return;
-  }
-  enterCreateScreenForMode(normalized);
+  void enterModeWithContinuity(mode);
 }
 
 let flowPanelWired = false;
@@ -823,11 +839,49 @@ function resetModeSelectUi() {
 }
 
 export function enterModeSelectScreen() {
+  syncFlowExitState();
   persistFlowRecommendationProgress();
   resetModeSelectUi();
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
   showScreen("modeSelect");
+}
+
+function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
+  const doc = getActiveSession();
+  if (!doc?.docId || !Array.isArray(inventory) || !inventory.length) return;
+  const concepts = inventory
+    .map((raw) => {
+      if (!raw || typeof raw !== "object") return null;
+      const label = String(raw.label || raw.term || raw.name || "").trim();
+      if (!label) return null;
+      return {
+        label,
+        definition: String(raw.definition || raw.authorUsage || "").trim(),
+        canonicalId: raw.canonicalId || raw.id,
+        detectedBy,
+      };
+    })
+    .filter(Boolean);
+  if (concepts.length) addConceptsToShared(doc.docId, concepts);
+}
+
+function syncActiveSessionAssessmentSignals() {
+  const doc = getActiveSession();
+  const session = state.activeSession;
+  if (!doc?.docId || !session?._responses) return;
+  const mode = normalizeStudyMode(session.studyMode || state.studyMode);
+  if (mode !== "rsvp" && mode !== "questions") return;
+  try {
+    syncAssessmentSignalsToShared(doc.docId, session, mode);
+  } catch (err) {
+    console.warn("[study] assessment signal sync failed", err);
+  }
+}
+
+/** Batch sync responses + refresh flow panel state when leaving a mode. */
+export function syncFlowExitState() {
+  syncActiveSessionAssessmentSignals();
 }
 
 function escapeDocLibraryHtml(value) {
@@ -906,8 +960,138 @@ function reopenDocumentFromLibrary(docId) {
   enterModeSelectScreen();
 }
 
+function hydrateMaterialStateFromDoc(doc) {
+  const text = String(doc?.shared?.rawMarkdown || "");
+  state.lastCleanedMaterialText = text;
+  state.lastCleanedMaterialWordCount = countWords(text);
+  const fileName = String(doc?.shared?.uploadMeta?.fileName || "").trim();
+  state.lastUploadedFileNames = fileName ? [fileName] : [];
+}
+
+function clearMaterialBootstrapUi() {
+  state.materialBootstrapActive = false;
+  if (els.modeMaterialLoadedBanner) els.modeMaterialLoadedBanner.hidden = true;
+  if (els.studyFileInputRow) els.studyFileInputRow.hidden = false;
+  if (els.fileInput) els.fileInput.required = true;
+}
+
+function setMaterialBootstrapUi(active, doc) {
+  state.materialBootstrapActive = Boolean(active);
+  if (els.modeMaterialLoadedBanner) {
+    els.modeMaterialLoadedBanner.hidden = !active;
+    if (active) {
+      const docTitle = els.modeMaterialLoadedBanner.querySelector(".mode-material-loaded-doc");
+      if (docTitle) {
+        docTitle.textContent = String(doc?.shared?.docMeta?.titleInferred || "").trim();
+      }
+    }
+  }
+  if (els.studyFileInputRow) els.studyFileInputRow.hidden = active;
+  if (els.fileInput) {
+    els.fileInput.required = !active;
+    if (active) els.fileInput.value = "";
+  }
+  if (active && els.fileExtractHint) {
+    const words = Number(state.lastCleanedMaterialWordCount) || 0;
+    els.fileExtractHint.textContent = words > 0 ? `(~${words} words loaded from document)` : "";
+  }
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null} doc
+ * @param {string} mode
+ * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
+ */
+export function applyModeEntry(doc, mode, options = {}) {
+  const resolution = resolveModeEntryState(doc, mode);
+  const normalized = normalizeStudyMode(mode);
+  if (resolution.kind === "resume") {
+    return { action: "resume", mode: normalized, slice: resolution.existingSlice };
+  }
+  if (resolution.kind === "bootstrap" && doc) {
+    const slice = buildModeSliceFromShared(doc, mode, options);
+    persistModeSliceToDocument(doc, mode, slice);
+    return { action: "bootstrap", mode: normalized, slice };
+  }
+  return { action: "upload_required", mode: normalized, slice: null };
+}
+
+function showBootstrappedCreateScreen(mode, slice, doc) {
+  hydrateMaterialStateFromDoc(doc);
+  state.studyMode = mode;
+  state.activeSession = slice;
+  storeActiveSession(slice);
+  setStudyModeRadio(mode);
+  if (els.createModeLabel) {
+    els.createModeLabel.textContent = getStudyModeLabel(mode);
+  }
+  updateCreateScreenModeVisibility(mode);
+
+  if (mode === "slow") {
+    if (doc.shared?.docHierarchy) {
+      slice.docHierarchy = doc.shared.docHierarchy;
+      storeActiveSession(slice);
+    }
+    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    clearMaterialBootstrapUi();
+    showScreen("slowScope");
+    renderSlowScopeScreen(slice);
+    return;
+  }
+
+  if (mode === "cloze") {
+    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+    if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
+    setMaterialBootstrapUi(true, doc);
+    updateClozeSessionPanel(slice);
+    showScreen("create");
+    return;
+  }
+
+  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
+  if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
+  setMaterialBootstrapUi(true, doc);
+  showScreen("create");
+}
+
+/**
+ * @param {string} mode
+ */
+export async function enterModeWithContinuity(mode) {
+  const normalized = normalizeStudyMode(mode);
+  if (normalized === "review") {
+    startReviewFromRecommendation();
+    return;
+  }
+
+  applyFlowRecommendationOnEnterMode(normalized);
+  const doc = getActiveSession();
+  const entry = applyModeEntry(doc, normalized, {
+    llmModel: getSessionLlmModel(),
+    language: getStudyLanguage(),
+  });
+
+  if (entry.action === "resume" && entry.slice) {
+    if (normalized === "slow") resumeSlowSession(entry.slice);
+    else if (normalized === "cloze") resumeClozeSession(entry.slice);
+    else if (normalized === "questions") resumeQuestionsSession(entry.slice);
+    else resumeRsvpSession(entry.slice);
+    return;
+  }
+
+  if (entry.action === "bootstrap" && entry.slice && doc) {
+    showBootstrappedCreateScreen(normalized, entry.slice, doc);
+    return;
+  }
+
+  clearMaterialBootstrapUi();
+  enterCreateScreenForMode(normalized);
+}
+
 function enterCreateScreenForMode(mode) {
   const normalized = normalizeStudyMode(mode);
+  clearMaterialBootstrapUi();
   applyFlowRecommendationOnEnterMode(normalized);
   state.studyMode = normalized;
   setStudyModeRadio(normalized);
@@ -938,13 +1122,19 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.recommendBlocksBtn) els.recommendBlocksBtn.hidden = !isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   if (els.generateBlocksBtn) {
-    els.generateBlocksBtn.textContent =
-      isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
+    const bootstrapped = Boolean(state.materialBootstrapActive);
+    if (bootstrapped && (isSlow || isCloze)) {
+      els.generateBlocksBtn.textContent = "Continue with loaded material →";
+    } else {
+      els.generateBlocksBtn.textContent =
+        isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
+    }
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
 }
 
 function resetCreateScreenModeUi() {
+  clearMaterialBootstrapUi();
   if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   if (els.generateBlocksForm) els.generateBlocksForm.hidden = true;
   if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
@@ -1071,6 +1261,7 @@ async function runClozeGeneration(session) {
         valid: result.validItems.length,
       },
     };
+    applyAssessmentPrioritizedOrder(session, getActiveSession());
     updateClozeSessionPanel(session);
     storeActiveSession(session);
   } catch (err) {
@@ -2057,7 +2248,7 @@ function wireStudyModeSelector() {
     radio.addEventListener("change", () => {
       const mode = getSelectedStudyModeRadio();
       if (!mode) return;
-      enterCreateScreenForMode(mode);
+      void enterModeWithContinuity(mode);
     });
   });
 
@@ -2086,12 +2277,22 @@ function wireStudyModeSelector() {
         "Starting a new session will replace your saved session for this mode. Continue?",
       );
       if (!ok) return;
+      const doc = getActiveSession();
+      if (doc?.modes) {
+        persistModeSliceToDocument(doc, mode, null);
+      }
     }
+    clearMaterialBootstrapUi();
     if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     if (els.generateBlocksForm) els.generateBlocksForm.hidden = false;
     if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
     state.studyMode = mode;
+    state.activeSession = null;
     updateCreateScreenModeVisibility(mode);
+    const doc = getActiveSession();
+    if (doc?.shared?.rawMarkdown) {
+      void enterModeWithContinuity(mode);
+    }
   });
 
   els.criticalModeToggleBtn?.addEventListener("click", () => {
@@ -2421,6 +2622,56 @@ function assembleBlockCountSignals(cleanedText, inventory, textMetrics, pedagogi
   };
 }
 
+function buildBootstrapFileStub(doc, cleanedText) {
+  const meta = doc?.shared?.uploadMeta;
+  const fileName =
+    String(meta?.fileName || doc?.shared?.docMeta?.titleInferred || "loaded-material.md").trim() ||
+    "loaded-material.md";
+  return {
+    name: fileName,
+    size: String(cleanedText || "").length,
+    lastModified: Number(doc?.updatedAt) || Date.now(),
+  };
+}
+
+/**
+ * @returns {Promise<{
+ *   file: File | object,
+ *   cleanedText: string,
+ *   wordCount: number,
+ *   originalFormat: string,
+ *   normalizedFormat: string,
+ *   fromBootstrap: boolean,
+ *   warnings?: string[],
+ *   fallbackSections?: object | null,
+ * } | null>}
+ */
+async function resolveMaterialForGenerate() {
+  const doc = getActiveSession();
+  const fileList = els.fileInput?.files ? Array.from(els.fileInput.files) : [];
+  let file = fileList[0];
+
+  if (!file && state.materialBootstrapActive && doc?.shared?.rawMarkdown) {
+    const cleanedText = String(state.lastCleanedMaterialText || doc.shared.rawMarkdown || "");
+    const wordCount = Number(state.lastCleanedMaterialWordCount) || countWords(cleanedText);
+    const meta = doc.shared.uploadMeta;
+    return {
+      file: buildBootstrapFileStub(doc, cleanedText),
+      cleanedText,
+      wordCount,
+      originalFormat: String(meta?.originalFormat || "md"),
+      normalizedFormat: "markdown",
+      fromBootstrap: true,
+      warnings: [],
+      fallbackSections: null,
+    };
+  }
+
+  if (!file) return null;
+  const material = await readAndCleanMaterialText(file);
+  return { file, ...material, fromBootstrap: false };
+}
+
 async function handleRecommendBlockCount() {
   const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
   if (selectedMode !== "rsvp") return;
@@ -2446,27 +2697,22 @@ async function handleRecommendBlockCount() {
     return;
   }
 
-  const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
-  const file = fileList[0];
-  if (!file) {
-    if (els.recommendBlocksStatus) {
-      els.recommendBlocksStatus.textContent =
-        "Please choose a file (.pdf, .html, .txt, or .md).";
-    }
-    return;
-  }
-
   state.studyNotes = els.studyNotesInput ? String(els.studyNotesInput.value || "") : "";
   state.pendingLlmModel = llmModel;
 
   setRecommendLoading(true);
   try {
-    let cleanedText = String(state.lastCleanedMaterialText || "");
-    let wordCount = Number(state.lastCleanedMaterialWordCount) || 0;
-    if (!cleanedText.trim()) {
-      const material = await readAndCleanMaterialText(file);
-      cleanedText = material.cleanedText;
-      wordCount = material.wordCount;
+    const resolved = await resolveMaterialForGenerate();
+    if (!resolved) {
+      if (els.recommendBlocksStatus) {
+        els.recommendBlocksStatus.textContent =
+          "Please choose a file (.pdf, .html, .txt, or .md).";
+      }
+      return;
+    }
+    const { file, cleanedText, wordCount } = resolved;
+    if (!cleanedText.trim()) throw new Error("File appears to be empty.");
+    if (!resolved.fromBootstrap) {
       state.lastCleanedMaterialText = cleanedText;
       state.lastCleanedMaterialWordCount = wordCount;
       if (els.fileExtractHint) {
@@ -3711,6 +3957,7 @@ function handleTestAnswer({ chosen, correct, feedback }) {
     feedback: String(feedback || ""),
     correctAnswer: String(correct || ""),
   });
+  syncActiveSessionAssessmentSignals();
 
   const normalizedChosen = String(chosen || "").trim().toUpperCase();
   const normalizedCorrect = String(correct || "").trim().toUpperCase();
@@ -4571,6 +4818,7 @@ export function wireStudyHandlers() {
   wireSlowPhase3Handlers();
   wireMaterialGraphHandlers();
   wireClozeStudyHandlers();
+  setClozeStudyCompleteExitHandler(() => enterModeSelectScreen());
   wireClozeImportHandlers();
   els.clozeGenerateBtn?.addEventListener("click", () => {
     const session = state.activeSession;
@@ -4578,7 +4826,7 @@ export function wireStudyHandlers() {
   });
   els.clozeStudyBtn?.addEventListener("click", () => {
     const session = state.activeSession;
-    if (session?.studyMode === "cloze") enterClozeStudyScreen(session);
+    if (session?.studyMode === "cloze") enterClozeStudyScreen(session, getActiveSession());
   });
   els.clozeViewGraphBtn?.addEventListener("click", () => {
     const session = state.activeSession;
@@ -5403,6 +5651,7 @@ export function wireStudyHandlers() {
         window.offlinePack = null;
         setBlocksReadonlyMode({ enabled: false, bannerText: "" });
       }
+      state.materialBootstrapActive = false;
       state.lastRawMaterialText = "";
       state.lastCleanedMaterialText = "";
       state.lastCleanedMaterialWordCount = 0;
@@ -5436,15 +5685,14 @@ export function wireStudyHandlers() {
       }
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
-      const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
-      const file = fileList[0];
-      if (!file) {
+      const resolvedCloze = await resolveMaterialForGenerate();
+      if (!resolvedCloze) {
         setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
         return;
       }
       setGenerateLoading(true);
       try {
-        const { cleanedText, normalizedFormat, originalFormat } = await readAndCleanMaterialText(file);
+        const { file, cleanedText, normalizedFormat, originalFormat } = resolvedCloze;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
         const doc = await ensureDocumentSessionForUpload(cleanedText);
@@ -5452,7 +5700,7 @@ export function wireStudyHandlers() {
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
           normalizedFormat,
-          fileName: file.name,
+          fileName: String(file.name || ""),
           originalFormat,
           llmModel,
           language: getStudyLanguage(),
@@ -5487,21 +5735,21 @@ export function wireStudyHandlers() {
         if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
         return;
       }
-      const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
-      const file = fileList[0];
-      if (!file) {
+      const resolvedSlow = await resolveMaterialForGenerate();
+      if (!resolvedSlow) {
         setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
         return;
       }
       setGenerateLoading(true);
       try {
         const {
+          file,
           cleanedText,
           normalizedFormat,
           originalFormat,
           warnings,
           fallbackSections,
-        } = await readAndCleanMaterialText(file);
+        } = resolvedSlow;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const criticalMode =
           els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
@@ -5509,7 +5757,7 @@ export function wireStudyHandlers() {
         const sessionObj = createSlowSession({
           normalizedText: cleanedText,
           normalizedFormat,
-          fileName: file.name,
+          fileName: String(file.name || ""),
           originalFormat,
           llmModel,
           criticalMode,
@@ -5561,12 +5809,15 @@ export function wireStudyHandlers() {
     setBlocksReadonlyMode({ enabled: false, bannerText: "" });
     clearGenerateError();
     els.generateBlocksStatus.textContent = "";
+    const bootstrapRsvp = Boolean(state.materialBootstrapActive);
     state.originalMaterialText = "";
     state.studyNotes = els.studyNotesInput ? String(els.studyNotesInput.value || "") : "";
     state.lastNBlocks = 0;
-    state.lastUploadedFileNames = [];
-    state.lastCleanedMaterialText = "";
-    state.lastCleanedMaterialWordCount = 0;
+    if (!bootstrapRsvp) {
+      state.lastUploadedFileNames = [];
+      state.lastCleanedMaterialText = "";
+      state.lastCleanedMaterialWordCount = 0;
+    }
     state.lastBlockIndex = null;
     window.indexWasImported = false;
     if (els.importIndexLabel) els.importIndexLabel.textContent = "";
@@ -5590,17 +5841,15 @@ export function wireStudyHandlers() {
     }
     storeDefaultQuestionConfig({ n_test: state.nTest, n_socratic: state.nSocratic });
 
-    const fileList = els.fileInput.files ? Array.from(els.fileInput.files) : [];
-    state.lastUploadedFileNames = fileList.map((f) => String(f?.name || "")).filter(Boolean);
-    const file = fileList[0];
-    if (!file) {
-      setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
-      return;
-    }
-
     const nBlocks = Number(els.blocksInput.value);
     if (!Number.isFinite(nBlocks) || nBlocks < 5 || nBlocks > 60) {
       setGenerateError("Blocks must be a number between 5 and 60.");
+      return;
+    }
+
+    const resolvedRsvp = await resolveMaterialForGenerate();
+    if (!resolvedRsvp) {
+      setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
       return;
     }
 
@@ -5608,11 +5857,14 @@ export function wireStudyHandlers() {
     els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
-      const { cleanedText, wordCount } = await readAndCleanMaterialText(file);
-      state.lastCleanedMaterialText = cleanedText;
-      state.lastCleanedMaterialWordCount = wordCount;
-      if (els.fileExtractHint) {
-        els.fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+      const { file, cleanedText, wordCount } = resolvedRsvp;
+      if (!bootstrapRsvp) {
+        state.lastCleanedMaterialText = cleanedText;
+        state.lastCleanedMaterialWordCount = wordCount;
+        state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
+        if (els.fileExtractHint) {
+          els.fileExtractHint.textContent = `(~${wordCount} words extracted)`;
+        }
       }
       if (!cleanedText.trim()) {
         throw new Error("File appears to be empty.");
@@ -5678,6 +5930,7 @@ export function wireStudyHandlers() {
       const inventory =
         conceptInventory ||
         (Array.isArray(splitRunMeta?.concept_inventory) ? splitRunMeta.concept_inventory : []);
+      promoteConceptInventoryToShared(inventory, "rsvp");
       renderSplitMergeSummary(splitRunMeta);
       renderBlocksGraphActions(finalIndex, inventory);
       renderBlockIndexEditor(finalIndex, { readOnly: false });
@@ -5885,6 +6138,7 @@ export function wireStudyHandlers() {
         blockIndex: merged,
         conceptInventory: mgInventory,
       };
+      promoteConceptInventoryToShared(mgInventory, "rsvp");
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5',location:'src/js/study.js:2816',message:'confirm blocks before storeActiveSession',data:{nBlocks,sessionBlocks:Array.isArray(sessionObj.blocks)?sessionObj.blocks.length:null,stateActiveSessionBefore:!!state.activeSession,indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
@@ -6222,6 +6476,7 @@ export function wireStudyHandlers() {
         feedback: resp,
         correctAnswer: "",
       });
+      syncActiveSessionAssessmentSignals();
 
       const isLastQuestion = ctx.globalIndex >= ctx.total - 1;
       const isLastBlock = state.activeBlockIndex >= blocks.length - 1;

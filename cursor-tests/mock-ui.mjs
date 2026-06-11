@@ -39,3 +39,21 @@ export function initLanguageUi() {}
 export function showScreen() {}
 export function toggleSidebar() {}
 export function typesetMath() {}
+export function hideSidebar() {}
+export function showSidebar() {}
+export function setFullPackEntryCta() {}
+export function updateFullPackProgressUi() {}
+export function setOfflinePackButtonVisibility() {}
+export function enableUnifiedMaterialUpload() {}
+export function setPrefetchIndicator() {}
+export function setBlockReadContentProvider() {}
+export function closeBlockReadSidebar() {}
+export function refreshBlockReadSidebarContent() {}
+export function toggleBlockReadSidebar() {}
+export function setBlockReadSidebarAvailable() {}
+export function resolveChromeVisibility() {
+  return { showGuide: false, showFab: false };
+}
+export function syncFloatingChrome() {}
+export function registerChromeStudyModeResolver() {}
+export function registerChromeHasConceptsResolver() {}

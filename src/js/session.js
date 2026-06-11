@@ -55,6 +55,7 @@ export const state = {
   activeQuestionIndex: 0,
   pendingLlmModel: null,
   blockSplitCache: null,
+  materialBootstrapActive: false,
 };
 
 export function clampInt(n, min, max, fallback) {

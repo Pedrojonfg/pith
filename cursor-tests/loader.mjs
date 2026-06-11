@@ -5,6 +5,7 @@ const mockUi = new URL("./mock-ui.mjs", import.meta.url).href;
 /** Feature closure suites (validate tooling index). */
 export const FEATURE_TEST_SUITES = Object.freeze({
   "20260611-rsvp-block-recommend": "cursor-tests/20260611_rsvp-block-recommend.mjs",
+  "20260612-mode-continuity": "cursor-tests/20260612_mode-continuity.mjs",
 });
 
 /** Strip ?v= cache busters; stub browser-only modules for Node tests. */

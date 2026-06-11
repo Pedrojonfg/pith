@@ -4,6 +4,12 @@ const store = new Map();
 globalThis.window = globalThis.window || {};
 globalThis.window.offlineMode = false;
 globalThis.window.assessmentConfig = undefined;
+if (typeof globalThis.window.addEventListener !== "function") {
+  globalThis.window.addEventListener = () => {};
+}
+if (typeof globalThis.window.removeEventListener !== "function") {
+  globalThis.window.removeEventListener = () => {};
+}
 
 globalThis.localStorage = {
   get length() {

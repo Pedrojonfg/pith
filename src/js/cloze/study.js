@@ -1,3 +1,4 @@
+import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260612_1";
 import { getValidItems } from "./normalize.js?v=20260607_1";
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260525_1";
@@ -15,6 +16,12 @@ let shuffledOptions = [];
 let activeStudySession = null;
 let advanceTimerId = null;
 let keydownBound = false;
+/** @type {(() => void) | null} */
+let clozeStudyCompleteExit = null;
+
+export function setClozeStudyCompleteExitHandler(handler) {
+  clozeStudyCompleteExit = typeof handler === "function" ? handler : null;
+}
 
 function escapeText(text) {
   return String(text || "")
@@ -25,6 +32,38 @@ function escapeText(text) {
 
 function getClozeData(session) {
   return session?.cloze && typeof session.cloze === "object" ? session.cloze : null;
+}
+
+function itemsForSignalMatch(items) {
+  return items.map((item) => ({
+    ...item,
+    canonicalId: item.canonicalId || item.node_id || item.concept_id,
+    conceptLabel: item.conceptLabel || item.label || item.blank_text,
+  }));
+}
+
+/**
+ * @param {object} session
+ * @param {{ shared?: { assessmentSignals?: object[] } } | null} [doc]
+ */
+export function applyAssessmentPrioritizedOrder(session, doc = null) {
+  const cloze = getClozeData(session);
+  if (!cloze) return;
+  const valid = getValidItems(cloze.items || []);
+  if (!valid.length) return;
+
+  const signals = Array.isArray(doc?.shared?.assessmentSignals)
+    ? doc.shared.assessmentSignals
+    : [];
+  if (!signals.length) {
+    const ids = valid.map((item) => item.id);
+    shuffleInPlace(ids);
+    cloze.studyOrder = ids;
+    return;
+  }
+
+  const prioritized = prioritizeByAssessmentSignals(itemsForSignalMatch(valid), signals);
+  cloze.studyOrder = prioritized.map((item) => item.id);
 }
 
 function buildStudyOrder(session) {
@@ -150,7 +189,8 @@ function renderSummary(session) {
     <button type="button" id="clozeStudyExitBtn" class="btn-primary">Volver</button>
   `;
   host.querySelector("#clozeStudyExitBtn")?.addEventListener("click", () => {
-    showScreen("create");
+    if (clozeStudyCompleteExit) clozeStudyCompleteExit();
+    else showScreen("create");
   });
 }
 
@@ -210,10 +250,15 @@ function renderItem(session) {
   });
 }
 
-export function enterClozeStudyScreen(session) {
+export function enterClozeStudyScreen(session, doc = null) {
   if (!session?.cloze) return;
   const valid = getValidItems(session.cloze.items || []);
   if (!valid.length) return;
+
+  if (!Array.isArray(session.cloze.studyOrder) || !session.cloze.studyOrder.length) {
+    applyAssessmentPrioritizedOrder(session, doc);
+    storeActiveSession(session);
+  }
 
   activeOrder = buildStudyOrder(session);
   activeIndex = Math.min(Number(session.cloze.studyIndex) || 0, activeOrder.length);
