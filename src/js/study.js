@@ -339,7 +339,9 @@ const FLOW_MODE_SHORT_LABELS = {
  * @returns {string}
  */
 export function getFlowModeShortLabel(mode) {
-  const slot = normalizeStudyMode(mode);
+  const raw = String(mode || "").trim();
+  if (FLOW_MODE_SHORT_LABELS[raw]) return FLOW_MODE_SHORT_LABELS[raw];
+  const slot = normalizeStudyMode(raw);
   return FLOW_MODE_SHORT_LABELS[slot] || getStudyModeLabel(slot);
 }
 
@@ -1070,11 +1072,12 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
  * @param {string} mode
  */
 export async function enterModeWithContinuity(mode) {
-  const normalized = normalizeStudyMode(mode);
-  if (normalized === "review") {
+  const raw = String(mode || "").trim();
+  if (raw === "review") {
     startReviewFromRecommendation();
     return;
   }
+  const normalized = normalizeStudyMode(raw);
 
   applyFlowRecommendationOnEnterMode(normalized);
   const doc = getActiveSession();
