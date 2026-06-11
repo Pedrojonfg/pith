@@ -2008,6 +2008,79 @@ export function describeSplitRunMetaForUi(splitRunMeta) {
   };
 }
 
+/** @param {object} sessionObj */
+function ensureSessionMetaObject(sessionObj) {
+  if (!sessionObj || typeof sessionObj !== "object") return null;
+  if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
+    sessionObj._meta = {};
+  }
+  return sessionObj._meta;
+}
+
+/** @returns {object | null} */
+export function getKnowledgeProfile(sessionObj) {
+  const profile = sessionObj?._meta?.knowledge_profile;
+  return profile && typeof profile === "object" ? profile : null;
+}
+
+export function setKnowledgeProfile(sessionObj, profile) {
+  const meta = ensureSessionMetaObject(sessionObj);
+  if (!meta) return sessionObj;
+  if (profile == null) {
+    delete meta.knowledge_profile;
+    return sessionObj;
+  }
+  if (typeof profile !== "object") return sessionObj;
+  meta.knowledge_profile = profile;
+  if (meta.assessment_skipped == null) meta.assessment_skipped = false;
+  if (meta.packing_ignored_profile == null) meta.packing_ignored_profile = false;
+  return sessionObj;
+}
+
+export function setAssessmentSkipped(sessionObj, skipped = true) {
+  const meta = ensureSessionMetaObject(sessionObj);
+  if (!meta) return sessionObj;
+  meta.assessment_skipped = Boolean(skipped);
+  if (skipped) {
+    delete meta.knowledge_profile;
+    meta.packing_ignored_profile = false;
+  }
+  return sessionObj;
+}
+
+export function setPackingIgnoredProfile(sessionObj, ignored = true) {
+  const meta = ensureSessionMetaObject(sessionObj);
+  if (!meta) return sessionObj;
+  meta.packing_ignored_profile = Boolean(ignored);
+  if (ignored) meta.assessment_skipped = false;
+  return sessionObj;
+}
+
+/** Pack layer invariants for tests and runtime checks. */
+export function validatePackInvariants({
+  conceptInventory,
+  blockIndex,
+  requested_n,
+  knowledgeProfile = null,
+  splitRunMeta = null,
+}) {
+  const inv = Array.isArray(conceptInventory) ? conceptInventory : [];
+  const idx = Array.isArray(blockIndex) ? blockIndex : [];
+  const errors = [];
+  const storedInv = splitRunMeta?.concept_inventory;
+  if (Array.isArray(storedInv) && storedInv.length !== inv.length) {
+    errors.push("concept_inventory length changed in splitRunMeta");
+  }
+  if (idx.length > requested_n) {
+    errors.push(`blockIndex.length (${idx.length}) > requested_n (${requested_n})`);
+  }
+  const expectedApplied = Boolean(knowledgeProfile);
+  if (splitRunMeta && splitRunMeta.profile_applied !== expectedApplied) {
+    errors.push(`profile_applied expected ${expectedApplied}`);
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export async function runConceptInventory(
   material,
   { llmModel, studyNotes, language, onProgress } = {},
@@ -2037,13 +2110,15 @@ export async function packInventoryToBlocks(
   inventory,
   nBlocks,
   material,
-  { llmModel, studyNotes, language, onProgress } = {},
+  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null } = {},
 ) {
   const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
   const materialText = String(material || "").trim();
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const profile =
+    knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
@@ -2055,8 +2130,10 @@ export async function packInventoryToBlocks(
     llmModel: model,
     inventory,
     nBlocks: requested_n,
+    maxBlocks: requested_n,
     studyNotes: notes,
     language: lang,
+    knowledgeProfile: profile,
   });
 
   let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
@@ -2072,10 +2149,14 @@ export async function packInventoryToBlocks(
       : Array.isArray(b.concept_ids)
         ? b.concept_ids
         : [];
+    const learning_goal = String(src.learning_goal || b.learning_goal || "").trim();
+    const mastery_adjusted = src.mastery_adjusted === true || b.mastery_adjusted === true;
     return {
       ...b,
       chunk: chunks[i] || "",
       ...(concept_ids.length ? { concept_ids } : {}),
+      ...(learning_goal ? { learning_goal } : {}),
+      ...(mastery_adjusted ? { mastery_adjusted: true } : {}),
     };
   });
 
@@ -2083,19 +2164,34 @@ export async function packInventoryToBlocks(
   const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
   const concept_count = inventory.length;
 
+  const splitRunMeta = {
+    requested_n,
+    final_n: dedupResult.blockIndex.length,
+    baseline_n: requested_n,
+    profile_applied: Boolean(profile),
+    pipeline: "two_phase",
+    concept_count,
+    concept_inventory: inventory,
+    pack_meta,
+    dedup_merges: dedupResult.dedup_merges,
+    dedup_merged_count: dedupResult.merged_count,
+  };
+
+  const invariant = validatePackInvariants({
+    conceptInventory: inventory,
+    blockIndex: dedupResult.blockIndex,
+    requested_n,
+    knowledgeProfile: profile,
+    splitRunMeta,
+  });
+  if (!invariant.ok) {
+    console.warn("packInventoryToBlocks invariant:", invariant.errors.join("; "));
+  }
+
   return {
     blockIndex: dedupResult.blockIndex,
     conceptInventory: inventory,
-    splitRunMeta: {
-      requested_n,
-      final_n: dedupResult.blockIndex.length,
-      pipeline: "two_phase",
-      concept_count,
-      concept_inventory: inventory,
-      pack_meta,
-      dedup_merges: dedupResult.dedup_merges,
-      dedup_merged_count: dedupResult.merged_count,
-    },
+    splitRunMeta,
   };
 }
 

@@ -6,7 +6,14 @@ import {
   generateAssessmentQuestions,
   generateAssessmentSynthesis,
   synthesizeAssessmentGaps,
+  generatePrePackingAssessmentItems,
+  evaluatePrePackingAssessmentResponses,
+  PREPACKING_DONT_KNOW_ANSWER,
 } from "./api.js?v=20260527_1";
+import {
+  ASSESSMENT_FLAGS,
+  isPrePackingAssessmentEnabled,
+} from "./config/flags.js";
 import {
   assertLlmKeyPresent,
   getApiKeyForLlmModel,
@@ -132,6 +139,9 @@ import {
   gapLabelsForBlock,
   generateOfflinePack,
   mergeGapLists,
+  setKnowledgeProfile,
+  setAssessmentSkipped,
+  setPackingIgnoredProfile,
 } from "./session.js?v=20260527_1";
 import {
   els,
@@ -4651,16 +4661,364 @@ function openMaterialGraphScreen({
   showScreen("slowGraph");
 }
 
+/** Ephemeral RSVP pre-packing flow state (20260611-rsvp-assessment-reposition). */
+let prePackingFlow = null;
+/** Persists assessment meta until blocks are confirmed. */
+let prePackingDraftMeta = null;
+
+function resetPrePackingFlow() {
+  prePackingFlow = null;
+}
+
+function stashPrePackingDraftMeta() {
+  if (!prePackingFlow) return;
+  prePackingDraftMeta = {
+    knowledgeProfile: prePackingFlow.knowledgeProfile || null,
+    assessmentSkipped: Boolean(prePackingFlow.assessmentSkipped),
+    packingIgnoredProfile: Boolean(prePackingFlow.packingIgnoredProfile),
+  };
+}
+
+function countProfileMastery(profile) {
+  const threshold = ASSESSMENT_FLAGS.ASSESSMENT_MASTERY_THRESHOLD;
+  const items = Array.isArray(profile?.items) ? profile.items : [];
+  let full = 0;
+  let partial = 0;
+  let none = 0;
+  for (const item of items) {
+    if (item?.mastery === "full" && Number(item.confidence) > threshold) full += 1;
+    else if (item?.mastery === "partial") partial += 1;
+    else none += 1;
+  }
+  return { full, partial, none };
+}
+
+function applyPackedBlocksToEditor(packed, conceptInventory) {
+  const finalIndex = packed.blockIndex;
+  const splitRunMeta = packed.splitRunMeta;
+  const inventory = conceptInventory || packed.conceptInventory || [];
+  state.lastBlockIndex = finalIndex;
+  state.lastNBlocks = finalIndex.length;
+  window.blockIndex = finalIndex;
+  window.indexWasImported = false;
+  promoteConceptInventoryToShared(inventory, "rsvp");
+  renderSplitMergeSummary(splitRunMeta);
+  renderBlocksGraphActions(finalIndex, inventory);
+  renderBlockIndexEditor(finalIndex, { readOnly: false });
+  if (els.blocksListOutput) {
+    els.blocksListOutput.value = formatBlockIndexForConfirmation(finalIndex);
+  }
+  showScreen("blocks");
+}
+
+async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
+  if (!prePackingFlow) throw new Error("Pre-packing flow not initialized.");
+  const { conceptInventory, nBlocks, cleanedText, splitOpts } = prePackingFlow;
+  return packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
+    ...splitOpts,
+    knowledgeProfile,
+    onProgress,
+  });
+}
+
+function renderPrePackingAssessmentGraph(inventory) {
+  const host = els.prePackingAssessmentGraph;
+  if (!host) return;
+  const graph = buildRsvpMaterialGraph({
+    conceptInventory: inventory,
+    blockIndex: [],
+  });
+  state.materialGraphContext = {
+    blockIndex: [],
+    conceptInventory: Array.isArray(inventory) ? inventory : [],
+  };
+  host.textContent = `${graph.nodes.length} concepts · ${graph.edges.length} relations`;
+}
+
+function renderPrePackingAssessmentQuestion() {
+  if (!prePackingFlow) return;
+  const items = prePackingFlow.assessmentItems || [];
+  const idx = prePackingFlow.questionIndex || 0;
+  const item = items[idx];
+  if (!item) return;
+
+  if (els.prePackingAssessmentProgress) {
+    els.prePackingAssessmentProgress.textContent = `Question ${idx + 1} of ${items.length}`;
+  }
+  if (els.prePackingAssessmentQuestion) {
+    els.prePackingAssessmentQuestion.textContent = String(item.question || "");
+  }
+  const optionsHost = els.prePackingAssessmentOptions;
+  if (!optionsHost) return;
+  optionsHost.innerHTML = "";
+  const groupName = "prePackingAssessmentOption";
+  const options = [...(item.options || []), PREPACKING_DONT_KNOW_ANSWER];
+  const saved = prePackingFlow.responses?.find((r) => r.item_id === item.item_id)?.answer;
+  for (const opt of options) {
+    const label = document.createElement("label");
+    label.className = "pre-packing-assessment-option";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = groupName;
+    input.value = opt;
+    if (saved === opt) input.checked = true;
+    label.appendChild(input);
+    const span = document.createElement("span");
+    span.textContent = opt;
+    label.appendChild(span);
+    optionsHost.appendChild(label);
+  }
+  if (els.prePackingAssessmentNext) {
+    els.prePackingAssessmentNext.textContent =
+      idx >= items.length - 1 ? "Finish" : "Next";
+  }
+}
+
+async function enterPrePackingAssessmentScreen() {
+  if (!prePackingFlow) return;
+  renderPrePackingAssessmentGraph(prePackingFlow.conceptInventory);
+  prePackingFlow.questionIndex = 0;
+  prePackingFlow.responses = [];
+  if (els.prePackingAssessmentError) {
+    els.prePackingAssessmentError.hidden = true;
+    els.prePackingAssessmentError.textContent = "";
+  }
+  if (els.prePackingAssessmentStatus) {
+    els.prePackingAssessmentStatus.textContent = "Loading questions…";
+  }
+  showScreen("prePackingAssessment");
+
+  try {
+    if (!prePackingFlow.itemsPromise) {
+      prePackingFlow.itemsPromise = generatePrePackingAssessmentItems({
+        conceptInventory: prePackingFlow.conceptInventory,
+        maxItems: ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX,
+        llmModel: prePackingFlow.splitOpts?.llmModel,
+        language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
+      });
+    }
+    const items = await prePackingFlow.itemsPromise;
+    prePackingFlow.assessmentItems = Array.isArray(items) ? items : [];
+    if (!prePackingFlow.assessmentItems.length) {
+      throw new Error("Could not generate assessment items.");
+    }
+    if (els.prePackingAssessmentStatus) els.prePackingAssessmentStatus.textContent = "";
+    renderPrePackingAssessmentQuestion();
+  } catch (err) {
+    if (els.prePackingAssessmentError) {
+      els.prePackingAssessmentError.hidden = false;
+      els.prePackingAssessmentError.textContent = err?.message
+        ? String(err.message)
+        : "Assessment unavailable — packing without profile.";
+    }
+    if (els.prePackingAssessmentStatus) {
+      els.prePackingAssessmentStatus.textContent = "Falling back to uniform packing…";
+    }
+    await handlePrePackingSkip();
+  }
+}
+
+async function handlePrePackingSkip() {
+  if (!prePackingFlow) return;
+  prePackingFlow.knowledgeProfile = null;
+  prePackingFlow.assessmentSkipped = true;
+  prePackingFlow.packingIgnoredProfile = false;
+  setGenerateLoading(true);
+  try {
+    const packed = await runPrePackingPack({ knowledgeProfile: null });
+    prePackingFlow.packedResult = packed;
+    stashPrePackingDraftMeta();
+    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
+    resetPrePackingFlow();
+  } catch (err) {
+    setGenerateError(err?.message ? String(err.message) : String(err));
+    showScreen("create");
+  } finally {
+    setGenerateLoading(false);
+  }
+}
+
+function collectCurrentPrePackingAnswer() {
+  const selected = document.querySelector(
+    '#prePackingAssessmentOptions input[type="radio"]:checked',
+  );
+  return selected ? String(selected.value || "") : "";
+}
+
+async function advancePrePackingAssessment() {
+  if (!prePackingFlow) return;
+  const items = prePackingFlow.assessmentItems || [];
+  const idx = prePackingFlow.questionIndex || 0;
+  const item = items[idx];
+  if (!item) return;
+
+  const answer = collectCurrentPrePackingAnswer();
+  if (!answer) {
+    if (els.prePackingAssessmentError) {
+      els.prePackingAssessmentError.hidden = false;
+      els.prePackingAssessmentError.textContent = "Select an option to continue.";
+    }
+    return;
+  }
+  if (els.prePackingAssessmentError) {
+    els.prePackingAssessmentError.hidden = true;
+    els.prePackingAssessmentError.textContent = "";
+  }
+
+  const responses = Array.isArray(prePackingFlow.responses) ? prePackingFlow.responses : [];
+  const existing = responses.findIndex((r) => r.item_id === item.item_id);
+  const row = { item_id: item.item_id, answer };
+  if (existing >= 0) responses[existing] = row;
+  else responses.push(row);
+  prePackingFlow.responses = responses;
+
+  if (idx < items.length - 1) {
+    prePackingFlow.questionIndex = idx + 1;
+    renderPrePackingAssessmentQuestion();
+    return;
+  }
+
+  await finishPrePackingAssessment();
+}
+
+async function finishPrePackingAssessment() {
+  if (!prePackingFlow) return;
+  if (els.prePackingAssessmentStatus) {
+    els.prePackingAssessmentStatus.textContent = "Evaluating responses…";
+  }
+  if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = true;
+
+  const profile = await evaluatePrePackingAssessmentResponses({
+    items: prePackingFlow.assessmentItems,
+    responses: prePackingFlow.responses,
+    conceptInventory: prePackingFlow.conceptInventory,
+    llmModel: prePackingFlow.splitOpts?.llmModel,
+    language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
+  });
+
+  prePackingFlow.knowledgeProfile = profile;
+  prePackingFlow.assessmentSkipped = false;
+  prePackingFlow.packingIgnoredProfile = false;
+
+  if (ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING && profile) {
+    prePackingFlow.packingPromise = runPrePackingPack({
+      knowledgeProfile: profile,
+      onProgress: (msg) => {
+        if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = msg;
+      },
+    }).then((packed) => {
+      prePackingFlow.packedResult = packed;
+      return packed;
+    });
+  }
+
+  const counts = countProfileMastery(profile);
+  if (!profile || counts.full === 0) {
+    if (!prePackingFlow.packingPromise) {
+      prePackingFlow.packingPromise = runPrePackingPack({
+        knowledgeProfile: profile,
+      });
+    }
+    const packed = await prePackingFlow.packingPromise;
+    prePackingFlow.packedResult = packed;
+    stashPrePackingDraftMeta();
+    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
+    resetPrePackingFlow();
+    return;
+  }
+
+  renderPrePackingResultsScreen(counts);
+  showScreen("prePackingResults");
+  if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = false;
+}
+
+function renderPrePackingResultsScreen(counts) {
+  if (!prePackingFlow) return;
+  const { full, partial, none } = counts;
+  if (els.prePackingResultsSummary) {
+    els.prePackingResultsSummary.textContent = `Mastered: ${full} · Partial: ${partial} · New: ${none}`;
+  }
+  if (els.prePackingResultsDiff) {
+    if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
+      const n = prePackingFlow.nBlocks;
+      els.prePackingResultsDiff.hidden = false;
+      els.prePackingResultsDiff.textContent = `Hasta ${n} → packing with profile (may be fewer blocks)`;
+    } else {
+      els.prePackingResultsDiff.hidden = true;
+    }
+  }
+  const list = els.prePackingResultsDetailList;
+  if (list && prePackingFlow.knowledgeProfile?.items) {
+    list.innerHTML = "";
+    for (const item of prePackingFlow.knowledgeProfile.items) {
+      const li = document.createElement("li");
+      li.textContent = `${item.concept_id}: ${item.mastery} (${Math.round(item.confidence * 100)}%)`;
+      list.appendChild(li);
+    }
+  }
+}
+
+async function handlePrePackingAccept() {
+  if (!prePackingFlow) return;
+  if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = true;
+  if (els.prePackingResultsStatus) {
+    els.prePackingResultsStatus.textContent = "Preparing blocks…";
+  }
+  try {
+    let packed = prePackingFlow.packedResult;
+    if (!packed && prePackingFlow.packingPromise) {
+      packed = await prePackingFlow.packingPromise;
+    }
+    if (!packed) {
+      packed = await runPrePackingPack({
+        knowledgeProfile: prePackingFlow.knowledgeProfile,
+      });
+    }
+    prePackingFlow.packedResult = packed;
+    if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF && els.prePackingResultsDiff) {
+      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} → ${packed.blockIndex.length}`;
+    }
+    stashPrePackingDraftMeta();
+    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
+    resetPrePackingFlow();
+  } catch (err) {
+    setGenerateError(err?.message ? String(err.message) : String(err));
+    showScreen("create");
+  } finally {
+    if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = false;
+    if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = "";
+  }
+}
+
+async function handlePrePackingIgnore() {
+  if (!prePackingFlow) return;
+  prePackingFlow.packingIgnoredProfile = true;
+  if (els.prePackingResultsStatus) {
+    els.prePackingResultsStatus.textContent = "Re-packing without profile…";
+  }
+  try {
+    const packed = await runPrePackingPack({ knowledgeProfile: null });
+    prePackingFlow.packedResult = packed;
+    stashPrePackingDraftMeta();
+    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
+    resetPrePackingFlow();
+  } catch (err) {
+    setGenerateError(err?.message ? String(err.message) : String(err));
+    showScreen("create");
+  }
+}
+
 function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   const host = document.getElementById("blocksGraphActions");
   if (!host) return;
   const blocks = Array.isArray(blockIndex) ? blockIndex : [];
-  if (!blocks.length) {
+  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  if (!blocks.length && !inventory.length) {
     host.hidden = true;
     host.innerHTML = "";
     return;
   }
-  const graph = buildRsvpMaterialGraph({ conceptInventory, blockIndex: blocks });
+  const graph = buildRsvpMaterialGraph({ conceptInventory: inventory, blockIndex: blocks });
   state.materialGraphContext = {
     blockIndex: blocks,
     conceptInventory: Array.isArray(conceptInventory) ? conceptInventory : [],
@@ -4861,8 +5219,17 @@ export function wireStudyHandlers() {
     }
   }
 
+  function goAfterBlocksConfirmed(nBlocks) {
+    if (isPrePackingAssessmentEnabled()) {
+      goToSessionReady(nBlocks);
+      return;
+    }
+    goToInitialAssessment();
+  }
+
   function setAssessmentUiDefaults() {
-    if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = false;
+    const hideLegacy = isPrePackingAssessmentEnabled();
+    if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = hideLegacy;
     if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = true;
     if (els.assessmentMaxQuestions) els.assessmentMaxQuestions.value = "20";
     if (els.assessmentPenaliseBtn) els.assessmentPenaliseBtn.setAttribute("aria-pressed", "true");
@@ -5888,25 +6255,59 @@ export function wireStudyHandlers() {
         },
       };
 
-      let finalIndex;
-      let splitRunMeta;
-      let conceptInventory;
+      resetPrePackingFlow();
+      prePackingDraftMeta = null;
+      const prePackingOn = isPrePackingAssessmentEnabled();
 
-      if (isBlockSplitCacheValid(cache, fingerprint)) {
-        const packed = await packInventoryToBlocks(
-          cache.conceptInventory,
-          nBlocks,
-          cleanedText,
-          splitOpts,
+      if (!prePackingOn) {
+        let packed;
+        if (isBlockSplitCacheValid(cache, fingerprint)) {
+          packed = await packInventoryToBlocks(
+            cache.conceptInventory,
+            nBlocks,
+            cleanedText,
+            splitOpts,
+          );
+        } else {
+          const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
+          packed = {
+            blockIndex: splitResult.blockIndex,
+            splitRunMeta: splitResult.splitRunMeta,
+            conceptInventory: splitResult.conceptInventory,
+          };
+          const inv = splitResult.conceptInventory;
+          if (Array.isArray(inv) && inv.length > 0) {
+            setBlockSplitCache({
+              fingerprint,
+              conceptInventory: inv,
+              recommendation: cache?.recommendation ?? null,
+            });
+          }
+        }
+        if (!Array.isArray(packed.blockIndex) || !packed.blockIndex.length) {
+          throw new Error(
+            "Block split returned no blocks. Please try generating blocks again.",
+          );
+        }
+        promoteConceptInventoryToShared(
+          packed.conceptInventory ||
+            packed.splitRunMeta?.concept_inventory ||
+            [],
+          "rsvp",
         );
-        finalIndex = packed.blockIndex;
-        splitRunMeta = packed.splitRunMeta;
-        conceptInventory = packed.conceptInventory;
+        applyPackedBlocksToEditor(
+          packed,
+          packed.conceptInventory || packed.splitRunMeta?.concept_inventory,
+        );
+        return;
+      }
+
+      let conceptInventory;
+      if (isBlockSplitCacheValid(cache, fingerprint)) {
+        conceptInventory = cache.conceptInventory;
       } else {
-        const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
-        finalIndex = splitResult.blockIndex;
-        splitRunMeta = splitResult.splitRunMeta;
-        conceptInventory = splitResult.conceptInventory;
+        const invResult = await runConceptInventory(cleanedText, splitOpts);
+        conceptInventory = invResult.inventory;
         if (Array.isArray(conceptInventory) && conceptInventory.length > 0) {
           setBlockSplitCache({
             fingerprint,
@@ -5916,29 +6317,40 @@ export function wireStudyHandlers() {
         }
       }
 
-      if (!Array.isArray(finalIndex) || !finalIndex.length) {
-        throw new Error(
-          "Block split returned no blocks. Please try generating blocks again.",
-        );
+      if (!Array.isArray(conceptInventory) || !conceptInventory.length) {
+        throw new Error("Concept inventory returned no concepts. Please try again.");
       }
 
-      state.lastBlockIndex = finalIndex;
-      state.lastNBlocks = finalIndex.length;
-      window.blockIndex = finalIndex;
-      window.indexWasImported = false;
+      promoteConceptInventoryToShared(conceptInventory, "rsvp");
 
-      const inventory =
-        conceptInventory ||
-        (Array.isArray(splitRunMeta?.concept_inventory) ? splitRunMeta.concept_inventory : []);
-      promoteConceptInventoryToShared(inventory, "rsvp");
-      renderSplitMergeSummary(splitRunMeta);
-      renderBlocksGraphActions(finalIndex, inventory);
-      renderBlockIndexEditor(finalIndex, { readOnly: false });
-      if (els.blocksListOutput) {
-        // keep the hidden textarea in a stable, pretty format (debug + fallback)
-        els.blocksListOutput.value = formatBlockIndexForConfirmation(finalIndex);
-      }
-      showScreen("blocks");
+      prePackingFlow = {
+        phase: "assessment",
+        conceptInventory,
+        nBlocks,
+        cleanedText,
+        splitOpts,
+        fingerprint,
+        assessmentItems: [],
+        itemsPromise: generatePrePackingAssessmentItems({
+          conceptInventory,
+          maxItems: ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX,
+          llmModel: splitOpts.llmModel,
+          language: splitOpts.language,
+        }).catch(() => []),
+        responses: [],
+        knowledgeProfile: null,
+        packingPromise: null,
+        packedResult: null,
+        assessmentSkipped: false,
+        packingIgnoredProfile: false,
+        questionIndex: 0,
+        draftMeta: { _meta: {} },
+      };
+
+      setGenerateLoading(false);
+      els.generateBlocksStatus.textContent = "";
+      await enterPrePackingAssessmentScreen();
+      return;
     } catch (err) {
       setGenerateError(err?.message ? String(err.message) : String(err));
     } finally {
@@ -6148,13 +6560,40 @@ export function wireStudyHandlers() {
       // #region agent log
       fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H6',location:'src/js/study.js:2820',message:'confirm blocks after storeActiveSession',data:{storedSessionExists:!!loadActiveSession(),stateActiveSessionAfterStore:!!state.activeSession},timestamp:Date.now()})}).catch(()=>{});
       // #endregion
-      goToInitialAssessment();
+      if (prePackingDraftMeta) {
+        if (prePackingDraftMeta.assessmentSkipped) {
+          setAssessmentSkipped(sessionObj, true);
+        } else if (prePackingDraftMeta.packingIgnoredProfile) {
+          setPackingIgnoredProfile(sessionObj, true);
+          if (prePackingDraftMeta.knowledgeProfile) {
+            setKnowledgeProfile(sessionObj, prePackingDraftMeta.knowledgeProfile);
+          }
+        } else if (prePackingDraftMeta.knowledgeProfile) {
+          setKnowledgeProfile(sessionObj, prePackingDraftMeta.knowledgeProfile);
+        }
+        prePackingDraftMeta = null;
+      }
+
+      goAfterBlocksConfirmed(nBlocks);
     } catch (err) {
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
       setConfirmLoading(false);
       els.confirmBlocksStatus.textContent = "";
     }
+  });
+
+  els.prePackingAssessmentSkip?.addEventListener("click", () => {
+    void handlePrePackingSkip();
+  });
+  els.prePackingAssessmentNext?.addEventListener("click", () => {
+    void advancePrePackingAssessment();
+  });
+  els.prePackingResultsAccept?.addEventListener("click", () => {
+    void handlePrePackingAccept();
+  });
+  els.prePackingResultsIgnore?.addEventListener("click", () => {
+    void handlePrePackingIgnore();
   });
 
   els.startStudyingBtn.addEventListener("click", async () => startStudyingNow());

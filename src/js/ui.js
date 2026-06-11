@@ -136,7 +136,26 @@ export const els = {
   recommendationProgress: document.getElementById("recommendationProgress"),
   recommendationProgressSteps: document.getElementById("recommendationProgressSteps"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
+  screenPrePackingAssessment: document.getElementById("screenPrePackingAssessment"),
+  screenPrePackingResults: document.getElementById("screenPrePackingResults"),
   screenBlocksList: document.getElementById("screenBlocksList"),
+  prePackingAssessmentScreen: document.getElementById("screenPrePackingAssessment"),
+  prePackingAssessmentSkip: document.getElementById("prePackingAssessmentSkip"),
+  prePackingAssessmentProgress: document.getElementById("prePackingAssessmentProgress"),
+  prePackingAssessmentQuestion: document.getElementById("prePackingAssessmentQuestion"),
+  prePackingAssessmentOptions: document.getElementById("prePackingAssessmentOptions"),
+  prePackingAssessmentNext: document.getElementById("prePackingAssessmentNext"),
+  prePackingAssessmentGraph: document.getElementById("prePackingAssessmentGraph"),
+  prePackingAssessmentStatus: document.getElementById("prePackingAssessmentStatus"),
+  prePackingAssessmentError: document.getElementById("prePackingAssessmentError"),
+  prePackingResultsScreen: document.getElementById("screenPrePackingResults"),
+  prePackingResultsSummary: document.getElementById("prePackingResultsSummary"),
+  prePackingResultsDiff: document.getElementById("prePackingResultsDiff"),
+  prePackingResultsAccept: document.getElementById("prePackingResultsAccept"),
+  prePackingResultsIgnore: document.getElementById("prePackingResultsIgnore"),
+  prePackingResultsDetail: document.getElementById("prePackingResultsDetail"),
+  prePackingResultsDetailList: document.getElementById("prePackingResultsDetailList"),
+  prePackingResultsStatus: document.getElementById("prePackingResultsStatus"),
   screenInitialAssessment: document.getElementById("screenInitialAssessment"),
   screenAssessmentGenerating: document.getElementById("screenAssessmentGenerating"),
   screenSessionReady: document.getElementById("screenSessionReady"),
@@ -842,6 +861,8 @@ export function showScreen(which) {
   const modeSelectEl = showModeSelect ? resolveModeSelectScreenEl() : els.screenModeSelect;
   const showModeSelectScreen = showModeSelect && !!modeSelectEl;
   const showCreate = which === "create" || (showModeSelect && !modeSelectEl);
+  const showPrePackingAssessment = which === "prePackingAssessment";
+  const showPrePackingResults = which === "prePackingResults";
   const showBlocks = which === "blocks";
   const showAssessment = which === "assessment";
   const showAssessmentGenerating = which === "assessmentGenerating";
@@ -867,6 +888,11 @@ export function showScreen(which) {
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
+  els.screenPrePackingAssessment?.setAttribute(
+    "aria-hidden",
+    String(!showPrePackingAssessment),
+  );
+  els.screenPrePackingResults?.setAttribute("aria-hidden", String(!showPrePackingResults));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
   els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
   els.screenAssessmentGenerating?.setAttribute(

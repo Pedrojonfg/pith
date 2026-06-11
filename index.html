@@ -597,6 +597,60 @@
         </section>
 
         <section
+          id="screenPrePackingAssessment"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Pre-packing assessment"
+        >
+          <div class="card pre-packing-assessment-card">
+            <h1 class="pre-packing-assessment-title">Quick knowledge check</h1>
+            <p class="subtle pre-packing-assessment-intro">
+              Answer a few questions so we can skip concepts you already know when building blocks.
+            </p>
+            <div id="prePackingAssessmentGraph" class="pre-packing-assessment-graph hint"></div>
+            <p id="prePackingAssessmentProgress" class="pre-packing-assessment-progress" aria-live="polite"></p>
+            <p id="prePackingAssessmentQuestion" class="pre-packing-assessment-question"></p>
+            <div id="prePackingAssessmentOptions" class="pre-packing-assessment-options" role="radiogroup"></div>
+            <div class="pre-packing-assessment-actions row">
+              <button type="button" id="prePackingAssessmentSkip" class="btn-secondary">
+                Skip — pack without profile
+              </button>
+              <button type="button" id="prePackingAssessmentNext" class="btn-primary">
+                Next
+              </button>
+            </div>
+            <p id="prePackingAssessmentStatus" class="hint" role="status"></p>
+            <div id="prePackingAssessmentError" class="error" hidden></div>
+          </div>
+        </section>
+
+        <section
+          id="screenPrePackingResults"
+          class="screen"
+          aria-hidden="true"
+          aria-label="Assessment results"
+        >
+          <div class="card pre-packing-results-card">
+            <h1 class="pre-packing-results-title">Your knowledge profile</h1>
+            <p id="prePackingResultsSummary" class="pre-packing-results-summary"></p>
+            <p id="prePackingResultsDiff" class="pre-packing-results-diff hint"></p>
+            <details id="prePackingResultsDetailWrap" class="pre-packing-results-detail">
+              <summary id="prePackingResultsDetail">View concept breakdown</summary>
+              <ul id="prePackingResultsDetailList"></ul>
+            </details>
+            <div class="pre-packing-results-actions row">
+              <button type="button" id="prePackingResultsAccept" class="btn-primary">
+                Accept personalised blocks
+              </button>
+              <button type="button" id="prePackingResultsIgnore" class="btn-secondary">
+                Ignorar y usar todos
+              </button>
+            </div>
+            <p id="prePackingResultsStatus" class="hint" role="status"></p>
+          </div>
+        </section>
+
+        <section
           id="screenBlocksList"
           class="screen"
           aria-hidden="true"
