@@ -40,6 +40,9 @@ function applyModeVisibility(doc, mode) {
   setHidden("slowOnlyControls", !isSlow);
   setHidden("clozeImportSection", !isCloze);
 
+  const form = doc.getElementById("generateBlocksForm");
+  if (form) form.classList.toggle("create-form--slow", isSlow);
+
   const blocksInput = doc.getElementById("blocksInput");
   if (blocksInput) blocksInput.required = showBlockConfig;
 }
@@ -83,7 +86,10 @@ const fileInputIdx = indexHtml.indexOf('id="fileInput"');
 const resumeIdx = indexHtml.indexOf('id="resumeSessionDetails"');
 const modelIdx = indexHtml.indexOf('id="llmModelSelect"');
 assert(fileInputIdx > 0 && modelIdx > fileInputIdx, "happy: model follows file input");
-assert(resumeIdx > indexHtml.indexOf('id="generateBlocksError"'), "happy: resume after main form");
+assert(resumeIdx > indexHtml.indexOf('id="rsvpAdvancedDetails"'), "happy: resume after RSVP advanced section");
+const generateBtnIdx = indexHtml.indexOf('id="generateBlocksBtn"');
+assert(generateBtnIdx > resumeIdx, "happy: generate CTA after resume collapsible");
+assert(indexHtml.includes('form="generateBlocksForm"'), "happy: generate button linked to create form");
 
 assert(form?.querySelector("#studyNotesInput")?.getAttribute("rows") === "2", "happy: comments textarea compact (2 rows)");
 assert(form?.classList.contains("create-form"), "happy: create form uses compact layout class");
@@ -93,6 +99,8 @@ applyModeVisibility(doc, "rsvp");
 assert(!rsvpImport?.hidden, "happy: RSVP shows import details");
 assert(!rsvpAdvanced?.hidden, "happy: RSVP shows advanced details");
 assert(doc.getElementById("slowOnlyControls")?.hidden, "happy: slow options hidden for RSVP");
+assert(!form?.classList.contains("create-form--slow"), "happy: RSVP create form not slow-scoped");
+assert(mainCss.includes(".create-form:not(.create-form--slow) #slowOnlyControls"), "happy: CSS hides slow options for non-slow");
 assert(clozeImport?.hidden, "happy: cloze import hidden for RSVP");
 assert(doc.getElementById("blocksInput")?.required, "happy: blocks required for RSVP");
 
@@ -101,6 +109,7 @@ applyModeVisibility(doc, "slow");
 assert(rsvpImport?.hidden, "happy: import hidden for slow");
 assert(rsvpAdvanced?.hidden, "happy: advanced hidden for slow");
 assert(!doc.getElementById("slowOnlyControls")?.hidden, "happy: slow options visible for slow");
+assert(form?.classList.contains("create-form--slow"), "happy: slow create form has slow-scoped class");
 assert(!doc.getElementById("blocksInput")?.required, "happy: blocks not required for slow");
 
 // --- Happy: mode visibility contract (cloze) ---
@@ -111,6 +120,7 @@ assert(rsvpAdvanced?.hidden, "happy: advanced hidden for cloze");
 // --- Happy: study.js wiring ---
 assert(studySrc.includes("rsvpImportDetails"), "happy: study wires rsvpImportDetails");
 assert(studySrc.includes("rsvpAdvancedDetails"), "happy: study wires rsvpAdvancedDetails");
+assert(studySrc.includes("create-form--slow"), "happy: study toggles slow-only create form class");
 assert(uiSrc.includes("rsvpImportDetails"), "happy: ui els rsvpImportDetails");
 assert(uiSrc.includes("rsvpAdvancedDetails"), "happy: ui els rsvpAdvancedDetails");
 assert(studySrc.includes("wireFlowRecommendUpload"), "happy: flow upload wiring restored");
