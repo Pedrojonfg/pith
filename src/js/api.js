@@ -1,4 +1,5 @@
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
+import { ASSESSMENT_FLAGS } from "./config/flags.js";
 import {
   buildParagraphFormatOpts,
   enforceExplanationParagraphs,
@@ -990,22 +991,38 @@ export async function deepSeekConceptInventory({
   );
 }
 
-export function buildConceptPackPrompt(n, lang, inventoryJson) {
+export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null } = {}) {
   const targetN = Math.max(1, Math.floor(Number(n) || 1));
   const language = String(lang || "English").trim() || "English";
   const inventory = String(inventoryJson || "[]");
-  return `You are packaging a concept inventory into exactly ${targetN} study blocks for RSVP reading.
+  const threshold = ASSESSMENT_FLAGS.ASSESSMENT_MASTERY_THRESHOLD;
+  const profileBlock = knowledgeProfile
+    ? `
+
+Knowledge profile present — input inventory is COMPLETE; output only affects active study blocks.
+Maximum blocks (ceiling) = ${targetN}. You MAY return fewer than ${targetN} blocks.
+Omit dedicated blocks for concepts with mastery === 'full' AND confidence > ${threshold}.
+If a dominated concept is prerequisite for a non-dominated concept, include it in the dependent block with learning_goal: 'prerequisite_review'.
+For relational-only gaps use learning_goal: 'relational' and compress content (~40% of normal).
+Add learning_goal (string) and mastery_adjusted (boolean) on each block when profile-informed.
+Do NOT filter concepts out of the inventory JSON — only omit dominated dedicated blocks.
+
+Knowledge profile:
+${JSON.stringify(knowledgeProfile)}`
+    : "";
+
+  return `You are packaging a concept inventory into study blocks for RSVP reading.
 
 Input: concept inventory JSON (ordered teachable concepts).
-Target block count N = ${targetN}.
+${knowledgeProfile ? `Maximum block count (ceiling) = ${targetN}. Return up to ${targetN} blocks; fewer is allowed when profile omits mastered concepts.` : `Target block count N = ${targetN}.`}
 
 Rules:
 1. Block id 1 MUST be a global course overview (title starts with "Overview:", "Mapa del curso:", or "Course map:"). It counts toward N. concept_ids may be [].
 2. For EACH module in the inventory: the first block for that module MUST be vocabulary: title "Key terms: [module name]", 6-10 terms in signature, concept_ids for that vocab concept only.
 3. Never assign the same concept_id to two blocks.
-4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have exactly ${targetN} blocks. Record merges in pack_meta.merges.
+4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have at most ${targetN} blocks. Record merges in pack_meta.merges.
 5. If fewer than N blocks are justified: set pack_meta.final_block_count to the actual count (no padding).
-6. Every block: summary, signature (3-10 strings), chunk "" (always empty).
+6. Every block: summary, signature (3-10 strings), chunk "" (always empty).${profileBlock}
 
 Output JSON only:
 {"blocks":[{"id":1,"title":"Overview: ...","summary":"...","signature":["term1"],"concept_ids":[],"chunk":""}],"pack_meta":{"target_n":${targetN},"final_block_count":12,"merges":[{"concept_ids":["c5","c6"],"block_title":"..."}]}}
@@ -1094,18 +1111,25 @@ export async function deepSeekPackConceptsToBlocks({
   apiKey: _legacyApiKey,
   inventory,
   nBlocks,
+  maxBlocks,
   studyNotes,
   language,
+  knowledgeProfile = null,
 }) {
   const model = resolveLlmModelArg(llmModel);
-  const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const n = Math.max(1, Math.floor(Number(maxBlocks ?? nBlocks) || 1));
   const lang = String(language || "English").trim() || "English";
   const notes = String(studyNotes || "").trim();
   const inventoryJson = JSON.stringify(Array.isArray(inventory) ? inventory : []);
+  const profile =
+    knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
 
   function buildMessages(compact) {
     const messages = [
-      { role: "system", content: buildConceptPackPrompt(n, lang, inventoryJson) },
+      {
+        role: "system",
+        content: buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile: profile }),
+      },
     ];
     if (notes) {
       messages.push({
@@ -2015,6 +2039,264 @@ No preamble, no backticks.`
     ],
     temperature: 0.2,
   });
+}
+
+export const PREPACKING_DONT_KNOW_ANSWER = "No lo sé";
+
+const PREPACKING_DONT_KNOW_ALIASES = new Set([
+  PREPACKING_DONT_KNOW_ANSWER,
+  "No lo se",
+  "I don't know",
+  "I do not know",
+  "",
+]);
+
+const MASTERY_LEVELS = new Set(["none", "partial", "full"]);
+
+function unwrapAssessmentItemsArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return null;
+  for (const key of ["items", "questions", "assessment_items", "data"]) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return null;
+}
+
+/** @returns {object[]} */
+export function normalizeAssessmentItems(raw) {
+  const arr = unwrapAssessmentItemsArray(raw);
+  if (!Array.isArray(arr) || !arr.length) {
+    throw new Error("Assessment items array is empty.");
+  }
+  return arr.map((item, idx) => {
+    if (!item || typeof item !== "object") {
+      throw new Error(`Assessment item ${idx} is not an object.`);
+    }
+    const item_id = String(item.item_id || item.id || `item_${idx + 1}`).trim();
+    const question = String(item.question || "").trim();
+    const type = String(item.type || "mcq").trim().toLowerCase();
+    if (!item_id || !question) {
+      throw new Error(`Assessment item ${idx} missing item_id or question.`);
+    }
+    if (type !== "mcq") {
+      throw new Error(`Assessment item ${idx} must be type mcq.`);
+    }
+    const options = Array.isArray(item.options)
+      ? item.options.map((o) => String(o || "").trim()).filter(Boolean)
+      : [];
+    if (options.length < 2) {
+      throw new Error(`Assessment item ${idx} needs at least 2 options.`);
+    }
+    const concept_id =
+      item.concept_id != null && String(item.concept_id).trim()
+        ? String(item.concept_id).trim()
+        : null;
+    const edge =
+      item.edge && typeof item.edge === "object"
+        ? {
+            from: String(item.edge.from || "").trim(),
+            to: String(item.edge.to || "").trim(),
+          }
+        : undefined;
+    if (edge && (!edge.from || !edge.to)) {
+      throw new Error(`Assessment item ${idx} edge requires from and to.`);
+    }
+    return {
+      item_id,
+      concept_id,
+      ...(edge?.from && edge?.to ? { edge } : {}),
+      question,
+      type: "mcq",
+      options,
+      correct: String(item.correct || item.answer || "").trim(),
+    };
+  });
+}
+
+function normalizeProfileItem(raw, idx) {
+  if (!raw || typeof raw !== "object") {
+    throw new Error(`Profile item ${idx} invalid.`);
+  }
+  const concept_id = String(raw.concept_id || "").trim();
+  if (!concept_id) throw new Error(`Profile item ${idx} missing concept_id.`);
+  let mastery = String(raw.mastery || "none").trim().toLowerCase();
+  if (!MASTERY_LEVELS.has(mastery)) mastery = "none";
+  let confidence = Number(raw.confidence);
+  if (!Number.isFinite(confidence)) confidence = mastery === "full" ? 0.9 : mastery === "partial" ? 0.5 : 0.1;
+  confidence = Math.min(1, Math.max(0, confidence));
+  const edge_mastery = Array.isArray(raw.edge_mastery)
+    ? raw.edge_mastery
+        .filter((e) => e && typeof e === "object")
+        .map((e) => ({
+          from: String(e.from || "").trim(),
+          to: String(e.to || "").trim(),
+          mastered: Boolean(e.mastered),
+        }))
+        .filter((e) => e.from && e.to)
+    : undefined;
+  return {
+    concept_id,
+    mastery,
+    confidence,
+    ...(edge_mastery?.length ? { edge_mastery } : {}),
+  };
+}
+
+function computeAssessmentCoverage(inventory, items) {
+  const inv = Array.isArray(inventory) ? inventory : [];
+  const invIds = new Set(
+    inv.map((c) => String(c?.id || c?.concept_id || "").trim()).filter(Boolean),
+  );
+  const assessed = new Set();
+  for (const item of Array.isArray(items) ? items : []) {
+    const cid = String(item?.concept_id || "").trim();
+    if (cid) assessed.add(cid);
+  }
+  if (!invIds.size) return 0;
+  return Math.min(100, Math.max(0, Math.round((assessed.size / invIds.size) * 100)));
+}
+
+function isDontKnowAnswer(answer) {
+  const a = String(answer || "").trim();
+  return PREPACKING_DONT_KNOW_ALIASES.has(a) || /^no\s+lo\s+s[eé]$/i.test(a);
+}
+
+/** @returns {object | null} */
+export function normalizeKnowledgeProfile(raw, { inventory = [], items = [], responses = [] } = {}) {
+  if (!raw || typeof raw !== "object") return null;
+  const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+  if (!itemsRaw.length) return null;
+
+  const responseByItem = new Map();
+  for (const r of Array.isArray(responses) ? responses : []) {
+    if (!r || typeof r !== "object") continue;
+    const id = String(r.item_id || "").trim();
+    if (id) responseByItem.set(id, String(r.answer || "").trim());
+  }
+
+  const normalizedItems = itemsRaw.map((row, idx) => normalizeProfileItem(row, idx));
+
+  const quizByItemId = new Map();
+  for (const it of Array.isArray(items) ? items : []) {
+    const id = String(it?.item_id || "").trim();
+    if (id) quizByItemId.set(id, it);
+  }
+  for (const [itemId, answer] of responseByItem) {
+    if (!isDontKnowAnswer(answer)) continue;
+    const quizItem = quizByItemId.get(itemId);
+    const conceptId = String(quizItem?.concept_id || "").trim();
+    if (!conceptId) continue;
+    const profileItem = normalizedItems.find((p) => p.concept_id === conceptId);
+    if (profileItem) {
+      profileItem.mastery = "none";
+      profileItem.confidence = Math.min(profileItem.confidence, 0.2);
+    }
+  }
+
+  return {
+    assessed_at: new Date().toISOString(),
+    coverage: computeAssessmentCoverage(inventory, items),
+    items: normalizedItems,
+  };
+}
+
+export async function generatePrePackingAssessmentItems({
+  conceptInventory,
+  edges,
+  maxItems,
+  llmModel,
+  language,
+}) {
+  const model = resolveLlmModelArg(llmModel);
+  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  if (!inventory.length) throw new Error("Missing concept inventory.");
+  const cap = Math.max(
+    1,
+    Math.floor(Number(maxItems) || ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX || 7),
+  );
+  const lang = String(language || "English").trim() || "English";
+  const minimal = inventory.map((c) => ({
+    id: String(c?.id || c?.concept_id || "").trim(),
+    label: String(c?.label || c?.title || "").trim(),
+    type: String(c?.type || "CONCEPT").trim(),
+  }));
+  const edgeList = Array.isArray(edges) ? edges : [];
+
+  const systemPrompt = `Generate up to ${cap} multiple-choice assessment items from this concept inventory.
+Rules:
+- Cover highest-value concept_ids and important prerequisite edges.
+- Prioritize THESIS and ARGUMENT over TERM.
+- Each item references exactly one concept_id OR one edge {from,to}.
+- MCQ with 3-4 options; one correct answer.
+- type must be "mcq".
+Return ONLY a JSON array:
+[{"item_id":"a1","concept_id":"c1","question":"...","type":"mcq","options":["..."],"correct":"..."}]
+Respond in ${lang}.`;
+
+  const userPayload = { concepts: minimal.filter((c) => c.id), edges: edgeList };
+  const content = await llmChatCompletions({
+    llmModel: model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify(userPayload) },
+    ],
+    temperature: 0.2,
+  });
+
+  const parsed = parseModelJsonValue(content);
+  const normalized = normalizeAssessmentItems(parsed);
+  return normalized.slice(0, cap);
+}
+
+export async function evaluatePrePackingAssessmentResponses({
+  items,
+  responses,
+  conceptInventory,
+  llmModel,
+  language,
+}) {
+  try {
+    const model = resolveLlmModelArg(llmModel);
+    const qs = Array.isArray(items) ? items : [];
+    const resp = Array.isArray(responses) ? responses : [];
+    const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+    if (!qs.length) return null;
+
+    const lang = String(language || "English").trim() || "English";
+    const systemPrompt = `Evaluate quiz responses into a knowledge_profile.
+Rules:
+- Conservative mastery: "full" only with demonstrated precision; "partial" requires real understanding.
+- Unknown / "No lo sé" answers → mastery "none", low confidence.
+- Output JSON: {"items":[{"concept_id":"...","mastery":"none|partial|full","confidence":0.0-1.0}]}
+Respond in ${lang}.`;
+
+    const payload = {
+      items: qs.map((q) => ({
+        item_id: q.item_id,
+        concept_id: q.concept_id,
+        edge: q.edge,
+        question: q.question,
+        correct: q.correct,
+      })),
+      responses: resp,
+      inventory_ids: inventory.map((c) => String(c?.id || c?.concept_id || "").trim()).filter(Boolean),
+    };
+
+    const content = await llmChatCompletions({
+      llmModel: model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+      temperature: 0.1,
+    });
+
+    const parsed = parseModelJsonValue(content);
+    return normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
+  } catch (err) {
+    console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
+    return null;
+  }
 }
 
 export async function deepSeekReviewSocraticTutor({
