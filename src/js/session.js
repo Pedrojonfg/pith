@@ -19,7 +19,7 @@ import {
   generateBlockFromChunk,
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
-} from "./api.js?v=20260610_1";
+} from "./api.js?v=20260611_2";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
@@ -2093,7 +2093,7 @@ export async function runConceptInventory(
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
-  const { deepSeekConceptInventory } = await import("./api.js?v=20260525_1");
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260611_2");
 
   progress("Indexing concepts…");
   const inventory = await deepSeekConceptInventory({
@@ -2104,6 +2104,117 @@ export async function runConceptInventory(
   });
 
   return { inventory, concept_count: inventory.length };
+}
+
+/** Local pack when LLM output truncates — no network, assigns every concept once. */
+export function packInventoryDeterministic(inventory, nBlocks, lang = "English") {
+  const targetN = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const inv = (Array.isArray(inventory) ? inventory : [])
+    .filter((c) => c && String(c.id || "").trim())
+    .slice()
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  if (!inv.length) {
+    return { blocks: [], pack_meta: { target_n: targetN, final_block_count: 0, merges: [] } };
+  }
+
+  const language = String(lang || "English").trim() || "English";
+  const isEs = /español|spanish/i.test(language);
+  const overviewPrefix = isEs ? "Mapa del curso:" : "Overview:";
+  const courseLabel = String(inv[0]?.module || inv[0]?.title || (isEs ? "Curso" : "Course")).trim();
+
+  /** @type {object[]} */
+  const blocks = [
+    {
+      id: 1,
+      title: `${overviewPrefix} ${courseLabel}`,
+      summary: inv
+        .slice(0, 5)
+        .map((c) => String(c.title || "").trim())
+        .filter(Boolean)
+        .join("; "),
+      signature: inv
+        .slice(0, 6)
+        .map((c) => String(c.title || "").trim())
+        .filter(Boolean),
+      concept_ids: [],
+      chunk: "",
+    },
+  ];
+
+  const assigned = new Set();
+  const byModule = new Map();
+  for (const c of inv) {
+    const mod = String(c.module || "General").trim() || "General";
+    if (!byModule.has(mod)) byModule.set(mod, []);
+    byModule.get(mod).push(c);
+  }
+
+  const moduleEntries = [...byModule.entries()];
+  const slotsAfterOverview = targetN - 1;
+  const canVocab =
+    targetN >= 3 && moduleEntries.length > 0 && moduleEntries.length <= slotsAfterOverview - 1;
+
+  if (canVocab) {
+    for (const [modName, concepts] of moduleEntries) {
+      if (blocks.length >= targetN) break;
+      const vocab = concepts[0];
+      if (!vocab?.id || assigned.has(vocab.id)) continue;
+      assigned.add(vocab.id);
+      blocks.push({
+        id: blocks.length + 1,
+        title: `Key terms: ${modName}`,
+        summary: isEs ? `Términos clave de ${modName}.` : `Key terms for ${modName}.`,
+        signature: concepts
+          .slice(0, 8)
+          .map((c) => String(c.title || "").trim())
+          .filter(Boolean),
+        concept_ids: [String(vocab.id)],
+        chunk: "",
+      });
+    }
+  }
+
+  const remaining = inv.filter((c) => !assigned.has(String(c.id)));
+  const slotsLeft = Math.max(0, targetN - blocks.length);
+  if (slotsLeft > 0 && remaining.length > 0) {
+    const per = Math.ceil(remaining.length / slotsLeft);
+    let idx = 0;
+    for (let s = 0; s < slotsLeft && idx < remaining.length; s++) {
+      const group = remaining.slice(idx, idx + per);
+      idx += per;
+      if (!group.length) continue;
+      for (const c of group) assigned.add(String(c.id));
+      blocks.push({
+        id: blocks.length + 1,
+        title:
+          group.length === 1
+            ? String(group[0].title || "").trim()
+            : `${String(group[0].title || "").trim()} (+${group.length - 1})`,
+        summary: group
+          .map((c) => String(c.scope_one_line || c.title || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .slice(0, 280),
+        signature: group
+          .map((c) => String(c.title || "").trim())
+          .filter(Boolean)
+          .slice(0, 6),
+        concept_ids: group.map((c) => String(c.id)),
+        chunk: "",
+      });
+    }
+  }
+
+  const normalized = blocks.slice(0, targetN).map((b, i) => ({ ...b, id: i + 1, chunk: "" }));
+  return {
+    blocks: normalized,
+    pack_meta: {
+      target_n: targetN,
+      final_block_count: normalized.length,
+      merges: [],
+      deterministic: true,
+    },
+  };
 }
 
 export async function packInventoryToBlocks(
@@ -2124,12 +2235,13 @@ export async function packInventoryToBlocks(
   };
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
-    "./api.js?v=20260525_1",
+    "./api.js?v=20260611_2",
   );
 
   progress(`Packing ${requested_n} blocks…`);
   let blocks;
   let pack_meta;
+  let packPipeline = "two_phase";
   try {
     ({ blocks, pack_meta } = await deepSeekPackConceptsToBlocks({
       llmModel: model,
@@ -2141,36 +2253,49 @@ export async function packInventoryToBlocks(
       knowledgeProfile: profile,
     }));
   } catch (packErr) {
-    console.warn("packInventoryToBlocks: falling back to mono split", packErr?.message || packErr);
-    progress("Using classic split (fallback)…");
-    const parsed = await deepSeekSplitIntoBlocks({
-      llmModel: model,
-      nBlocks: requested_n,
-      materialText,
-      studyNotes: notes,
-      language: lang,
-    });
-    let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
-    if (!fallbackBlocks?.length) throw packErr;
-    const chunks = splitMaterialIntoBlockChunks(materialText, fallbackBlocks.length);
-    const blockIndex = fallbackBlocks.map((b, i) => ({
-      ...b,
-      chunk: chunks[i] || "",
-    }));
-    return {
-      blockIndex,
-      conceptInventory: inventory,
-      splitRunMeta: {
-        requested_n,
-        final_n: blockIndex.length,
-        baseline_n: requested_n,
-        profile_applied: Boolean(profile),
-        pipeline: "fallback_mono",
-        concept_count: inventory.length,
-        concept_inventory: inventory,
-        pack_fallback_reason: String(packErr?.message || packErr),
-      },
-    };
+    const packReason = String(packErr?.message || packErr);
+    console.warn("packInventoryToBlocks: LLM pack failed", packReason);
+    progress("Packing blocks locally…");
+    const det = packInventoryDeterministic(inventory, requested_n, lang);
+    if (det?.blocks?.length) {
+      blocks = det.blocks;
+      pack_meta = {
+        ...det.pack_meta,
+        pack_fallback_reason: packReason,
+      };
+      packPipeline = "deterministic_fallback";
+    } else {
+      console.warn("packInventoryToBlocks: falling back to mono split");
+      progress("Using classic split (fallback)…");
+      const parsed = await deepSeekSplitIntoBlocks({
+        llmModel: model,
+        nBlocks: requested_n,
+        materialText,
+        studyNotes: notes,
+        language: lang,
+      });
+      let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
+      if (!fallbackBlocks?.length) throw packErr;
+      const chunks = splitMaterialIntoBlockChunks(materialText, fallbackBlocks.length);
+      const blockIndex = fallbackBlocks.map((b, i) => ({
+        ...b,
+        chunk: chunks[i] || "",
+      }));
+      return {
+        blockIndex,
+        conceptInventory: inventory,
+        splitRunMeta: {
+          requested_n,
+          final_n: blockIndex.length,
+          baseline_n: requested_n,
+          profile_applied: Boolean(profile),
+          pipeline: "fallback_mono",
+          concept_count: inventory.length,
+          concept_inventory: inventory,
+          pack_fallback_reason: packReason,
+        },
+      };
+    }
   }
 
   let normalized = normalizeBlockIndexArray(blocks, { requireChunk: false, lenient: true });
@@ -2206,7 +2331,7 @@ export async function packInventoryToBlocks(
     final_n: dedupResult.blockIndex.length,
     baseline_n: requested_n,
     profile_applied: Boolean(profile),
-    pipeline: "two_phase",
+    pipeline: packPipeline,
     concept_count,
     concept_inventory: inventory,
     pack_meta,
@@ -2248,7 +2373,7 @@ export async function twoPhaseConceptSplit(
 
   const runFallback = async () => {
     progress("Using classic split (fallback)…");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260525_1");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260611_2");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -2298,7 +2423,7 @@ export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApi
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260525_1");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260611_2");
   const text = await deepSeekAuditBlockIndex({
     llmModel: model,
     blockIndexJson: payload,
@@ -2329,7 +2454,7 @@ export async function mergeChunks(
     .trim();
 
   const blockCount = 1 + absorbs.length;
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260525_1");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260611_2");
   const mergedChunk = await deepSeekPostMergeChunk({
     llmModel: model,
     keep_id,
