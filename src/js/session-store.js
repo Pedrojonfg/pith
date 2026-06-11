@@ -175,6 +175,15 @@ export function getActiveSession() {
   return getSession(docId);
 }
 
+/** Drop the active document pointer without deleting library entries. */
+export function clearActiveDocumentPointer() {
+  try {
+    localStorage.removeItem(LS_ACTIVE_DOC_ID_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * @param {string} docId
  */
