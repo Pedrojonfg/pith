@@ -1,301 +1,171 @@
-# ROADMAP — Study Source Fidelity (A + B + C)
+# ROADMAP — RSVP Pre-Generation Assessment Reliability
 
-**Feature**: `20260613-source-fidelity` | **Spec**: `specs/20260613-source-fidelity/spec.md` | **Plan**: `specs/20260613-source-fidelity/plan.md`
+**Feature**: `20260616-fix-pregen-assessment` | **Spec**: `specs/20260616-fix-pregen-assessment/spec.md` | **Plan**: `specs/20260616-fix-pregen-assessment/plan.md`
 
-**Objetivo**: El LLM traduce la fuente subida (definiciones, taxonomías, ejemplos del profesor) — no inventa pedagogía genérica. Tres fases en un release: **A** reglas + tutor, **B** chunks alineados + validación, **C** modo estricto + tutor documental.
+**Objetivo**: El knowledge check **pre-generación** en RSVP aparece siempre tras inventario y antes del editor de bloques. Sin assessment **post-generación**. Fix del prefetch roto + skip silencioso.
 
 ## Tabla de tareas
 
-| ID | Fase | Descripción | Deps | Complejidad | Estado |
-|----|------|-------------|------|-------------|--------|
-| T01 | A | `source-fidelity.js` — `SOURCE_FIDELITY_RULES` + `buildSourceFirstRsvpStructure` | — | S | [x] |
-| T02 | A | `api.js` — prompts bloque RSVP + vocabulario + split (invertir anti-mirror) | T01 | M | [x] |
-| T03 | A | `api.js` — questions, assessment, inventario `source_phrase` | T01 | M | [x] |
-| T04 | A | `guide-chat.js` — chunk de bloque + reglas fidelidad | T01 | M | [x] |
-| T05 | B | `chunk-alignment.js` — `assignAlignedChunks` | — | L | [x] |
-| T06 | B | `session.js` — wire alignment en pack + metadata `anchor_quality` | T05 | M | [x] |
-| T07 | B | Jerarquía doc — snap ventanas a secciones (enhance) | T05, T06 | S | [x] |
-| T08 | B | `fidelity-validation.js` + hook retry en `deepSeekGenerateBlockJson` | T02, T06 | M | [x] |
-| T09 | B | UI banner fidelidad (`study.js`, `index.html`, CSS) | T08 | S | [x] |
-| T10 | C | `api.js` — `deepSeekExtractSourceClaims` + strict rewrite | T02 | L | [x] |
-| T11 | C | `flags.js` + checkbox modo estricto create UI | T10 | S | [x] |
-| T12 | C | `guide-chat.js` — `resolveGuideDocumentExcerpt` + spoiler policy | T04, T06 | M | [x] |
-| T13 | — | Tests + quickstart QA closure | T01–T12 | M | [x] |
+| ID | Descripción | Deps | Complejidad | Estado |
+|----|-------------|------|-------------|--------|
+| T01 | Prefetch alineado — `itemsPromise` con `n_test`/`n_socratic`/`materialText`; quitar `.catch(() => [])`; `buildPrefetchConfigKey` | — | S | [x] |
+| T02 | Runner resiliente — invalidar promesa vacía/stale; no auto `handlePrePackingSkip` en catch | T01 | M | [x] |
+| T03 | Validación API — `generatePrePackingAssessmentItems` rechaza `n_test`/`n_socratic` no finitos | — | S | [x] |
+| T04 | UX fallo generación — error visible + Retry + Skip explícito | T02 | M | [x] |
+| T05 | Gate legacy post-generación — tests regresión `goAfterBlocksConfirmed` | T01 | S | [x] |
+| T06 | Suite tests + quickstart QA closure | T01–T05 | M | [x] |
 
 ## Diagrama de dependencias
 
 ```text
-T01 ──→ T02 ──┐
-T01 ──→ T03 ──┼──→ T08 ──→ T09 ──→ T13
-T01 ──→ T04 ──┘
-T05 ──→ T06 ──→ T07
-T06 ──→ T08
-T02 ──→ T10 ──→ T11 ──→ T13
-T06 ──→ T12 ──→ T13
+T01 ──→ T02 ──→ T04 ──→ T06
+T03 ──↗
+T01 ──→ T05 ──→ T06
 ```
 
-**Paralelizables desde inicio (tras T01)**: T02 + T03 + T05 (3 agentes)
+**Paralelizables desde inicio**: T01 + T03 (2 agentes)
 
-**Paralelizables ola 3**: T04 + T06 + T07 (T04 solo necesita T01; T06 necesita T05)
+**Paralelizables ola 2**: T02 + T05 (2 agentes, tras T01)
 
-**Paralelizables ola 5**: T09 + T10 (T10 necesita T02)
-
-**Paralelizables ola 6**: T11 + T12
+**Secuencial crítico**: T02 → T04 → T06
 
 ## Orden de ejecución recomendado
 
-### Ola 0 — Fundación (1 agente)
-- **T01** módulo `source-fidelity.js`
+### Ola 0 — Fundación (2 agentes en paralelo)
+- **T01** prefetch contract (`study.js`)
+- **T03** API validation (`api.js`)
 
-### Ola 1 — Fase A core (3 agentes en paralelo)
-- **T02** prompts bloque RSVP
-- **T03** prompts questions/assessment/inventario
-- **T05** chunk alignment (puede empezar en paralelo con T01 hecho — no depende de T01)
+### Ola 1 — Runner + gate (2 agentes en paralelo)
+- **T02** runner resiliente (`study.js`)
+- **T05** legacy gate tests
 
-> Nota: T05 es independiente de T01; puedes lanzar **T01 + T05** en paralelo al inicio (2 agentes), luego T02+T03.
+### Ola 2 — Error UX (1 agente)
+- **T04** retry/skip UI
 
-### Ola 2 — Integración A + B (3 agentes)
-- **T04** guide chat Phase A
-- **T06** session wiring
-- **T07** hierarchy snap (opcional, no bloquea T08)
+### Ola 3 — Cierre (1 agente)
+- **T06** tests + QA
 
-### Ola 3 — Validación (1 agente)
-- **T08** fidelity validation + retry
-
-### Ola 4 — UI + C extract (2 agentes)
-- **T09** banner UI
-- **T10** strict extract→rewrite
-
-### Ola 5 — C flags + guide doc (2 agentes)
-- **T11** strict toggle
-- **T12** guide document search
-
-### Ola 6 — Cierre (1 agente)
-- **T13** tests + QA
-
-**MVP mínimo útil**: T01 + T02 + T05 + T06 — reglas + chunks alineados (A parcial + B core).
+**MVP mínimo útil**: T01 + T03 + T02 — knowledge check aparece en flujo feliz.
 
 ---
 
-## PROMPT T01 — Source fidelity module
+## PROMPT T01 — Prefetch alineado
 
-Implementa **T01** del ROADMAP Study Source Fidelity.
+Implementa **T01** del ROADMAP RSVP Pre-Generation Assessment Reliability.
 
-**Contexto**: Feature `20260613-source-fidelity` Fase A. El LLM inventa definiciones porque los prompts premian pedagogía genérica. Necesitamos un módulo único de reglas. Contrato: `specs/20260613-source-fidelity/contracts/source-fidelity-rules.md`.
+**Contexto**: Bug: tras "Generate blocks" en RSVP el assessment pre-packing no aparece porque `itemsPromise` se crea sin `n_test`/`n_socratic` (solo `maxItems`) y `.catch(() => [])` cachea fallo vacío. Spec: `specs/20260616-fix-pregen-assessment/spec.md`. Contrato: `specs/20260616-fix-pregen-assessment/contracts/prefetch-assessment.md`.
 
 **Archivos**:
-- `src/js/source-fidelity.js` (NUEVO) — exportar `SOURCE_FIDELITY_RULES`, `buildSourceFirstRsvpStructure({ isVocabularyBlock, requireConnection, strictMode, extractedClaims })`, `mergeFidelityIntoSystemPrompt(base, opts)`
-- `cursor-tests/20260613_source-fidelity.mjs` (NUEVO esqueleto) — smoke: rules length, split prompt must not contain anti-mirror cuando se testee desde T02
+- `src/js/study.js` — bloque `prePackingFlow` en generate handler (~6883): pasar `materialText: cleanedText`, `n_test`/`n_socratic` de `resolvePrePackingQuestionConfig()`, añadir `prefetchConfigKey` vía nuevo helper `buildPrefetchConfigKey({ qCfg, conceptInventory, cleanedText })`; **eliminar** `.catch(() => [])`
 
-**Reglas clave**:
-- Fuente suprema; autor prevalece sobre conocimiento genérico
-- Ejemplo/contraste solo si la fuente los tiene
-- Sin dependencias de DOM ni LLM
+**Reglas**:
+- Mismos args que `enterPrePackingAssessmentRunner` usa para generar
+- Exportar `buildPrefetchConfigKey` si tests lo necesitan
 
-**Criterio de éxito**: módulo importable; tests smoke pasan. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: prefetch usa Questions params; sin swallow de errores. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Block generation prompts (Phase A)
+## PROMPT T02 — Runner resiliente
 
-Implementa **T02** del ROADMAP Study Source Fidelity. Depende de **T01**.
+Implementa **T02** del ROADMAP. Depende de **T01**.
 
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/source-fidelity-rules.md`.
+**Contexto**: Contratos `prefetch-assessment.md` y `assessment-failure-ux.md`. `enterPrePackingAssessmentRunner` no debe reutilizar `itemsPromise` vacía ni auto-skip.
 
 **Archivos**:
-- `src/js/api.js` — importar `source-fidelity.js`; reemplazar `EXPLANATION_RSVP_THOROUGH`, `EXPLANATION_VOCABULARY_BLOCK`, `EXPLANATION_BRIEF_DEEP`; inyectar reglas en `buildBlockGenerationSystemPrompt`; limpiar `buildSplitBlocksPrompt` (quitar "not for mirroring"); alinear `CONCEPT_DICTIONARY_EXTRACTION_RULES`
+- `src/js/study.js` — `enterPrePackingAssessmentRunner`, `enterPrePackingAssessmentScreen`: si `!itemsPromise` OR `prefetchConfigKey` mismatch OR resultado `[]`, recrear promise; en `catch`, **no** llamar `handlePrePackingSkip()` — delegar a T04 o dejar error para T04
 
-**Reglas clave**:
-- `buildBlockGenerationUserContent` mantiene chunk verbatim — no cambiar wiring
-- Vocabulary: definiciones desde chunk, no plain-language genérico
+**Reglas**:
+- `questions.length === 0` → error, no packing
+- Mantener `renderAssessmentChrome` + skip buttons cuando pantalla assessment activa
 
-**Criterio de éxito**: `buildBlockGenerationSystemPrompt` incluye fidelity marker; tests smoke en cursor-tests. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: runner regenera si prefetch falló; sin skip silencioso en catch. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — Questions, assessment, inventory (Phase A)
+## PROMPT T03 — Validación API
 
-Implementa **T03** del ROADMAP Study Source Fidelity. Depende de **T01**.
+Implementa **T03** del ROADMAP. Independiente de T01 (paralelo).
 
-**Contexto**: Mismas reglas en todas las superficies LLM RSVP.
+**Contexto**: Contrato `specs/20260616-fix-pregen-assessment/contracts/api-input-validation.md`. `Number(undefined)` → NaN bypassa checks actuales.
 
 **Archivos**:
-- `src/js/api.js` — `buildQuestionsOnlySystemPrompt`, `buildPrePackingAssessmentSystemPrompt`, `buildConceptInventoryPrompt`, `parseConceptInventoryFromModelResponse` (campos `source_phrase`, `anchor_type`)
+- `src/js/api.js` — `generatePrePackingAssessmentItems` Questions path: validar `n_test`/`n_socratic` finitos antes del LLM; mensajes de error estables
 
-**Reglas clave**:
-- Inventario: exigir `source_phrase` cuando el término aparece en el material; `anchor_type: inferred` solo si esencial
-- Assessment: preguntas respondibles solo desde excerpt + inventario anclado
+**Reglas**:
+- No defaults silenciosos a 2+1 — caller debe pasar counts
+- Legacy MCQ path sin cambios de comportamiento
 
-**Criterio de éxito**: parser acepta `source_phrase`; prompts incluyen SOURCE_FIDELITY. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: llamada sin `n_test` lanza error claro sin LLM. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Guide chat Phase A
+## PROMPT T04 — UX fallo generación
 
-Implementa **T04** del ROADMAP Study Source Fidelity. Depende de **T01**.
+Implementa **T04** del ROADMAP. Depende de **T02**.
 
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/guide-chat-grounding.md` (Phase A).
+**Contexto**: Contrato `assessment-failure-ux.md`. FR-004: usuario debe ver error y elegir retry o skip.
 
 **Archivos**:
-- `src/js/guide-chat.js` — `buildSessionContext` añade `getBlockChunkFromIndex` por bloque estudiado (cap 8000 chars); `buildGuidePrompt` incluye `SOURCE_FIDELITY_RULES` y declinación sin conocimiento externo
+- `src/js/study.js` — `retryPrePackingAssessmentGeneration()`, wire error state en runner catch; botones Retry + Skip
+- `index.html` — solo si hace falta región UI (preferir reutilizar `#testError` / assessment chrome)
 
-**Import**: usar `getBlockChunkFromIndex` desde `session.js` (dynamic import o patrón existente del proyecto).
+**Reglas**:
+- Retry limpia `itemsPromise` y reintenta con config actual
+- Skip solo en click explícito
 
-**Criterio de éxito**: prompt del tutor contiene chunk del bloque activo. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: fallo simulado no lleva al editor de bloques sin acción del usuario. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — Chunk alignment module
+## PROMPT T05 — Gate legacy post-generación
 
-Implementa **T05** del ROADMAP Study Source Fidelity.
+Implementa **T05** del ROADMAP. Depende de **T01** (verificación).
 
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/chunk-alignment.md`. Causa raíz: `splitMaterialIntoBlockChunks` corta por posición lineal.
+**Contexto**: Contrato `legacy-assessment-gate.md`. Owner no quiere assessment post-generación.
 
 **Archivos**:
-- `src/js/chunk-alignment.js` (NUEVO) — `assignAlignedChunks(materialText, blockIndex, inventory, opts)`
-- `cursor-tests/20260613_source-fidelity.mjs` — tests alineación con fixture reordenado
+- `src/js/study.js` — verificar `goAfterBlocksConfirmed`, `setAssessmentUiDefaults`; no añadir rutas nuevas a `goToInitialAssessment` cuando flag on
+- `cursor-tests/20260616_fix-pregen-assessment.mjs` — tests documentados del gate (import flags + inspección de funciones exportadas o smoke strings)
 
-**Reglas clave**:
-- `anchor_quality`: strong | weak | proportional_fallback
-- `chunk_match_terms` en metadata
-- Overview bloque 1 = intro slice
+**Reglas**:
+- No borrar pantalla legacy del DOM (rollback)
+- Solo asegurar gate + test
 
-**Criterio de éxito**: ≥4 tests deterministas de alignment. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: tests documentan que flag on → no post-generation path. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Session pack wiring
+## PROMPT T06 — Tests + QA closure
 
-Implementa **T06** del ROADMAP Study Source Fidelity. Depende de **T05**.
+Implementa **T06** del ROADMAP. Depende de **T01–T05**.
 
-**Contexto**: Contrato chunk-alignment; data-model `BlockIndexEntry` extendido.
-
-**Archivos**:
-- `src/js/session.js` — `packInventoryToBlocks`, `twoPhaseConceptSplit` fallback paths: reemplazar `splitMaterialIntoBlockChunks` directo por `assignAlignedChunks`; pasar `inventory` y `docHierarchy` si disponible en state/doc session
-
-**Reglas clave**:
-- Fallback proporcional solo vía `assignAlignedChunks` con flag explícito
-- Persistir `anchor_quality` en block_index localStorage
-
-**Criterio de éxito**: tras pack, block_index entries tienen anchor_quality. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T07 — Hierarchy section snap (enhance)
-
-Implementa **T07** del ROADMAP Study Source Fidelity. Depende de **T05**, **T06**.
-
-**Contexto**: FR-B02 — cuando `docHierarchy` existe, snap cortes a límites de sección.
+**Contexto**: `specs/20260616-fix-pregen-assessment/quickstart.md`
 
 **Archivos**:
-- `src/js/chunk-alignment.js` — integrar offsets desde `doc.shared.docHierarchy` o helper de `normalization/hierarchy.js`
-- Tests adicionales en cursor-tests
-
-**Criterio de éxito**: con fixture hierarchy, chunk no parte mitad de sección cuando hay match. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T08 — Fidelity validation + retry
-
-Implementa **T08** del ROADMAP Study Source Fidelity. Depende de **T02**, **T06**.
-
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/fidelity-validation.md`.
-
-**Archivos**:
-- `src/js/fidelity-validation.js` (NUEVO) — `validateBlockFidelity`, `extractKeyTermsFromBlockMeta`
-- `src/js/api.js` — hook en `deepSeekGenerateBlockJson` retry + `fidelity_status` / `fidelity_issues` en bloque
-
-**Criterio de éxito**: ≥6 tests validación; bloque envenenado falla. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T09 — Fidelity UI banner
-
-Implementa **T09** del ROADMAP Study Source Fidelity. Depende de **T08**.
-
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/fidelity-ui.md`.
-
-**Archivos**:
-- `index.html` — `#blockFidelityBanner`
-- `src/js/study.js` — `syncBlockFidelityBanner`
-- `src/css/main.css` — `.block-fidelity-banner`
-
-**Criterio de éxito**: bloque weak/warn muestra banner en estudio RSVP. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T10 — Strict extract→rewrite (Phase C)
-
-Implementa **T10** del ROADMAP Study Source Fidelity. Depende de **T02**.
-
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/strict-extract-rewrite.md`.
-
-**Archivos**:
-- `src/js/api.js` — `deepSeekExtractSourceClaims`, branch en `deepSeekGenerateBlockJson` cuando strict; persistir `extracted_claims` en bloque
-
-**Criterio de éxito**: strict path llama extract antes de rewrite; standard path sin extract. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T11 — Strict mode flag + UI
-
-Implementa **T11** del ROADMAP Study Source Fidelity. Depende de **T10**.
-
-**Contexto**: Opt-in modo estricto en create RSVP.
-
-**Archivos**:
-- `src/js/config/flags.js` — `SOURCE_FIDELITY_STRICT`, `isSourceFidelityStrictEnabled()`
-- `index.html` + `study.js` — checkbox create; persistir `session._meta.source_fidelity_mode`
-
-**Criterio de éxito**: checkbox activa extract pass en generación. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T12 — Guide document search (Phase C)
-
-Implementa **T12** del ROADMAP Study Source Fidelity. Depende de **T04**, **T06**.
-
-**Contexto**: Contrato `specs/20260613-source-fidelity/contracts/guide-chat-grounding.md` Phase C.
-
-**Archivos**:
-- `src/js/guide-chat.js` — `resolveGuideDocumentExcerpt`; spoiler policy definicional vs sintética; usar material completo de sesión
-
-**Criterio de éxito**: pregunta definicional encuentra pasaje en doc completo; sintética unread declina. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T13 — Tests + QA closure
-
-Implementa **T13** del ROADMAP Study Source Fidelity.
-
-**Contexto**: Cerrar feature. Ver `specs/20260613-source-fidelity/quickstart.md`.
-
-**Archivos**:
-- `cursor-tests/20260613_source-fidelity.mjs` — suite completa (alignment, validation, prompt smoke, parser source_phrase, guide excerpt)
+- `cursor-tests/20260616_fix-pregen-assessment.mjs` — suite: `buildPrefetchConfigKey`, API validation throws, prefetch param contract (sin LLM live)
 - `cursor-tests/loader.mjs` — registrar si aplica
-- `specs/20260613-source-fidelity/quickstart.md` — marcar QA checklist
+- `specs/20260616-fix-pregen-assessment/quickstart.md` — marcar QA checklist
+- `ROADMAP.md` — marcar T01–T06 [x]
 
 **Casos mínimos**:
-- 4+ chunk alignment
-- 6+ fidelity validation
-- 3+ prompt smoke
-- 2+ guide excerpt
+- API throws on missing n_test/n_socratic
+- prefetchConfigKey cambia cuando cambian counts
+- documentación gate legacy
 
-**Criterio de éxito**: suite pasa; QA-SF-A1..C2 documentados. Ejecuta `/validate` antes de cerrar este mensaje.
+**Criterio de éxito**: suite pasa; QA-PA-1..PA-6 documentados. Ejecuta `/validate` antes de cerrar este mensaje.
 
 ---
 
 ## Instrucción de ejecución
 
-1. **Lanzar en paralelo** (2 chats): **PROMPT T01**, **PROMPT T05**
-2. **Esperar** T01 y T05
-3. **Lanzar en paralelo** (3 chats): **PROMPT T02**, **PROMPT T03**, **PROMPT T06** (T06 tras T05)
-4. **Lanzar en paralelo** (2 chats): **PROMPT T04**, **PROMPT T07** (T07 opcional)
-5. **Lanzar** **PROMPT T08**
-6. **Lanzar en paralelo** (2 chats): **PROMPT T09**, **PROMPT T10**
-7. **Lanzar en paralelo** (2 chats): **PROMPT T11**, **PROMPT T12**
-8. **Lanzar** **PROMPT T13**
+1. **Lanzar en paralelo** (2 chats): **PROMPT T01**, **PROMPT T03**
+2. **Esperar** T01 y T03
+3. **Lanzar en paralelo** (2 chats): **PROMPT T02**, **PROMPT T05**
+4. **Esperar** T02
+5. **Lanzar** **PROMPT T04**
+6. **Lanzar** **PROMPT T06**
 
-**Tiempo total estimado**: 8 olas; máximo 3 agentes en paralelo en olas 1 y 2.
+**Tiempo total estimado**: 4 olas; máximo 2 agentes en paralelo.
 
-**Prioridad si hay prisa**: T01 → T02 → T05 → T06 → T08 (MVP fidelidad real) antes de C.
+**Prioridad si hay prisa**: T01 → T03 → T02 (MVP: knowledge check visible en generate normal).

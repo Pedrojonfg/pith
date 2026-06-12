@@ -2920,8 +2920,21 @@ Respond in ${lang}.`;
     return normalized.slice(0, cap);
   }
 
-  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const material = String(materialText ?? "").trim();
+  if (!material) {
+    throw new Error("Missing material text for assessment generation.");
+  }
+
+  const rawTest = Number(n_test);
+  const rawSocratic = Number(n_socratic);
+  if (!Number.isFinite(rawTest)) {
+    throw new Error("n_test must be a finite number.");
+  }
+  if (!Number.isFinite(rawSocratic)) {
+    throw new Error("n_socratic must be a finite number.");
+  }
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(rawTest)));
+  const nSocratic = Math.max(0, Math.min(3, Math.round(rawSocratic)));
   const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
   if (nTest + nSocratic <= 0) {
     throw new Error("Assessment needs at least one question (n_test + n_socratic).");
@@ -2936,7 +2949,7 @@ Respond in ${lang}.`;
     n_socratic: nSocratic,
     conceptInventory: inventory,
     edges: edgeList,
-    materialExcerpt: materialText,
+    materialExcerpt: material,
   });
 
   const content = await llmChatCompletions({
