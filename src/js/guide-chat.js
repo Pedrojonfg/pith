@@ -106,7 +106,7 @@ function resolveFullMaterialText(activeSession) {
   return "";
 }
 
-const DEFINITIONAL_QUERY_RE = /\b(qué es|que es|define|significa|what is|what does)\b/i;
+const DEFINITIONAL_QUERY_RE = /\b(define|what is|what does)\b/i;
 
 function isDefinitionalQuery(query, inventoryTitles = []) {
   const q = String(query || "").trim();
@@ -127,7 +127,7 @@ export function resolveGuideDocumentExcerpt(query, fullMaterial, opts = {}) {
   if (!material || !q) return "";
   const terms = q
     .toLowerCase()
-    .split(/[^a-z0-9áéíóúüñ]+/i)
+    .split(/[^a-z0-9]+/i)
     .map((t) => t.trim())
     .filter((t) => t.length >= 4);
   if (!terms.length) return material.slice(0, 4000);
@@ -307,10 +307,10 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
   } else if (
     fullMaterial &&
     !isDefinitionalQuery(safeUser, inventoryTitles) &&
-    /\b(relaciona|relación|compare|how does|why does)\b/i.test(safeUser)
+    /\b(compare|how does|why does)\b/i.test(safeUser)
   ) {
     documentExcerptSection =
-      "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"Aún no has estudiado el bloque que desarrolla esto.\" Mention block number only if listed in session context — do not reveal unread block explanations.";
+      "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"You have not studied the block that develops this yet.\" Mention block number only if listed in session context — do not reveal unread block explanations.";
   }
 
   const systemPrompt =

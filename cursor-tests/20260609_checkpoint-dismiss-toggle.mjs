@@ -185,7 +185,7 @@ globalThis.clearTimeout = (id) => {
 // --- scope screen DOM contract ---
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 assert(indexHtml.includes('id="slowScopeCheckpoints"'), "UI: scope screen has checkpoints checkbox");
-assert(indexHtml.includes("Checkpoints de sección"), "UI: Spanish label for checkpoints toggle");
+assert(indexHtml.includes("Section checkpoints"), "UI: English label for checkpoints toggle");
 assert(
   indexHtml.includes('id="slowScopeCheckpoints" checked'),
   "UI: checkpoints checkbox checked by default",

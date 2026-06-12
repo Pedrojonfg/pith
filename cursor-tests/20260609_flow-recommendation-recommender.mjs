@@ -23,32 +23,23 @@ function assert(cond, msg) {
 }
 
 const PHILOSOPHICAL_PAPER = `
-La cuestión ontológica del ser y la nada plantea un problema fundamental para la
-hermenéutica contemporánea. Desde la perspectiva fenomenológica, la intencionalidad
-de la conciencia no puede reducirse a un análisis meramente empírico sin perder su
-dimensión trascendental. El argumento dialéctico exige considerar la intersubjetividad
-como condición de posibilidad del conocimiento. La epistemología moderna, en su
-crítica al idealismo, ha intentado fundamentar la verdad en la experiencia perceptiva
-sin abandonar del todo las categorías a priori. Esta problemática, que atraviesa toda
-la tradición filosófica occidental desde Kant hasta Heidegger, obliga a repensar la
-relación entre sujeto y objeto, entre representación y realidad, entre síntesis y
-análisis. La deconstrucción del metafísico no implica un relativismo absoluto sino
-una reconstrucción cuidadosa de los marcos conceptuales que sostienen nuestras
-prácticas interpretativas. Por tanto, la coherencia de un sistema filosófico depende
-tanto de su capacidad explicativa como de su resistencia ante la refutación empírica
-y conceptual. La genealogía de los conceptos revela contingencias históricas que
-muchas veces se presentan como necesidades lógicas. En consecuencia, el filósofo debe
-interrogar los presupuestos de su propio discurso sin caer en un escepticismo
-paralizante. La dialéctica entre universal y particular, entre abstracción y
-concreción, permanece como núcleo irreductible del pensamiento crítico. Cada tesis
-genera su antítesis y exige una síntesis que no clausure prematuramente la pregunta.
+The ontological question of being and nothingness raises a fundamental problem for
+contemporary hermeneutics. From a phenomenological perspective, intentionality of
+consciousness cannot be reduced to merely empirical analysis without losing its
+transcendental dimension. The dialectical argument requires treating intersubjectivity
+as a condition for knowledge. Modern epistemology, in its critique of idealism, has
+tried to ground truth in perceptual experience without abandoning a priori categories.
+This problem runs through the Western philosophical tradition and forces us to rethink
+the relation between subject and object, representation and reality, synthesis and
+analysis. Therefore, the coherence of a philosophical system depends on explanatory
+power, empirical resistance, conceptual consistency, and justified inference.
 `.trim();
 
 const FIRST_PERSON_NOTES = `
-Hoy en clase yo tomé apuntes sobre la revolución industrial. Nosotros vimos que
-la mecanización cambió todo. Me pareció interesante cómo mi profesor explicó el
-impacto social. I think we should review this before the exam. My notes are messy
-but I captured the main ideas about factories and urbanization.
+Today in class I took notes on the industrial revolution. We saw that mechanization
+changed everything. I thought the professor's explanation of the social impact was
+useful. I think we should review this before the exam. My notes are messy but I
+captured the main ideas about factories and urbanization.
 `.repeat(20).trim();
 
 const STEP_MODES = new Set(["rsvp", "slow", "cloze", "questions", "review"]);
@@ -96,7 +87,7 @@ function testPhilosophicalPaperSlowFirst() {
     argumentativeDensity: 5,
     conceptualLoad: 4,
     primaryLearningGoal: "understand_argument",
-    genreReasoning: "Texto filosófico denso",
+    genreReasoning: "Dense philosophical text",
   });
 
   assert(rec.primaryFlow[0].mode === "slow", "philosophical: primary starts with slow");
@@ -121,7 +112,7 @@ function testNotesRsvpOrQuestions() {
     argumentativeDensity: 2,
     conceptualLoad: 2,
     primaryLearningGoal: "memorize_facts",
-    genreReasoning: "Apuntes de clase con primera persona",
+    genreReasoning: "First-person class notes",
   });
 
   const primaryFirst = rec.primaryFlow[0].mode;
@@ -138,7 +129,7 @@ function testNotesRsvpOrQuestions() {
 }
 
 function testTinySingleStep() {
-  const tinyText = "Definición breve: la fotosíntesis convierte luz en energía química.";
+  const tinyText = "Brief definition: photosynthesis converts light into chemical energy.";
   const metrics = analyzeText(tinyText);
   assert(metrics.sizeCategory === "tiny", "tiny fixture: sizeCategory");
 
@@ -147,7 +138,7 @@ function testTinySingleStep() {
     argumentativeDensity: 2,
     conceptualLoad: 1,
     primaryLearningGoal: "memorize_facts",
-    genreReasoning: "Texto muy corto",
+    genreReasoning: "Very short text",
   });
 
   assert(rec.primaryFlow.length === 1, "tiny: single primary step");

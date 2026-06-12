@@ -25,11 +25,11 @@ function assert(cond, msg) {
 }
 
 const PHILOSOPHICAL = `
-La cuestión ontológica del ser plantea un problema fundamental. Por tanto, la coherencia
-de un sistema filosófico depende de su capacidad explicativa y de su resistencia ante
-la refutación empírica y conceptual. La genealogía de los conceptos revela contingencias
-históricas que muchas veces se presentan como necesidades lógicas. En consecuencia, el
-filósofo debe interrogar los presupuestos de su propio discurso sin caer en escepticismo.
+The ontological question of being raises a fundamental problem. Therefore, the coherence
+of a philosophical system depends on its explanatory power and its resistance to empirical
+and conceptual refutation. The genealogy of concepts reveals historical contingencies
+often presented as logical necessities. Consequently, the philosopher must interrogate
+the assumptions of their own discourse without falling into skepticism.
 `.repeat(8).trim();
 
 function makePhilosophicalRecommendation() {
@@ -39,7 +39,7 @@ function makePhilosophicalRecommendation() {
     argumentativeDensity: 5,
     conceptualLoad: 4,
     primaryLearningGoal: "understand_argument",
-    genreReasoning: "Texto filosófico denso",
+    genreReasoning: "Dense philosophical text",
   });
 }
 
@@ -51,7 +51,7 @@ function baseSession(overrides = {}) {
     updatedAt: 1,
     shared: {
       rawMarkdown: "# Test",
-      docMeta: { titleInferred: "Test", charCount: 10, language: "es", estimatedGenre: "unknown" },
+      docMeta: { titleInferred: "Test", charCount: 10, language: "en", estimatedGenre: "unknown" },
       docHierarchy: null,
       conceptInventory: [],
       annotations: [],

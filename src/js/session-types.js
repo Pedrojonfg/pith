@@ -121,17 +121,15 @@ export function inferDocMeta(rawMarkdown) {
 
   const sample = text.slice(0, 2000).toLowerCase();
   let language = "other";
-  const esHits = (sample.match(/\b(el|la|de|que|en|un|una|por|con)\b/g) || []).length;
   const enHits = (sample.match(/\b(the|and|of|to|in|a|is|for)\b/g) || []).length;
-  if (esHits > enHits && esHits >= 3) language = "es";
-  else if (enHits >= 3) language = "en";
+  if (enHits >= 3) language = "en";
 
   let estimatedGenre = "unknown";
-  if (/\b(therefore|thus|hence|por tanto|por lo tanto)\b/i.test(sample)) {
+  if (/\b(therefore|thus|hence)\b/i.test(sample)) {
     estimatedGenre = "philosophical";
-  } else if (/\b(method|hypothesis|experiment|método|hipótesis)\b/i.test(sample)) {
+  } else if (/\b(method|hypothesis|experiment)\b/i.test(sample)) {
     estimatedGenre = "scientific";
-  } else if (/\b(essay|ensayo|reflection|reflexión)\b/i.test(sample)) {
+  } else if (/\b(essay|reflection)\b/i.test(sample)) {
     estimatedGenre = "essay";
   } else if (text.length < 3000 && /^[-*]\s/m.test(text)) {
     estimatedGenre = "notes";

@@ -231,7 +231,7 @@ const wrong = scorePrePackingTestResponses(items, [
 assert(wrong[0].mastery === "none" && wrong[0].confidence === 0.2, "score: wrong → none 0.2");
 
 const dontKnow = scorePrePackingTestResponses(items, [
-  { item_id: "t1", questionType: "test", userAnswer: "No lo sé" },
+  { item_id: "t1", questionType: "test", userAnswer: "I don't know" },
 ]);
 assert(dontKnow[0].mastery === "none" && dontKnow[0].confidence === 0.1, "score: dont-know → none 0.1");
 

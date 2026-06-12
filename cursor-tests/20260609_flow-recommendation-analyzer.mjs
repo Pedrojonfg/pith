@@ -17,32 +17,29 @@ function assert(cond, msg) {
 }
 
 const PHILOSOPHICAL_PAPER = `
-La cuestión ontológica del ser y la nada plantea un problema fundamental para la
-hermenéutica contemporánea. Desde la perspectiva fenomenológica, la intencionalidad
-de la conciencia no puede reducirse a un análisis meramente empírico sin perder su
-dimensión trascendental. El argumento dialéctico exige considerar la intersubjetividad
-como condición de posibilidad del conocimiento. La epistemología moderna, en su
-crítica al idealismo, ha intentado fundamentar la verdad en la experiencia perceptiva
-sin abandonar del todo las categorías a priori. Esta problemática, que atraviesa toda
-la tradición filosófica occidental desde Kant hasta Heidegger, obliga a repensar la
-relación entre sujeto y objeto, entre representación y realidad, entre síntesis y
-análisis. La deconstrucción del metafísico no implica un relativismo absoluto sino
-una reconstrucción cuidadosa de los marcos conceptuales que sostienen nuestras
-prácticas interpretativas. Por tanto, la coherencia de un sistema filosófico depende
-tanto de su capacidad explicativa como de su resistencia ante la refutación empírica
-y conceptual. La genealogía de los conceptos revela contingencias históricas que
-muchas veces se presentan como necesidades lógicas. En consecuencia, el filósofo debe
-interrogar los presupuestos de su propio discurso sin caer en un escepticismo
-paralizante. La dialéctica entre universal y particular, entre abstracción y
-concreción, permanece como núcleo irreductible del pensamiento crítico. Cada tesis
-genera su antítesis y exige una síntesis que no clausure prematuramente la pregunta.
+The ontological question of being and nothingness raises a fundamental problem for
+contemporary hermeneutics. From a phenomenological perspective, intentionality of
+consciousness cannot be reduced to merely empirical analysis without losing its
+transcendental dimension. The dialectical argument requires treating intersubjectivity
+as a condition for knowledge. Modern epistemology, in its critique of idealism, has
+tried to ground truth in perceptual experience without abandoning a priori categories.
+This problem runs through the Western philosophical tradition from Kant to Heidegger
+and forces us to rethink the relation between subject and object, representation and
+reality, synthesis and analysis. Deconstruction of metaphysics does not imply absolute
+relativism but a careful reconstruction of the conceptual frameworks that sustain
+interpretive practices. Therefore, the coherence of a philosophical system depends on
+both explanatory power and resistance to empirical and conceptual refutation.
+The genealogy of concepts reveals historical contingencies often presented as logical
+necessities. Consequently, the philosopher must interrogate the assumptions of their
+own discourse without falling into paralyzing skepticism. The dialectic between
+universal and particular remains an irreducible core of critical thought.
 `.trim();
 
 const FIRST_PERSON_NOTES = `
-Hoy en clase yo tomé apuntes sobre la revolución industrial. Nosotros vimos que
-la mecanización cambió todo. Me pareció interesante cómo mi profesor explicó el
-impacto social. I think we should review this before the exam. My notes are messy
-but I captured the main ideas about factories and urbanization.
+Today in class I took notes on the industrial revolution. We saw that mechanization
+changed everything. I thought the professor's explanation of the social impact was
+useful. I think we should review this before the exam. My notes are messy but I
+captured the main ideas about factories and urbanization.
 `.trim();
 
 function testNullUndefinedEmpty() {
@@ -75,7 +72,7 @@ function testFirstPersonNotes() {
 }
 
 function testBibliographyCitation() {
-  const text = "Como señala el autor (Smith, 2019), la teoría evoluciona. Ver también [1].";
+  const text = "As the author notes (Smith, 2019), the theory evolves. See also [1].";
   const m = analyzeText(text);
   assert(m.contentSignals.hasBibliography === true, "bibliography: [1] or (Author, year)");
 }
@@ -88,15 +85,13 @@ function testTinySizeCategory() {
 }
 
 function testMathNotation() {
-  const text = "La integral $\\int_0^1 f(x)\\,dx$ y $\\frac{a}{b}$ con suma $\\sum_{i=1}^n x_i$ y ∑.";
+  const text = "The integral $\\int_0^1 f(x)\\,dx$ and $\\frac{a}{b}$ with sum $\\sum_{i=1}^n x_i$ and ∑.";
   const m = analyzeText(text);
   assert(m.contentSignals.hasMathNotation === true, "math: LaTeX and symbols detected");
 }
 
 function testDefinitionPatterns() {
-  const es = "El término se define como la unidad básica del análisis.";
   const en = "The concept is defined as the primary unit of study.";
-  assert(analyzeText(es).contentSignals.hasDefinitionPatterns === true, "definitions: Spanish");
   assert(analyzeText(en).contentSignals.hasDefinitionPatterns === true, "definitions: English");
 }
 
@@ -107,10 +102,10 @@ function testExplicitHeadings() {
   assert(m.structureSignals.headingDensity > 0, "headings: density > 0");
 }
 
-function testAcademicVocabBilingual() {
-  const es = "La epistemología y la ontología son fundamentales therefore however.";
-  const m = analyzeText(es);
-  assert(m.contentSignals.academicVocabDensity > 0.1, "academic vocab: ES+EN terms counted");
+function testAcademicVocabEnglish() {
+  const en = "Epistemology and ontology are fundamental; therefore, however, methodology matters.";
+  const m = analyzeText(en);
+  assert(m.contentSignals.academicVocabDensity > 0.1, "academic vocab: English terms counted");
 }
 
 function testDeterministic() {
@@ -141,7 +136,7 @@ testTinySizeCategory();
 testMathNotation();
 testDefinitionPatterns();
 testExplicitHeadings();
-testAcademicVocabBilingual();
+testAcademicVocabEnglish();
 testDeterministic();
 testShortSizeCategory();
 testLongParagraphRatio();

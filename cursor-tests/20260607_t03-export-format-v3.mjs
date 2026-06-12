@@ -47,7 +47,7 @@ const fmSlow = buildExportFrontmatter(
     _meta: { session_id: "sample-slow-001", duration_min: 47 },
     slow: {
       criticalMode: true,
-      readingScope: { label: "Capítulo 3", charStart: 0, charEnd: 4200 },
+      readingScope: { label: "Chapter 3", charStart: 0, charEnd: 4200 },
     },
   },
   { mode: "slow" },
@@ -57,7 +57,7 @@ assert(fmSlow.includes("mode: slow"), "FM-happy: slow mode");
 assert(fmSlow.includes("session_id: sample-slow-001"), "FM-happy: session_id");
 assert(fmSlow.includes("critical: true"), "FM-happy: critical flag");
 assert(fmSlow.includes("duration_min: 47"), "FM-happy: duration");
-assert(fmSlow.includes("language: es"), "FM-happy: language es");
+assert(fmSlow.includes("language: en"), "FM-happy: export labels stay English");
 
 const fmFast = buildExportFrontmatter(
   { studyMode: "rsvp", language: "English", _meta: { session_id: "x" } },
@@ -70,7 +70,7 @@ assert(!fmFast.includes("critical:"), "FM-edge: fast omits critical");
 // ─── Graph edge families (happy / failure) ───────────────────────────────────
 
 const edgeLine = formatGraphEdgeMarkdown("a", "b", "requires", "Spanish");
-assert(edgeLine.includes("requires · epistémica"), "EDGE-happy: requires maps to epistemic family");
+assert(edgeLine.includes("requires · epistemic"), "EDGE-happy: requires maps to epistemic family");
 
 const supportLine = formatGraphEdgeMarkdown("u1", "arg:P1", "supports", "English");
 assert(supportLine.includes("supports · argumentative"), "EDGE-happy: supports argumentative");
@@ -89,14 +89,14 @@ const enriched = buildSlowEnrichedGraphFromInputs({
       type: "⊘",
       charStart: 100,
       charEnd: 120,
-      userText: "Objeción concreta",
+      userText: "Concrete objection",
     },
     {
       id: "a2",
       type: "≈",
       charStart: 200,
       charEnd: 220,
-      userText: "Ejemplo concreto",
+      userText: "Concrete example",
       graphLinks: [{ termId: "coordination" }],
     },
   ],
@@ -146,9 +146,9 @@ const fastSession = {
       title: "Block",
       explanation: "Body",
       questions: [
-        { type: "test", question: "Si φ=x², ¿∇φ en (1,0)?" },
-        { type: "test", question: "¿Qué es flujo?" },
-        { type: "socratic", question: "¿Por qué importa orientación?", socratic_mode: "guided" },
+        { type: "test", question: "If φ=x², what is ∇φ at (1,0)?" },
+        { type: "test", question: "What is flux?" },
+        { type: "socratic", question: "Why does orientation matter?", socratic_mode: "guided" },
       ],
     },
   ],
@@ -159,19 +159,19 @@ const fastSession = {
           0: {
             user_answer: "B",
             correct_answer: "A",
-            feedback: "Revisa el cálculo: ∇φ = (2x, 0).",
+            feedback: "Review the calculation: ∇φ = (2x, 0).",
             answered_at: "2026-06-07T10:23:15.000Z",
             error_type: "calculation_error",
           },
           1: {
             user_answer: "A",
             correct_answer: "A",
-            feedback: "Correcto.",
+            feedback: "Correct.",
             answered_at: "2026-06-07T10:24:01.000Z",
           },
           2: {
-            user_answer: "Porque define el signo del flujo.",
-            feedback: "Buena intuición.",
+            user_answer: "Because it defines the sign of flux.",
+            feedback: "Good intuition.",
             answered_at: "2026-06-07T10:25:00.000Z",
             socratic_mode: "guided",
           },
@@ -197,7 +197,7 @@ assert(
 );
 assert(fastMd.includes("<!-- graph-section -->"), "FAST-happy: graph delimiter");
 assert(
-  /· (epistémica|didáctica|semántica|argumentativa)/.test(fastMd),
+  /· (epistemic|didactic|semantic|argumentative)/.test(fastMd),
   "FAST-happy: edge family in graph",
 );
 assert(fastMd.includes("study-session-resume:v2:"), "FAST-invariant: resume blob preserved");
@@ -210,13 +210,13 @@ const slowSession = {
   materialMeta: { fileName: "economia-coordinacion-cap3.md" },
   _meta: {
     session_id: "sample-slow-001",
-    student_synthesis: "La verificación de información es el eje del capítulo.",
+    student_synthesis: "Information verification is the chapter's axis.",
   },
   slow: {
     phase: "complete",
     criticalMode: true,
     graphEnrichedUnlocked: true,
-    readingScope: { label: "Capítulo 3", charStart: 0, charEnd: 4200 },
+    readingScope: { label: "Chapter 3", charStart: 0, charEnd: 4200 },
     phase0: { thesis: "Tesis", guideQuestion: "Q?" },
     annotations: [
       {
@@ -224,21 +224,21 @@ const slowSession = {
         type: "⊘",
         charStart: 640,
         charEnd: 710,
-        userText: "Inferencia causal no justificada",
+        userText: "Unjustified causal inference",
       },
       {
         id: "s1",
         type: "⇑",
         charStart: 1120,
         charEnd: 1210,
-        userText: "Marco predictivo útil",
+        userText: "Useful predictive framework",
       },
-      { id: "t1", type: "↯", charStart: 780, charEnd: 830, userText: "Optimismo normativo vs datos" },
+      { id: "t1", type: "↯", charStart: 780, charEnd: 830, userText: "Normative optimism vs data" },
     ],
     findings: [
       {
         conceptTerm: "Coordination failure",
-        userText: "Hallazgo",
+        userText: "Finding",
         revealedInPhase1: false,
         review_priority: "medium",
       },
@@ -250,8 +250,8 @@ const slowMd = buildMarkdown(slowSession);
 assert(slowMd.includes("mode: slow"), "SLOW-happy: slow frontmatter");
 assert(slowMd.includes("## Top tensions"), "SLOW-happy: top tensions section");
 assert(slowMd.includes("⊘ [640–710]"), "SLOW-happy: tension cites offsets");
-assert(!slowMd.includes("## Grafo de material"), "SLOW-happy: no duplicate phase0 material graph");
-assert(slowMd.includes("## Grafo enriquecido"), "SLOW-happy: enriched graph only");
+assert(!slowMd.includes("## Material graph"), "SLOW-happy: no duplicate phase0 material graph");
+assert(slowMd.includes("## Enriched graph"), "SLOW-happy: enriched graph only");
 assert(slowMd.includes("review_priority: medium"), "SLOW-happy: finding review_priority");
 
 const tensions = extractTopTensions(slowSession.slow.annotations, { max: 3 });
@@ -268,7 +268,7 @@ assert(slowNoGraphLines.length === 0, "GRAPH-edge: slow without enriched emits n
 assert(isTestResponseIncorrect({ user_answer: "B", correct_answer: "A" }), "ERR-happy: detects wrong MC");
 assert(!isTestResponseIncorrect({ user_answer: "A", correct_answer: "A" }), "ERR-fail: correct not flagged");
 assert(
-  inferErrorType({ feedback: "Revisa el cálculo" }, "∇φ") === "calculation_error",
+  inferErrorType({ feedback: "Review the calculation" }, "∇φ") === "calculation_error",
   "ERR-happy: infers calculation_error",
 );
 assert(

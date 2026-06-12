@@ -83,24 +83,24 @@ assert(
 
 assert(looksLikeTruncatedModelJson("") === false, "T01 failure: empty string → not truncated");
 
-// ── T02: parse still accepts Spanish overview ──
+// ── T02: parse accepts English overview ──
 
 section("T02 parseConceptPackFromModelResponse");
 
-const spanishOverviewPack = {
+const englishOverviewPack = {
   blocks: [
     {
       id: 1,
-      title: "Mapa del curso: Ética",
-      summary: "Vista general del curso.",
-      signature: ["ética", "moral"],
+      title: "Overview: Ethics",
+      summary: "Course overview.",
+      signature: ["ethics", "morality"],
       concept_ids: [],
       chunk: "",
     },
     {
       id: 2,
-      title: "Key terms: Introducción",
-      summary: "Términos clave.",
+      title: "Key terms: Introduction",
+      summary: "Key terms.",
       signature: ["t1", "t2", "t3"],
       concept_ids: ["c1"],
       chunk: "",
@@ -109,13 +109,13 @@ const spanishOverviewPack = {
   pack_meta: { target_n: 2, final_block_count: 2, merges: [] },
 };
 
-const parsedSpanish = parseConceptPackFromModelResponse(JSON.stringify(spanishOverviewPack), {
+const parsedEnglish = parseConceptPackFromModelResponse(JSON.stringify(englishOverviewPack), {
   targetN: 2,
 });
-assert(parsedSpanish?.blocks?.length === 2, "T02 happy: Mapa del curso overview parses");
+assert(parsedEnglish?.blocks?.length === 2, "T02 happy: Overview parses");
 assert(
-  /^Mapa del curso:/i.test(parsedSpanish.blocks[0].title),
-  "T02 happy: preserves Spanish overview title",
+  /^Overview:/i.test(parsedEnglish.blocks[0].title),
+  "T02 happy: preserves English overview title",
 );
 
 assert(
@@ -142,9 +142,9 @@ assert(
   "T03 edge: slimInventoryForPack caps scope_one_line",
 );
 
-const det = packInventoryDeterministic(longScope, 8, "Español");
+const det = packInventoryDeterministic(longScope, 8, "Spanish");
 assert(det.blocks.length >= 2 && det.blocks.length <= 8, "T06 happy: deterministic pack respects N");
-assert(/^Mapa del curso:/i.test(det.blocks[0].title), "T06 happy: Spanish overview");
+assert(/^Overview:/i.test(det.blocks[0].title), "T06 happy: English overview");
 const detIds = new Set(det.blocks.flatMap((b) => b.concept_ids || []));
 assert(detIds.size >= 8, "T06 happy: deterministic pack assigns concepts");
 assert(det.pack_meta.deterministic === true, "T06 contract: pack_meta.deterministic");

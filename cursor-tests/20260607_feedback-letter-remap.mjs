@@ -41,15 +41,15 @@ assertEq(letterMap.B, "D", "happy: wrong1 text B→D");
 assertEq(letterMap.C, "A", "happy: wrong2 text C→A");
 assertEq(letterMap.D, "C", "happy: wrong3 text D→C");
 
-const enEs = remapFeedbackOptionLetters(
-  "Option B fails because it confuses X. Option C fails too. La opción D confunde Y.",
+const en = remapFeedbackOptionLetters(
+  "Option B fails because it confuses X. Option C fails too. Option D confuses Y.",
   letterMap,
 );
 assert(
-  enEs.includes("Option D fails") &&
-    enEs.includes("Option A fails") &&
-    enEs.includes("La opción C confunde"),
-  "happy: EN Option + ES opción patterns remapped",
+  en.includes("Option D fails") &&
+    en.includes("Option A fails") &&
+    en.includes("Option C confuses"),
+  "happy: English option patterns remapped",
 );
 
 const shuffled = shuffleTestQuestionOptions({
@@ -96,9 +96,9 @@ assert(
 assert(latexRemapped.includes("Option D is wrong"), "edge: prose letters remapped alongside LaTeX");
 
 assertEq(
-  remapFeedbackOptionLetters("B, C y D fallan.", letterMap),
-  "D, A y C fallan.",
-  "edge: Spanish letter lists remapped",
+  remapFeedbackOptionLetters("B, C and D fail.", letterMap),
+  "D, A and C fail.",
+  "edge: English letter lists remapped",
 );
 
 assertEq(

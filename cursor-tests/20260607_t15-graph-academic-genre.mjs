@@ -27,60 +27,60 @@ function assert(cond, msg) {
 }
 
 const basePhase0 = {
-  thesis: "La Bildung evoluciona históricamente.",
-  guideQuestion: "¿Cómo cambia el concepto?",
+  thesis: "Bildung evolves historically.",
+  guideQuestion: "How does the concept change?",
   conceptsToFind: [
-    { term: "Bildung", authorUsage: "formación integral", nodeType: "CONCEPTO" },
-    { term: "Herder", authorUsage: "precursor romántico", nodeType: "PERSONA" },
+    { term: "Bildung", authorUsage: "integral formation", nodeType: "CONCEPT" },
+    { term: "Herder", authorUsage: "Romantic precursor", nodeType: "PERSON" },
     {
-      term: "Tendencias tecnocráticas",
-      authorUsage: "oposición al humanismo",
-      nodeType: "EVENTO",
-      includes: ["PISA", "estandarización"],
+      term: "Technocratic trends",
+      authorUsage: "opposition to humanism",
+      nodeType: "EVENT",
+      includes: ["PISA", "standardization"],
     },
   ],
 };
 
-// 1 — GENEALOGÍA → historically_precedes
-const genealogia = buildSlowPhase0GraphFromInputs({
+// 1 — GENEALOGY → historically_precedes
+const genealogy = buildSlowPhase0GraphFromInputs({
   phase0: {
     ...basePhase0,
-    textGenre: "GENEALOGÍA",
+    textGenre: "GENEALOGY",
     argumentMap: [
-      { id: "G1", text: "Origen ilustrado", period: "siglo XVIII" },
+      { id: "G1", text: "Enlightenment origin", period: "18th century" },
       { id: "G2", text: "Romanticismo", period: "siglo XIX" },
       { id: "G3", text: "Neohumanismo", period: "siglo XX" },
     ],
   },
 });
-const geneEdges = genealogia.edges.filter((e) => e.type === "historically_precedes");
-assert(geneEdges.length === 2, "T15 #1 happy: GENEALOGÍA has 2 historically_precedes edges");
+const geneEdges = genealogy.edges.filter((e) => e.type === "historically_precedes");
+assert(geneEdges.length === 2, "T15 #1 happy: GENEALOGY has 2 historically_precedes edges");
 assert(
-  !genealogia.edges.some((e) => e.type === "sequence"),
-  "T15 #1 happy: GENEALOGÍA has no sequence edges",
+  !genealogy.edges.some((e) => e.type === "sequence"),
+  "T15 #1 happy: GENEALOGY has no sequence edges",
 );
 assert(
-  genealogia.nodes.some((n) => n.label.includes("siglo XVIII")),
+  genealogy.nodes.some((n) => n.label.includes("18th century")),
   "T15 #1 happy: arg label includes period",
 );
 
-// 2 — ARGUMENTO_LINEAL → sequence
-const lineal = buildSlowPhase0GraphFromInputs({
+// 2 — LINEAR_ARGUMENT → sequence
+const linear = buildSlowPhase0GraphFromInputs({
   phase0: {
     ...basePhase0,
-    textGenre: "ARGUMENTO_LINEAL",
+    textGenre: "LINEAR_ARGUMENT",
     argumentMap: [
       { id: "P1", text: "Premisa uno", status: "argued" },
       { id: "P2", text: "Premisa dos", status: "argued" },
-      { id: "C", text: "Conclusión" },
+      { id: "C", text: "Conclusion" },
     ],
   },
 });
-const seqEdges = lineal.edges.filter((e) => e.type === "sequence");
-assert(seqEdges.length === 2, "T15 #2 happy: lineal has 2 sequence edges");
+const seqEdges = linear.edges.filter((e) => e.type === "sequence");
+assert(seqEdges.length === 2, "T15 #2 happy: linear has 2 sequence edges");
 assert(
-  !lineal.edges.some((e) => e.type === "historically_precedes"),
-  "T15 #2 happy: lineal has no historically_precedes",
+  !linear.edges.some((e) => e.type === "historically_precedes"),
+  "T15 #2 happy: linear has no historically_precedes",
 );
 
 // edge case — missing textGenre defaults to sequence
@@ -131,23 +131,23 @@ assert(emptyPrune.nodes.length === 0, "T15 #3 failure-safe: empty graph stays em
 
 // 4 — normalizeConcept nodeType + includes via validatePhase0Orientation
 const validated = validatePhase0Orientation({
-  textGenre: "GENEALOGÍA",
-  thesis: "Tesis genealógica",
-  guideQuestion: "¿Cómo evoluciona?",
-  argumentMap: [{ id: "G1", text: "Etapa uno", period: "XVIII" }],
+  textGenre: "GENEALOGY",
+  thesis: "Genealogical thesis",
+  guideQuestion: "How does it evolve?",
+  argumentMap: [{ id: "G1", text: "Stage one", period: "XVIII" }],
   conceptsToFind: [
-    { term: "[CONCEPTO] Bildung", authorUsage: "concepto central" },
-    { term: "Herder", authorUsage: "autor citado", nodeType: "PERSONA" },
+    { term: "[CONCEPT] Bildung", authorUsage: "central concept" },
+    { term: "Herder", authorUsage: "cited author", nodeType: "PERSON" },
     {
       term: "Cluster",
-      authorUsage: "agrupación",
-      nodeType: "EVENTO",
-      includes: ["PISA", "examen"],
+      authorUsage: "grouping",
+      nodeType: "EVENT",
+      includes: ["PISA", "exam"],
     },
   ],
 });
-assert(validated?.textGenre === "GENEALOGÍA", "T15 #4 happy: textGenre preserved");
-assert(validated?.conceptsToFind[0].nodeType === "CONCEPTO", "T15 #4 happy: prefix parses nodeType");
+assert(validated?.textGenre === "GENEALOGY", "T15 #4 happy: textGenre preserved");
+assert(validated?.conceptsToFind[0].nodeType === "CONCEPT", "T15 #4 happy: prefix parses nodeType");
 assert(validated?.conceptsToFind[0].term === "Bildung", "T15 #4 happy: prefix stripped from term");
 assert(
   Array.isArray(validated?.conceptsToFind[2].includes) && validated.conceptsToFind[2].includes.length === 2,
@@ -166,14 +166,14 @@ const invalidGenre = validatePhase0Orientation({
   ],
 });
 assert(
-  invalidGenre?.textGenre === "ARGUMENTO_LINEAL",
-  "T15 #4 edge: unknown textGenre defaults to ARGUMENTO_LINEAL",
+  invalidGenre?.textGenre === "LINEAR_ARGUMENT",
+  "T15 #4 edge: unknown textGenre defaults to LINEAR_ARGUMENT",
 );
 
 const graphFromValidated = buildSlowPhase0GraphFromInputs({ phase0: validated });
 const conceptNode = graphFromValidated.nodes.find((n) => n.label.includes("Bildung"));
 assert(
-  conceptNode?.label === "[CONCEPTO] Bildung",
+  conceptNode?.label === "[CONCEPT] Bildung",
   "T15 #4 happy: graph label includes nodeType",
 );
 const clusterNode = graphFromValidated.nodes.find((n) => n.label.includes("Cluster"));
@@ -185,7 +185,7 @@ assert(
 // 5 — formatGraphEdgeMarkdown contrasts_with
 const mdEs = formatGraphEdgeMarkdown("a", "b", "contrasts_with", "es");
 assert(mdEs.includes("contrasts_with"), "T15 #5 happy: edge type in markdown");
-assert(mdEs.includes("argumentativa"), "T15 #5 happy: argumentative family in Spanish");
+assert(mdEs.includes("argumentative"), "T15 #5 happy: argumentative family in English");
 
 const mdUnknown = formatGraphEdgeMarkdown("x", "y", "totally_unknown", "en");
 assert(mdUnknown.includes("semantic"), "T15 #5 edge: unknown type falls back to semantic family");
@@ -238,7 +238,7 @@ assert(
 const withOrphans = buildSlowPhase0GraphFromInputs({
   phase0: {
     ...basePhase0,
-    textGenre: "ARGUMENTO_LINEAL",
+    textGenre: "LINEAR_ARGUMENT",
     argumentMap: [{ id: "P1", text: "solo premisa" }],
   },
 });
@@ -252,8 +252,8 @@ const enrichedOrphans = buildSlowEnrichedGraphFromInputs({
   textConcepts: collectTextConceptsFromLists(
     [],
     [
-      { term: "huérfano", authorUsage: "sin anotación", nodeType: "CONCEPTO" },
-      { term: "conectado", authorUsage: "con anotación", nodeType: "CONCEPTO" },
+      { term: "orphan", authorUsage: "without annotation", nodeType: "CONCEPT" },
+      { term: "connected", authorUsage: "with annotation", nodeType: "CONCEPT" },
     ],
   ),
   argumentMap: [],
@@ -270,7 +270,7 @@ const enrichedOrphans = buildSlowEnrichedGraphFromInputs({
   scopeText: "",
 });
 assert(
-  !enrichedOrphans.nodes.some((n) => n.label.includes("huérfano")),
+  !enrichedOrphans.nodes.some((n) => n.label.includes("orphan")),
   "T15 #6 happy: enriched graph prunes orphan text concept",
 );
 assert(
@@ -284,8 +284,8 @@ const debate = buildSlowPhase0GraphFromInputs({
     ...basePhase0,
     textGenre: "DEBATE",
     argumentMap: [
-      { id: "D1", text: "Posición kantiana", author: "Kant" },
-      { id: "D2", text: "Posición hegeliana", author: "Hegel" },
+      { id: "D1", text: "Kantian position", author: "Kant" },
+      { id: "D2", text: "Hegelian position", author: "Hegel" },
     ],
   },
 });
@@ -304,28 +304,28 @@ const badNodeType = validatePhase0Orientation({
   ],
 });
 assert(
-  badNodeType?.conceptsToFind[0].nodeType === "CONCEPTO",
-  "T15 #7 edge: unknown nodeType defaults to CONCEPTO",
+  badNodeType?.conceptsToFind[0].nodeType === "CONCEPT",
+  "T15 #7 edge: unknown nodeType defaults to CONCEPT",
 );
 
-// 8 — legacy Phase 0 backward compat (no textGenre / nodeType)
+// 8 — Phase 0 defaults (no textGenre / nodeType)
 const legacy = validatePhase0Orientation({
-  thesis: "Economía lineal",
-  guideQuestion: "¿Cuál es la tesis?",
+  thesis: "Linear economics",
+  guideQuestion: "What is the thesis?",
   argumentMap: [
-    { id: "P1", text: "Premisa", status: "argued" },
-    { id: "C", text: "Conclusión" },
+    { id: "P1", text: "Premise", status: "argued" },
+    { id: "C", text: "Conclusion" },
   ],
   conceptsToFind: [
-    { term: "inflación", authorUsage: "sube precios" },
-    { term: "PIB", authorUsage: "producto interno" },
-    { term: "oferta", authorUsage: "cantidad vendida" },
+    { term: "inflation", authorUsage: "raises prices" },
+    { term: "GDP", authorUsage: "gross domestic product" },
+    { term: "supply", authorUsage: "quantity sold" },
   ],
 });
-assert(legacy?.textGenre === "ARGUMENTO_LINEAL", "T15 #8 happy: legacy defaults textGenre");
+assert(legacy?.textGenre === "LINEAR_ARGUMENT", "T15 #8 happy: defaults textGenre");
 assert(
-  legacy?.conceptsToFind.every((c) => c.nodeType === "CONCEPTO"),
-  "T15 #8 happy: legacy concepts default nodeType",
+  legacy?.conceptsToFind.every((c) => c.nodeType === "CONCEPT"),
+  "T15 #8 happy: concepts default nodeType",
 );
 assert(
   validatePhase0Orientation(null) === null,
@@ -343,12 +343,12 @@ const familyExpectations = {
 for (const [type, family] of Object.entries(familyExpectations)) {
   assert(EDGE_TYPE_FAMILIES[type] === family, `T15 #9 happy: ${type} → ${family}`);
 }
-assert(NODE_TYPES.has("PERSONA"), "T15 #9 happy: NODE_TYPES exported");
-assert(TEXT_GENRES.has("GENEALOGÍA"), "T15 #9 happy: TEXT_GENRES exported");
+assert(NODE_TYPES.has("PERSON"), "T15 #9 happy: NODE_TYPES exported");
+assert(TEXT_GENRES.has("GENEALOGY"), "T15 #9 happy: TEXT_GENRES exported");
 
 assert(
-  formatGraphEdgeMarkdown("g1", "g2", "historically_precedes", "es").includes("didáctica"),
-  "T15 #9 happy: historically_precedes export family ES",
+  formatGraphEdgeMarkdown("g1", "g2", "historically_precedes", "es").includes("didactic"),
+  "T15 #9 happy: historically_precedes export family EN",
 );
 assert(
   formatGraphEdgeMarkdown("p", "c", "reinterprets", "en").includes("semantic"),

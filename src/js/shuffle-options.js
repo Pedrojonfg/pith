@@ -176,12 +176,12 @@ export function remapFeedbackOptionLetters(feedback, letterMap) {
   };
 
   text = text.replace(
-    /\b(option|options|opción|opcion|opciones|choice|choices|alternativa|alternativas)\s+([A-Da-d])\b/gi,
+    /\b(option|options|choice|choices)\s+([A-Da-d])\b/gi,
     (full, word, letter) => `${word} ${replaceLetter(letter)}`,
   );
 
   text = text.replace(
-    /\b(la|el|the)\s+([A-Da-d])\b/gi,
+    /\b(the)\s+([A-Da-d])\b/gi,
     (full, word, letter) => `${word} ${replaceLetter(letter)}`,
   );
 
@@ -203,22 +203,22 @@ export function remapFeedbackOptionLetters(feedback, letterMap) {
   text = text.replace(/\b([A-Da-d])\b/g, (full, letter, offset, whole) => {
     const before = whole.slice(0, offset);
     if (
-      /(?:option|options|opción|opcion|opciones|choice|choices|alternativa|alternativas)\s+$/i.test(
+      /(?:option|options|choice|choices)\s+$/i.test(
         before,
       ) ||
-      /(?:^|\s)(?:la|el|the)\s+$/i.test(before)
+      /(?:^|\s)(?:the)\s+$/i.test(before)
     ) {
       return letter;
     }
     const after = whole.slice(offset + full.length);
     if (
-      /^(?:\s+(?:is|are|was|were|es|son|era|eran|falla|fallan|fails|confunde|confuses|trata|treats|ignora|ignores|mezcla|mixes|asume|assumes|describe|describe|identifica|identifies))\b/i.test(
+      /^(?:\s+(?:is|are|was|were|fail|fails|confuse|confuses|treat|treats|ignore|ignores|mix|mixes|assume|assumes|describe|describes|identify|identifies))\b/i.test(
         after,
       )
     ) {
       return replaceLetter(letter);
     }
-    if (/(?:^|\s)(?:unlike|frente a|compared to|a diferencia de|versus|vs\.?)\s*$/i.test(before)) {
+    if (/(?:^|\s)(?:unlike|compared to|versus|vs\.?)\s*$/i.test(before)) {
       return replaceLetter(letter);
     }
     return letter;

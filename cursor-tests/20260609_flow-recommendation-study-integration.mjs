@@ -74,9 +74,9 @@ function applyFlowRecommendationOnEnterMode(chosenMode, doc) {
 }
 
 const PHILOSOPHICAL = `
-La cuestión ontológica del ser plantea un problema fundamental. Por tanto, la coherencia
-de un sistema filosófico depende de su capacidad explicativa. En consecuencia, el
-filósofo debe interrogar los presupuestos sin caer en escepticismo.
+The ontological question of being raises a fundamental problem. Therefore, the coherence
+of a philosophical system depends on its explanatory power. Consequently, the philosopher
+must interrogate assumptions without falling into skepticism.
 `.repeat(12).trim();
 
 // study.js wiring smoke checks

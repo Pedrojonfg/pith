@@ -19,7 +19,7 @@ export const els = {
   screenTest: mockScreen(),
 };
 
-const LANG_OPTIONS = ["English", "Español", "Français", "Deutsch"];
+const LANG_OPTIONS = ["English", "Spanish", "French", "German"];
 
 export function getStudyLanguage() {
   const stored = globalThis.localStorage?.getItem("study_lang");

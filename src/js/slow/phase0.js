@@ -18,23 +18,23 @@ export const PHASE0_MAX_CHUNK_CHARS = 50000;
 const MIN_CONCEPTS = 3;
 const MAX_CONCEPTS = 5;
 
-export const NODE_TYPES = new Set(["CONCEPTO", "PERSONA", "OBRA", "MOVIMIENTO", "EVENTO"]);
+export const NODE_TYPES = new Set(["CONCEPT", "PERSON", "WORK", "MOVEMENT", "EVENT"]);
 export const TEXT_GENRES = new Set([
-  "ARGUMENTO_LINEAL",
-  "GENEALOGÍA",
+  "LINEAR_ARGUMENT",
+  "GENEALOGY",
   "DEBATE",
-  "DEFINICIÓN",
-  "ANÁLISIS_DE_CASO",
+  "DEFINITION",
+  "CASE_ANALYSIS",
 ]);
 
-const NODE_TYPE_PREFIX_RE = /^\[(CONCEPTO|PERSONA|OBRA|MOVIMIENTO|EVENTO)\]\s*/i;
+const NODE_TYPE_PREFIX_RE = /^\[(CONCEPT|PERSON|WORK|MOVEMENT|EVENT)\]\s*/i;
 
 function normalizeNodeType(raw, term = "") {
   const fromField = normalizeString(raw).toUpperCase();
   if (NODE_TYPES.has(fromField)) return fromField;
   const fromTerm = String(term || "").match(NODE_TYPE_PREFIX_RE);
   if (fromTerm) return fromTerm[1].toUpperCase();
-  return "CONCEPTO";
+  return "CONCEPT";
 }
 
 function stripNodeTypePrefix(term) {
@@ -43,7 +43,7 @@ function stripNodeTypePrefix(term) {
 
 function normalizeTextGenre(raw) {
   const genre = normalizeString(raw).toUpperCase();
-  return TEXT_GENRES.has(genre) ? genre : "ARGUMENTO_LINEAL";
+  return TEXT_GENRES.has(genre) ? genre : "LINEAR_ARGUMENT";
 }
 
 function stripJsonFence(text) {
@@ -220,29 +220,29 @@ Rules:
 - Return ONLY valid JSON (no markdown fences).
 - Do NOT judge whether the argument is correct or valid.
 - Before building the argument map, classify the text into ONE textGenre:
-  ARGUMENTO_LINEAL (linear thesis + premises), GENEALOGÍA (historical evolution of a concept),
-  DEBATE (contrasting authors on one problem), DEFINICIÓN (what a concept is/is not),
-  ANÁLISIS_DE_CASO (concrete case with theoretical frame).
+  LINEAR_ARGUMENT (linear thesis + premises), GENEALOGY (historical evolution of a concept),
+  DEBATE (contrasting authors on one problem), DEFINITION (what a concept is/is not),
+  CASE_ANALYSIS (concrete case with theoretical frame).
 - thesis: one sentence — what the author wants the reader to accept (conclusion-oriented, not a summary).
 - argumentMap shape depends on textGenre:
-  ARGUMENTO_LINEAL → P1, P2, …, C with status on premises;
-  GENEALOGÍA → G1, G2, … chronological with required period per node;
+  LINEAR_ARGUMENT → P1, P2, …, C with status on premises;
+  GENEALOGY → G1, G2, … chronological with required period per node;
   DEBATE → D1, D2, … positions with required author per node;
-  DEFINICIÓN → DEF central node + S1, S2 satellites;
-  ANÁLISIS_DE_CASO → CASO + M1, M2 theoretical frame nodes.
+  DEFINITION → DEF central node + S1, S2 satellites;
+  CASE_ANALYSIS → CASE + M1, M2 theoretical frame nodes.
 - conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } — technical or redefined concepts.
-  For each node indicate type: [CONCEPTO], [PERSONA], [OBRA], [MOVIMIENTO], or [EVENTO].
-  Never create a [PERSONA] node for the author of the text you are analyzing.
+  For each node indicate type: [CONCEPT], [PERSON], [WORK], [MOVEMENT], or [EVENT].
+  Never create a [PERSON] node for the author of the text you are analyzing.
   If the text contains its own name as a bibliographic reference, ignore it as a node.
   If several concepts share the same structural role, group them in one node with includes: [...].
 - guideQuestion: one open question the text answers (broad enough to avoid tunnel vision, specific enough to orient reading).${criticalBlock}
 
 JSON schema:
 {
-  "textGenre": "ARGUMENTO_LINEAL",
+  "textGenre": "LINEAR_ARGUMENT",
   "thesis": "string",
   "argumentMap": [{ "id": "P1", "text": "...", "status": "..." }],
-  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPTO", "includes": ["..."] }],
+  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPT", "includes": ["..."] }],
   "guideQuestion": "string"${criticalMode ? ',\n  "criticalExaminePoints": ["..."]' : ""}
 }`;
 }
@@ -303,10 +303,10 @@ Rules:
 
 JSON schema:
 {
-  "textGenre": "ARGUMENTO_LINEAL",
+  "textGenre": "LINEAR_ARGUMENT",
   "thesis": "string",
   "argumentMap": [{ "id": "P1", "text": "...", "status": "..." }],
-  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPTO" }],
+  "conceptsToFind": [{ "term": "...", "authorUsage": "...", "nodeType": "CONCEPT" }],
   "guideQuestion": "string"${criticalMode ? ',\n  "criticalExaminePoints": ["..."]' : ""}
 }`;
 }
@@ -669,7 +669,7 @@ export function slugGraphTermId(term) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_áéíóúñü-]/gi, "");
+    .replace(/[^a-z0-9_-]/gi, "");
 }
 
 function readJsonStorage(key, fallback) {
@@ -833,32 +833,21 @@ export function getPhase0SeenKeyForSession(session) {
 
 const GENERIC_SUMMARIZE_RE = /summarize (?:this section )?in one sentence/i;
 
-function isSpanishLang(lang) {
-  const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
-}
-
 /**
  * Local integration question when phase0 was skipped or IA is unavailable.
  */
 export function buildCheckpointQuestionTemplate(section, argumentMap, lang = "English") {
   const title = String(section?.title || "this section").trim() || "this section";
   const map = Array.isArray(argumentMap) ? argumentMap.filter(Boolean) : [];
-  const es = isSpanishLang(lang);
-
   if (map.length) {
     const nodes = map
       .slice(0, 3)
       .map((n) => `${n.id}: ${n.text}`)
       .join("; ");
-    return es
-      ? `¿Cómo conecta lo leído en «${title}» con el mapa argumental (${nodes})?`
-      : `How does what you read in «${title}» connect to the argument map (${nodes})?`;
+    return `How does what you read in «${title}» connect to the argument map (${nodes})?`;
   }
 
-  return es
-    ? `¿Cómo integrarías lo leído bajo «${title}» con el hilo argumental del autor?`
-    : `How would you integrate what you read under «${title}» with the author's line of argument?`;
+  return `How would you integrate what you read under «${title}» with the author's line of argument?`;
 }
 
 function normalizeCheckpointQuestion(text) {
@@ -873,7 +862,7 @@ function isWeakCheckpointQuestion(text) {
   const q = normalizeCheckpointQuestion(text);
   if (!q) return true;
   if (GENERIC_SUMMARIZE_RE.test(q)) return true;
-  if (/^(who|quién)\s+(is|was|es|fue)\s+(the\s+)?author/i.test(q)) return true;
+  if (/^who\s+(is|was)\s+(the\s+)?author/i.test(q)) return true;
   return false;
 }
 

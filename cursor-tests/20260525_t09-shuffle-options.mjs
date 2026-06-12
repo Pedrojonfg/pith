@@ -136,12 +136,12 @@ const letterMap = computeOptionLetterMap(beforeOptions, afterOptions);
 assert(letterMap.A === "B" && letterMap.B === "D" && letterMap.C === "A" && letterMap.D === "C", "letter map follows option text");
 
 const remapped = remapFeedbackOptionLetters(
-  "Option B fails because x. Option C fails because y. La opción D confunde z.",
+  "Option B fails because x. Option C fails because y. Option D confuses z.",
   letterMap,
 );
 assert(
-  remapped === "Option D fails because x. Option A fails because y. La opción C confunde z.",
-  "feedback option letters remapped (EN + ES)",
+  remapped === "Option D fails because x. Option A fails because y. Option C confuses z.",
+  "feedback option letters remapped (EN)",
 );
 
 const withFeedback = shuffleTestQuestionOptions({

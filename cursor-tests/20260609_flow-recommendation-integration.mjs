@@ -75,12 +75,12 @@ function applyFlowRecommendationOnEnterMode(chosenMode, doc) {
 }
 
 const PHILOSOPHICAL_PARAGRAPH = `
-La cuestión ontológica del ser y la nada plantea un problema fundamental para la
-hermenéutica contemporánea. Desde la perspectiva fenomenológica, la intencionalidad
-de la conciencia no puede reducirse a un análisis meramente empírico sin perder su
-dimensión trascendental. El argumento dialéctico exige considerar la intersubjetividad
-como condición de posibilidad del conocimiento. Por tanto, la coherencia de un sistema
-filosófico depende de su capacidad explicativa y de su resistencia ante la refutación.
+The ontological question of being and nothingness raises a fundamental problem for
+contemporary hermeneutics. From a phenomenological perspective, intentionality of
+consciousness cannot be reduced to merely empirical analysis without losing its
+transcendental dimension. The dialectical argument treats intersubjectivity as a
+condition for knowledge. Therefore, the coherence of a philosophical system depends
+on its explanatory power and its resistance to refutation.
 `.trim();
 
 function buildPhilosophicalText(targetWords = 2000) {
@@ -169,7 +169,7 @@ assert(
 // --- Fallback without LLM ---
 resetStorage();
 
-const longNoHeadings = "Concepto filosófico denso sin encabezados. ".repeat(120).trim();
+const longNoHeadings = "Dense philosophical concept without headings. ".repeat(120).trim();
 const hierarchyNoLlm = await buildDocumentHierarchy(longNoHeadings, null, { useCache: false });
 assert(hierarchyNoLlm === null, "fallback: buildDocumentHierarchy returns null without llmFn");
 

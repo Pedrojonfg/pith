@@ -59,10 +59,10 @@ assert(studySrc.includes("language,"), "SL: createSlowSession accepts language p
 const selectEl = { value: "English" };
 const { els } = await import("../src/js/ui.js");
 els.languageSelect = selectEl;
-const synced = syncStudyLanguage("Deutsch");
-assert(synced === "Deutsch", "SL: syncStudyLanguage returns valid lang");
-assert(localStorage.getItem(LS_STUDY_LANG_KEY) === "Deutsch", "SL: syncStudyLanguage writes localStorage");
-assert(selectEl.value === "Deutsch", "SL: syncStudyLanguage updates select");
+const synced = syncStudyLanguage("German");
+assert(synced === "German", "SL: syncStudyLanguage returns valid lang");
+assert(localStorage.getItem(LS_STUDY_LANG_KEY) === "German", "SL: syncStudyLanguage writes localStorage");
+assert(selectEl.value === "German", "SL: syncStudyLanguage updates select");
 
 // --- Edge: invalid language falls back to English ---
 localStorage.clear();
@@ -93,17 +93,17 @@ assert(!languageSelect.hidden, "SL: language select still visible when rsvp sect
 
 // --- Failure: updateCreateScreenModeVisibility only hides rsvpBlocksSection ---
 assert(
-  studySrc.includes('els.rsvpBlocksSection.hidden = !isRsvp'),
-  "SL: visibility toggle targets rsvpBlocksSection only",
+  studySrc.includes("els.rsvpAdvancedDetails") && studySrc.includes("els.rsvpImportDetails"),
+  "SL: visibility toggle targets RSVP-specific controls",
 );
 assert(!studySrc.includes("languageSelect.hidden"), "SL: language select never explicitly hidden");
 
 // --- Failure: export includes language for slow sessions ---
-assert(exportSrc.includes("Language: ${String(session.language"), "SL: slow export mentions language");
+assert(exportSrc.includes("Language: ${lang}"), "SL: slow export mentions language");
 
-// --- STUDY_LANG_OPTIONS unchanged ---
+// --- STUDY_LANG_OPTIONS remain English-labeled/internal ---
 assert(STUDY_LANG_OPTIONS.length >= 4, "SL: at least 4 language options");
-assert(STUDY_LANG_OPTIONS.some((o) => o.value === "Español"), "SL: Español option exists");
+assert(STUDY_LANG_OPTIONS.some((o) => o.value === "Spanish"), "SL: Spanish option exists");
 
 // --- ui.js exports syncStudyLanguage ---
 assert(uiSrc.includes("export function syncStudyLanguage"), "SL: syncStudyLanguage exported");

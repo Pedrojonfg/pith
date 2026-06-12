@@ -44,7 +44,7 @@ export const GEMINI_OPENAI_CHAT_URL =
 
 export const STUDY_LANG_OPTIONS = [
   { value: "English", label: "English" },
-  { value: "Español", label: "Español" },
-  { value: "Français", label: "Français" },
-  { value: "Deutsch", label: "Deutsch" },
+  { value: "Spanish", label: "Spanish" },
+  { value: "French", label: "French" },
+  { value: "German", label: "German" },
 ];

@@ -82,15 +82,15 @@ const parsedInv = parseConceptInventoryFromModelResponse(
       {
         id: "c1",
         order: 1,
-        title: "Amoralismo",
+        title: "Amoralism",
         scope_one_line: "Course sense",
-        source_phrase: "El amoralismo niega",
+        source_phrase: "Amoralism denies",
         anchor_type: "cited",
       },
     ],
   }),
 );
-assert(parsedInv?.[0]?.source_phrase === "El amoralismo niega", "parser accepts source_phrase");
+assert(parsedInv?.[0]?.source_phrase === "Amoralism denies", "parser accepts source_phrase");
 const qPrompt = buildQuestionsOnlySystemPrompt({ language: "English", n_test: 1, n_socratic: 0 });
 assert(qPrompt.includes("supreme authority"), "questions-only has fidelity");
 const assessPrompt = buildPrePackingAssessmentSystemPrompt({
@@ -106,18 +106,18 @@ assert(assessPrompt.includes("supreme authority"), "prepack assessment has fidel
 // ── T05/T07: chunk alignment ──
 section("T05/T07 chunk alignment");
 const material = [
-  "Capítulo 1. Introducción general al curso de ética.",
-  "Capítulo 2. El utilitarismo clásico define el bien como utilidad.",
-  "Capítulo 3. El amoralismo del profesor niega obligaciones morales universales.",
-  "Capítulo 3 continúa con ejemplos del autor sobre amoralismo técnico.",
+  "Chapter 1. General introduction to the ethics course.",
+  "Chapter 2. Classical utilitarianism defines the good as utility.",
+  "Chapter 3. The professor's amoralism denies universal moral obligations.",
+  "Chapter 3 continues with the author's examples of technical amoralism.",
 ].join(" ");
 
 const blocks = [
-  { id: 1, title: "Overview", summary: "Map", signature: ["ética"] },
-  { id: 2, title: "Amoralismo del curso", summary: "Def", signature: ["amoralismo"], concept_ids: ["c3"] },
+  { id: 1, title: "Overview", summary: "Map", signature: ["ethics"] },
+  { id: 2, title: "Course amoralism", summary: "Def", signature: ["amoralism"], concept_ids: ["c3"] },
 ];
 const inventory = [
-  { id: "c3", title: "Amoralismo", source_phrase: "amoralismo del profesor niega" },
+  { id: "c3", title: "Amoralism", source_phrase: "professor's amoralism denies" },
 ];
 
 const aligned = assignAlignedChunks(material, blocks, inventory, {});
@@ -125,8 +125,8 @@ const overview = aligned.find((b) => b.id === 1);
 const amoral = aligned.find((b) => b.id === 2);
 assert(overview?.anchor_quality === "strong", "overview strong anchor");
 assert(
-  String(amoral?.chunk || "").toLowerCase().includes("capítulo 3"),
-  "reordered block gets capítulo 3 chunk",
+  String(amoral?.chunk || "").toLowerCase().includes("chapter 3"),
+  "reordered block gets chapter 3 chunk",
 );
 assert(amoral?.anchor_quality === "strong" || amoral?.anchor_quality === "weak", "amoral anchor not fallback");
 
@@ -142,65 +142,65 @@ const hierarchy = {
 };
 const hierAligned = assignAlignedChunks(material, blocks, inventory, { docHierarchy: hierarchy });
 const hierAmoral = hierAligned.find((b) => b.id === 2);
-assert(String(hierAmoral?.chunk || "").includes("Capítulo 3"), "hierarchy snap keeps cap 3");
+assert(String(hierAmoral?.chunk || "").includes("Chapter 3"), "hierarchy snap keeps chapter 3");
 
 // ── T08: fidelity validation ──
 section("T08 fidelity validation");
 const terms = extractKeyTermsFromBlockMeta({
-  blockTitle: "Amoralismo técnico",
-  signature: ["amoralismo"],
-  concepts: [{ term: "amoralismo" }],
+  blockTitle: "Technical amoralism",
+  signature: ["amoralism"],
+  concepts: [{ term: "amoralism" }],
 });
-assert(terms.includes("amoralismo"), "extract key terms");
+assert(terms.includes("amoralism"), "extract key terms");
 
 const poisoned = validateBlockFidelity({
-  blockTitle: "Amoralismo",
-  signature: ["amoralismo"],
-  chunk: "El texto habla de utilitarismo solamente.",
-  explanation: "El amoralismo kantiano universal es la tesis central.",
-  concepts: [{ term: "amoralismo" }],
+  blockTitle: "Amoralism",
+  signature: ["amoralism"],
+  chunk: "The text discusses utilitarianism only.",
+  explanation: "Universal Kantian amoralism is the central thesis.",
+  concepts: [{ term: "amoralism" }],
 });
 assert(poisoned.ok === false, "poisoned block fails");
 
 const okParaphrase = validateBlockFidelity({
-  blockTitle: "Utilitarismo",
-  signature: ["utilitarismo"],
-  chunk: "El utilitarismo clásico define el bien como utilidad máxima.",
-  explanation: "El utilitarismo define el bien como la utilidad o beneficio máximo.",
+  blockTitle: "Utilitarianism",
+  signature: ["utilitarianism"],
+  chunk: "Classical utilitarianism defines the good as maximum utility.",
+  explanation: "Utilitarianism defines the good as maximum utility or benefit.",
 });
 assert(okParaphrase.ok === true, "paraphrase passes");
 
 const weakLenient = validateBlockFidelity({
-  blockTitle: "Amoralismo",
-  signature: ["amoralismo"],
-  chunk: "texto sin término",
-  explanation: "otro tema",
+  blockTitle: "Amoralism",
+  signature: ["amoralism"],
+  chunk: "text without term",
+  explanation: "another topic",
   anchor_quality: "weak",
 });
 assert(weakLenient.ok === true, "weak anchor lenient for one term");
 
 const retryPath = validateBlockFidelity({
-  blockTitle: "Amoralismo y deontología",
-  signature: ["amoralismo", "deontología"],
-  chunk: "solo amoralismo aparece aquí",
-  explanation: "deontología kantiana pura",
+  blockTitle: "Amoralism and deontology",
+  signature: ["amoralism", "deontology"],
+  chunk: "only amoralism appears here",
+  explanation: "pure Kantian deontology",
 });
 assert(retryPath.action === "retry", "retry action on unsupported");
 
 const warnPath = validateBlockFidelity({
-  blockTitle: "Amoralismo y deontología",
-  signature: ["amoralismo", "deontología"],
-  chunk: "solo amoralismo",
-  explanation: "deontología pura",
+  blockTitle: "Amoralism and deontology",
+  signature: ["amoralism", "deontology"],
+  chunk: "only amoralism",
+  explanation: "pure deontology",
   isRetry: true,
 });
 assert(warnPath.action === "warn", "warn after retry");
 
 const chunkHit = validateBlockFidelity({
-  blockTitle: "Utilidad",
-  signature: ["utilidad"],
-  chunk: "La utilidad es central.",
-  explanation: "La utilidad organiza el argumento.",
+  blockTitle: "Utility",
+  signature: ["utility"],
+  chunk: "Utility is central.",
+  explanation: "Utility organizes the argument.",
 });
 assert(chunkHit.ok === true, "term in chunk passes");
 
@@ -209,21 +209,21 @@ section("T09 fidelity banner");
 function resolveBannerMessage(block = {}, indexEntry = {}) {
   const anchor = String(indexEntry.anchor_quality || block.anchor_quality || "").trim();
   const fidelity = String(block.fidelity_status || "").trim();
-  if (anchor === "weak") return "Anclaje débil al documento — contrasta con tu PDF.";
+  if (anchor === "weak") return "Weak anchor to the document — compare with your PDF.";
   if (anchor === "proportional_fallback") {
-    return "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
+    return "This block uses an approximate slice of the file; check the source.";
   }
   if (fidelity === "warn") {
-    return "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
+    return "Reduced fidelity: some content may not reflect the source.";
   }
   return "";
 }
 assert(
-  resolveBannerMessage({ fidelity_status: "warn" }, { anchor_quality: "strong" }).includes("Fidelidad"),
+  resolveBannerMessage({ fidelity_status: "warn" }, { anchor_quality: "strong" }).includes("Reduced fidelity"),
   "banner warn message",
 );
 assert(
-  resolveBannerMessage({}, { anchor_quality: "weak" }).includes("Anclaje débil"),
+  resolveBannerMessage({}, { anchor_quality: "weak" }).includes("Weak anchor"),
   "banner weak message",
 );
 assert(resolveBannerMessage({}, { anchor_quality: "strong" }) === "", "banner hidden on strong");
@@ -235,23 +235,23 @@ assert(typeof isSourceFidelityStrictEnabled() === "boolean", "strict flag callab
 // ── T12: guide excerpt ──
 section("T12 guide document excerpt");
 const excerpt = resolveGuideDocumentExcerpt(
-  "qué es amoralismo",
+  "what is amoralism",
   material,
   { studiedBlockCount: 1 },
 );
-assert(excerpt.toLowerCase().includes("amoralismo"), "excerpt finds term");
+assert(excerpt.toLowerCase().includes("amoralism"), "excerpt finds term");
 
 const dom = new JSDOM("<!DOCTYPE html><html><body></body></html>");
 globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 window.guideContext = {
-  sessionContext: "Block 1: Test\nBlock 1 source chunk:\nEl amoralismo del profesor.",
+  sessionContext: "Block 1: Test\nBlock 1 source chunk:\nThe professor's amoralism.",
   currentBlockIndex: 0,
 };
-const guidePrompt = buildGuidePrompt("qué es amoralismo", 0);
+const guidePrompt = buildGuidePrompt("what is amoralism", 0);
 assert(guidePrompt.includes("supreme authority"), "guide has fidelity rules");
 assert(
-  guidePrompt.includes("source chunk") || guidePrompt.includes("amoralismo"),
+  guidePrompt.includes("source chunk") || guidePrompt.includes("amoralism"),
   "guide prompt includes chunk context",
 );
 
