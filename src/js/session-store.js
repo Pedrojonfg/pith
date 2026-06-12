@@ -5,6 +5,12 @@ import {
   LS_DOC_TEXT_PREFIX,
 } from "./config.js";
 import {
+  docBlocksKey,
+  docResponsesKey,
+  rehydrateBlocks,
+  stripBlocksForPersist,
+} from "./block-store.js";
+import {
   extractSignalsFromBlockSession,
   mergeAssessmentSignals,
 } from "./assessment-signals.js";
@@ -44,39 +50,69 @@ function writeSessionsRaw(sessions) {
 }
 
 function rehydrateMarkdown(session) {
-  if (!session?.shared) return session;
+  if (!session?.shared) return rehydrateSessionModes(session);
   const sh = session.shared;
-  if (typeof sh.rawMarkdown === "string") return session;
+  if (typeof sh.rawMarkdown === "string") return rehydrateSessionModes(session);
   const ref = sh.rawMarkdownRef;
-  if (!ref?.storageKey) return session;
+  if (!ref?.storageKey) return rehydrateSessionModes(session);
   try {
     const text = localStorage.getItem(ref.storageKey);
     if (text == null) {
       console.warn(`[session-store] missing externalized text: ${ref.storageKey}`);
-      return {
+      return rehydrateSessionModes({
         ...session,
         shared: { ...sh, rawMarkdown: "" },
-      };
+      });
     }
-    return {
+    return rehydrateSessionModes({
       ...session,
       shared: { ...sh, rawMarkdown: text },
-    };
+    });
   } catch (err) {
     console.warn("[session-store] rehydrate failed", err);
-    return { ...session, shared: { ...sh, rawMarkdown: "" } };
+    return rehydrateSessionModes({ ...session, shared: { ...sh, rawMarkdown: "" } });
   }
+}
+
+function rehydrateSessionModes(session) {
+  if (!session?.docId) return session;
+  const docId = session.docId;
+  const modes = session.modes && typeof session.modes === "object" ? { ...session.modes } : {};
+  let changed = false;
+  if (modes.rsvp) {
+    const next = rehydrateBlocks(modes.rsvp, docId);
+    if (next !== modes.rsvp) {
+      modes.rsvp = next;
+      changed = true;
+    }
+  }
+  if (modes.questions) {
+    const next = rehydrateBlocks(modes.questions, docId);
+    if (next !== modes.questions) {
+      modes.questions = next;
+      changed = true;
+    }
+  }
+  return changed ? { ...session, modes } : session;
 }
 
 function stripMarkdownForPersist(session) {
   const clone = JSON.parse(JSON.stringify(session));
+  const docId = clone.docId;
+
+  if (clone.modes?.rsvp) {
+    clone.modes.rsvp = stripBlocksForPersist(clone.modes.rsvp, docId);
+  }
+  if (clone.modes?.questions) {
+    clone.modes.questions = stripBlocksForPersist(clone.modes.questions, docId);
+  }
+
   const sh = clone.shared;
   if (!sh || typeof sh.rawMarkdown !== "string") return clone;
 
   let payload = JSON.stringify(clone);
   if (payload.length <= DOC_SESSION_SIZE_THRESHOLD) return clone;
 
-  const docId = clone.docId;
   const storageKey = docTextKey(docId);
   const charCount = sh.rawMarkdown.length;
   localStorage.setItem(storageKey, sh.rawMarkdown);
@@ -232,6 +268,12 @@ export function deleteSession(docId) {
     } catch {
       // ignore
     }
+  }
+  try {
+    localStorage.removeItem(docBlocksKey(id));
+    localStorage.removeItem(docResponsesKey(id));
+  } catch {
+    // ignore
   }
   writeSessionsRaw(sessions.filter((s) => s?.docId !== id));
   const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);

@@ -11,6 +11,7 @@ import {
   getActiveSession as getActiveDocumentSession,
   saveActiveSession as saveDocumentSession,
 } from "./session-store.js";
+import { writeThroughModeSlice } from "./block-store.js";
 import { syncConceptsFromBlock } from "./dictionary.js?v=20260527_1";
 import {
   deepSeekGenerateBlockBridge,
@@ -534,7 +535,7 @@ export function recordResponse({
     correct_answer: correctAnswer,
     answered_at: new Date().toISOString(),
   };
-  storeActiveSession(state.activeSession, { bumpRev: true });
+  persistActiveRsvpSlice(state.activeSession, { bumpRev: true });
 }
 
 function parseAnswerLetter(raw) {
@@ -2817,6 +2818,49 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
 
 let onPrefetchReady = null;
 let onBridgeReady = null;
+let onPersistFailure = null;
+
+export function setOnPersistFailure(fn) {
+  onPersistFailure = typeof fn === "function" ? fn : null;
+}
+
+export function notifyPersistFailure(error) {
+  if (typeof onPersistFailure !== "function") return;
+  try {
+    onPersistFailure(error);
+  } catch (err) {
+    console.warn("notifyPersistFailure: callback failed", err);
+  }
+}
+
+function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
+  if (!slice || typeof slice !== "object") return { ok: false, error: "invalid" };
+  if (!slice._meta || typeof slice._meta !== "object") slice._meta = {};
+  if (!slice._meta.session_id) slice._meta.session_id = newSessionId();
+  if (bumpRev) {
+    const prev = Number(slice._meta.rev || 0);
+    slice._meta.rev = Number.isFinite(prev) && prev >= 0 ? prev + 1 : 1;
+  }
+  const mode = normalizeStudyMode(slice.studyMode || state.studyMode);
+  if (!slice.studyMode) slice.studyMode = mode;
+
+  const doc = getActiveDocumentSession();
+  if (doc?.docId && (mode === "rsvp" || mode === "questions")) {
+    const result = writeThroughModeSlice(doc, mode, slice);
+    if (!result.ok) notifyPersistFailure(result.error);
+    else if (doc.modes?.rsvp) {
+      try {
+        localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(doc.modes.rsvp));
+      } catch {
+        // ignore
+      }
+    }
+    return result;
+  }
+
+  storeSessionForMode(mode, slice);
+  return { ok: true };
+}
 
 export function setOnPrefetchReady(fn) {
   onPrefetchReady = typeof fn === "function" ? fn : null;
@@ -2955,7 +2999,10 @@ export function applyPrefetchReadySideEffects(blockIndex, data, cfg) {
       state.activeSession.blocks.push({});
     }
     state.activeSession.blocks[idx] = normalized;
-    storeActiveSession(state.activeSession, { bumpRev: true });
+    const result = persistActiveRsvpSlice(state.activeSession, { bumpRev: true });
+    if (!result.ok) {
+      console.warn("applyPrefetchReadySideEffects: session write-through failed", result.error);
+    }
   } catch (err) {
     console.warn("applyPrefetchReadySideEffects: session write-through failed", err);
   }

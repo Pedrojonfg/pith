@@ -238,6 +238,14 @@
             <h1>Choose a study mode</h1>
             <p class="mode-select-lead">Pick how you want to work with your material. Switch anytime with <strong>+</strong>.</p>
 
+            <div id="persistHealthBannerMode" class="persist-health-banner hidden" role="status" hidden>
+              <span id="persistHealthBannerModeText"></span>
+              <div class="persist-health-banner-actions">
+                <button type="button" id="persistHealthRecoverBtnMode" class="btn-secondary" hidden>Import from backup</button>
+                <button type="button" id="persistHealthDismissBtnMode" class="btn-secondary">Dismiss</button>
+              </div>
+            </div>
+
             <div id="flowRecommendUpload" class="flow-recommend-upload" hidden>
               <button type="button" id="flowRecommendBtn" class="btn-primary flow-recommend-btn">
                 Recommend my study flow
@@ -366,6 +374,14 @@
             </div>
             <h1>Configure your session</h1>
             <p class="create-screen-lead">Upload your material, then generate or continue.</p>
+
+            <div id="persistHealthBanner" class="persist-health-banner hidden" role="status" hidden>
+              <span id="persistHealthBannerText"></span>
+              <div class="persist-health-banner-actions">
+                <button type="button" id="persistHealthRecoverBtn" class="btn-secondary" hidden>Import from backup</button>
+                <button type="button" id="persistHealthDismissBtn" class="btn-secondary">Dismiss</button>
+              </div>
+            </div>
 
             <div id="modeMaterialLoadedBanner" class="mode-material-loaded-banner" hidden>
               <strong class="mode-material-loaded-title">Document ready</strong>

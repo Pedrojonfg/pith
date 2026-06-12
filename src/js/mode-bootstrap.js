@@ -1,4 +1,4 @@
-import { normalizeStudyMode } from "./session.js";
+import { hasGeneratedBlockContent, normalizeStudyMode } from "./session.js";
 import { createClozeSession, createSlowSession } from "./study.js";
 
 /**
@@ -21,9 +21,8 @@ function hasSharedMaterial(doc) {
 function isSliceResumable(slice, slot) {
   if (!slice || typeof slice !== "object") return false;
   if (slot === "rsvp" || slot === "questions") {
-    const n = Number(slice.n_blocks) || 0;
     const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
-    return n > 0 && blocks.length > 0;
+    return blocks.some(hasGeneratedBlockContent);
   }
   if (slot === "slow") {
     return String(slice.slow?.phase || "").trim().length > 0;

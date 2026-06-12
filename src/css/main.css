@@ -1996,3 +1996,52 @@ body.assessment-runner-active .assessment-runner-chrome {
 .block-fidelity-banner.hidden {
   display: none;
 }
+
+.persist-health-banner {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #ca8a04 55%, transparent);
+  background: color-mix(in srgb, #eab308 14%, var(--card, #fff));
+  color: color-mix(in srgb, #854d0e 85%, var(--text, #111));
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.persist-health-banner.hidden,
+.persist-health-banner[hidden] {
+  display: none;
+}
+
+.persist-health-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.export-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  max-width: min(92vw, 480px);
+  text-align: center;
+}
+
+.export-toast--success {
+  background: color-mix(in srgb, #16a34a 18%, var(--card, #fff));
+  border: 1px solid color-mix(in srgb, #16a34a 45%, transparent);
+  color: color-mix(in srgb, #14532d 90%, var(--text, #111));
+}
+
+.export-toast--error {
+  background: color-mix(in srgb, #dc2626 14%, var(--card, #fff));
+  border: 1px solid color-mix(in srgb, #dc2626 45%, transparent);
+  color: color-mix(in srgb, #7f1d1d 90%, var(--text, #111));
+}

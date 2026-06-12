@@ -43,6 +43,7 @@ import {
   isBlockSplitCacheValid,
   setBlockSplitCache,
 } from "./block-split-cache.js";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import {
   recordUserOverride,
   updateFlowProgress,
@@ -65,7 +66,15 @@ import {
 } from "./dictionary.js?v=20260526_1";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
-import { exportOfflinePack, exportSessionMarkdown, exportClozeItemsMarkdown, downloadTextFile } from "./export.js?v=20260525_1";
+import {
+  exportOfflinePack,
+  exportSessionMarkdown,
+  exportClozeItemsMarkdown,
+  downloadTextFile,
+  resolveSessionForExport,
+  buildMarkdown,
+} from "./export.js?v=20260525_1";
+import { computePersistenceHealth, tryRecoverBlocksFromV1Backup } from "./block-store.js";
 import {
   clearGuideChatStorage,
   refreshGuideContext,
@@ -132,6 +141,7 @@ import {
   triggerPrefetch,
   setOnPrefetchReady,
   setOnBridgeReady,
+  setOnPersistFailure,
   triggerBridgePrefetch,
   getPrefetchedBlock,
   hasGeneratedBlockContent,
@@ -860,6 +870,8 @@ export function enterModeSelectScreen() {
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
   showScreen("modeSelect");
+  syncExportButtonsEnabled();
+  syncPersistenceHealthBanner();
 }
 
 function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
@@ -1130,6 +1142,8 @@ function resolveActiveCreateMode() {
 
 function showCreateScreen() {
   updateCreateScreenModeVisibility(resolveActiveCreateMode());
+  syncExportButtonsEnabled();
+  syncPersistenceHealthBanner();
   showScreen("create");
 }
 
@@ -1144,21 +1158,32 @@ function updateCreateScreenModeVisibility(mode) {
   const isRsvp = mode === "rsvp";
   const isCloze = mode === "cloze";
   const isQuestions = mode === "questions";
-  const showBlockConfig = isRsvp || isQuestions;
+  const showAdvancedConfig = isRsvp || isQuestions;
   if (els.generateBlocksForm) {
     els.generateBlocksForm.classList.toggle("create-form--slow", isSlow);
   }
   if (els.rsvpImportDetails) els.rsvpImportDetails.hidden = !isRsvp;
-  if (els.rsvpAdvancedDetails) els.rsvpAdvancedDetails.hidden = !showBlockConfig;
+  if (els.rsvpAdvancedDetails) els.rsvpAdvancedDetails.hidden = !showAdvancedConfig;
+  if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isRsvp;
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
-  if (els.blocksInput) els.blocksInput.required = showBlockConfig;
+  if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (els.recommendBlocksBtn) els.recommendBlocksBtn.hidden = !isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
+  if (els.rsvpAdvancedDetails) {
+    const summary = els.rsvpAdvancedDetails.querySelector("summary");
+    if (summary) {
+      summary.textContent = isQuestions
+        ? "Comments & questions"
+        : "Blocks, comments & questions";
+    }
+  }
   if (els.generateBlocksBtn) {
     const bootstrapped = Boolean(state.materialBootstrapActive);
     if (bootstrapped && (isSlow || isCloze)) {
       els.generateBlocksBtn.textContent = "Continue with loaded material →";
+    } else if (isQuestions) {
+      els.generateBlocksBtn.textContent = "Generate questions";
     } else {
       els.generateBlocksBtn.textContent =
         isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
@@ -1439,7 +1464,7 @@ function resumeQuestionsSession(session) {
   storeActiveSession(session);
   const n = Math.max(1, Number(session?.n_blocks) || 1);
   if (els.sessionReadyMeta) {
-    els.sessionReadyMeta.textContent = `Questions session ready. Blocks: ${n}`;
+    els.sessionReadyMeta.textContent = "Questions session ready.";
   }
   setFullPackEntryCta(n);
   showScreen("ready");
@@ -2961,6 +2986,144 @@ function setResumeError(message) {
   els.resumeSessionError.hidden = false;
   els.resumeSessionError.textContent = message;
 }
+
+let exportToastTimer = null;
+
+function showExportToast(message, { variant = "success", durationMs = 3000 } = {}) {
+  const text = String(message || "").trim();
+  if (!text) return;
+  let toast = document.getElementById("exportToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "exportToast";
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.className = `export-toast export-toast--${variant === "error" ? "error" : "success"}`;
+  toast.textContent = text;
+  if (exportToastTimer) clearTimeout(exportToastTimer);
+  exportToastTimer = setTimeout(() => {
+    toast.remove();
+    exportToastTimer = null;
+  }, durationMs);
+}
+
+function handleExportSessionClick() {
+  const result = exportSessionMarkdown({ force: true, source: "button" });
+  if (result.ok) {
+    const blocks = result.blockCount != null ? ` (${result.blockCount} blocks)` : "";
+    showExportToast(`Session saved${blocks}`);
+    return;
+  }
+  if (result.error === "no_session") {
+    setResumeError("No session to export — generate block content first.");
+    showExportToast("No session to export", { variant: "error", durationMs: 5000 });
+    return;
+  }
+  if (result.error === "download_blocked") {
+    const session = resolveSessionForExport();
+    if (session) void copyPlainTextToClipboard(buildMarkdown(session));
+    showExportToast("Download blocked — content copied to clipboard", {
+      variant: "error",
+      durationMs: 5000,
+    });
+    return;
+  }
+  showExportToast("Could not save session", { variant: "error", durationMs: 5000 });
+}
+
+async function handleOfflinePackClick() {
+  const result = exportOfflinePack();
+  if (result.ok) {
+    showExportToast("Offline pack downloaded");
+    return;
+  }
+  const messages = {
+    no_session: "No session to export.",
+    no_block_content: "Generate block content before downloading offline pack.",
+    offline: "Offline pack is not available in offline mode.",
+    download_blocked: "Download blocked — try again or check browser settings.",
+  };
+  const msg = messages[result.error] || "Could not download offline pack.";
+  setResumeError(msg);
+  showExportToast(msg, { variant: "error", durationMs: 5000 });
+}
+
+function syncExportButtonsEnabled() {
+  const exportable = Boolean(resolveSessionForExport());
+  if (els.saveSessionBtn) els.saveSessionBtn.disabled = !exportable;
+  if (els.saveSessionInlineBtn) els.saveSessionInlineBtn.disabled = !exportable;
+  if (els.downloadOfflinePackBtn) els.downloadOfflinePackBtn.disabled = !exportable;
+}
+
+let persistHealthDismissed = false;
+
+function syncPersistenceHealthBanner() {
+  const doc = getActiveSession();
+  const health = computePersistenceHealth(doc);
+  const banners = [
+    {
+      el: document.getElementById("persistHealthBanner"),
+      textEl: document.getElementById("persistHealthBannerText"),
+      dismissBtn: document.getElementById("persistHealthDismissBtn"),
+      recoverBtn: document.getElementById("persistHealthRecoverBtn"),
+    },
+    {
+      el: document.getElementById("persistHealthBannerMode"),
+      textEl: document.getElementById("persistHealthBannerModeText"),
+      dismissBtn: document.getElementById("persistHealthDismissBtnMode"),
+      recoverBtn: document.getElementById("persistHealthRecoverBtnMode"),
+    },
+  ];
+
+  const showPartial =
+    !persistHealthDismissed && health.status === "partial" && (health.hasDictionary || health.hasGuideChat);
+
+  const backupBlocks = showPartial ? tryRecoverBlocksFromV1Backup(doc?.modes?.rsvp) : null;
+  const message =
+    health.lastWriteError === "quota"
+      ? "Study progress may not be fully saved — browser storage is full."
+      : "Study progress may not be fully saved — block content is missing but dictionary or chat data exists.";
+
+  for (const { el, textEl, dismissBtn, recoverBtn } of banners) {
+    if (!el || !textEl) continue;
+    if (!showPartial) {
+      el.classList.add("hidden");
+      el.hidden = true;
+      continue;
+    }
+    textEl.textContent = message;
+    el.classList.remove("hidden");
+    el.hidden = false;
+    if (recoverBtn) recoverBtn.hidden = !backupBlocks;
+    if (dismissBtn && !dismissBtn.dataset.wired) {
+      dismissBtn.dataset.wired = "1";
+      dismissBtn.addEventListener("click", () => {
+        persistHealthDismissed = true;
+        syncPersistenceHealthBanner();
+      });
+    }
+    if (recoverBtn && !recoverBtn.dataset.wired) {
+      recoverBtn.dataset.wired = "1";
+      recoverBtn.addEventListener("click", () => {
+        const recovered = tryRecoverBlocksFromV1Backup(doc?.modes?.rsvp);
+        if (!recovered || !doc) return;
+        if (!doc.modes) doc.modes = {};
+        const slice = doc.modes.rsvp || { studyMode: "rsvp", blocks: [], n_blocks: recovered.length };
+        slice.blocks = recovered;
+        slice.n_blocks = Math.max(Number(slice.n_blocks) || 0, recovered.length);
+        doc.modes.rsvp = slice;
+        saveDocumentSession(doc);
+        persistHealthDismissed = true;
+        showExportToast("Imported blocks from backup — review before continuing");
+        syncPersistenceHealthBanner();
+        syncExportButtonsEnabled();
+      });
+    }
+  }
+}
+
 function setResumeLoading(isLoading) {
   if (els.resumeSessionBtn) els.resumeSessionBtn.disabled = isLoading;
   if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = isLoading ? "Restoring…" : "";
@@ -3830,6 +3993,40 @@ function setTestMeta() {
   syncBlockFidelityBanner(block, indexEntry);
 }
 
+let testMcAnswered = false;
+/** @type {((e: KeyboardEvent) => void) | null} */
+let testMcKeydownHandler = null;
+
+function detachTestMcKeydown() {
+  if (!testMcKeydownHandler) return;
+  document.removeEventListener("keydown", testMcKeydownHandler);
+  testMcKeydownHandler = null;
+}
+
+function attachTestMcKeydown() {
+  detachTestMcKeydown();
+  testMcKeydownHandler = (e) => {
+    if (e.repeat || isMcTypingTarget(e.target)) return;
+    if (els.screenTest?.getAttribute("aria-hidden") === "true") return;
+
+    if (testMcAnswered) {
+      if (e.key === "Enter" && els.testNextBtn && !els.testNextBtn.hidden) {
+        e.preventDefault();
+        els.testNextBtn.click();
+      }
+      return;
+    }
+
+    const letter = letterFromMcKey(e.key);
+    if (!letter) return;
+    const btn = els.testOptions?.querySelector(`button[data-letter="${letter}"]`);
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    btn.click();
+  };
+  document.addEventListener("keydown", testMcKeydownHandler);
+}
+
 function showTestQuestions() {
   els.testRsvpView.hidden = true;
   els.testQaView.hidden = false;
@@ -3983,6 +4180,7 @@ async function startSocraticBlock() {
 }
 
 function renderTestQuestion() {
+  testMcAnswered = false;
   clearTestError();
   els.testFeedback.hidden = true;
   clearMarkdownContainer(els.testFeedback);
@@ -4031,9 +4229,11 @@ function renderTestQuestion() {
     });
     els.testOptions.appendChild(btn);
   }
+  attachTestMcKeydown();
 }
 
 function handleTestAnswer({ chosen, correct, feedback }) {
+  testMcAnswered = true;
   if (isPrePackingAssessmentRunner()) {
     handleAssessmentTestAnswer({ chosen, correct, feedback });
     return;
@@ -6027,6 +6227,7 @@ export function wireStudyHandlers() {
     let score = 0;
     let settled = false;
     let timerId = null;
+    let advanceTimerId = null;
     let rafId = null;
     let startedAt = 0;
     const timerMs = ASSESSMENT_SECONDS_PER_QUESTION * 1000;
@@ -6035,6 +6236,10 @@ export function wireStudyHandlers() {
       if (timerId) {
         clearTimeout(timerId);
         timerId = null;
+      }
+      if (advanceTimerId) {
+        clearTimeout(advanceTimerId);
+        advanceTimerId = null;
       }
       if (rafId) {
         cancelAnimationFrame(rafId);
@@ -6086,10 +6291,18 @@ export function wireStudyHandlers() {
       if (ratio < 1 && !settled) rafId = requestAnimationFrame(tickTimer);
     }
 
-    function getLetterFromKey(e) {
-      const k = String(e.key || "").toUpperCase();
-      if (k === "A" || k === "B" || k === "C" || k === "D") return k;
-      return "";
+    function advanceToNextQuestion() {
+      if (advanceTimerId) {
+        clearTimeout(advanceTimerId);
+        advanceTimerId = null;
+      }
+      currentQ += 1;
+      if (currentQ >= list.length) {
+        cleanup();
+        showAssessmentResults(responses, list);
+        return;
+      }
+      renderQuestion();
     }
 
     function renderQuestion() {
@@ -6163,22 +6376,24 @@ export function wireStudyHandlers() {
       }
 
       renderHeader();
-      o.meta.textContent = "Next question…";
-      window.setTimeout(() => {
-        currentQ += 1;
-        if (currentQ >= list.length) {
-          cleanup();
-          showAssessmentResults(responses, list);
-          return;
-        }
-        renderQuestion();
+      o.meta.textContent = "Press Enter for next question…";
+      advanceTimerId = window.setTimeout(() => {
+        advanceTimerId = null;
+        advanceToNextQuestion();
       }, ASSESSMENT_ADVANCE_AFTER_ANSWER_MS);
     }
 
     function onKeyDown(e) {
-      if (e.repeat) return;
-      const letter = getLetterFromKey(e);
-      if (!letter || settled) return;
+      if (e.repeat || isMcTypingTarget(e.target)) return;
+      if (settled) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          advanceToNextQuestion();
+        }
+        return;
+      }
+      const letter = letterFromMcKey(e.key);
+      if (!letter) return;
       e.preventDefault();
       settleAnswer(letter);
     }
@@ -6523,10 +6738,15 @@ export function wireStudyHandlers() {
     }
     storeDefaultQuestionConfig({ n_test: state.nTest, n_socratic: state.nSocratic });
 
-    const nBlocks = Number(els.blocksInput.value);
-    if (!Number.isFinite(nBlocks) || nBlocks < 5 || nBlocks > 60) {
-      setGenerateError("Blocks must be a number between 5 and 60.");
-      return;
+    let nBlocks;
+    if (selectedMode === "questions") {
+      nBlocks = 20;
+    } else {
+      nBlocks = Number(els.blocksInput.value);
+      if (!Number.isFinite(nBlocks) || nBlocks < 5 || nBlocks > 60) {
+        setGenerateError("Blocks must be a number between 5 and 60.");
+        return;
+      }
     }
 
     setGenerateLoading(true);
@@ -7391,17 +7611,24 @@ export function wireStudyHandlers() {
     setDictionaryOverlayOpen(true);
   });
 
-  els.saveSessionBtn.addEventListener("click", () => {
-    exportSessionMarkdown();
-  });
+  els.saveSessionBtn.addEventListener("click", handleExportSessionClick);
   if (els.downloadOfflinePackBtn) {
     els.downloadOfflinePackBtn.addEventListener("click", () => {
-      exportOfflinePack();
+      void handleOfflinePackClick();
     });
   }
   if (els.saveSessionInlineBtn) {
-    els.saveSessionInlineBtn.addEventListener("click", () => exportSessionMarkdown());
+    els.saveSessionInlineBtn.addEventListener("click", handleExportSessionClick);
   }
+
+  setOnPersistFailure((error) => {
+    const msg =
+      error === "quota"
+        ? "Could not save blocks — browser storage is full."
+        : "Could not save study progress.";
+    showExportToast(msg, { variant: "error", durationMs: 5000 });
+    syncPersistenceHealthBanner();
+  });
 
   if (els.summaryOverlayCloseBtn) {
     els.summaryOverlayCloseBtn.addEventListener("click", () => setSummaryOverlayOpen(false));
@@ -7464,7 +7691,7 @@ export function wireStudyHandlers() {
   }
 
   window.addEventListener("beforeunload", () => {
-    exportSessionMarkdown();
+    exportSessionMarkdown({ source: "beforeunload" });
   });
 
   wireRsvpHandlers();
@@ -7546,6 +7773,8 @@ export function wireStudyHandlers() {
 
   setOnPrefetchReady(() => {
     refreshUiOnPrefetchReady();
+    syncExportButtonsEnabled();
+    syncPersistenceHealthBanner();
   });
 
   setOnBridgeReady(() => {
@@ -7554,5 +7783,7 @@ export function wireStudyHandlers() {
 
   syncOfflinePackButtonVisibility();
   updateDictionaryButtonVisibility();
+  syncExportButtonsEnabled();
+  syncPersistenceHealthBanner();
 }
 

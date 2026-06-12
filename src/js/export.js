@@ -7,11 +7,14 @@ import {
 import {
   buildResumePayload,
   hasGeneratedBlockContent,
+  loadSessionForMode,
   normalizeGapsByBlock,
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
 } from "./session.js?v=20260527_1";
+import { getActiveSession as getActiveDocumentSession } from "./session-store.js";
+import { rehydrateBlocks } from "./block-store.js";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
 import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
@@ -804,15 +807,53 @@ export function buildOfflinePack(activeSession, blockIndex) {
 }
 
 export function downloadTextFile({ filename, text }) {
-  const blob = new Blob([String(text || "")], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  try {
+    const blob = new Blob([String(text || "")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveSessionSliceForOffline() {
+  const exportable = resolveSessionForExport();
+  if (exportable) return exportable;
+  const active = state.activeSession;
+  if (active && Array.isArray(active.blocks) && active.blocks.length > 0) return active;
+  const mode = state.studyMode != null ? String(state.studyMode) : "rsvp";
+  const doc = getActiveDocumentSession();
+  const raw = loadSessionForMode(mode) || loadSessionForMode("rsvp");
+  if (!raw) return null;
+  return doc?.docId ? rehydrateBlocks(raw, doc.docId) : raw;
+}
+
+export function resolveSessionForExport() {
+  const active = state.activeSession;
+  if (active && typeof active === "object") {
+    const activeBlocks = Array.isArray(active.blocks) ? active.blocks : [];
+    if (activeBlocks.some(hasGeneratedBlockContent)) return active;
+  }
+
+  const mode = state.studyMode != null ? String(state.studyMode) : "rsvp";
+  const candidates = [loadSessionForMode(mode), loadSessionForMode("rsvp"), loadSessionForMode("questions")];
+  const doc = getActiveDocumentSession();
+  const docId = doc?.docId;
+
+  for (const raw of candidates) {
+    if (!raw || typeof raw !== "object") continue;
+    const slice = docId ? rehydrateBlocks(raw, docId) : raw;
+    const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
+    if (blocks.some(hasGeneratedBlockContent)) return slice;
+  }
+  return null;
 }
 
 export function exportClozeItemsMarkdown(session = state.activeSession) {
@@ -827,40 +868,70 @@ export function exportClozeItemsMarkdown(session = state.activeSession) {
   });
 }
 
-export function exportSessionMarkdown() {
-  if (!state.activeSession) return;
-  if (state.activeSession.studyMode === "cloze") {
+export function exportSessionMarkdown({ force = false, source = "button" } = {}) {
+  if (state.activeSession?.studyMode === "cloze") {
     exportClozeItemsMarkdown(state.activeSession);
-    return;
+    return { ok: true };
   }
+
+  const session = resolveSessionForExport();
+  if (!session) {
+    return { ok: false, error: "no_session" };
+  }
+
   ensureSessionResponseState();
-  const sessionId = String(state.activeSession?._meta?.session_id || "");
-  const rev = Number(state.activeSession?._meta?.rev || 0);
-  const last = getLastExportState();
-  if (last && last.sessionId === sessionId && last.rev === rev) {
-    return;
+
+  const sessionId = String(session._meta?.session_id || "");
+  const rev = Number(session._meta?.rev || 0);
+  if (!force && source === "beforeunload") {
+    const last = getLastExportState();
+    if (last && last.sessionId === sessionId && last.rev === rev) {
+      return { ok: false, error: "dedup" };
+    }
   }
-  const md = buildMarkdown(state.activeSession);
+
+  const md = buildMarkdown(session);
   const ts = formatExportTimestamp(new Date());
   const stem = getExportFilenameStem();
-  downloadTextFile({
+  const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+  const blockCount = blocks.filter(hasGeneratedBlockContent).length;
+  const downloaded = downloadTextFile({
     filename: `${stem}_${ts}.md`,
     text: md,
   });
-  if (sessionId && Number.isFinite(rev)) {
+  if (downloaded && sessionId && Number.isFinite(rev)) {
     setLastExportState({ sessionId, rev });
   }
+  return {
+    ok: downloaded,
+    error: downloaded ? undefined : "download_blocked",
+    charCount: md.length,
+    blockCount,
+  };
 }
 
 export function exportOfflinePack() {
-  if (isOfflineMode()) return;
-  if (!state.activeSession) return;
-  const md = buildOfflinePack(state.activeSession, state.activeBlockIndex);
+  if (isOfflineMode()) return { ok: false, error: "offline" };
+
+  const session = resolveSessionSliceForOffline();
+  if (!session) {
+    return { ok: false, error: "no_session" };
+  }
+
+  const withContent = (Array.isArray(session.blocks) ? session.blocks : []).filter(
+    hasGeneratedBlockContent,
+  );
+  if (!withContent.length) {
+    return { ok: false, error: "no_block_content" };
+  }
+
+  const md = buildOfflinePack(session, state.activeBlockIndex);
   const ts = formatExportTimestamp(new Date());
   const stem = getExportFilenameStem();
-  downloadTextFile({
+  const downloaded = downloadTextFile({
     filename: `${stem}_offline_${ts}.md`,
     text: md,
   });
+  return { ok: downloaded, error: downloaded ? undefined : "download_blocked" };
 }
 
