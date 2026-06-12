@@ -19,9 +19,12 @@ import {
   renderMarkdown,
   renderMcOptionHtml,
 } from "./markdown.js?v=20260525_1";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
+/** @type {((e: KeyboardEvent) => void) | null} */
+let reviewMcKeydownHandler = null;
 let reviewQuestions = [];
 let reviewIndex = 0;
 let reviewCorrect = 0;
@@ -566,7 +569,41 @@ export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = 
   renderReviewQuestion();
 }
 
+function detachReviewMcKeydown() {
+  if (!reviewMcKeydownHandler) return;
+  document.removeEventListener("keydown", reviewMcKeydownHandler);
+  reviewMcKeydownHandler = null;
+}
+
+function attachReviewMcKeydown(q) {
+  detachReviewMcKeydown();
+  if (!q || q.type !== "test") return;
+
+  reviewMcKeydownHandler = (e) => {
+    if (e.repeat || isMcTypingTarget(e.target)) return;
+    if (els.screenReview?.getAttribute("aria-hidden") === "true") return;
+
+    const answered = reviewAnswers[reviewIndex] != null;
+    if (answered) {
+      if (e.key === "Enter" && !els.reviewNextBtn.hidden) {
+        e.preventDefault();
+        els.reviewNextBtn.click();
+      }
+      return;
+    }
+
+    const letter = letterFromMcKey(e.key);
+    if (!letter) return;
+    const btn = els.reviewTestOptions?.querySelector(`button[data-letter="${letter}"]`);
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    btn.click();
+  };
+  document.addEventListener("keydown", reviewMcKeydownHandler);
+}
+
 function renderReviewQuestion() {
+  detachReviewMcKeydown();
   clearReviewError();
   const total = reviewQuestions.length;
   const q = reviewQuestions[reviewIndex];
@@ -639,6 +676,7 @@ function renderReviewQuestion() {
       });
       els.reviewTestOptions.appendChild(btn);
     }
+    attachReviewMcKeydown(q);
     return;
   }
 
@@ -647,6 +685,7 @@ function renderReviewQuestion() {
 }
 
 function showReviewSummary() {
+  detachReviewMcKeydown();
   const total = reviewQuestions.length;
   const hasAnyTest = reviewQuestions.some((q) => q && q.type === "test");
   const wrong = [];
@@ -744,6 +783,7 @@ function showReviewSummary() {
 }
 
 function resetReviewRun() {
+  detachReviewMcKeydown();
   reviewQuestions = [];
   reviewIndex = 0;
   reviewCorrect = 0;

@@ -347,6 +347,7 @@ export const els = {
   newSessionModeBtn: document.getElementById("newSessionModeBtn"),
   rsvpOnlyControls: document.getElementById("rsvpOnlyControls"),
   rsvpBlocksSection: document.getElementById("rsvpBlocksSection"),
+  rsvpBlocksCountGroup: document.getElementById("rsvpBlocksCountGroup"),
   slowOnlyControls: document.getElementById("slowOnlyControls"),
   criticalModeToggleBtn: document.getElementById("criticalModeToggleBtn"),
   clozeSessionPanel: document.getElementById("clozeSessionPanel"),
