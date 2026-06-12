@@ -1,5 +1,11 @@
 import { MAX_N_TEST } from "./config.js?v=20260527_1";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
+import { validateBlockFidelity } from "./fidelity-validation.js";
+import {
+  SOURCE_FIDELITY_RULES,
+  buildSourceFirstRsvpStructure,
+  mergeFidelityIntoSystemPrompt,
+} from "./source-fidelity.js";
 import {
   buildParagraphFormatOpts,
   enforceExplanationParagraphs,
@@ -758,15 +764,17 @@ Respond entirely in ${lang}.`;
   });
 }
 
-function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
+export function buildSplitBlocksPrompt(n, lang, { compact = false } = {}) {
   const chunkRule = compact
     ? '- Set "chunk" to "" for every block.'
     : '- Set "chunk" to "" (the app assigns source text locally; do NOT paste document text into chunk).';
   return `You are designing exactly ${n} study blocks for RSVP reading (one word flash at a time; the student cannot re-read).
 
-Design for learning—not for mirroring the document:
+${SOURCE_FIDELITY_RULES}
+
+Design for learning while respecting source definitions:
 - Order blocks by prerequisites (foundations before applications).
-- Do NOT copy section titles or source paragraph order when that hurts learning order.
+- Prefer pedagogical order, but block titles and signatures must reflect terms as the source uses them.
 - Each block = ONE teachable concept OR ONE vocabulary set—not one chapter heading.
 - If several sections teach the same core idea, merge them into ONE block named after the concept.
 - Never duplicate the same primary concept in two blocks.
@@ -910,16 +918,19 @@ export function buildConceptInventoryPrompt(lang) {
   const language = String(lang || "English").trim() || "English";
   return `You are extracting an ordered inventory of teachable concepts from study material.
 
+${SOURCE_FIDELITY_RULES}
+
 Rules:
 - One concept = one teachable idea sized for RSVP (single pass, no re-read).
 - Order by learning prerequisites (foundations before applications).
-- Do NOT paste document text or long quotes in the output.
 - Each concept: stable id (c1, c2, …), order (1-based, strictly increasing), title, scope_one_line.
+- REQUIRED when the term appears in the material: source_phrase — a short anchor quote (≤25 words) copied or nearly copied from the document.
+- If no localizable quote exists but the concept is essential: anchor_type "inferred" (omit source_phrase).
 - Optional: module (thematic label), prerequisite_ids (array of other concept ids).
 - Return enough concepts to cover the material (typically at least 5 for substantial texts).
 
 Output JSON only (no markdown, no preamble):
-{"concepts":[{"id":"c1","order":1,"title":"Short concept name","scope_one_line":"What this concept covers","module":"Optional module","prerequisite_ids":[]}]}
+{"concepts":[{"id":"c1","order":1,"title":"Short concept name","scope_one_line":"What this concept covers","source_phrase":"Short quote from document","anchor_type":"cited","module":"Optional module","prerequisite_ids":[]}]}
 
 Respond entirely in ${language}.`;
 }
@@ -953,6 +964,14 @@ export function parseConceptInventoryFromModelResponse(text) {
       row.prerequisite_ids = item.prerequisite_ids
         .map((x) => String(x || "").trim())
         .filter(Boolean);
+    }
+    const source_phrase = String(item.source_phrase || "").trim();
+    if (source_phrase) row.source_phrase = source_phrase.slice(0, 200);
+    const anchor_type = String(item.anchor_type || "").trim().toLowerCase();
+    if (anchor_type === "inferred" || anchor_type === "cited") {
+      row.anchor_type = anchor_type;
+    } else if (source_phrase) {
+      row.anchor_type = "cited";
     }
     out.push(row);
   }
@@ -1336,11 +1355,11 @@ const BLOCK_JSON_SCHEMA = `{
 const EXPLANATION_RSVP_THOROUGH = `You are writing study material optimized for RSVP reading (rapid serial visual presentation). The student reads word by word at high speed and CANNOT re-read. This imposes strict rules:
 
 CONTENT STRUCTURE (mandatory drafting order—never expose these step names in the explanation text):
-1. Hook — 1 sentence: why this concept exists; what problem it solves.
-2. Core definition — 1-3 sentences: plain language; no Latin yet; no jargon; explain to a smart 16-year-old.
-3. Technical layer — 2-4 sentences: formal/Latin terms; each term in its own sentence (e.g. "The Romans called this X, meaning Y.").
-4. Concrete example — 2-4 sentences: one specific vivid real-world case; not "imagine..."; a real instance.
-5. Contrast — 1-3 sentences: what this is NOT; common confusions.
+1. Hook — 1 sentence: why this concept matters per the source (not invented stakes).
+2. Core definition — 1-3 sentences: preserve the author's technical sense in plain RSVP prose.
+3. Technical layer — 2-4 sentences: formal terms as the source presents them.
+4. Example — ONLY if the source chunk contains an example; otherwise omit entirely.
+5. Contrast — ONLY if the source mentions confusion, opposition, or contrast; otherwise omit.
 6. Connection — 1-2 sentences: link to the next concept or the course arc.
 
 When this block is not first, add a bridge from the previous block (the previous block title or its key concept).
@@ -1360,7 +1379,7 @@ WRITING RULES (non-negotiable):
 - If a concept requires knowing another concept first, teach that first (in an earlier block—not here).
 - Strict pedagogical order: definition → concrete example → implication. Never reverse (no example before definition; no implication before the example that supports it).
 - Prefer active voice. Prefer concrete nouns over abstract ones.
-- Do NOT copy source prose: no 80-word sentences, no five concepts per paragraph, no undefined vocabulary.
+- Do NOT contradict or replace source definitions; paraphrase short sentences. No 80-word sentences, no undefined vocabulary.
 - Total length: 200-300 words maximum. Dense but scannable at speed.`;
 
 const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title starts with "Key terms:"). The student reads via RSVP and CANNOT re-read.
@@ -1368,14 +1387,14 @@ const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title st
 Write ONLY definitions—no narrative, no relationships between terms yet.
 
 Format the explanation as one paragraph per term (6-10 terms):
-**TERM** — Plain-language definition. Why the term exists. One-sentence real example.
+**TERM** — Definition tracking the source chunk wording and technical sense for that term.
 
 WRITING RULES: subject-verb-object; max 15 words per sentence; one idea per sentence; no parentheses, semicolons, or em-dashes; define before use.
-Do not use section labels or headings. Later blocks reference these terms as known.`;
+Include a one-sentence example only if the chunk provides one for that term. Do not use section labels or headings.`;
 
 const EXPLANATION_BRIEF_DEEP = `Brief RSVP recap for a student who already studied this material. CANNOT re-read. Max 120 words.
 
-Cover only: hook (1 sentence), core definition (1-2 sentences), technical layer (1-2 sentences), contrast (1 pitfall sentence). Omit concrete example and connection unless a listed learning gap requires them.
+Cover only: hook (1 sentence), core definition (1-2 sentences), technical layer (1-2 sentences). Include contrast only if the source mentions it. Omit example unless a listed learning gap requires it.
 When this block is not first, the first Hook sentence (first sentence of the first paragraph) must explicitly state how it builds on the previous block title or key concept.
 That bridge sentence must come first so a four-sentence preview still shows the connection before the later Connection paragraph.
 Same output rules as thorough: flowing prose, no section labels or headings, one blank line between paragraphs for subsection pauses.
@@ -1424,8 +1443,8 @@ export const CONCEPT_DICTIONARY_EXTRACTION_RULES = (isVocabularyBlock) =>
       ? "every term in this vocabulary block (6-10)."
       : "3-8 non-obvious domain-specific terms introduced in this block."
   }
-For each: the term exactly as used in the material. Put a one-line scope hint (≤15 words) in definition — fuller entries are generated in a separate pass.
-Only include terms that are non-obvious or domain-specific. No common words.`;
+For each: the term exactly as used in the source chunk. Definition MUST paraphrase how the chunk defines or uses the term — not a generic textbook gloss.
+Only include terms grounded in the chunk. No common words.`;
 
 export const CONCEPT_DICTIONARY_ENRICHMENT_RULES = `You are writing session dictionary entries. The student reads these in a sidebar and in the exported session markdown — NOT via RSVP. Entries may be substantive.
 
@@ -1549,6 +1568,8 @@ export function buildBlockGenerationSystemPrompt({
   blockTitle = "",
   blockIndex = 0,
   include_connection_questions = true,
+  strictMode = false,
+  extractedClaims = null,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
@@ -1560,15 +1581,21 @@ export function buildBlockGenerationSystemPrompt({
     : [];
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, profile);
   const paragraphRule = explanationParagraphHardRule(paragraphOpts);
-  const explanationSection = isVocabularyBlock
-    ? `${EXPLANATION_VOCABULARY_BLOCK}\n${paragraphRule}`
-    : profile === "brief_deep"
-      ? `${EXPLANATION_BRIEF_DEEP}\n${paragraphRule}`
-      : `${EXPLANATION_RSVP_THOROUGH}\n${paragraphRule}`;
   const blockNo = Number(blockIndex) + 1;
   const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
   const connectionEnabled = include_connection_questions !== false;
   const requireConnection = connectionEnabled && blockNoSafe > 1;
+  const sourceStructure = buildSourceFirstRsvpStructure({
+    isVocabularyBlock,
+    requireConnection,
+    strictMode,
+    extractedClaims,
+  });
+  const explanationSection = isVocabularyBlock
+    ? `${EXPLANATION_VOCABULARY_BLOCK}\n${sourceStructure}\n${paragraphRule}`
+    : profile === "brief_deep"
+      ? `${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
+      : `${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
   const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
   const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
 
@@ -1594,7 +1621,7 @@ Placement rule:
 - Not required for this block (block 1 only, or when the option is disabled).
 - Do NOT generate any connection question.`;
 
-  return `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
+  const basePrompt = `You will receive study material and a confirmed list of blocks. Generate JSON for ONLY ONE block.
 Return a single JSON object with this schema:
 ${BLOCK_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
@@ -1613,6 +1640,7 @@ ${gapSection}
 ${CONCEPT_DICTIONARY_EXTRACTION_RULES(isVocabularyBlock)}
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+  return mergeFidelityIntoSystemPrompt(basePrompt, { strictMode, extractedClaims });
 }
 
 export function buildBlockGenerationUserContent({
@@ -1702,7 +1730,7 @@ Placement rule:
 - Not required for this block (block 1 only, or when the option is disabled).
 - Do NOT generate any connection question.`;
 
-  return `You will receive a FIXED block explanation and source material. Generate ONLY new questions — do NOT modify, rewrite, or return the explanation or title.
+  const basePrompt = `You will receive a FIXED block explanation and source material. Generate ONLY new questions — do NOT modify, rewrite, or return the explanation or title.
 Return a single JSON object with this schema:
 ${QUESTIONS_ONLY_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
@@ -1718,10 +1746,11 @@ ${QUESTION_PEDAGOGY_RULES}
 Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
 ${gapSection}
-Optionally list new dictionary terms (3-8) in concepts[] if new domain terms appear; omit concepts if none. Use exact term spelling and a one-line scope hint (≤15 words) in definition.
+Optionally list new dictionary terms (3-8) in concepts[] if new domain terms appear; omit concepts if none. Use exact term spelling grounded in the source chunk.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 MUST NOT include "explanation", "title", or "id" fields in the response.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+  return mergeFidelityIntoSystemPrompt(basePrompt, {});
 }
 
 export function buildQuestionsOnlyUserContent({
@@ -1832,6 +1861,35 @@ export async function deepSeekRegenerateBlockQuestions({
   return obj;
 }
 
+export async function deepSeekExtractSourceClaims({
+  llmModel,
+  materialText,
+  blockTitle,
+  language,
+}) {
+  const lang = String(language || "English").trim() || "English";
+  const chunk = String(materialText || "").trim();
+  const title = String(blockTitle || "").trim();
+  const systemPrompt = `Extract structured claims from the source chunk only. Return JSON:
+{"claims":[{"type":"definition|classification|example|contrast|thesis","text":"...","terms":["..."]}]}
+Rules: every claim MUST be traceable to the user chunk; no external facts; empty claims array is valid.
+${SOURCE_FIDELITY_RULES}
+Respond entirely in ${lang}. Return ONLY valid JSON.`;
+  const userContent = `Block title: ${title || "Untitled"}\n\nSource chunk:\n${chunk}`;
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.1,
+  });
+  const parsed = parseModelJsonObject(raw);
+  const claims = Array.isArray(parsed?.claims) ? parsed.claims : [];
+  return claims.filter((c) => c && typeof c === "object" && String(c.text || "").trim());
+}
+
 export async function deepSeekGenerateBlockJson({
   llmModel,
   apiKey: _legacyApiKey,
@@ -1846,7 +1904,21 @@ export async function deepSeekGenerateBlockJson({
   explanation_profile = "thorough",
   gap_focus = [],
   include_connection_questions = true,
+  strictMode = false,
+  extractedClaims = null,
+  anchor_quality = "strong",
+  signature = [],
 }) {
+  let claims = extractedClaims;
+  if (strictMode && !Array.isArray(claims)) {
+    claims = await deepSeekExtractSourceClaims({
+      llmModel,
+      materialText,
+      blockTitle,
+      language,
+    });
+  }
+
   const systemPrompt = buildBlockGenerationSystemPrompt({
     language,
     n_test,
@@ -1856,6 +1928,8 @@ export async function deepSeekGenerateBlockJson({
     blockTitle,
     blockIndex,
     include_connection_questions,
+    strictMode,
+    extractedClaims: claims,
   });
 
   const userContent = buildBlockGenerationUserContent({
@@ -1865,16 +1939,6 @@ export async function deepSeekGenerateBlockJson({
     blockTitle,
     previousComment,
     gap_focus,
-  });
-
-  const raw = await llmChatCompletions({
-    llmModel: resolveLlmModelArg(llmModel),
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userContent },
-    ],
-    temperature: 0.2,
   });
 
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
@@ -1891,25 +1955,53 @@ export async function deepSeekGenerateBlockJson({
     return obj;
   };
 
-  let blockObj = parseAndEnforceBlock(raw);
+  const callBlockLlm = async (userExtra = "") => {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(llmModel),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent + userExtra },
+      ],
+      temperature: 0.2,
+    });
+    return parseAndEnforceBlock(raw);
+  };
+
+  let blockObj = await callBlockLlm();
   if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
     const min = getMinExplanationParagraphs(paragraphOpts);
     const retryHint =
       `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs ` +
       `separated by one blank line each (double newline). A single paragraph is invalid.`;
-    const rawRetry = await llmChatCompletions({
-      llmModel: resolveLlmModelArg(llmModel),
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent + retryHint },
-      ],
-      temperature: 0.2,
-    });
-    blockObj = parseAndEnforceBlock(rawRetry);
+    blockObj = await callBlockLlm(retryHint);
     if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
       console.warn("Block explanation still lacks required paragraph breaks after retry.");
     }
+  }
+
+  const fidelityMeta = {
+    blockTitle,
+    signature,
+    chunk: materialText,
+    explanation: blockObj.explanation,
+    concepts: blockObj.concepts,
+    anchor_quality,
+  };
+  let validation = validateBlockFidelity(fidelityMeta);
+  if (!validation.ok && validation.action === "retry") {
+    const fidelityHint =
+      `\n\nFIDELITY RETRY: These terms lack support in the source chunk: ${validation.unsupported_terms.join(", ")}. ` +
+      "Do NOT define them from general knowledge. Only use the chunk.";
+    blockObj = await callBlockLlm(fidelityHint);
+    validation = validateBlockFidelity({ ...fidelityMeta, explanation: blockObj.explanation, isRetry: true });
+  }
+  if (!validation.ok) {
+    blockObj.fidelity_status = "warn";
+    blockObj.fidelity_issues = validation.unsupported_terms;
+  }
+  if (strictMode && Array.isArray(claims) && claims.length) {
+    blockObj.extracted_claims = claims;
   }
 
   const conceptList = Array.isArray(blockObj.concepts) ? blockObj.concepts : [];
@@ -2143,7 +2235,7 @@ export function buildPrePackingAssessmentSystemPrompt({
   const edgeList = Array.isArray(edges) ? edges : [];
   const excerpt = truncateMaterialExcerpt(materialExcerpt);
 
-  return `You will receive a concept inventory and source material excerpt. Generate a document-wide knowledge check before block packing.
+  const basePrompt = `You will receive a concept inventory and source material excerpt. Generate a document-wide knowledge check before block packing.
 Return a single JSON object with this schema:
 ${PREPACKING_ASSESSMENT_JSON_SCHEMA}
 Respond entirely in ${lang}.
@@ -2175,6 +2267,7 @@ ${JSON.stringify(edgeList)}
 
 Material excerpt:
 ${excerpt || "(none)"}`;
+  return mergeFidelityIntoSystemPrompt(basePrompt, {});
 }
 
 function unwrapPrePackingQuestions(raw) {

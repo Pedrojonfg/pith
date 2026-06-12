@@ -21,3 +21,12 @@ export function isAssessmentQuestionsUiEnabled() {
     !ASSESSMENT_FLAGS.ASSESSMENT_LEGACY_MCQ_UI
   );
 }
+
+/** Source fidelity strict mode (20260613-source-fidelity Phase C). */
+export const SOURCE_FIDELITY_FLAGS = Object.freeze({
+  SOURCE_FIDELITY_STRICT: false,
+});
+
+export function isSourceFidelityStrictEnabled() {
+  return SOURCE_FIDELITY_FLAGS.SOURCE_FIDELITY_STRICT === true;
+}
