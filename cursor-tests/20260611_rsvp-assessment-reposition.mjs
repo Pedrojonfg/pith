@@ -243,7 +243,7 @@ section("T04 pack invariants");
 // ── T05/T08: orchestration smoke ──
 section("T05/T08 flag gate smoke");
 assert(typeof isPrePackingAssessmentEnabled === "function", "flag helper exported");
-assert(PREPACKING_DONT_KNOW_ANSWER === "No lo sé", "dont-know UI constant");
+assert(PREPACKING_DONT_KNOW_ANSWER === "I don't know", "dont-know UI constant");
 
 console.log(`\n${"=".repeat(40)}`);
 console.log(`Passed: ${passed}  Failed: ${failed}`);

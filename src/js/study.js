@@ -4982,6 +4982,50 @@ function resolvePrePackingQuestionConfig() {
   return { n_test, n_socratic };
 }
 
+/** Stable key for prefetch invalidation (20260616-fix-pregen-assessment). */
+export function buildPrefetchConfigKey({ qCfg, conceptInventory, cleanedText }) {
+  const ids = (Array.isArray(conceptInventory) ? conceptInventory : [])
+    .map((c) => String(c?.id || c?.concept_id || "").trim())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  const len = String(cleanedText ?? "").length;
+  const nTest = Math.floor(Number(qCfg?.n_test) || 0);
+  const nSocratic = Math.floor(Number(qCfg?.n_socratic) || 0);
+  return `${nTest}:${nSocratic}|${ids}|${len}`;
+}
+
+function createPrePackingItemsPromise(flow) {
+  const qCfg = resolvePrePackingQuestionConfig();
+  return generatePrePackingAssessmentItems({
+    conceptInventory: flow.conceptInventory,
+    edges: flow.edges || [],
+    materialText: flow.cleanedText,
+    n_test: qCfg.n_test,
+    n_socratic: qCfg.n_socratic,
+    llmModel: flow.splitOpts?.llmModel,
+    language: flow.splitOpts?.language || getStudyLanguage(),
+  });
+}
+
+function getCurrentPrefetchConfigKey(flow) {
+  const qCfg = resolvePrePackingQuestionConfig();
+  return buildPrefetchConfigKey({
+    qCfg,
+    conceptInventory: flow.conceptInventory,
+    cleanedText: flow.cleanedText,
+  });
+}
+
+function ensurePrePackingItemsPromise(flow) {
+  const currentKey = getCurrentPrefetchConfigKey(flow);
+  if (!flow.itemsPromise || flow.prefetchConfigKey !== currentKey) {
+    flow.prefetchConfigKey = currentKey;
+    flow.itemsPromise = createPrePackingItemsPromise(flow);
+  }
+  return flow.itemsPromise;
+}
+
 function isPrePackingAssessmentRunner() {
   return prePackingFlow?.runnerMode === "assessment";
 }
@@ -5181,6 +5225,42 @@ function handleAssessmentSocraticSubmit(answerText) {
   }
 }
 
+function showPrePackingAssessmentGenerationFailure(err) {
+  if (!prePackingFlow) return;
+  prePackingFlow.assessmentGenerationError = err?.message
+    ? String(err.message)
+    : "Could not load knowledge check questions.";
+  prePackingFlow.itemsPromise = null;
+
+  if (els.testHeader) els.testHeader.textContent = "Document knowledge check";
+  showScreen("test");
+  renderAssessmentChrome();
+  if (els.testQaView) els.testQaView.hidden = true;
+  if (els.testRsvpView) els.testRsvpView.hidden = true;
+  els.testNextBtn.hidden = true;
+  els.testOptions.innerHTML = "";
+  clearMarkdownContainer(els.testQuestionText);
+  els.testFeedback.hidden = true;
+  clearMarkdownContainer(els.testFeedback);
+
+  setTestError("Could not load knowledge check questions.");
+  if (els.assessmentRunnerRetry) els.assessmentRunnerRetry.hidden = false;
+}
+
+function clearPrePackingAssessmentGenerationFailure() {
+  if (prePackingFlow) prePackingFlow.assessmentGenerationError = null;
+  if (els.assessmentRunnerRetry) els.assessmentRunnerRetry.hidden = true;
+}
+
+async function retryPrePackingAssessmentGeneration() {
+  if (!prePackingFlow) return;
+  clearPrePackingAssessmentGenerationFailure();
+  clearTestError();
+  prePackingFlow.itemsPromise = null;
+  prePackingFlow.prefetchConfigKey = null;
+  await enterPrePackingAssessmentRunner();
+}
+
 async function enterPrePackingAssessmentRunner() {
   if (!prePackingFlow) return;
   const qCfg = resolvePrePackingQuestionConfig();
@@ -5188,6 +5268,7 @@ async function enterPrePackingAssessmentRunner() {
   prePackingFlow.assessmentQuestionIndex = 0;
   prePackingFlow.assessmentResponses = [];
 
+  clearPrePackingAssessmentGenerationFailure();
   clearTestError();
   els.testFeedback.hidden = true;
   clearMarkdownContainer(els.testFeedback);
@@ -5196,20 +5277,11 @@ async function enterPrePackingAssessmentRunner() {
   clearMarkdownContainer(els.testQuestionText);
 
   try {
-    if (!prePackingFlow.itemsPromise) {
-      prePackingFlow.itemsPromise = generatePrePackingAssessmentItems({
-        conceptInventory: prePackingFlow.conceptInventory,
-        edges: prePackingFlow.edges || [],
-        materialText: prePackingFlow.cleanedText,
-        n_test: qCfg.n_test,
-        n_socratic: qCfg.n_socratic,
-        llmModel: prePackingFlow.splitOpts?.llmModel,
-        language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
-      });
-    }
+    ensurePrePackingItemsPromise(prePackingFlow);
     const items = await prePackingFlow.itemsPromise;
     const questions = Array.isArray(items) ? items : [];
     if (!questions.length) {
+      prePackingFlow.itemsPromise = null;
       throw new Error("Could not generate assessment items.");
     }
 
@@ -5228,11 +5300,7 @@ async function enterPrePackingAssessmentRunner() {
     showTestQuestions();
     renderTestQuestion();
   } catch (err) {
-    clearAssessmentChrome();
-    setTestError(
-      err?.message ? String(err.message) : "Assessment unavailable — packing without profile.",
-    );
-    await handlePrePackingSkip();
+    showPrePackingAssessmentGenerationFailure(err);
   }
 }
 
@@ -5294,17 +5362,11 @@ async function enterPrePackingAssessmentScreen() {
   showScreen("prePackingAssessment");
 
   try {
-    if (!prePackingFlow.itemsPromise) {
-      prePackingFlow.itemsPromise = generatePrePackingAssessmentItems({
-        conceptInventory: prePackingFlow.conceptInventory,
-        maxItems: ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX,
-        llmModel: prePackingFlow.splitOpts?.llmModel,
-        language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
-      });
-    }
+    ensurePrePackingItemsPromise(prePackingFlow);
     const items = await prePackingFlow.itemsPromise;
     prePackingFlow.assessmentItems = Array.isArray(items) ? items : [];
     if (!prePackingFlow.assessmentItems.length) {
+      prePackingFlow.itemsPromise = null;
       throw new Error("Could not generate assessment items.");
     }
     if (els.prePackingAssessmentStatus) els.prePackingAssessmentStatus.textContent = "";
@@ -5312,14 +5374,15 @@ async function enterPrePackingAssessmentScreen() {
   } catch (err) {
     if (els.prePackingAssessmentError) {
       els.prePackingAssessmentError.hidden = false;
-      els.prePackingAssessmentError.textContent = err?.message
-        ? String(err.message)
-        : "Assessment unavailable — packing without profile.";
+      els.prePackingAssessmentError.textContent = "Could not load knowledge check questions.";
     }
     if (els.prePackingAssessmentStatus) {
-      els.prePackingAssessmentStatus.textContent = "Falling back to uniform packing…";
+      els.prePackingAssessmentStatus.textContent = "";
     }
-    await handlePrePackingSkip();
+    prePackingFlow.itemsPromise = null;
+    prePackingFlow.assessmentGenerationError = err?.message
+      ? String(err.message)
+      : "Could not load knowledge check questions.";
   }
 }
 
@@ -6872,6 +6935,12 @@ export function wireStudyHandlers() {
 
       promoteConceptInventoryToShared(conceptInventory, "rsvp");
 
+      const qCfg = resolvePrePackingQuestionConfig();
+      const prefetchConfigKey = buildPrefetchConfigKey({
+        qCfg,
+        conceptInventory,
+        cleanedText,
+      });
       prePackingFlow = {
         phase: "assessment",
         conceptInventory,
@@ -6880,12 +6949,16 @@ export function wireStudyHandlers() {
         splitOpts,
         fingerprint,
         assessmentItems: [],
+        prefetchConfigKey,
         itemsPromise: generatePrePackingAssessmentItems({
           conceptInventory,
-          maxItems: ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX,
+          edges: [],
+          materialText: cleanedText,
+          n_test: qCfg.n_test,
+          n_socratic: qCfg.n_socratic,
           llmModel: splitOpts.llmModel,
           language: splitOpts.language,
-        }).catch(() => []),
+        }),
         responses: [],
         knowledgeProfile: null,
         packingPromise: null,
@@ -7140,6 +7213,9 @@ export function wireStudyHandlers() {
     }
   });
 
+  els.assessmentRunnerRetry?.addEventListener("click", () => {
+    void retryPrePackingAssessmentGeneration();
+  });
   els.assessmentRunnerSkip?.addEventListener("click", () => {
     void handlePrePackingSkip();
   });

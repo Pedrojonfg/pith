@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260613-source-fidelity/plan.md`
-- **Spec**: `specs/20260613-source-fidelity/spec.md`
-- **Data model**: `specs/20260613-source-fidelity/data-model.md`
-- **Contracts**: `specs/20260613-source-fidelity/contracts/`
+- **Active plan**: `specs/20260616-fix-pregen-assessment/plan.md`
+- **Spec**: `specs/20260616-fix-pregen-assessment/spec.md`
+- **Data model**: `specs/20260616-fix-pregen-assessment/data-model.md`
+- **Contracts**: `specs/20260616-fix-pregen-assessment/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

@@ -183,6 +183,7 @@ export const els = {
   screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
   screenSocratic: document.getElementById("screenSocratic"),
   screenTest: document.getElementById("screenTest"),
+  assessmentRunnerRetry: document.getElementById("assessmentRunnerRetry"),
   assessmentRunnerSkip: document.getElementById("assessmentRunnerSkip"),
   assessmentRunnerSkipSocratic: document.getElementById("assessmentRunnerSkipSocratic"),
   testAssessmentChrome: document.getElementById("testAssessmentChrome"),
