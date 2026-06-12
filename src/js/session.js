@@ -20,6 +20,7 @@ import {
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260611_2";
+import { assignAlignedChunks } from "./chunk-alignment.js";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
@@ -43,6 +44,7 @@ export const state = {
   nTest: 2,
   nSocratic: 1,
   includeConnectionQuestions: true,
+  sourceFidelityStrict: false,
   nextBlockQuestionOverride: null, // { blockIndex, n_test, n_socratic, _touched }
   lastNBlocks: 0,
   lastUploadedFileNames: [],
@@ -2217,11 +2219,22 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English")
   };
 }
 
+function resolveDocHierarchyForAlignment() {
+  try {
+    const doc = getActiveDocumentSession?.();
+    const h = doc?.shared?.docHierarchy;
+    if (h && typeof h === "object" && Array.isArray(h.tree) && h.tree.length) return h;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 export async function packInventoryToBlocks(
   inventory,
   nBlocks,
   material,
-  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null } = {},
+  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null, docHierarchy = null } = {},
 ) {
   const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
@@ -2276,11 +2289,9 @@ export async function packInventoryToBlocks(
       });
       let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
       if (!fallbackBlocks?.length) throw packErr;
-      const chunks = splitMaterialIntoBlockChunks(materialText, fallbackBlocks.length);
-      const blockIndex = fallbackBlocks.map((b, i) => ({
-        ...b,
-        chunk: chunks[i] || "",
-      }));
+      const blockIndex = assignAlignedChunks(materialText, fallbackBlocks, inventory, {
+        docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
+      });
       return {
         blockIndex,
         conceptInventory: inventory,
@@ -2302,9 +2313,7 @@ export async function packInventoryToBlocks(
   if (!normalized?.length) throw new Error("Pack returned no normalizable blocks.");
 
   normalized = applyPackMetaCount(normalized, pack_meta);
-  const finalCount = normalized.length;
-  const chunks = splitMaterialIntoBlockChunks(materialText, finalCount);
-  let blockIndex = normalized.map((b, i) => {
+  const enriched = normalized.map((b, i) => {
     const src = blocks[i] && typeof blocks[i] === "object" ? blocks[i] : {};
     const concept_ids = Array.isArray(src.concept_ids)
       ? src.concept_ids.map((c) => String(c || "").trim()).filter(Boolean)
@@ -2315,11 +2324,13 @@ export async function packInventoryToBlocks(
     const mastery_adjusted = src.mastery_adjusted === true || b.mastery_adjusted === true;
     return {
       ...b,
-      chunk: chunks[i] || "",
       ...(concept_ids.length ? { concept_ids } : {}),
       ...(learning_goal ? { learning_goal } : {}),
       ...(mastery_adjusted ? { mastery_adjusted: true } : {}),
     };
+  });
+  let blockIndex = assignAlignedChunks(materialText, enriched, inventory, {
+    docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
   });
 
   progress("Checking for duplicates…");
@@ -2383,11 +2394,9 @@ export async function twoPhaseConceptSplit(
     });
     let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
     if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
-    const chunks = splitMaterialIntoBlockChunks(materialText, normalized.length);
-    const blockIndex = normalized.map((b, i) => ({
-      ...b,
-      chunk: chunks[i] || "",
-    }));
+    const blockIndex = assignAlignedChunks(materialText, normalized, [], {
+      docHierarchy: resolveDocHierarchyForAlignment(),
+    });
     return {
       blockIndex,
       splitRunMeta: {

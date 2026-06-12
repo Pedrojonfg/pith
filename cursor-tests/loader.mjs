@@ -9,6 +9,7 @@ export const FEATURE_TEST_SUITES = Object.freeze({
   "20260612-mode-continuity": "cursor-tests/20260612_mode-continuity.mjs",
   "20260612-rsvp-assessment-questions-parity":
     "cursor-tests/20260612_rsvp-assessment-questions-parity.mjs",
+  "20260613-source-fidelity": "cursor-tests/20260613_source-fidelity.mjs",
 });
 
 /** Strip ?v= cache busters; stub browser-only modules for Node tests. */

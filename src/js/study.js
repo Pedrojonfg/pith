@@ -14,6 +14,7 @@ import {
   ASSESSMENT_FLAGS,
   isAssessmentQuestionsUiEnabled,
   isPrePackingAssessmentEnabled,
+  isSourceFidelityStrictEnabled,
 } from "./config/flags.js";
 import {
   assertLlmKeyPresent,
@@ -95,6 +96,7 @@ import {
   buildSessionFromResumePayload,
   formatBlockIndexForConfirmation,
   getBlockChunkFromIndex,
+  getBlockIndexEntry,
   getBlock,
   getBlockTitleFromList,
   getBlockTitleSafe,
@@ -3628,6 +3630,7 @@ async function ensureBlockGenerated(blockIndex) {
     if (!materialChunk) {
       throw new Error("Missing block chunk for this session. Please regenerate blocks.");
     }
+    const indexEntry = getBlockIndexEntry(blockIndex);
 
     const blockRequest = {
       llmModel,
@@ -3641,6 +3644,9 @@ async function ensureBlockGenerated(blockIndex) {
       explanation_profile: cfg.explanation_profile,
       gap_focus: cfg.gap_focus,
       include_connection_questions: cfg.include_connection_questions,
+      strictMode: resolveSourceFidelityStrictForSession(),
+      anchor_quality: String(indexEntry?.anchor_quality || "strong"),
+      signature: indexEntry?.signature,
     };
 
     let obj = null;
@@ -3771,15 +3777,57 @@ function setQuestionProgressUi() {
   }
 }
 
+export function syncBlockFidelityBanner(block, blockIndexEntry) {
+  const banner = els.blockFidelityBanner;
+  if (!banner) return;
+  const b = block && typeof block === "object" ? block : {};
+  const idx = blockIndexEntry && typeof blockIndexEntry === "object" ? blockIndexEntry : {};
+  const anchor = String(idx.anchor_quality || b.anchor_quality || "").trim();
+  const fidelity = String(b.fidelity_status || "").trim();
+
+  let message = "";
+  if (anchor === "weak") {
+    message = "Anclaje débil al documento — contrasta con tu PDF.";
+  } else if (anchor === "proportional_fallback") {
+    message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
+  } else if (fidelity === "warn") {
+    message = "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
+  }
+
+  if (!message) {
+    banner.textContent = "";
+    banner.classList.add("hidden");
+    banner.hidden = true;
+    return;
+  }
+  banner.textContent = message;
+  banner.classList.remove("hidden");
+  banner.hidden = false;
+}
+
+function resolveSourceFidelityStrictForSession(session = state.activeSession) {
+  const mode = String(session?._meta?.source_fidelity_mode || "").trim().toLowerCase();
+  if (mode === "strict") return true;
+  if (mode === "standard") return false;
+  return (
+    state.sourceFidelityStrict === true ||
+    isSourceFidelityStrictEnabled()
+  );
+}
+
 function setTestMeta() {
   if (isPrePackingAssessmentRunner()) {
     els.testHeader.textContent = "Document knowledge check";
+    syncBlockFidelityBanner(null, null);
     return;
   }
   const total = Math.max(1, getTotalBlocksSafe());
   const title = getBlockTitleSafe(state.activeBlockIndex);
   els.testHeader.textContent = title;
   els.testMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}`;
+  const block = getBlock(state.activeBlockIndex);
+  const indexEntry = getBlockIndexEntry(state.activeBlockIndex);
+  syncBlockFidelityBanner(block, indexEntry);
 }
 
 function showTestQuestions() {
@@ -5472,6 +5520,11 @@ export function wireStudyHandlers() {
       els.connectionQuestionsToggleSubtitle.hidden = next;
     }
   }
+  if (els.sourceFidelityStrictToggleBtn) {
+    const strictOn = state.sourceFidelityStrict === true;
+    els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(strictOn));
+    if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !strictOn;
+  }
 
   function goAfterBlocksConfirmed(nBlocks) {
     if (isPrePackingAssessmentEnabled()) {
@@ -6757,6 +6810,10 @@ export function wireStudyHandlers() {
         };
         if (Array.isArray(b.signature) && b.signature.length) row.signature = b.signature;
         if (Array.isArray(b.concept_ids) && b.concept_ids.length) row.concept_ids = b.concept_ids;
+        if (b.anchor_quality) row.anchor_quality = b.anchor_quality;
+        if (Array.isArray(b.chunk_match_terms) && b.chunk_match_terms.length) {
+          row.chunk_match_terms = b.chunk_match_terms;
+        }
         merged.push(row);
       }
       merged.sort((a, b) => a.id - b.id);
@@ -6806,6 +6863,10 @@ export function wireStudyHandlers() {
         sessionObj._meta.source_files = state.lastUploadedFileNames.map((name) => ({
           name: String(name || ""),
         }));
+      }
+      sessionObj._meta.source_fidelity_mode = state.sourceFidelityStrict ? "strict" : "standard";
+      if (state.lastCleanedMaterialText) {
+        sessionObj._meta.cleaned_material = state.lastCleanedMaterialText;
       }
       const mgInventory = state.materialGraphContext?.conceptInventory || [];
       sessionObj._meta.material_graph = {
@@ -7038,6 +7099,15 @@ export function wireStudyHandlers() {
       if (els.connectionQuestionsToggleSubtitle) {
         els.connectionQuestionsToggleSubtitle.hidden = next;
       }
+    });
+  }
+  if (els.sourceFidelityStrictToggleBtn) {
+    els.sourceFidelityStrictToggleBtn.addEventListener("click", () => {
+      const pressed = els.sourceFidelityStrictToggleBtn.getAttribute("aria-pressed") === "true";
+      const next = !pressed;
+      state.sourceFidelityStrict = next;
+      els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(next));
+      if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !next;
     });
   }
   if (els.assessmentTakeBtn) {

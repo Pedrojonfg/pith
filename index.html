@@ -518,6 +518,14 @@
                   <div class="hint" id="connectionQuestionsToggleSubtitle" hidden>
                     Off: connection questions will not be generated for blocks.
                   </div>
+                  <div class="toggle" role="group" aria-label="Source fidelity strict mode">
+                    <button type="button" id="sourceFidelityStrictToggleBtn" aria-pressed="false">
+                      Modo estricto (solo traducir la fuente)
+                    </button>
+                  </div>
+                  <div class="hint" id="sourceFidelityStrictHint" hidden>
+                    On: extract claims from each chunk before RSVP rewrite (extra LLM call per block).
+                  </div>
                   <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
                 </div>
               </details>
@@ -958,6 +966,7 @@
             </div>
             <h1 id="testHeader">Test</h1>
             <p class="subtle" id="testMeta"></p>
+            <div id="blockFidelityBanner" class="block-fidelity-banner hidden" role="status"></div>
 
             <div class="divider"></div>
 

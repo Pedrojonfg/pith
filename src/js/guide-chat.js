@@ -6,6 +6,8 @@ import {
 } from "./llm.js?v=20260525_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
+import { SOURCE_FIDELITY_RULES } from "./source-fidelity.js";
+import { getBlockChunkFromIndex } from "./session.js";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -94,6 +96,61 @@ export function clearGuideChatStorage({ sessionId, removeAllStored = false } = {
   paintChatHistory([]);
 }
 
+function resolveFullMaterialText(activeSession) {
+  const meta = activeSession?._meta;
+  if (meta?.raw_markdown) return String(meta.raw_markdown).trim();
+  if (meta?.cleaned_material) return String(meta.cleaned_material).trim();
+  if (typeof window !== "undefined" && window.state?.lastCleanedMaterialText) {
+    return String(window.state.lastCleanedMaterialText).trim();
+  }
+  return "";
+}
+
+const DEFINITIONAL_QUERY_RE = /\b(qué es|que es|define|significa|what is|what does)\b/i;
+
+function isDefinitionalQuery(query, inventoryTitles = []) {
+  const q = String(query || "").trim();
+  if (!q) return false;
+  if (DEFINITIONAL_QUERY_RE.test(q)) return true;
+  const lower = q.toLowerCase();
+  return inventoryTitles.some((t) => t && lower.includes(String(t).toLowerCase()));
+}
+
+/**
+ * @param {string} query
+ * @param {string} fullMaterial
+ * @param {{ studiedBlockCount?: number, blocksListText?: string }} [opts]
+ */
+export function resolveGuideDocumentExcerpt(query, fullMaterial, opts = {}) {
+  const material = String(fullMaterial || "").trim();
+  const q = String(query || "").trim();
+  if (!material || !q) return "";
+  const terms = q
+    .toLowerCase()
+    .split(/[^a-z0-9áéíóúüñ]+/i)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 4);
+  if (!terms.length) return material.slice(0, 4000);
+
+  const windowSize = 4000;
+  let bestScore = -1;
+  let bestStart = 0;
+  for (let i = 0; i < material.length; i += Math.max(200, Math.floor(windowSize / 4))) {
+    const slice = material.slice(i, i + windowSize);
+    const norm = slice.toLowerCase();
+    let score = 0;
+    for (const t of terms) {
+      if (norm.includes(t)) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestStart = i;
+    }
+  }
+  const excerpt = material.slice(bestStart, bestStart + windowSize).trim();
+  return excerpt;
+}
+
 function buildSessionContext({ activeSession, currentBlockIndex }) {
   const title = String(activeSession?._meta?.source_files?.[0]?.name || "").trim();
   const blocks = Array.isArray(activeSession?.blocks) ? activeSession.blocks : [];
@@ -114,6 +171,12 @@ function buildSessionContext({ activeSession, currentBlockIndex }) {
     lines.push("");
     lines.push(`Block ${i + 1}: ${bTitle}`);
     if (explanation) lines.push(`Explanation: ${explanation}`);
+
+    const chunk = truncate(getBlockChunkFromIndex(i), 8000);
+    if (chunk) {
+      lines.push(`Block ${i + 1} source chunk:`);
+      lines.push(chunk);
+    }
 
     const concepts = Array.isArray(b.concepts) ? b.concepts : [];
     const conceptLines = concepts
@@ -220,11 +283,45 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
 
   const safeUser = String(userMessage || "").trim();
   const currentBlockNote = `Student is currently on block ${idx + 1}`;
+
+  const activeSession = getActiveSessionFromStorage();
+  const fullMaterial = resolveFullMaterialText(activeSession);
+  const inventory =
+    activeSession?._meta?.material_graph?.conceptInventory ||
+    activeSession?._meta?.concept_inventory ||
+    [];
+  const inventoryTitles = (Array.isArray(inventory) ? inventory : [])
+    .map((c) => String(c?.title || "").trim())
+    .filter(Boolean);
+  const studiedCount = idx + 1;
+
+  let documentExcerptSection = "";
+  if (fullMaterial && isDefinitionalQuery(safeUser, inventoryTitles)) {
+    const excerpt = resolveGuideDocumentExcerpt(safeUser, fullMaterial, {
+      studiedBlockCount: studiedCount,
+      blocksListText: activeSession?.blocks_list_text || "",
+    });
+    if (excerpt) {
+      documentExcerptSection = `\n\nDOCUMENT EXCERPT (full uploaded material — definitional lookup):\n${excerpt}`;
+    }
+  } else if (
+    fullMaterial &&
+    !isDefinitionalQuery(safeUser, inventoryTitles) &&
+    /\b(relaciona|relación|compare|how does|why does)\b/i.test(safeUser)
+  ) {
+    documentExcerptSection =
+      "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"Aún no has estudiado el bloque que desarrolla esto.\" Mention block number only if listed in session context — do not reveal unread block explanations.";
+  }
+
   const systemPrompt =
-    `You are a study guide tutor. Below is the COMPLETE context of the current study session. Answer questions about ANY topic in this session.\n\n` +
+    `You are a study guide tutor grounded in the uploaded study material.\n\n` +
+    `${SOURCE_FIDELITY_RULES}\n\n` +
+    `Answer ONLY from session context (source chunks + explanations + concepts). ` +
+    `If unsupported, decline in one sentence without external knowledge. ` +
+    `Author definitions prevail over generic domain knowledge.\n\n` +
     `${GUIDE_SIDEBAR_STYLE}\n\n` +
     `Respond in the same language as the student's latest message.\n\n` +
-    `COMPLETE SESSION CONTEXT:\n${sessionContext}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
+    `COMPLETE SESSION CONTEXT:\n${sessionContext}${documentExcerptSection}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
 
   return systemPrompt;
 }

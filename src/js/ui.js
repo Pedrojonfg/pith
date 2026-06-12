@@ -299,6 +299,8 @@ export const els = {
   connectionQuestionsToggleSubtitle: document.getElementById(
     "connectionQuestionsToggleSubtitle",
   ),
+  sourceFidelityStrictToggleBtn: document.getElementById("sourceFidelityStrictToggleBtn"),
+  sourceFidelityStrictHint: document.getElementById("sourceFidelityStrictHint"),
   questionsPreviewLabel: document.getElementById("questionsPreviewLabel"),
   generateBlocksBtn: document.getElementById("generateBlocksBtn"),
   generateBlocksStatus: document.getElementById("generateBlocksStatus"),
@@ -469,6 +471,7 @@ export const els = {
 
   testHeader: document.getElementById("testHeader"),
   testMeta: document.getElementById("testMeta"),
+  blockFidelityBanner: document.getElementById("blockFidelityBanner"),
   testRsvpView: document.getElementById("testRsvpView"),
   testRsvpWord: document.getElementById("testRsvpWord"),
   testRsvpSkipBtn: document.getElementById("testRsvpSkipBtn"),
