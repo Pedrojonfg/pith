@@ -460,33 +460,35 @@
               <details id="rsvpAdvancedDetails" class="form-collapsible" hidden>
                 <summary>Blocks, comments &amp; questions</summary>
                 <div id="rsvpBlocksSection" class="form-collapsible-body">
-                  <label for="blocksInput">Blocks</label>
-                  <div class="recommend-blocks-controls">
-                    <button type="button" id="recommendBlocksBtn" class="recommend-blocks-btn">
-                      Recommend block count
-                    </button>
-                    <span
-                      id="recommendBlocksStatus"
-                      class="recommend-blocks-status hint"
-                      role="status"
-                    ></span>
+                  <div id="rsvpBlocksCountGroup" class="rsvp-blocks-count-group">
+                    <label for="blocksInput">Blocks</label>
+                    <div class="recommend-blocks-controls">
+                      <button type="button" id="recommendBlocksBtn" class="recommend-blocks-btn">
+                        Recommend block count
+                      </button>
+                      <span
+                        id="recommendBlocksStatus"
+                        class="recommend-blocks-status hint"
+                        role="status"
+                      ></span>
+                    </div>
+                    <input
+                      id="blocksInput"
+                      name="blocks"
+                      type="number"
+                      min="5"
+                      max="60"
+                      step="1"
+                      value="20"
+                      required
+                    />
+                    <p
+                      id="recommendBlocksWhy"
+                      class="recommend-blocks-why hint"
+                      hidden
+                      aria-live="polite"
+                    ></p>
                   </div>
-                  <input
-                    id="blocksInput"
-                    name="blocks"
-                    type="number"
-                    min="5"
-                    max="60"
-                    step="1"
-                    value="20"
-                    required
-                  />
-                  <p
-                    id="recommendBlocksWhy"
-                    class="recommend-blocks-why hint"
-                    hidden
-                    aria-live="polite"
-                  ></p>
 
                   <label for="studyNotesInput">Comments / study focus (optional)</label>
                   <textarea
