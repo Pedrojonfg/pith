@@ -268,5 +268,26 @@ assert(!html.includes("localStorage.clear("), "index.html does not clear full lo
 assert(!sw.includes("localStorage.clear("), "sw.js does not clear full localStorage");
 assert(!html.includes('removeItem("ds_api_key")'), "index.html does not remove DeepSeek key");
 
+const swUpdateSrc = await readFile(join(root, "src/js/sw-update.js"), "utf8");
+const versionMatch = swUpdateSrc.match(/export const SW_VERSION = "([^"]+)"/);
+const appVersion = versionMatch?.[1] ?? "";
+assert(appVersion.length > 0, "sw-update.js exports SW_VERSION");
+assert(
+  html.includes(`sw-update.js?v=${appVersion}`),
+  `index.html sw-update.js ?v= must match SW_VERSION (${appVersion})`,
+);
+assert(
+  html.includes(`main.js?v=${appVersion}`),
+  `index.html main.js ?v= must match SW_VERSION (${appVersion})`,
+);
+assert(
+  swUpdateSrc.includes("visibilitychange"),
+  "sw-update.js checks for updates when tab becomes visible",
+);
+assert(
+  swUpdateSrc.includes("5 * 60 * 1000"),
+  "sw-update.js polls for updates at most every 5 minutes",
+);
+
 console.log(`\nValidate SW update flow: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

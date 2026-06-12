@@ -1561,7 +1561,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260607_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260612_1";
 
       function showBootFailure(message) {
         const banner = document.getElementById("bootErrorBanner");
@@ -1575,7 +1575,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260611_2");
+        await import("./src/js/main.js?v=20260612_1");
       } catch (err) {
         showBootFailure(
           "The app failed to load — a required script is missing or outdated. " +

@@ -1,6 +1,6 @@
 /** PWA service worker update UX — detect new versions and let users refresh safely. */
 
-export const SW_VERSION = "20260611_2";
+export const SW_VERSION = "20260612_1";
 
 export function getServiceWorkerUrl() {
   return `/sw.js?v=${SW_VERSION}`;
@@ -25,7 +25,7 @@ export function showUpdateToast(document, window, registration) {
   toast.style.left = "50%";
   toast.style.bottom = "16px";
   toast.style.transform = "translateX(-50%)";
-  toast.style.zIndex = "2000";
+  toast.style.zIndex = "4000";
   toast.style.display = "flex";
   toast.style.gap = "8px";
   toast.style.alignItems = "center";
@@ -57,7 +57,7 @@ export function showUpdateToast(document, window, registration) {
   return toast;
 }
 
-const UPDATE_POLL_MS = 30 * 60 * 1000;
+const UPDATE_POLL_MS = 5 * 60 * 1000;
 
 export async function initServiceWorkerUpdate({
   navigator: nav = globalThis.navigator,
@@ -109,10 +109,20 @@ export async function initServiceWorkerUpdate({
     win.setTimeout(checkForUpdate, 1500);
     const pollId = win.setInterval(checkForUpdate, pollIntervalMs);
 
+    const onVisible = () => {
+      if (doc.visibilityState === "visible") checkForUpdate();
+    };
+    if (typeof doc.addEventListener === "function") {
+      doc.addEventListener("visibilitychange", onVisible);
+    }
+
     return {
       registered: true,
       registration,
-      stopPolling: () => win.clearInterval(pollId),
+      stopPolling: () => {
+        win.clearInterval(pollId);
+        doc.removeEventListener?.("visibilitychange", onVisible);
+      },
     };
   } catch (error) {
     console.error("SW failed:", error);
