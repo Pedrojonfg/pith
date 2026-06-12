@@ -10,6 +10,8 @@ import {
 } from "./hierarchy-cache.js";
 
 const HEADING_RE = /^(#{1,3})\s+(.+)$/gm;
+const DELIMITER_L1_RE = /^❖\s*(.+)$/gm;
+const DELIMITER_L2_RE = /^[➔➢]\s*(.+)$/gm;
 const MIN_LLM_CHARS = 3000;
 const SUMMARY_MIN_CHARS = 8000;
 
@@ -31,6 +33,16 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     return {
       method: "deterministic",
       tree: buildDeterministicHierarchy(text),
+      pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+      textHash,
+      generatedAt,
+    };
+  }
+
+  if (hasDelimiterHeadings(text)) {
+    return {
+      method: "deterministic",
+      tree: buildDelimiterHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       textHash,
       generatedAt,
@@ -364,6 +376,87 @@ function normalizeParsedNodes(nodes) {
 export function hasMarkdownHeadings(markdownText) {
   HEADING_RE.lastIndex = 0;
   return HEADING_RE.test(String(markdownText ?? ""));
+}
+
+/**
+ * Plain-text section markers (❖ L1, ➔/➢ L2) — pipeline lever L1.
+ * @param {string} text
+ */
+export function hasDelimiterHeadings(text) {
+  const raw = String(text ?? "");
+  DELIMITER_L1_RE.lastIndex = 0;
+  if (DELIMITER_L1_RE.test(raw)) return true;
+  DELIMITER_L2_RE.lastIndex = 0;
+  return DELIMITER_L2_RE.test(raw);
+}
+
+/**
+ * @param {string} plainText
+ * @returns {import("./types.js").HierarchyNode[]}
+ */
+export function buildDelimiterHierarchy(plainText) {
+  const text = String(plainText ?? "");
+  const textLength = text.length;
+  /** @type {{ level: number, title: string, startOffset: number, endOffset?: number }[]} */
+  const headings = [];
+
+  const collect = (re, level) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const title = String(m[1] || "").trim();
+      if (!title) continue;
+      headings.push({ level, title, startOffset: m.index });
+    }
+  };
+
+  collect(DELIMITER_L1_RE, 1);
+  collect(DELIMITER_L2_RE, 2);
+
+  if (!headings.length) {
+    return buildTrivialHierarchy(text);
+  }
+
+  headings.sort((a, b) => a.startOffset - b.startOffset);
+
+  for (let i = 0; i < headings.length; i += 1) {
+    let endOffset = textLength;
+    for (let j = i + 1; j < headings.length; j += 1) {
+      if (headings[j].level <= headings[i].level) {
+        endOffset = headings[j].startOffset;
+        break;
+      }
+    }
+    headings[i].endOffset = endOffset;
+  }
+
+  /** @type {import("./types.js").HierarchyNode[]} */
+  const roots = [];
+  /** @type {{ node: import("./types.js").HierarchyNode, level: number }[]} */
+  const stack = [];
+
+  for (const h of headings) {
+    const node = {
+      title: h.title,
+      level: h.level,
+      startOffset: h.startOffset,
+      endOffset: h.endOffset,
+      children: [],
+    };
+
+    while (stack.length > 0 && stack[stack.length - 1].level >= h.level) {
+      stack.pop();
+    }
+
+    if (stack.length === 0) {
+      roots.push(node);
+    } else {
+      stack[stack.length - 1].node.children.push(node);
+    }
+    stack.push({ node, level: h.level });
+  }
+
+  return normalizeRootSpan(roots, textLength);
 }
 
 /**

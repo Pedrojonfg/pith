@@ -203,6 +203,60 @@ export function buildRsvpMaterialGraph({ conceptInventory = [], blockIndex = [] 
         g.addEdge(blockNodeId(prev), blockNodeId(cur), "sequence");
       }
     }
+
+    const blockById = new Map(sorted.map((b) => [Number(b.id), b]));
+    for (const block of sorted) {
+      const conceptIds = Array.isArray(block.concept_ids) ? block.concept_ids : [];
+      for (const cid of conceptIds) {
+        const conceptId = String(cid || "").trim();
+        if (!conceptId) continue;
+        const item = conceptById.get(conceptId);
+        const prereqs = Array.isArray(item?.prerequisite_ids) ? item.prerequisite_ids : [];
+        for (const prereq of prereqs) {
+          const pid = String(prereq || "").trim();
+          if (!pid) continue;
+          let prereqBlockId = null;
+          for (const b of sorted) {
+            const ids = Array.isArray(b.concept_ids) ? b.concept_ids : [];
+            if (ids.map(String).includes(pid)) {
+              prereqBlockId = Number(b.id);
+              break;
+            }
+          }
+          const curId = Number(block.id);
+          if (
+            prereqBlockId != null &&
+            Number.isFinite(prereqBlockId) &&
+            Number.isFinite(curId) &&
+            prereqBlockId !== curId &&
+            Math.abs(prereqBlockId - curId) > 1
+          ) {
+            g.addEdge(blockNodeId(prereqBlockId), blockNodeId(curId), "prerequisite");
+          }
+        }
+      }
+    }
+  }
+
+  const inventoryIds = new Set(inventory.map((c) => String(c?.id || "").trim()).filter(Boolean));
+  for (const block of blocks) {
+    const signature = Array.isArray(block.signature) ? block.signature : [];
+    for (const term of signature) {
+      const t = String(term || "").trim();
+      if (!t) continue;
+      const matched = [...inventoryIds].some((id) => {
+        const item = conceptById.get(id);
+        const title = String(item?.title || "").toLowerCase();
+        return title && title.includes(t.toLowerCase());
+      });
+      if (!matched) {
+        const tid = termNodeId(t);
+        if (!g.hasNode(tid)) {
+          g.addNode({ id: tid, label: t, layer: "term", term: t, grey: true });
+        }
+        g.addEdge(blockNodeId(Number(block.id)), tid, "mentions");
+      }
+    }
   }
 
   g.sortNodes();

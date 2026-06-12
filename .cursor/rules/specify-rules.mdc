@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260616-fix-pregen-assessment/plan.md`
-- **Spec**: `specs/20260616-fix-pregen-assessment/spec.md`
-- **Data model**: `specs/20260616-fix-pregen-assessment/data-model.md`
-- **Contracts**: `specs/20260616-fix-pregen-assessment/contracts/`
+- **Active plan**: `specs/20260617-pipeline-levers/plan.md`
+- **Spec**: `specs/20260617-pipeline-levers/spec.md`
+- **Data model**: `specs/20260617-pipeline-levers/data-model.md`
+- **Contracts**: `specs/20260617-pipeline-levers/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

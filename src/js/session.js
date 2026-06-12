@@ -22,6 +22,17 @@ import {
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260611_2";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
+import {
+  annotateBlockIndexEntry,
+  buildQuestionScopeContext,
+  computeEstimatedConceptTarget,
+  extractClaimsFromQuestions,
+  appendCoverageClaims,
+  initPipelineLevers,
+  isZeroQuestionBlockTitle,
+  replaceCoverageForBlock,
+  findSemanticDuplicatePairs,
+} from "./pipeline-levers.js";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
@@ -233,6 +244,16 @@ export function adjustQuestionBudgetForGaps(
   return { n_test: nt, n_socratic: ns };
 }
 
+function resolveBlockTitleForConfig(blockIndex) {
+  const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
+  const blocks = Array.isArray(session.blocks) ? session.blocks : [];
+  const b = blocks[blockIndex];
+  const fromBlock = b && typeof b === "object" ? String(b.title || "").trim() : "";
+  if (fromBlock) return fromBlock;
+  const indexEntry = getBlockIndexEntry(blockIndex);
+  return indexEntry ? String(indexEntry.title || "").trim() : getBlockTitleFromList(blockIndex);
+}
+
 export function resolveBlockQuestionConfig(blockIndex) {
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const defaults = {
@@ -242,6 +263,18 @@ export function resolveBlockQuestionConfig(blockIndex) {
     gap_focus: [],
     include_connection_questions: session.include_connection_questions !== false,
   };
+
+  const blockTitle = resolveBlockTitleForConfig(blockIndex);
+  if (isZeroQuestionBlockTitle(blockTitle)) {
+    return {
+      n_test: 0,
+      n_socratic: 0,
+      explanation_profile: defaults.explanation_profile,
+      gap_focus: [],
+      include_connection_questions: false,
+    };
+  }
+
   const blocks = Array.isArray(session.blocks) ? session.blocks : [];
   const b = blocks[blockIndex];
   const cfg = b && typeof b === "object" && b._config && typeof b._config === "object" ? b._config : null;
@@ -255,6 +288,40 @@ export function resolveBlockQuestionConfig(blockIndex) {
       cfg.include_connection_questions != null ? Boolean(cfg.include_connection_questions) : defaults.include_connection_questions,
   };
 }
+
+export { buildQuestionScopeContext };
+
+export function ensureSessionCoverageManifest(session) {
+  if (!session || typeof session !== "object") return [];
+  if (!session._meta || typeof session._meta !== "object") session._meta = {};
+  if (!Array.isArray(session._meta.coverageManifest)) session._meta.coverageManifest = [];
+  return session._meta.coverageManifest;
+}
+
+export function ensureSessionPipelineLevers(session, strictMode = false) {
+  if (!session || typeof session !== "object") return initPipelineLevers(strictMode);
+  if (!session._meta || typeof session._meta !== "object") session._meta = {};
+  session._meta.pipelineLevers = initPipelineLevers(
+    strictMode,
+    session._meta.pipelineLevers,
+  );
+  return session._meta.pipelineLevers;
+}
+
+export function updateCoverageManifestAfterBlock(blockIndex, questions) {
+  const session = state.activeSession;
+  if (!session || typeof session !== "object") return;
+  const blockId = blockIndex + 1;
+  const claims = extractClaimsFromQuestions(blockId, questions);
+  ensureSessionCoverageManifest(session);
+  session._meta.coverageManifest = replaceCoverageForBlock(
+    session._meta.coverageManifest,
+    blockId,
+    claims,
+  );
+}
+
+export { appendCoverageClaims, replaceCoverageForBlock, extractClaimsFromQuestions };
 
 function newSessionId() {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -744,6 +811,11 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
     if (t) previousBlocksTitles.push(t);
   }
 
+  const blockIndexArr = loadBlockIndex() || [];
+  const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+  const coverageManifest = ensureSessionCoverageManifest(state.activeSession);
+  const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
+
   const request = {
     llmModel,
     language: getStudyLanguage(),
@@ -756,6 +828,8 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
     materialText: materialChunk,
     gap_focus: cfg.gap_focus,
     previousBlocksTitles,
+    coverageManifest: coverageManifest.slice(-20),
+    questionScope,
   };
 
   let response = null;
@@ -886,6 +960,11 @@ export async function generateQuestionsOnlyForIndex(
     if (t) previousBlocksTitles.push(t);
   }
 
+  const blockIndexArr = loadBlockIndex() || [];
+  const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+  const coverageManifest = ensureSessionCoverageManifest(state.activeSession);
+  const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
+
   const request = {
     llmModel,
     language: getStudyLanguage(),
@@ -898,6 +977,8 @@ export async function generateQuestionsOnlyForIndex(
     materialText: materialChunk,
     gap_focus: cfg.gap_focus,
     previousBlocksTitles,
+    coverageManifest: coverageManifest.slice(-20),
+    questionScope,
   };
 
   let response = null;
@@ -909,6 +990,7 @@ export async function generateQuestionsOnlyForIndex(
     response = await deepSeekRegenerateBlockQuestions(request);
   }
   warnQuestionsOnlyCountMismatch(response, cfg);
+  updateCoverageManifestAfterBlock(idx, response?.questions);
 
   const merged = {
     ...base,
@@ -1826,10 +1908,36 @@ function shouldSkipDedupPair(blockA, blockB) {
   return false;
 }
 
+function resolveDedupSignatureThreshold() {
+  const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
+  const levers = session._meta?.pipelineLevers;
+  const fromLevers = Number(levers?.dedupSignatureOverlapThreshold);
+  if (Number.isFinite(fromLevers) && fromLevers >= 1) return Math.floor(fromLevers);
+  const strict =
+    String(session._meta?.source_fidelity_mode || "").trim().toLowerCase() === "strict";
+  return strict ? 2 : 3;
+}
+
+function sharedConceptIds(blockA, blockB) {
+  const idsA = new Set(
+    (Array.isArray(blockA?.concept_ids) ? blockA.concept_ids : [])
+      .map((c) => String(c || "").trim())
+      .filter(Boolean),
+  );
+  const idsB = Array.isArray(blockB?.concept_ids) ? blockB.concept_ids : [];
+  let shared = 0;
+  for (const c of idsB) {
+    const id = String(c || "").trim();
+    if (id && idsA.has(id)) shared += 1;
+  }
+  return shared;
+}
+
 /** @returns {import('./session.js').DedupMergeRecord[]} */
 export function findDeterministicDuplicateMerges(blockIndex) {
   const safe = Array.isArray(blockIndex) ? blockIndex.slice() : [];
   safe.sort((a, b) => Number(a.id) - Number(b.id));
+  const threshold = resolveDedupSignatureThreshold();
   const plans = [];
   const scheduledAbsorb = new Set();
   const keepAbsorbing = new Set();
@@ -1856,7 +1964,12 @@ export function findDeterministicDuplicateMerges(blockIndex) {
         const sigI = normalizeSignatureTerms(blockI.signature);
         const sigJ = normalizeSignatureTerms(blockJ.signature);
         overlap_terms = [...sigI].filter((t) => sigJ.has(t));
-        if (overlap_terms.length >= 3) reason = "signature_overlap";
+        const conceptShared = sharedConceptIds(blockI, blockJ);
+        if (overlap_terms.length >= threshold) {
+          reason = "signature_overlap";
+        } else if (conceptShared >= 1 && overlap_terms.length >= 2) {
+          reason = "concept_signature_overlap";
+        }
       }
 
       if (!reason) continue;
@@ -2084,14 +2197,32 @@ export function validatePackInvariants({
   return { ok: errors.length === 0, errors };
 }
 
+export async function runConceptInventoryPhase2(sectionText, existingConcepts, { llmModel, language } = {}) {
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
+  const { deepSeekConceptInventoryPhase2 } = await import("./api.js?v=20260611_2");
+  return deepSeekConceptInventoryPhase2({
+    llmModel: model,
+    sectionText: String(sectionText || "").trim(),
+    existingConcepts: Array.isArray(existingConcepts) ? existingConcepts : [],
+    language: lang,
+  });
+}
+
 export async function runConceptInventory(
   material,
-  { llmModel, studyNotes, language, onProgress } = {},
+  { llmModel, studyNotes, language, onProgress, docHierarchy } = {},
 ) {
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
   const materialText = String(material || "").trim();
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
+  const strict =
+    String(session._meta?.source_fidelity_mode || "").trim().toLowerCase() === "strict";
+  const pipelineLevers = ensureSessionPipelineLevers(session, strict);
+  const wordCount = materialText.split(/\s+/).filter(Boolean).length;
+  const estimatedConceptTarget = computeEstimatedConceptTarget(wordCount, pipelineLevers);
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
@@ -2099,14 +2230,44 @@ export async function runConceptInventory(
   const { deepSeekConceptInventory } = await import("./api.js?v=20260611_2");
 
   progress("Indexing concepts…");
-  const inventory = await deepSeekConceptInventory({
+  let inventory = await deepSeekConceptInventory({
     llmModel: model,
     materialText,
     studyNotes: notes,
     language: lang,
+    estimatedConceptTarget,
+    wordCount,
   });
 
-  return { inventory, concept_count: inventory.length };
+  const needsTwoPass =
+    pipelineLevers.twoPassInventory &&
+    inventory.length < estimatedConceptTarget * 0.8 &&
+    wordCount > 8000;
+  if (needsTwoPass && docHierarchy?.tree?.length) {
+    progress("Second-pass concept scan…");
+    const { flattenHierarchy } = await import("./normalization/hierarchy.js");
+    const sections = flattenHierarchy(docHierarchy.tree, 2);
+    const existingIds = new Set(inventory.map((c) => String(c.id)));
+    for (const section of sections) {
+      const start = Number(section.startOffset) || 0;
+      const end = Number(section.endOffset) || materialText.length;
+      const slice = materialText.slice(start, end).trim();
+      if (slice.length < 200) continue;
+      try {
+        const micro = await runConceptInventoryPhase2(slice, inventory, { llmModel: model, language: lang });
+        for (const c of micro) {
+          if (!c?.id || existingIds.has(String(c.id))) continue;
+          existingIds.add(String(c.id));
+          inventory.push({ ...c, level: 2, secondary: true });
+        }
+      } catch (err) {
+        console.warn("runConceptInventory phase 2 section failed:", err?.message || err);
+      }
+    }
+    inventory.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  }
+
+  return { inventory, concept_count: inventory.length, estimatedConceptTarget, wordCount };
 }
 
 /** Local pack when LLM output truncates — no network, assigns every concept once. */
@@ -2158,20 +2319,24 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English")
   if (canVocab) {
     for (const [modName, concepts] of moduleEntries) {
       if (blocks.length >= targetN) break;
+      if (concepts.length < 4) continue;
       const vocab = concepts[0];
       if (!vocab?.id || assigned.has(vocab.id)) continue;
       assigned.add(vocab.id);
-      blocks.push({
-        id: blocks.length + 1,
-        title: `Key terms: ${modName}`,
-        summary: `Key terms for ${modName}.`,
-        signature: concepts
-          .slice(0, 8)
-          .map((c) => String(c.title || "").trim())
-          .filter(Boolean),
-        concept_ids: [String(vocab.id)],
-        chunk: "",
-      });
+      blocks.push(
+        annotateBlockIndexEntry({
+          id: blocks.length + 1,
+          title: `Key terms: ${modName}`,
+          summary: `Key terms for ${modName}.`,
+          signature: concepts
+            .slice(0, 8)
+            .map((c) => String(c.title || "").trim())
+            .filter(Boolean),
+          concept_ids: [String(vocab.id)],
+          chunk: "",
+          module: modName,
+        }),
+      );
     }
   }
 
@@ -2332,8 +2497,25 @@ export async function packInventoryToBlocks(
     docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
   });
 
+  blockIndex = blockIndex.map((b) => annotateBlockIndexEntry(b));
+
   progress("Checking for duplicates…");
-  const dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
+  let dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
+  const sessionForLevers =
+    state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
+  const levers = ensureSessionPipelineLevers(
+    sessionForLevers,
+    String(sessionForLevers._meta?.source_fidelity_mode || "").toLowerCase() === "strict",
+  );
+  if (levers.semanticDedupEnabled) {
+    const expectedBlocks = Math.max(1, requested_n);
+    if (dedupResult.blockIndex.length > expectedBlocks * 1.2) {
+      const pairs = findSemanticDuplicatePairs(dedupResult.blockIndex, 0.85);
+      if (pairs.length) {
+        console.warn("pipeline-levers: semantic dedup flagged pairs", pairs.length);
+      }
+    }
+  }
   const concept_count = inventory.length;
 
   const splitRunMeta = {

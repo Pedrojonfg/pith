@@ -915,8 +915,16 @@ export async function deepSeekSplitIntoBlocks({
 
 const OVERVIEW_TITLE_RE = /^(overview|course map)/i;
 
-export function buildConceptInventoryPrompt(lang) {
+export function buildConceptInventoryPrompt(lang, { wordCount, estimatedConceptTarget } = {}) {
   const language = String(lang || "English").trim() || "English";
+  const wc = Number(wordCount) || 0;
+  const target = Number(estimatedConceptTarget) || 0;
+  const densityLine =
+    target > 0 && wc > 0
+      ? `Identify ALL pedagogically significant concepts for this material.
+For a document of this length (~${wc} words), expect approximately ${target} concepts.
+Do not stop at major themes only — include distinctions, named arguments, and critical examples.`
+      : `Return enough concepts to cover the material (typically at least 5 for substantial texts).`;
   return `You are extracting an ordered inventory of teachable concepts from study material.
 
 ${SOURCE_FIDELITY_RULES}
@@ -927,11 +935,29 @@ Rules:
 - Each concept: stable id (c1, c2, …), order (1-based, strictly increasing), title, scope_one_line.
 - REQUIRED when the term appears in the material: source_phrase — a short anchor quote (≤25 words) copied or nearly copied from the document.
 - If no localizable quote exists but the concept is essential: anchor_type "inferred" (omit source_phrase).
-- Optional: module (thematic label), prerequisite_ids (array of other concept ids).
-- Return enough concepts to cover the material (typically at least 5 for substantial texts).
+- Optional: module (thematic label), prerequisite_ids (array of other concept ids), concept_type (definition | argument | example | distinction | excursus).
+- ${densityLine}
 
 Output JSON only (no markdown, no preamble):
-{"concepts":[{"id":"c1","order":1,"title":"Short concept name","scope_one_line":"What this concept covers","source_phrase":"Short quote from document","anchor_type":"cited","module":"Optional module","prerequisite_ids":[]}]}
+{"concepts":[{"id":"c1","order":1,"title":"Short concept name","scope_one_line":"What this concept covers","source_phrase":"Short quote from document","anchor_type":"cited","module":"Optional module","prerequisite_ids":[],"concept_type":"argument"}]}
+
+Respond entirely in ${language}.`;
+}
+
+export function buildConceptInventoryPhase2Prompt(lang) {
+  const language = String(lang || "English").trim() || "English";
+  return `You are extracting SECONDARY (level-2) concepts from ONE section of a longer document.
+
+${SOURCE_FIDELITY_RULES}
+
+Rules:
+- Identify sub-concepts, examples, critical distinctions, and named arguments in THIS section only.
+- Do NOT repeat concepts already in the provided phase-1 list (match by title or id).
+- Mark each new concept with level 2 — use new ids continuing the sequence.
+- Each concept: id, order, title, scope_one_line, source_phrase when possible, module, concept_type.
+
+Output JSON only:
+{"concepts":[{"id":"c99","order":99,"title":"...","scope_one_line":"...","source_phrase":"...","module":"...","concept_type":"example","level":2,"secondary":true}]}
 
 Respond entirely in ${language}.`;
 }
@@ -987,14 +1013,20 @@ export async function deepSeekConceptInventory({
   materialText,
   studyNotes,
   language,
+  estimatedConceptTarget,
+  wordCount,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const lang = String(language || "English").trim() || "English";
   const notes = String(studyNotes || "").trim();
   const material = String(materialText || "").trim();
+  const wc = Number(wordCount) || material.split(/\s+/).filter(Boolean).length;
 
   function buildMessages(compact) {
-    const system = buildConceptInventoryPrompt(lang);
+    const system = buildConceptInventoryPrompt(lang, {
+      wordCount: wc,
+      estimatedConceptTarget,
+    });
     const messages = [{ role: "system", content: compact ? `${system}\n\nBe concise. Valid JSON only.` : system }];
     if (notes) {
       messages.push({
@@ -1048,6 +1080,34 @@ export async function deepSeekConceptInventory({
   throw new Error(
     "Model returned concept inventory JSON we could not parse. Please try generating blocks again.",
   );
+}
+
+export async function deepSeekConceptInventoryPhase2({
+  llmModel,
+  sectionText,
+  existingConcepts,
+  language,
+}) {
+  const model = resolveLlmModelArg(llmModel);
+  const lang = String(language || "English").trim() || "English";
+  const section = String(sectionText || "").trim();
+  const existing = Array.isArray(existingConcepts) ? existingConcepts : [];
+  const existingList = existing
+    .map((c) => `- ${String(c.id || "")}: ${String(c.title || "").trim()}`)
+    .join("\n");
+  const system = buildConceptInventoryPhase2Prompt(lang);
+  const userContent = `Phase-1 concepts already identified (do NOT duplicate):\n${existingList || "(none)"}\n\nSection text:\n${section}`;
+  const raw = await llmChatCompletions({
+    llmModel: model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.2,
+  });
+  const concepts = parseConceptInventoryFromModelResponse(raw);
+  return Array.isArray(concepts) ? concepts : [];
 }
 
 export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null } = {}) {
@@ -1720,6 +1780,63 @@ export async function enrichBlockConceptDefinitions({
   return enriched || incoming;
 }
 
+export function buildQuestionScopePromptSection(questionScope, n_test = 0) {
+  if (!questionScope || typeof questionScope !== "object") return "";
+  const block_type = String(questionScope.block_type || "development");
+  const allowed = Array.isArray(questionScope.allowed) ? questionScope.allowed : [];
+  const forbidden = Array.isArray(questionScope.forbidden) ? questionScope.forbidden : [];
+  const already = Array.isArray(questionScope.alreadyQuestionedTerms)
+    ? questionScope.alreadyQuestionedTerms
+    : [];
+  const preceding = Array.isArray(questionScope.precedingKeyTermsSignature)
+    ? questionScope.precedingKeyTermsSignature
+    : [];
+  const minNovel = Math.ceil(Math.max(0, Number(n_test) || 0) * 0.4);
+  let section = `
+QUESTION TYPE RESTRICTION for block type "${block_type}":
+- ALLOWED: ${allowed.join(", ") || "(see defaults)"}
+- FORBIDDEN: ${forbidden.join(", ") || "(none)"}
+
+ALREADY QUESTIONED in previous blocks:
+${already.length ? already.join(", ") : "(none)"}
+
+Rules:
+1. Do NOT ask "what is X?" or "define X" for any term in ALREADY QUESTIONED.
+2. You MAY ask about relationships, contrasts, or implications involving those terms.
+3. At least ${minNovel} test questions must cover material NOT in ALREADY QUESTIONED.`;
+  if (block_type === "development" && preceding.length) {
+    section += `
+Do NOT ask "what is X?" for terms defined in preceding Key terms block:
+${preceding.join(", ")}`;
+  }
+  return section;
+}
+
+export function buildAvoidOverlapPromptSection(avoidOverlapWith = [], newConcepts = []) {
+  const avoid = (Array.isArray(avoidOverlapWith) ? avoidOverlapWith : [])
+    .map((t) => String(t || "").trim())
+    .filter(Boolean);
+  if (!avoid.length) return "";
+  const focus = (Array.isArray(newConcepts) ? newConcepts : [])
+    .map((t) => String(t || "").trim())
+    .filter(Boolean);
+  return `
+AVOID OVERLAP: The following concepts are already covered in prior blocks.
+Do NOT re-explain them. You may REFERENCE them briefly when necessary:
+${avoid.join(", ")}
+${focus.length ? `Focus instead on: ${focus.join(", ")}` : ""}`;
+}
+
+export function buildConnectionQuestionSection(prevBlockSummaryForConnection) {
+  const summary = String(prevBlockSummaryForConnection || "").trim();
+  if (!summary) return "";
+  return `
+REQUIRED CONNECTION QUESTION:
+The first question of this block MUST be a connection question that explicitly references this claim from a prior block:
+"${summary}"
+Ask the student to relate the current block's concept to that prior claim.`;
+}
+
 export function buildBlockGenerationSystemPrompt({
   language,
   n_test,
@@ -1731,6 +1848,9 @@ export function buildBlockGenerationSystemPrompt({
   include_connection_questions = true,
   strictMode = false,
   extractedClaims = null,
+  questionScope = null,
+  avoidOverlapWith = null,
+  prevBlockSummaryForConnection = "",
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
@@ -1798,6 +1918,9 @@ ${QUESTION_PEDAGOGY_RULES}
 When the material includes equations or expressions that must be reproduced exactly (LaTeX in the explanation counts), include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants (missing factor, wrong exponent/sign, swapped terms, dimensional inconsistency patterns). Prefer inline LaTeX in option text using \\( ... \\) when needed so each option renders clearly; all four options must use the same LaTeX style and comparable complexity.
 ${explanationSection}
 ${gapSection}
+${buildQuestionScopePromptSection(questionScope, nTest)}
+${buildAvoidOverlapPromptSection(avoidOverlapWith)}
+${buildConnectionQuestionSection(prevBlockSummaryForConnection)}
 ${CONCEPT_DICTIONARY_EXTRACTION_RULES(isVocabularyBlock)}
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 Return ONLY valid JSON. No preamble, no backticks, no markdown fences.${
@@ -1867,6 +1990,9 @@ export function buildQuestionsOnlySystemPrompt({
   blockTitle = "",
   blockIndex = 0,
   include_connection_questions = true,
+  questionScope = null,
+  avoidOverlapWith = null,
+  prevBlockSummaryForConnection = "",
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
@@ -1919,6 +2045,9 @@ ${QUESTION_PEDAGOGY_RULES}
 Questions MUST test understanding of the PROVIDED explanation text and the source material — not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
 ${gapSection}
+${buildQuestionScopePromptSection(questionScope, nTest)}
+${buildAvoidOverlapPromptSection(avoidOverlapWith)}
+${buildConnectionQuestionSection(prevBlockSummaryForConnection)}
 Optionally list new dictionary terms (3-8) in concepts[] if new domain terms appear; omit concepts if none. Use exact term spelling grounded in the source chunk.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
 MUST NOT include "explanation", "title", or "id" fields in the response.
@@ -1991,16 +2120,26 @@ export async function deepSeekRegenerateBlockQuestions({
   materialText,
   gap_focus = [],
   previousBlocksTitles = [],
+  coverageManifest = [],
+  questionScope = null,
+  avoidOverlapWith = null,
+  prevBlockSummaryForConnection = "",
 }) {
-  const systemPrompt = buildQuestionsOnlySystemPrompt({
-    language,
-    n_test,
-    n_socratic,
-    gap_focus,
-    blockTitle,
-    blockIndex,
-    include_connection_questions,
-  });
+  const manifestSlice = Array.isArray(coverageManifest) ? coverageManifest.slice(-20) : [];
+  const systemPrompt =
+    buildQuestionsOnlySystemPrompt({
+      language,
+      n_test,
+      n_socratic,
+      gap_focus,
+      blockTitle,
+      blockIndex,
+      include_connection_questions,
+      questionScope,
+      avoidOverlapWith,
+      prevBlockSummaryForConnection,
+    }) +
+    (manifestSlice.length ? `\n\n${renderCoverageManifestForPrompt(manifestSlice)}` : "");
   const userContent = buildQuestionsOnlyUserContent({
     blockTitle,
     explanation,
@@ -2063,6 +2202,167 @@ Respond entirely in ${lang}. Return ONLY valid JSON.`;
   return claims.filter((c) => c && typeof c === "object" && String(c.text || "").trim());
 }
 
+export async function deepSeekGenerateBlockExplanation({
+  llmModel,
+  blocksListText,
+  materialText,
+  blockIndex,
+  blockTitle,
+  previousComment,
+  language,
+  explanation_profile = "thorough",
+  gap_focus = [],
+  strictMode = false,
+  extractedClaims = null,
+  anchor_quality = "strong",
+  signature = [],
+  coverageManifest = null,
+  avoidOverlapWith = null,
+  questionScope = null,
+  claimCoverageMin = null,
+}) {
+  const systemPrompt = buildBlockGenerationSystemPrompt({
+    language,
+    n_test: 0,
+    n_socratic: 0,
+    explanation_profile,
+    gap_focus,
+    blockTitle,
+    blockIndex,
+    include_connection_questions: false,
+    strictMode,
+    extractedClaims,
+    questionScope,
+    avoidOverlapWith,
+  });
+
+  const userContent = buildBlockGenerationUserContent({
+    blocksListText,
+    materialText,
+    blockIndex,
+    blockTitle,
+    previousComment,
+    gap_focus,
+    coverageManifest,
+  });
+
+  const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
+
+  const parseAndEnforce = (responseText) => {
+    const obj = parseModelJsonObject(responseText);
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+      throw new Error("Model did not return valid JSON for the block explanation. Please try again.");
+    }
+    if (typeof obj.explanation === "string") {
+      obj.explanation = enforceExplanationParagraphs(obj.explanation, paragraphOpts);
+    }
+    obj.questions = [];
+    return obj;
+  };
+
+  const callLlm = async (userExtra = "") => {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(llmModel),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent + userExtra },
+      ],
+      temperature: 0.2,
+    });
+    return parseAndEnforce(raw);
+  };
+
+  let blockObj = await callLlm();
+  if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
+    const min = getMinExplanationParagraphs(paragraphOpts);
+    blockObj = await callLlm(
+      `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs separated by blank lines.`,
+    );
+  }
+
+  const fidelityMeta = {
+    blockTitle,
+    signature,
+    chunk: materialText,
+    explanation: blockObj.explanation,
+    concepts: blockObj.concepts,
+    anchor_quality,
+    strictMode,
+    extractedClaims,
+    claimCoverageMin,
+  };
+  let validation = validateBlockFidelity(fidelityMeta);
+  if (!validation.ok && validation.action === "retry") {
+    if (validation.uncoveredClaims?.length) {
+      const phrases = validation.uncoveredClaims.map((c) => c.source_phrase).filter(Boolean);
+      blockObj = await callLlm(
+        `\n\nCLAIM COVERAGE RETRY: Include these source claims in your explanation: ${phrases.join(", ")}`,
+      );
+    } else {
+      blockObj = await callLlm(
+        `\n\nFIDELITY RETRY: Unsupported terms: ${validation.unsupported_terms.join(", ")}. Use only the chunk.`,
+      );
+    }
+    validation = validateBlockFidelity({ ...fidelityMeta, explanation: blockObj.explanation, isRetry: true });
+  }
+  if (!validation.ok) {
+    blockObj.fidelity_status = "warn";
+    blockObj.fidelity_issues = validation.unsupported_terms;
+  }
+  blockObj.fidelity_metrics = {
+    jaccard: validation.jaccard,
+    chunk_coverage: validation.chunk_coverage,
+    claimCoverageRatio: validation.claimCoverageRatio,
+    severity: validation.severity,
+  };
+  return blockObj;
+}
+
+export async function deepSeekGenerateBlockQuestions({
+  llmModel,
+  language,
+  n_test,
+  n_socratic,
+  blockTitle,
+  blockIndex,
+  include_connection_questions,
+  explanation,
+  materialText,
+  gap_focus,
+  blocksListText,
+  coverageManifest,
+  questionScope,
+  avoidOverlapWith,
+  prevBlockSummaryForConnection,
+}) {
+  const prevTitles = [];
+  const list = String(blocksListText || "").trim();
+  if (list) {
+    for (const line of list.split("\n")) {
+      const m = line.match(/^\s*\d+\.\s*(.+)$/);
+      if (m) prevTitles.push(m[1].trim());
+    }
+  }
+  return deepSeekRegenerateBlockQuestions({
+    llmModel,
+    language,
+    n_test,
+    n_socratic,
+    blockTitle,
+    blockIndex,
+    include_connection_questions,
+    explanation,
+    materialText,
+    gap_focus,
+    previousBlocksTitles: prevTitles.slice(0, Math.max(0, blockIndex)),
+    coverageManifest,
+    questionScope,
+    avoidOverlapWith,
+    prevBlockSummaryForConnection,
+  });
+}
+
 export async function deepSeekGenerateBlockJson({
   llmModel,
   apiKey: _legacyApiKey,
@@ -2082,6 +2382,10 @@ export async function deepSeekGenerateBlockJson({
   anchor_quality = "strong",
   signature = [],
   coverageManifest = null,
+  questionScope = null,
+  avoidOverlapWith = null,
+  prevBlockSummaryForConnection = "",
+  claimCoverageMin = null,
 }) {
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
@@ -2093,90 +2397,58 @@ export async function deepSeekGenerateBlockJson({
     });
   }
 
-  const systemPrompt = buildBlockGenerationSystemPrompt({
-    language,
-    n_test,
-    n_socratic,
-    explanation_profile,
-    gap_focus,
-    blockTitle,
-    blockIndex,
-    include_connection_questions,
-    strictMode,
-    extractedClaims: claims,
-  });
+  const manifestSlice = Array.isArray(coverageManifest) ? coverageManifest.slice(-20) : null;
 
-  const userContent = buildBlockGenerationUserContent({
+  let blockObj = await deepSeekGenerateBlockExplanation({
+    llmModel,
     blocksListText,
     materialText,
     blockIndex,
     blockTitle,
     previousComment,
+    language,
+    explanation_profile,
     gap_focus,
-    coverageManifest,
+    strictMode,
+    extractedClaims: claims,
+    anchor_quality,
+    signature,
+    coverageManifest: manifestSlice,
+    avoidOverlapWith,
+    questionScope,
+    claimCoverageMin,
   });
 
-  const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
-
-  const parseAndEnforceBlock = (responseText) => {
-    const obj = parseModelJsonObject(responseText);
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-      console.warn("Invalid block JSON response:", responseText);
-      throw new Error("Model did not return valid JSON for the block. Please try again.");
-    }
-    if (typeof obj.explanation === "string") {
-      obj.explanation = enforceExplanationParagraphs(obj.explanation, paragraphOpts);
-    }
-    return obj;
-  };
-
-  const callBlockLlm = async (userExtra = "") => {
-    const raw = await llmChatCompletions({
-      llmModel: resolveLlmModelArg(llmModel),
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent + userExtra },
-      ],
-      temperature: 0.2,
-    });
-    return parseAndEnforceBlock(raw);
-  };
-
-  let blockObj = await callBlockLlm();
-  if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
-    const min = getMinExplanationParagraphs(paragraphOpts);
-    const retryHint =
-      `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs ` +
-      `separated by one blank line each (double newline). A single paragraph is invalid.`;
-    blockObj = await callBlockLlm(retryHint);
-    if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
-      console.warn("Block explanation still lacks required paragraph breaks after retry.");
-    }
-  }
-
-  const fidelityMeta = {
-    blockTitle,
-    signature,
-    chunk: materialText,
-    explanation: blockObj.explanation,
-    concepts: blockObj.concepts,
-    anchor_quality,
-  };
-  let validation = validateBlockFidelity(fidelityMeta);
-  if (!validation.ok && validation.action === "retry") {
-    const fidelityHint =
-      `\n\nFIDELITY RETRY: These terms lack support in the source chunk: ${validation.unsupported_terms.join(", ")}. ` +
-      "Do NOT define them from general knowledge. Only use the chunk.";
-    blockObj = await callBlockLlm(fidelityHint);
-    validation = validateBlockFidelity({ ...fidelityMeta, explanation: blockObj.explanation, isRetry: true });
-  }
-  if (!validation.ok) {
-    blockObj.fidelity_status = "warn";
-    blockObj.fidelity_issues = validation.unsupported_terms;
-  }
   if (strictMode && Array.isArray(claims) && claims.length) {
     blockObj.extracted_claims = claims;
+  }
+
+  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
+  const nSoc = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  if (nTest + nSoc > 0) {
+    const questionsObj = await deepSeekGenerateBlockQuestions({
+      llmModel,
+      language,
+      n_test: nTest,
+      n_socratic: nSoc,
+      blockTitle,
+      blockIndex,
+      include_connection_questions,
+      explanation: blockObj.explanation,
+      materialText,
+      gap_focus,
+      blocksListText,
+      coverageManifest: manifestSlice,
+      questionScope,
+      avoidOverlapWith,
+      prevBlockSummaryForConnection,
+    });
+    blockObj.questions = Array.isArray(questionsObj?.questions) ? questionsObj.questions : [];
+    if (Array.isArray(questionsObj?.concepts) && questionsObj.concepts.length) {
+      blockObj.concepts = questionsObj.concepts;
+    }
+  } else {
+    blockObj.questions = [];
   }
 
   const conceptList = Array.isArray(blockObj.concepts) ? blockObj.concepts : [];

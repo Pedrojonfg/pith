@@ -473,6 +473,10 @@ export const els = {
 
   testHeader: document.getElementById("testHeader"),
   testMeta: document.getElementById("testMeta"),
+  keyTermsGlossaryBtn: document.getElementById("keyTermsGlossaryBtn"),
+  keyTermsGlossaryDialog: document.getElementById("keyTermsGlossaryDialog"),
+  keyTermsGlossaryBody: document.getElementById("keyTermsGlossaryBody"),
+  keyTermsGlossaryClose: document.getElementById("keyTermsGlossaryClose"),
   blockFidelityBanner: document.getElementById("blockFidelityBanner"),
   testRsvpView: document.getElementById("testRsvpView"),
   testRsvpWord: document.getElementById("testRsvpWord"),
