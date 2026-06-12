@@ -484,13 +484,55 @@ function wordRangeOverlapRatio(wStart, wEnd, usedWordRanges) {
 
 
 
-function penalizedScore(hits, wStart, wEnd, targetWords, usedWordRanges, penalizeOverlap) {
+const OVERLAP_PENALTY_TERM_THRESHOLD = 0.4;
+
+const DEFAULT_MIN_CHUNK_WORDS = 400;
+
+
+
+function penalizedScore(hits, wStart, wEnd, targetWords, usedWordRanges, penalizeOverlap, penaltyThreshold = OVERLAP_PENALTY_TERM_THRESHOLD) {
 
   if (!penalizeOverlap || !normalizeUsedWordRanges(usedWordRanges).length) return hits;
+
+  const overlapRatio = wordRangeOverlapRatio(wStart, wEnd, usedWordRanges);
+
+  if (overlapRatio >= penaltyThreshold) return Math.floor(hits * 0.3);
 
   const overlapWords = countWordOverlap(wStart, wEnd, usedWordRanges);
 
   return hits - Math.floor((overlapWords / targetWords) * hits);
+
+}
+
+
+
+function expandToMinChunkWords(wStart, wEnd, words, totalWords, sections, minWords) {
+
+  const min = Math.max(50, Math.floor(Number(minWords) || DEFAULT_MIN_CHUNK_WORDS));
+
+  if (wEnd - wStart >= min) return { wStart, wEnd };
+
+  let newEnd = Math.min(totalWords, wStart + min);
+
+  if (sections.length && Array.isArray(words) && words.length) {
+
+    for (const sec of sections) {
+
+      const idx = charRangeToWordIndices(words, sec.start, sec.end);
+
+      if (newEnd <= idx.wEnd) {
+
+        newEnd = Math.min(totalWords, idx.wEnd);
+
+        break;
+
+      }
+
+    }
+
+  }
+
+  return { wStart, wEnd: Math.max(wStart + 1, newEnd) };
 
 }
 
@@ -767,6 +809,20 @@ function assignSingleAlignedChunk(
     wStart = idx.wStart;
 
     wEnd = idx.wEnd;
+
+  }
+
+
+
+  const minChunkWords = Number(opts?.minChunkWords) || DEFAULT_MIN_CHUNK_WORDS;
+
+  if (sections.length) {
+
+    const expanded = expandToMinChunkWords(wStart, wEnd, words, totalWords, sections, minChunkWords);
+
+    wStart = expanded.wStart;
+
+    wEnd = expanded.wEnd;
 
   }
 

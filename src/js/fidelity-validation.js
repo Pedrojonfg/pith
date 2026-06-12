@@ -96,8 +96,39 @@ export function extractKeyTermsFromBlockMeta({ blockTitle = "", signature = [], 
   return [...terms];
 }
 
+function countChunkKeyTermsInExplanation(chunk, explanation) {
+  const chunkTokens = new Set(significantTokens(chunk));
+  if (!chunkTokens.size) return { ratio: 1, total: 0, covered: 0 };
+  const explNorm = normalize(explanation);
+  let covered = 0;
+  for (const t of chunkTokens) {
+    if (explNorm.includes(t)) covered += 1;
+  }
+  return { ratio: covered / chunkTokens.size, total: chunkTokens.size, covered };
+}
+
+function claimCoveredInExplanation(claim, explanation) {
+  const text = String(claim?.text || claim?.source_phrase || "").trim();
+  if (!text) return false;
+  const explNorm = normalize(explanation);
+  const claimNorm = normalize(text);
+  if (claimNorm.length >= 8 && explNorm.includes(claimNorm.slice(0, Math.min(40, claimNorm.length)))) {
+    return true;
+  }
+  const terms = Array.isArray(claim?.terms) ? claim.terms : [];
+  if (terms.length) {
+    let hit = 0;
+    for (const t of terms) {
+      const n = normalize(String(t || ""));
+      if (n.length >= 4 && explNorm.includes(n)) hit += 1;
+    }
+    if (hit >= Math.ceil(terms.length * 0.5)) return true;
+  }
+  return jaccardOverlap(explanation, text) >= 0.2;
+}
+
 /**
- * @param {{ blockTitle?: string, signature?: string[]|string, chunk?: string, explanation?: string, concepts?: object[], anchor_quality?: string, isRetry?: boolean }} args
+ * @param {{ blockTitle?: string, signature?: string[]|string, chunk?: string, explanation?: string, concepts?: object[], anchor_quality?: string, isRetry?: boolean, strictMode?: boolean, extractedClaims?: object[], claimCoverageMin?: number }} args
  */
 export function validateBlockFidelity({
   blockTitle = "",
@@ -107,6 +138,9 @@ export function validateBlockFidelity({
   concepts = [],
   anchor_quality = "strong",
   isRetry = false,
+  strictMode = false,
+  extractedClaims = null,
+  claimCoverageMin = null,
 } = {}) {
   const keyTerms = extractKeyTermsFromBlockMeta({ blockTitle, signature, concepts });
   const normChunk = normalize(chunk);
@@ -118,22 +152,77 @@ export function validateBlockFidelity({
     unsupported_terms.push(term);
   }
 
-  if (unsupported_terms.length === 0) {
-    return { ok: true, action: "accept", severity: "none", unsupported_terms: [] };
+  const jaccard = jaccardOverlap(explanation, chunk);
+  const chunkCov = countChunkKeyTermsInExplanation(chunk, explanation);
+  const chunk_coverage = chunkCov.ratio;
+
+  const claims = Array.isArray(extractedClaims) ? extractedClaims : [];
+  const uncoveredClaims = claims.filter((c) => !claimCoveredInExplanation(c, explanation));
+  const claimCoverageRatio =
+    claims.length > 0 ? (claims.length - uncoveredClaims.length) / claims.length : 1;
+
+  const minCoverage =
+    claimCoverageMin != null && Number.isFinite(Number(claimCoverageMin))
+      ? Number(claimCoverageMin)
+      : strictMode
+        ? 0.6
+        : 0.5;
+
+  const chunkWarnThreshold = strictMode ? 0.5 : 0.4;
+  let severity = "ok";
+  let action = "accept";
+  let ok = true;
+
+  if (unsupported_terms.length > 0) {
+    if (unsupported_terms.length <= 1 && anchor_quality === "weak" && !isRetry) {
+      // accept weak anchor
+    } else {
+      ok = false;
+      action = isRetry ? "warn" : "retry";
+      severity = isRetry ? "warn" : "retry";
+    }
   }
 
-  if (
-    unsupported_terms.length <= 1 &&
-    anchor_quality === "weak" &&
-    !isRetry
-  ) {
-    return { ok: true, action: "accept", severity: "none", unsupported_terms };
+  if (claims.length > 0 && claimCoverageRatio < minCoverage && !isRetry) {
+    ok = false;
+    action = "retry";
+    severity = "retry";
+  } else if (claims.length > 0 && claimCoverageRatio < minCoverage && isRetry) {
+    severity = "warn";
+    action = "warn";
+  }
+
+  if (chunk_coverage < chunkWarnThreshold && severity === "ok") {
+    severity = "warn";
+  }
+
+  if (unsupported_terms.length === 0 && severity === "ok") {
+    return {
+      ok: true,
+      action: "accept",
+      severity: "none",
+      unsupported_terms: [],
+      jaccard,
+      chunk_coverage,
+      claimCoverageRatio,
+      uncoveredClaims: uncoveredClaims.map((c) => ({
+        source_phrase: String(c?.text || c?.source_phrase || "").trim(),
+        type: String(c?.type || "").trim(),
+      })),
+    };
   }
 
   return {
-    ok: false,
-    action: isRetry ? "warn" : "retry",
-    severity: isRetry ? "warn" : "retry",
+    ok,
+    action,
+    severity,
     unsupported_terms,
+    jaccard,
+    chunk_coverage,
+    claimCoverageRatio,
+    uncoveredClaims: uncoveredClaims.map((c) => ({
+      source_phrase: String(c?.text || c?.source_phrase || "").trim(),
+      type: String(c?.type || "").trim(),
+    })),
   };
 }

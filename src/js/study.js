@@ -1,4 +1,5 @@
 import {
+  deepSeekAuditBlockOverlap,
   deepSeekGenerateBlockJson,
   deepSeekSocraticTutor,
   deepSeekSummarySoFar,
@@ -128,6 +129,11 @@ import {
   recordResponse,
   resolveBlockQuestionConfig,
   resolveRegenMode,
+  buildQuestionScopeContext,
+  ensureSessionPipelineLevers,
+  ensureSessionCoverageManifest,
+  updateCoverageManifestAfterBlock,
+  loadBlockIndex,
   warnBlockGenerationProfileMismatch,
   safeParseJson,
   shouldTriggerCommentReply,
@@ -156,6 +162,12 @@ import {
   setAssessmentSkipped,
   setPackingIgnoredProfile,
 } from "./session.js?v=20260611_2";
+import {
+  isZeroQuestionBlockTitle,
+  overlapAuditNeedsRetry,
+  overlapAuditOverlappingConcepts,
+  resolveNextStudyBlockIndex,
+} from "./pipeline-levers.js";
 import {
   els,
   enableUnifiedMaterialUpload,
@@ -3805,6 +3817,26 @@ async function ensureBlockGenerated(blockIndex) {
     }
     const indexEntry = getBlockIndexEntry(blockIndex);
 
+    const strictMode = resolveSourceFidelityStrictForSession();
+    ensureSessionPipelineLevers(state.activeSession, strictMode);
+    const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
+    const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+    const coverageManifest = ensureSessionCoverageManifest(state.activeSession);
+    const questionScope = buildQuestionScopeContext(
+      blockIndex,
+      blockIndexArr,
+      inventory,
+      coverageManifest,
+    );
+    let prevBlockSummaryForConnection = "";
+    if (blockIndex > 0) {
+      const prev = state.activeSession?.blocks?.[blockIndex - 1];
+      prevBlockSummaryForConnection = String(prev?.explanation || "")
+        .split(/\n\n/)[0]
+        .trim()
+        .slice(0, 220);
+    }
+
     const blockRequest = {
       llmModel,
       blocksListText,
@@ -3817,9 +3849,13 @@ async function ensureBlockGenerated(blockIndex) {
       explanation_profile: cfg.explanation_profile,
       gap_focus: cfg.gap_focus,
       include_connection_questions: cfg.include_connection_questions,
-      strictMode: resolveSourceFidelityStrictForSession(),
+      strictMode,
       anchor_quality: String(indexEntry?.anchor_quality || "strong"),
       signature: indexEntry?.signature,
+      coverageManifest: coverageManifest.slice(-20),
+      questionScope,
+      prevBlockSummaryForConnection,
+      claimCoverageMin: state.activeSession?._meta?.pipelineLevers?.claimCoverageMin,
     };
 
     let obj = null;
@@ -3830,6 +3866,47 @@ async function ensureBlockGenerated(blockIndex) {
       if (!message.includes("valid JSON")) throw err;
       obj = await deepSeekGenerateBlockJson(blockRequest);
     }
+
+    if (
+      blockIndex > 0 &&
+      !isZeroQuestionBlockTitle(blockTitle) &&
+      !isOfflineMode()
+    ) {
+      const priorBlocks = [];
+      for (let i = Math.max(0, blockIndex - 2); i < blockIndex; i += 1) {
+        const pb = state.activeSession?.blocks?.[i];
+        if (pb?.explanation) {
+          priorBlocks.push({
+            title: getBlockTitleSafe(i),
+            explanation_excerpt: String(pb.explanation).slice(0, 1200),
+            signature: indexEntry?.signature,
+          });
+        }
+      }
+      if (priorBlocks.length) {
+        try {
+          const audit = await deepSeekAuditBlockOverlap({
+            llmModel,
+            blockTitle,
+            candidateExplanation: obj.explanation,
+            priorBlocks,
+            language: getStudyLanguage(),
+          });
+          if (overlapAuditNeedsRetry(audit)) {
+            const avoidOverlapWith = overlapAuditOverlappingConcepts(audit);
+            obj = await deepSeekGenerateBlockJson({
+              ...blockRequest,
+              avoidOverlapWith,
+            });
+          }
+        } catch (auditErr) {
+          console.warn("Overlap audit failed; continuing without retry:", auditErr?.message || auditErr);
+        }
+      }
+    }
+
+    updateCoverageManifestAfterBlock(blockIndex, obj?.questions);
+    storeActiveSession(state.activeSession, { bumpRev: true });
 
     warnBlockGenerationProfileMismatch(obj, cfg);
     cleaned = normalizeBlockJson(obj, cfg, blockIndex);
@@ -3988,19 +4065,79 @@ function resolveSourceFidelityStrictForSession(session = state.activeSession) {
   );
 }
 
+function hasKeyTermsGlossaryBlocks() {
+  const arr = loadBlockIndex() || state.lastBlockIndex || [];
+  return arr.some((b) => isZeroQuestionBlockTitle(b?.title) && /^Key terms:/i.test(String(b?.title || "")));
+}
+
+function renderKeyTermsGlossary() {
+  if (!els.keyTermsGlossaryBody) return;
+  const arr = loadBlockIndex() || state.lastBlockIndex || [];
+  const blocks = getBlocksSafe();
+  const parts = [];
+  arr.forEach((entry, i) => {
+    if (!/^Key terms:/i.test(String(entry?.title || ""))) return;
+    const generated = blocks[i];
+    const expl = String(generated?.explanation || entry.summary || "").trim();
+    parts.push(`<section><h3>${String(entry.title).replace(/</g, "&lt;")}</h3><p>${expl.replace(/</g, "&lt;")}</p></section>`);
+  });
+  els.keyTermsGlossaryBody.innerHTML = parts.length
+    ? parts.join("")
+    : "<p>No Key terms blocks in this session.</p>";
+}
+
+function syncKeyTermsGlossaryUi() {
+  const show = hasKeyTermsGlossaryBlocks() && !isPrePackingAssessmentRunner();
+  if (els.keyTermsGlossaryBtn) els.keyTermsGlossaryBtn.hidden = !show;
+}
+
+function checkPrerequisiteBlockWarning(blockIndex) {
+  const arr = loadBlockIndex() || state.lastBlockIndex || [];
+  const entry = arr[blockIndex];
+  const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+  const byId = new Map(inventory.filter((c) => c?.id).map((c) => [String(c.id), c]));
+  const conceptIds = Array.isArray(entry?.concept_ids) ? entry.concept_ids : [];
+  const studied = new Set(
+    (state.activeSession?.blocks || [])
+      .map((b, i) => (hasGeneratedBlockContent(b) ? i : -1))
+      .filter((i) => i >= 0),
+  );
+  for (const cid of conceptIds) {
+    const item = byId.get(String(cid));
+    const prereqs = Array.isArray(item?.prerequisite_ids) ? item.prerequisite_ids : [];
+    for (const pid of prereqs) {
+      const prereqBlockIdx = arr.findIndex((b) =>
+        (Array.isArray(b?.concept_ids) ? b.concept_ids : []).map(String).includes(String(pid)),
+      );
+      if (prereqBlockIdx >= 0 && prereqBlockIdx < blockIndex && !studied.has(prereqBlockIdx)) {
+        console.warn(
+          `Prerequisite block ${prereqBlockIdx + 1} not yet studied before block ${blockIndex + 1}.`,
+        );
+        if (els.testMeta) {
+          els.testMeta.textContent += " · Prerequisite block not studied yet";
+        }
+        return;
+      }
+    }
+  }
+}
+
 function setTestMeta() {
   if (isPrePackingAssessmentRunner()) {
     els.testHeader.textContent = "Document knowledge check";
     syncBlockFidelityBanner(null, null);
+    syncKeyTermsGlossaryUi();
     return;
   }
   const total = Math.max(1, getTotalBlocksSafe());
   const title = getBlockTitleSafe(state.activeBlockIndex);
   els.testHeader.textContent = title;
   els.testMeta.textContent = `Block ${state.activeBlockIndex + 1} of ${total}`;
+  checkPrerequisiteBlockWarning(state.activeBlockIndex);
   const block = getBlock(state.activeBlockIndex);
   const indexEntry = getBlockIndexEntry(state.activeBlockIndex);
   syncBlockFidelityBanner(block, indexEntry);
+  syncKeyTermsGlossaryUi();
 }
 
 let testMcAnswered = false;
@@ -4357,7 +4494,8 @@ function startBlock(blockIndex) {
 
   // 1) triggerPrefetch(N+1) — fire and forget
   const total = Math.max(1, getTotalBlocksSafe());
-  const nextIdx = idx + 1;
+  const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
+  const nextIdx = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
   if (nextIdx < total) {
     prefetchStartedAtByIndex.set(nextIdx, Date.now());
     setPrefetchIndicator("generating");
@@ -4474,7 +4612,8 @@ async function finishQuestions(blockIndex) {
   }
 
   const o = getOrCreateTransitionOverlay();
-  const nextIndex = idx + 1;
+  const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
+  const nextIndex = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
   o.title.textContent = `Continue to block ${nextIndex + 1} of ${total}`;
 
   o.finishedBlockIndex = idx;
@@ -7168,6 +7307,8 @@ export function wireStudyHandlers() {
         }));
       }
       sessionObj._meta.source_fidelity_mode = state.sourceFidelityStrict ? "strict" : "standard";
+      ensureSessionPipelineLevers(sessionObj, state.sourceFidelityStrict);
+      ensureSessionCoverageManifest(sessionObj);
       if (state.lastCleanedMaterialText) {
         sessionObj._meta.cleaned_material = state.lastCleanedMaterialText;
       }
@@ -7652,6 +7793,14 @@ export function wireStudyHandlers() {
     }
     showTestQuestions();
     renderTestQuestion();
+  });
+
+  els.keyTermsGlossaryBtn?.addEventListener("click", () => {
+    renderKeyTermsGlossary();
+    els.keyTermsGlossaryDialog?.showModal?.();
+  });
+  els.keyTermsGlossaryClose?.addEventListener("click", () => {
+    els.keyTermsGlossaryDialog?.close?.();
   });
 
   els.testRestartBlockBtn.addEventListener("click", () => {
