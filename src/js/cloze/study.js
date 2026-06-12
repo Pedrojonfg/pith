@@ -2,6 +2,7 @@ import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=202606
 import { getValidItems } from "./normalize.js?v=20260607_1";
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260525_1";
+import { isMcTypingTarget, letterFromMcKey } from "../mc-keyboard.js?v=20260612_1";
 import { shuffleInPlace } from "../shuffle-options.js";
 import { els, showScreen } from "../ui.js?v=20260525_1";
 
@@ -110,22 +111,33 @@ function attachClozeStudyKeydown() {
   keydownBound = true;
 }
 
-function optionIndexFromKey(key) {
-  const n = Number(key);
-  if (n >= 1 && n <= 4) return n - 1;
-  return -1;
+function optionIndexFromLetter(letter) {
+  const upper = String(letter || "").toUpperCase();
+  const code = upper.charCodeAt(0);
+  if (code < 65 || code > 68) return -1;
+  return code - 65;
 }
 
 function onClozeStudyKeydown(e) {
-  if (e.repeat || answered) return;
-  const tag = String(e.target?.tagName || "").toLowerCase();
-  if (tag === "input" || tag === "textarea" || tag === "select") return;
+  if (e.repeat || isMcTypingTarget(e.target)) return;
+  const host = els.clozeStudyContent;
 
-  const idx = optionIndexFromKey(e.key);
+  if (answered) {
+    if (e.key === "Enter") {
+      const nextBtn = host?.querySelector("#clozeStudyNextBtn");
+      if (nextBtn && !nextBtn.hidden && activeStudySession) {
+        e.preventDefault();
+        goToNextItem(activeStudySession);
+      }
+    }
+    return;
+  }
+
+  const letter = letterFromMcKey(e.key);
+  const idx = optionIndexFromLetter(letter);
   if (idx < 0 || idx >= shuffledOptions.length) return;
   e.preventDefault();
 
-  const host = els.clozeStudyContent;
   const btn = host?.querySelector(`.cloze-option-btn[data-option-idx="${idx}"]`);
   if (btn && activeStudySession) handleOptionSelect(activeStudySession, host, idx);
 }

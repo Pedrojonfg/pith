@@ -3409,6 +3409,12 @@ function refreshUiOnPrefetchReady() {
   renderTransitionSneakPeek(o, finishedIdx);
 }
 
+function sneakPeekLabelText(nextIndex) {
+  const name = String(getBlockTitleSafe(nextIndex) || "").trim();
+  if (!name) return "What's next";
+  return `What's next — ${name}`;
+}
+
 function renderTransitionSneakPeek(o, finishedIdx) {
   if (!o?.sneakPeekWrap || !o?.sneakPeekText) return;
   if (!Number.isFinite(finishedIdx)) return;
@@ -3419,6 +3425,9 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   }
 
   const nextIndex = finishedIdx + 1;
+  if (o.sneakPeekLabel) {
+    o.sneakPeekLabel.textContent = sneakPeekLabelText(nextIndex);
+  }
   const expectedKey = String(o.expectedPrefetchConfigKey || "");
   const blockReady =
     prefetchState?.blockIndex === nextIndex &&
@@ -3738,6 +3747,7 @@ function getOrCreateTransitionOverlay() {
     title,
     dictionaryWrap,
     sneakPeekWrap,
+    sneakPeekLabel,
     sneakPeekText,
     view: "default",
     defaultActions,
