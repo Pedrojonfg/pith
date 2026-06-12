@@ -11,7 +11,7 @@
  * @param {string} text
  */
 export function dehyphenate(text) {
-  return String(text || "").replace(/(\w)-\n([a-záéíóúüñ])/gu, "$1$2");
+  return String(text || "").replace(/(\w)-\n([a-z])/gu, "$1$2");
 }
 
 /**

@@ -20,7 +20,7 @@ import {
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260611_2";
-import { assignAlignedChunks } from "./chunk-alignment.js";
+import { assignAlignedChunksSequential } from "./chunk-alignment.js";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260527_1";
 import {
   assertLlmKeyPresent,
@@ -1444,7 +1444,7 @@ function isPedroSourceLine(line) {
 
 function isPedroLevelLine(line) {
   const t = String(line || "").trim().toLowerCase();
-  return t === "basico" || t === "básico" || t === "intermedio" || t === "avanzado";
+  return t === "basic" || t === "intermediate" || t === "advanced";
 }
 
 function stripLeadingListMarkers(line) {
@@ -1807,7 +1807,7 @@ export function normalizeBlockTitle(title) {
 function isOverviewBlockEntry(block) {
   const id = Number(block?.id);
   const title = String(block?.title || "").trim();
-  return id === 1 || /^(overview|mapa del curso|course map)/i.test(title);
+  return id === 1 || /^(overview|course map)/i.test(title);
 }
 
 function isKeyTermsBlockEntry(block) {
@@ -2119,10 +2119,8 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English")
     return { blocks: [], pack_meta: { target_n: targetN, final_block_count: 0, merges: [] } };
   }
 
-  const language = String(lang || "English").trim() || "English";
-  const isEs = /español|spanish/i.test(language);
-  const overviewPrefix = isEs ? "Mapa del curso:" : "Overview:";
-  const courseLabel = String(inv[0]?.module || inv[0]?.title || (isEs ? "Curso" : "Course")).trim();
+  const overviewPrefix = "Overview:";
+  const courseLabel = String(inv[0]?.module || inv[0]?.title || "Course").trim();
 
   /** @type {object[]} */
   const blocks = [
@@ -2165,7 +2163,7 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English")
       blocks.push({
         id: blocks.length + 1,
         title: `Key terms: ${modName}`,
-        summary: isEs ? `Términos clave de ${modName}.` : `Key terms for ${modName}.`,
+        summary: `Key terms for ${modName}.`,
         signature: concepts
           .slice(0, 8)
           .map((c) => String(c.title || "").trim())
@@ -2289,7 +2287,7 @@ export async function packInventoryToBlocks(
       });
       let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
       if (!fallbackBlocks?.length) throw packErr;
-      const blockIndex = assignAlignedChunks(materialText, fallbackBlocks, inventory, {
+      const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, fallbackBlocks, inventory, {
         docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
       });
       return {
@@ -2329,7 +2327,7 @@ export async function packInventoryToBlocks(
       ...(mastery_adjusted ? { mastery_adjusted: true } : {}),
     };
   });
-  let blockIndex = assignAlignedChunks(materialText, enriched, inventory, {
+  let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, enriched, inventory, {
     docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
   });
 
@@ -2394,7 +2392,7 @@ export async function twoPhaseConceptSplit(
     });
     let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
     if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
-    const blockIndex = assignAlignedChunks(materialText, normalized, [], {
+    const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
       docHierarchy: resolveDocHierarchyForAlignment(),
     });
     return {

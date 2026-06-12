@@ -55,7 +55,7 @@ function normalize(text) {
 
 function significantTokens(text) {
   return normalize(text)
-    .split(/[^a-z0-9áéíóúüñ]+/i)
+    .split(/[^a-z0-9]+/i)
     .map((t) => t.trim())
     .filter((t) => t.length >= 4 && !STOPWORDS.has(t));
 }

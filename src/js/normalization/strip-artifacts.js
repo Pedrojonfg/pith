@@ -28,7 +28,7 @@ const EDITORIAL_PATTERNS = [
 
 export const ORNAMENT_PATTERN = /^[\s\W]{1,20}$/u;
 export const ROMAN_ORNAMENT = /^~[IVXLC]+~$/i;
-export const ISOLATED_ALLCAPS = /^[A-ZÁÉÍÓÚÑÜ]{3,15}$/;
+export const ISOLATED_ALLCAPS = /^[A-Z]{3,15}$/;
 
 /**
  * @param {TextBlock} block

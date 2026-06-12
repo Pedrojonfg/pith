@@ -33,5 +33,5 @@ export function graphTermSlug(term) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, "_")
-    .replace(/[^a-z0-9_áéíóúñü-]/gi, "");
+    .replace(/[^a-z0-9_-]/gi, "");
 }

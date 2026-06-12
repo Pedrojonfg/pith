@@ -26,10 +26,10 @@ const FAMILY_LABELS = {
     argumentative: "argumentative",
   },
   es: {
-    epistemic: "epistémica",
-    didactic: "didáctica",
-    semantic: "semántica",
-    argumentative: "argumentativa",
+    epistemic: "epistemic",
+    didactic: "didactic",
+    semantic: "semantic",
+    argumentative: "argumentative",
   },
 };
 
@@ -41,11 +41,6 @@ const VALID_ERROR_TYPES = new Set([
 ]);
 
 const VALID_REVIEW_PRIORITIES = new Set(["high", "medium", "low"]);
-
-function isSpanishLang(lang) {
-  const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
-}
 
 function yamlQuote(value) {
   const raw = String(value ?? "").trim();
@@ -62,7 +57,8 @@ function parseAnswerLetter(raw) {
 }
 
 export function normalizeExportLanguageCode(lang) {
-  return isSpanishLang(lang) ? "es" : "en";
+  void lang;
+  return "en";
 }
 
 export function resolveMaterialPath(session) {
@@ -148,7 +144,8 @@ export function buildExportFrontmatter(session, { mode } = {}) {
 export function formatGraphEdgeMarkdown(from, to, type, lang = "English") {
   const edgeType = String(type || "relates").trim() || "relates";
   const familyKey = EDGE_TYPE_FAMILIES[edgeType] || "semantic";
-  const labels = isSpanishLang(lang) ? FAMILY_LABELS.es : FAMILY_LABELS.en;
+  void lang;
+  const labels = FAMILY_LABELS.en;
   const familyLabel = labels[familyKey] || familyKey;
   return `- ${from} → ${to} (${edgeType} · ${familyLabel})`;
 }
@@ -184,13 +181,13 @@ export function inferErrorType(response, questionText = "") {
   if (VALID_ERROR_TYPES.has(stored)) return stored;
   const fb = String(r.feedback || "").toLowerCase();
   const q = String(questionText || "").toLowerCase();
-  if (/cálculo|calculo|compute|∇|integral|deriv/.test(fb) || /∇|integral|deriv|φ\(/.test(q)) {
+  if (/compute|calculation|∇|integral|deriv/.test(fb) || /∇|integral|deriv|φ\(/.test(q)) {
     return "calculation_error";
   }
-  if (/enunciado|teorema|recuerda|formula|fórmula|formal/.test(fb)) {
+  if (/theorem|remember|formula|formal/.test(fb)) {
     return "formula_recall";
   }
-  if (/revisa|atención|atencion|simple|descuid/.test(fb)) {
+  if (/review|attention|simple|careless|slip/.test(fb)) {
     return "attention_slip";
   }
   return "conceptual_confusion";
@@ -232,7 +229,7 @@ function truncate(text, max = 72) {
 /** Top 2–3 tensions from ⊘/↯/⚠/⇑ annotations for long slow sessions. */
 export function extractTopTensions(annotations, { max = 3, lang = "English" } = {}) {
   const list = Array.isArray(annotations) ? annotations : [];
-  const es = isSpanishLang(lang);
+  void lang;
   const scored = list
     .filter((a) => a && ["⊘", "↯", "⚠", "⇑", "★"].includes(String(a.type)))
     .map((a) => {
@@ -275,7 +272,6 @@ export function extractTopTensions(annotations, { max = 3, lang = "English" } = 
     lines.push(`- ${truncate(t.userText, 80)} (↯ ${annRangeLabel(t)})`);
   }
 
-  void es;
   return lines;
 }
 

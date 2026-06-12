@@ -67,7 +67,7 @@ function argNodeLabel(node) {
 
 function textConceptLabel(c) {
   const term = String(c?.term || "").trim();
-  const nodeType = String(c?.nodeType || "CONCEPTO").trim() || "CONCEPTO";
+  const nodeType = String(c?.nodeType || "CONCEPT").trim() || "CONCEPT";
   return `[${nodeType}] ${term}`;
 }
 
@@ -356,7 +356,7 @@ export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
     if (!term) continue;
     const termId = String(c?.graphTermId || graphTermSlug(term)).trim();
     if (!termId) continue;
-    const nodeType = String(c?.nodeType || "CONCEPTO").trim() || "CONCEPTO";
+    const nodeType = String(c?.nodeType || "CONCEPT").trim() || "CONCEPT";
     const canvasNode = {
       id: textNodeId(termId),
       label: textConceptLabel(c),
@@ -371,7 +371,7 @@ export function buildSlowPhase0GraphFromInputs({ phase0 = null } = {}) {
   }
 
   const mapEdgeType =
-    String(phase0.textGenre || "").trim() === "GENEALOGÍA"
+    String(phase0.textGenre || "").trim() === "GENEALOGY"
       ? "historically_precedes"
       : "sequence";
 
@@ -414,7 +414,7 @@ function clozeNodeId(epistemicId) {
   return `cloze:${String(epistemicId || "").trim()}`;
 }
 
-/** Cloze epistemic graph from pipeline Fase 0 or shared concept inventory. */
+/** Cloze epistemic graph from pipeline Phase 0 or shared concept inventory. */
 export function buildClozeEpistemicGraph(session, options = {}) {
   const shared = options.shared ?? session?.shared ?? null;
   let epistemicGraph = session?.cloze?.epistemicGraph;

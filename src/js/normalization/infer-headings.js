@@ -7,34 +7,22 @@
 
 const SECTION_KEYWORDS = [
   "introduction",
-  "introducción",
   "abstract",
-  "resumen",
   "conclusion",
-  "conclusiones",
   "methods",
-  "método",
   "methodology",
-  "metodología",
   "results",
-  "resultados",
   "discussion",
-  "discusión",
   "background",
-  "antecedentes",
   "related work",
-  "trabajo relacionado",
   "appendix",
-  "apéndice",
   "references",
-  "bibliografía",
   "acknowledgments",
-  "agradecimientos",
 ];
 
 const NUMBERED_HEADING =
-  /^(\d+(\.\d+)*\.?)\s+([A-ZÁÉÍÓÚÑÜ][\wáéíóúñü\s\-–—:,]+)$/u;
-const ROMAN_HEADING = /^([IVXLC]+)\.\s+([A-ZÁÉÍÓÚÑÜ])/u;
+  /^(\d+(\.\d+)*\.?)\s+([A-Z][\w\s\-–—:,]+)$/u;
+const ROMAN_HEADING = /^([IVXLC]+)\.\s+([A-Z])/u;
 const MD_HEADING = /^(#{1,6})\s+(.+)$/;
 
 /**

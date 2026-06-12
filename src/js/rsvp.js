@@ -49,7 +49,7 @@ let rsvpHandlersWired = false;
 /** @type {RsvpTypographyProfile | null} */
 let typographyProfile = null;
 
-const RSVP_PROBE_FALLBACK = "internacionalización ";
+const RSVP_PROBE_FALLBACK = "internationalization ";
 const RSVP_MATH_FONT_SCALE = 0.85;
 const RSVP_MIN_FONT_PX = 16;
 

@@ -24,6 +24,7 @@ import {
   shuffleInPlace,
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
+import { renderCoverageManifestForPrompt } from "./coverage-manifest.js";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -912,7 +913,7 @@ export async function deepSeekSplitIntoBlocks({
   );
 }
 
-const OVERVIEW_TITLE_RE = /^(overview|mapa del curso|course map)/i;
+const OVERVIEW_TITLE_RE = /^(overview|course map)/i;
 
 export function buildConceptInventoryPrompt(lang) {
   const language = String(lang || "English").trim() || "English";
@@ -1075,7 +1076,7 @@ Input: concept inventory JSON (ordered teachable concepts).
 ${knowledgeProfile ? `Maximum block count (ceiling) = ${targetN}. Return up to ${targetN} blocks; fewer is allowed when profile omits mastered concepts.` : `Target block count N = ${targetN}.`}
 
 Rules:
-1. Block id 1 MUST be a global course overview (title starts with "Overview:", "Mapa del curso:", or "Course map:"). It counts toward N. concept_ids may be [].
+1. Block id 1 MUST be a global course overview (title starts with "Overview:" or "Course map:"). It counts toward N. concept_ids may be [].
 2. For EACH module in the inventory: the first block for that module MUST be vocabulary: title "Key terms: [module name]", 6-10 terms in signature, concept_ids for that vocab concept only.
 3. Never assign the same concept_id to two blocks.
 4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have at most ${targetN} blocks. Record merges in pack_meta.merges.
@@ -1292,6 +1293,165 @@ Respond ONLY with valid JSON.`
   });
 }
 
+const OVERLAP_AUDIT_MAX_PRIOR_BLOCKS = 2;
+const OVERLAP_AUDIT_EXCERPT_MAX_WORDS = 150;
+
+function truncateToWordLimit(text, maxWords) {
+  const words = String(text || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length <= maxWords) return words.join(" ");
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+/**
+ * @param {{ title?: string, explanation_excerpt?: string, signature?: string | string[] }} block
+ */
+function normalizePriorBlockForAudit(block) {
+  const title = String(block?.title || "").trim() || "Untitled";
+  const explanation_excerpt = truncateToWordLimit(
+    block?.explanation_excerpt || "",
+    OVERLAP_AUDIT_EXCERPT_MAX_WORDS,
+  );
+  const row = { title, explanation_excerpt };
+  if (Array.isArray(block?.signature) && block.signature.length) {
+    row.signature = block.signature.map((t) => String(t || "").trim()).filter(Boolean);
+  } else {
+    const sig = String(block?.signature || "").trim();
+    if (sig) row.signature = [sig];
+  }
+  return row;
+}
+
+/**
+ * @param {{ blockTitle?: string, candidateExplanation?: string, priorBlocks?: { title?: string, explanation_excerpt?: string, signature?: string | string[] }[], language?: string }} params
+ */
+export function buildOverlapAuditPrompt({
+  blockTitle,
+  candidateExplanation,
+  priorBlocks,
+  language,
+}) {
+  const lang = String(language || "English").trim() || "English";
+  const title = String(blockTitle || "").trim() || "Untitled";
+  const candidate = String(candidateExplanation || "").trim();
+  const priors = (Array.isArray(priorBlocks) ? priorBlocks : [])
+    .slice(0, OVERLAP_AUDIT_MAX_PRIOR_BLOCKS)
+    .map(normalizePriorBlockForAudit);
+
+  const priorSection = priors.length
+    ? priors
+        .map((p, i) => {
+          const sig = p.signature?.length ? `\nKey terms: ${p.signature.join(", ")}` : "";
+          return `Prior block ${i + 1} — "${p.title}":\n${p.explanation_excerpt || "(no excerpt)"}${sig}`;
+        })
+        .join("\n\n")
+    : "(none)";
+
+  return `You are auditing a study-session block explanation for redundant overlap with prior blocks.
+
+Compare the CANDIDATE explanation against the PRIOR block excerpt(s) below.
+
+Flag redundant DEFINITIONS, EXAMPLES, or FORMULAS that repeat what was already taught.
+Do NOT flag intentional bridge sentences that connect topics without re-teaching content.
+
+CANDIDATE block title: ${title}
+
+CANDIDATE explanation:
+${candidate || "(empty)"}
+
+PRIOR blocks (max ${OVERLAP_AUDIT_MAX_PRIOR_BLOCKS}):
+${priorSection}
+
+Respond ONLY with valid JSON (no markdown, no preamble):
+{
+  "overlap_severity": "none|low|high",
+  "redundant_claims": ["short description of each redundant claim"],
+  "action": "pass|trim|regen",
+  "regen_hint": "guidance when action is trim or regen; empty string when pass"
+}
+
+action rules:
+- pass: no meaningful redundancy (including acceptable bridge sentences)
+- trim: minor redundancy removable without full rewrite
+- regen: substantial repetition of definitions, examples, or formulas
+
+Respond entirely in ${lang}.`;
+}
+
+/**
+ * @typedef {{ overlap_severity: "none" | "low" | "high", redundant_claims: string[], action: "pass" | "trim" | "regen", regen_hint: string }} OverlapAuditResult
+ */
+
+/** @returns {OverlapAuditResult | null} */
+export function parseOverlapAuditFromModelResponse(text) {
+  const parsed = parseModelJsonObject(text);
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const severityRaw = String(parsed.overlap_severity || "").trim().toLowerCase();
+  if (!["none", "low", "high"].includes(severityRaw)) return null;
+
+  const actionRaw = String(parsed.action || "").trim().toLowerCase();
+  if (!["pass", "trim", "regen"].includes(actionRaw)) return null;
+
+  const redundant_claims = Array.isArray(parsed.redundant_claims)
+    ? parsed.redundant_claims.map((c) => String(c || "").trim()).filter(Boolean)
+    : [];
+
+  return {
+    overlap_severity: severityRaw,
+    redundant_claims,
+    action: actionRaw,
+    regen_hint: String(parsed.regen_hint || "").trim(),
+  };
+}
+
+export async function deepSeekAuditBlockOverlap({
+  llmModel,
+  blockTitle,
+  candidateExplanation,
+  priorBlocks,
+  language,
+}) {
+  const model = resolveLlmModelArg(llmModel);
+  const systemPrompt = buildOverlapAuditPrompt({
+    blockTitle,
+    candidateExplanation,
+    priorBlocks,
+    language,
+  });
+
+  const request = (useJsonObjectMode) =>
+    llmChatCompletions({
+      llmModel: model,
+      messages: [{ role: "system", content: systemPrompt }],
+      temperature: 0.2,
+      max_tokens: 800,
+      ...(useJsonObjectMode ? { response_format: { type: "json_object" } } : {}),
+    });
+
+  let raw = "";
+  try {
+    raw = await request(true);
+  } catch (err) {
+    if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+      raw = await request(false);
+    } else {
+      throw err;
+    }
+  }
+
+  const result = parseOverlapAuditFromModelResponse(raw);
+  if (!result) {
+    console.warn(
+      "Overlap audit: could not parse model response, treating as pass",
+      String(raw || "").slice(0, 400),
+    );
+  }
+  return result;
+}
+
 const MERGE_WORDS_PER_BLOCK = 2000;
 
 export async function deepSeekPostMergeChunk({
@@ -1431,7 +1591,7 @@ const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every tes
 - Start by restating the underlying idea or rule in your own words (without copying any option).
 - Then explain why that idea makes the correct option work, using principle-level reasoning.
 - For cause-effect questions, trace the full reasoning chain in feedback when the correct option is abbreviated—supply any intermediate steps the block did not already make explicit.
-- Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails because…" / "La opción C confunde…".
+- Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails because…" / "Option C confuses…".
 - Do NOT copy or closely paraphrase the text of the correct option in the feedback.
 - Avoid giveaway lead-ins such as "The correct answer is…" or naming the correct letter outright.
 - Keep it concise (3-5 short sentences), specific, and still useful after the student already knows if they were right or wrong.`;
@@ -1444,6 +1604,7 @@ export const CONCEPT_DICTIONARY_EXTRACTION_RULES = (isVocabularyBlock) =>
       : "3-8 non-obvious domain-specific terms introduced in this block."
   }
 For each: the term exactly as used in the source chunk. Definition MUST paraphrase how the chunk defines or uses the term — not a generic textbook gloss.
+Keep these extraction definitions brief; fuller entries are generated in a separate pass.
 Only include terms grounded in the chunk. No common words.`;
 
 export const CONCEPT_DICTIONARY_ENRICHMENT_RULES = `You are writing session dictionary entries. The student reads these in a sidebar and in the exported session markdown — NOT via RSVP. Entries may be substantive.
@@ -1639,7 +1800,12 @@ ${explanationSection}
 ${gapSection}
 ${CONCEPT_DICTIONARY_EXTRACTION_RULES(isVocabularyBlock)}
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
-Return ONLY valid JSON. No preamble, no backticks, no markdown fences.`;
+Return ONLY valid JSON. No preamble, no backticks, no markdown fences.${
+    blockNoSafe > 1
+      ? `
+If a term appears in ALREADY TAUGHT, advance the argument without repeating its definition or example.`
+      : ""
+  }`;
   return mergeFidelityIntoSystemPrompt(basePrompt, { strictMode, extractedClaims });
 }
 
@@ -1650,6 +1816,7 @@ export function buildBlockGenerationUserContent({
   blockTitle,
   previousComment,
   gap_focus = [],
+  coverageManifest = null,
 }) {
   const gaps = Array.isArray(gap_focus)
     ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
@@ -1670,7 +1837,13 @@ export function buildBlockGenerationUserContent({
     ? `\nPrevious block title: ${previousTitle}\nUse this title to write the bridge in the very first Hook sentence (first sentence of the first paragraph) so it appears in the sneak preview (first <=4 sentences).`
     : "";
 
-  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk above—not from future blocks or unexplained asides in the source.`;
+  const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  const coverageBlock =
+    idx >= 1 && coverageManifest
+      ? `\n\n${renderCoverageManifestForPrompt(coverageManifest)}`
+      : "";
+
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk above—not from future blocks or unexplained asides in the source.${coverageBlock}`;
 }
 
 const QUESTIONS_ONLY_JSON_SCHEMA = `{
@@ -1908,6 +2081,7 @@ export async function deepSeekGenerateBlockJson({
   extractedClaims = null,
   anchor_quality = "strong",
   signature = [],
+  coverageManifest = null,
 }) {
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
@@ -1939,6 +2113,7 @@ export async function deepSeekGenerateBlockJson({
     blockTitle,
     previousComment,
     gap_focus,
+    coverageManifest,
   });
 
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
@@ -2180,11 +2355,10 @@ No preamble, no backticks.`
   });
 }
 
-export const PREPACKING_DONT_KNOW_ANSWER = "No lo sé";
+export const PREPACKING_DONT_KNOW_ANSWER = "I don't know";
 
 const PREPACKING_DONT_KNOW_ALIASES = new Set([
   PREPACKING_DONT_KNOW_ANSWER,
-  "No lo se",
   "I don't know",
   "I do not know",
   "",
@@ -2648,7 +2822,7 @@ function computeAssessmentCoverage(inventory, items) {
 
 function isDontKnowAnswer(answer) {
   const a = String(answer || "").trim();
-  return PREPACKING_DONT_KNOW_ALIASES.has(a) || /^no\s+lo\s+s[eé]$/i.test(a);
+  return PREPACKING_DONT_KNOW_ALIASES.has(a);
 }
 
 /** @returns {object | null} */
@@ -2809,7 +2983,7 @@ export async function evaluatePrePackingAssessmentResponses({
       const systemPrompt = `Evaluate quiz responses into a knowledge_profile.
 Rules:
 - Conservative mastery: "full" only with demonstrated precision; "partial" requires real understanding.
-- Unknown / "No lo sé" answers → mastery "none", low confidence.
+- Unknown / "I don't know" answers → mastery "none", low confidence.
 - Output JSON: {"items":[{"concept_id":"...","mastery":"none|partial|full","confidence":0.0-1.0}]}
 Respond in ${lang}.`;
 
