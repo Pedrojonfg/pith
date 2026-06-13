@@ -1110,7 +1110,7 @@ export async function deepSeekConceptInventoryPhase2({
   return Array.isArray(concepts) ? concepts : [];
 }
 
-export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null } = {}) {
+export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null, vaultContextBlock = "" } = {}) {
   const targetN = Math.max(1, Math.floor(Number(n) || 1));
   const language = String(lang || "English").trim() || "English";
   const inventory = String(inventoryJson || "[]");
@@ -1149,7 +1149,7 @@ Output JSON only:
 Concept inventory:
 ${inventory}
 
-Respond entirely in ${language}.`;
+Respond entirely in ${language}.${vaultContextBlock ? String(vaultContextBlock) : ""}`;
 }
 
 function isOverviewBlockTitle(title) {
@@ -1234,6 +1234,7 @@ export async function deepSeekPackConceptsToBlocks({
   studyNotes,
   language,
   knowledgeProfile = null,
+  docTopics = null,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const n = Math.max(1, Math.floor(Number(maxBlocks ?? nBlocks) || 1));
@@ -1243,11 +1244,27 @@ export async function deepSeekPackConceptsToBlocks({
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
 
+  let vaultContextBlock = "";
+  if (Array.isArray(docTopics) && docTopics.length) {
+    try {
+      const { getVaultContextForDoc, buildVaultContextBlock } = await import(
+        "./vault/prompt-injection.js"
+      );
+      const entries = getVaultContextForDoc(docTopics);
+      vaultContextBlock = buildVaultContextBlock(entries);
+    } catch {
+      vaultContextBlock = "";
+    }
+  }
+
   function buildMessages(compact, terse = false) {
     const messages = [
       {
         role: "system",
-        content: buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile: profile }),
+        content: buildConceptPackPrompt(n, lang, inventoryJson, {
+          knowledgeProfile: profile,
+          vaultContextBlock,
+        }),
       },
     ];
     if (notes) {
@@ -1851,6 +1868,7 @@ export function buildBlockGenerationSystemPrompt({
   questionScope = null,
   avoidOverlapWith = null,
   prevBlockSummaryForConnection = "",
+  vaultHint = "",
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
@@ -1929,7 +1947,8 @@ Return ONLY valid JSON. No preamble, no backticks, no markdown fences.${
 If a term appears in ALREADY TAUGHT, advance the argument without repeating its definition or example.`
       : ""
   }`;
-  return mergeFidelityIntoSystemPrompt(basePrompt, { strictMode, extractedClaims });
+  const withVault = vaultHint ? `${basePrompt}${vaultHint}` : basePrompt;
+  return mergeFidelityIntoSystemPrompt(withVault, { strictMode, extractedClaims });
 }
 
 export function buildBlockGenerationUserContent({
@@ -2220,7 +2239,21 @@ export async function deepSeekGenerateBlockExplanation({
   avoidOverlapWith = null,
   questionScope = null,
   claimCoverageMin = null,
+  conceptIds = null,
+  docTopics = null,
 }) {
+  let vaultHint = "";
+  if (Array.isArray(conceptIds) && conceptIds.length && Array.isArray(docTopics) && docTopics.length) {
+    try {
+      const { getVaultContextForDoc, buildBlockVaultHint } = await import(
+        "./vault/prompt-injection.js"
+      );
+      vaultHint = buildBlockVaultHint(conceptIds, getVaultContextForDoc(docTopics));
+    } catch {
+      vaultHint = "";
+    }
+  }
+
   const systemPrompt = buildBlockGenerationSystemPrompt({
     language,
     n_test: 0,
@@ -2234,6 +2267,7 @@ export async function deepSeekGenerateBlockExplanation({
     extractedClaims,
     questionScope,
     avoidOverlapWith,
+    vaultHint,
   });
 
   const userContent = buildBlockGenerationUserContent({
@@ -2386,6 +2420,8 @@ export async function deepSeekGenerateBlockJson({
   avoidOverlapWith = null,
   prevBlockSummaryForConnection = "",
   claimCoverageMin = null,
+  conceptIds = null,
+  docTopics = null,
 }) {
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
@@ -2417,6 +2453,8 @@ export async function deepSeekGenerateBlockJson({
     avoidOverlapWith,
     questionScope,
     claimCoverageMin,
+    conceptIds,
+    docTopics,
   });
 
   if (strictMode && Array.isArray(claims) && claims.length) {
@@ -2628,6 +2666,7 @@ No preamble, no backticks.`
 }
 
 export const PREPACKING_DONT_KNOW_ANSWER = "I don't know";
+export const PREPACKING_ALREADY_KNOW_ANSWER = "I already know this ✓";
 
 const PREPACKING_DONT_KNOW_ALIASES = new Set([
   PREPACKING_DONT_KNOW_ANSWER,
@@ -3361,5 +3400,92 @@ Be concise overall. Respond in the same language as the question and student ans
     ],
     temperature: 0.2,
   });
+}
+
+/**
+ * Normalize new document concepts against existing vault entries (one LLM call).
+ * @param {{ existingEntries: Array<{id:string,canonicalTitle:string,aliases?:string[]}>, newConcepts: Array<{id:string,title:string,type?:string}>, topic: string }} params
+ * @returns {Promise<Array<{ conceptId: string, action: 'merge'|'alias'|'new', vaultEntryId: string | null }>>}
+ */
+export async function normalizeConceptsToVault({ existingEntries, newConcepts, topic }) {
+  const existing = Array.isArray(existingEntries) ? existingEntries : [];
+  const concepts = Array.isArray(newConcepts) ? newConcepts : [];
+  if (!concepts.length) return [];
+  if (!existing.length) {
+    return concepts
+      .map((c) => ({
+        conceptId: String(c.id || "").trim(),
+        action: /** @type {'new'} */ ("new"),
+        vaultEntryId: null,
+      }))
+      .filter((m) => m.conceptId);
+  }
+
+  const topicLabel = String(topic || "general").trim() || "general";
+  const systemPrompt = `You deduplicate learning concepts for a personal knowledge vault.
+For each NEW concept, decide:
+- merge: same concept as an existing vault entry (use vaultEntryId)
+- alias: alternate name for an existing entry (use vaultEntryId)
+- new: genuinely distinct concept (vaultEntryId null)
+
+Respond with JSON only:
+{"mappings":[{"conceptId":"...","action":"merge"|"alias"|"new","vaultEntryId":"..."|null}]}`;
+
+  const userPayload = {
+    topic: topicLabel,
+    existing: existing.map((e) => ({
+      id: e.id,
+      canonicalTitle: e.canonicalTitle,
+      aliases: e.aliases || [],
+    })),
+    newConcepts: concepts.map((c) => ({
+      id: c.id,
+      title: c.title,
+      type: c.type || "CONCEPT",
+    })),
+  };
+
+  try {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(null),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+      temperature: 0,
+    });
+    const parsed = parseModelJsonValue(raw);
+    const mappings = Array.isArray(parsed?.mappings)
+      ? parsed.mappings
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+    const validActions = new Set(["merge", "alias", "new"]);
+    const out = [];
+    for (const row of mappings) {
+      const conceptId = String(row?.conceptId || "").trim();
+      if (!conceptId) continue;
+      const action = String(row?.action || "new").toLowerCase();
+      const vaultEntryId =
+        row?.vaultEntryId == null ? null : String(row.vaultEntryId || "").trim() || null;
+      out.push({
+        conceptId,
+        action: validActions.has(action) ? /** @type {'merge'|'alias'|'new'} */ (action) : "new",
+        vaultEntryId,
+      });
+    }
+    if (out.length) return out;
+  } catch (err) {
+    console.warn("[normalizeConceptsToVault] LLM failed", err?.message || err);
+  }
+
+  return concepts
+    .map((c) => ({
+      conceptId: String(c.id || "").trim(),
+      action: /** @type {'new'} */ ("new"),
+      vaultEntryId: null,
+    }))
+    .filter((m) => m.conceptId);
 }
 

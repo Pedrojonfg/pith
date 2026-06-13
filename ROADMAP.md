@@ -1,401 +1,283 @@
-# ROADMAP — RSVP Pipeline Levers (Strict Mode)
+# ROADMAP — Global Knowledge Vault (Phase A+)
 
-**Feature**: `20260617-pipeline-levers` | **Spec**: `specs/20260617-pipeline-levers/spec.md` | **Plan**: `specs/20260617-pipeline-levers/plan.md`
+**Feature**: `20260618-knowledge-vault-a-plus` | **Spec**: `specs/20260618-knowledge-vault-a-plus/spec.md` | **Plan**: `specs/20260618-knowledge-vault-a-plus/plan.md`
 
-**Objetivo**: Eliminar overlapping estructural de preguntas y bloques thin en RSVP modo estricto mediante 25 palancas del pipeline (L1–L25), implementadas por sprints de impacto/esfuerzo.
+**Objective**: Persistent cross-document knowledge store with mastery decay, LLM concept deduplication, prerequisite elevation, and prompt/assessment calibration. Useful from T03 (debug UI) even before normalization.
 
-## Tabla de tareas
+## Task table
 
-| ID | Descripción | Deps | Complejidad | Estado |
-|----|-------------|------|-------------|--------|
-| T01 | L15 — `n_test=0` en Key terms, Overview, Course map | — | S | [x] |
-| T02 | L11 — Umbral dedup firma configurable (strict=2) | — | S | [x] |
-| T03 | L22 — `coverageManifest` param en regen (stub vacío) | — | S | [x] |
-| T04 | L2 — Densidad dinámica inventario (`wordCount/300*2`) | — | M | [x] |
-| T05 | L14 — Scope de preguntas por tipo de bloque | T01 | M | [x] |
-| T06 | L18 — Instrucción anti-reteaching en preguntas | T05 | S | [x] |
-| T07 | L17+L23 — Cablear `deepSeekAuditBlockOverlap` + retry | T05 | M | [x] |
-| T08 | L20+L21 — `chunk_coverage` + claim coverage retry | — | M | [x] |
-| T09 | L16 — `coverageManifest` activo en session + extracción | T03 | L | [x] |
-| T10 | L1 — Delimitadores jerarquía (❖ ➔ ➢) en normalización | — | M | [x] |
-| T11 | L9+L8+L10 — Snap obligatorio + penalización términos + min words | T10 | M | [x] |
-| T12 | L3 — Inventario dos pasadas (macro + micro) | T10 | L | [x] |
-| T13 | L13 — Separar generación explanation vs questions | T09 | M | [x] |
-| T14 | L5-D — Key terms fuera de secuencia lineal (glosario lateral) | T01 | M | [x] |
-| T15 | L4+L6+L7 — Tipología conceptos + ratio Key terms + fusión módulos | T04 | M | [x] |
-| T16 | L19 — Pregunta de conexión tipificada | T06 | S | [x] |
-| T17 | L24+L25 — Nodos grises grafo + prerequisites entre bloques | T15 | M | [x] |
-| T18 | L12 — Dedup semántico por embedding (opcional P5) | T02 | M | [x] |
-| T19 | Sprint 4 misc — flags `pipelineLevers` en session meta | T02 | S | [x] |
-| T20 | Suite tests + quickstart QA closure | T01–T14 mínimo | M | [x] |
+| ID | Description | Deps | Complexity | Status |
+|----|-------------|------|------------|--------|
+| T01 | `vault-store.js` + `mastery-model.js` — CRUD, decay, signal weights | — | M | [x] |
+| T02 | `session-close.js` — observation collection without LLM normalization | T01 | M | [x] |
+| T03 | Debug UI — settings Knowledge Vault panel | T02 | M | [x] |
+| T04 | `normalization.js` + `normalizeConceptsToVault()` in api.js | T02 | L | [x] |
+| T05 | `prompt-injection.js` + api.js pack/block prompt extensions | T04 | M | [x] |
+| T06 | `prerequisites.js` — elevate RSVP prerequisite_ids | T04 | S | [x] |
+| T07 | `docTopics` — extend buildDocumentHierarchy + session-types | — | M | [x] |
+| T08 | Assessment pre-fill — presumed_known from vault | T04, T07 | M | [x] |
+| T09 | cursor-tests + quickstart QA closure | T01–T08 | M | [x] |
 
-## Diagrama de dependencias
+## Dependency graph
 
 ```text
-T01 ──┬──→ T05 ──→ T06 ──→ T16
-      │         └──→ T07
-      └──→ T14
+T01 ──→ T02 ──→ T03
+T01 ──→ T04 ──┬──→ T05
+              ├──→ T06
+              └──→ T08
+T07 ───────────────→ T08
 
-T02 ──┬──→ T18
-      └──→ T19
-
-T03 ──→ T09 ──→ T13
-
-T04 ──→ T15 ──→ T17
-
-T08 (independiente)
-
-T10 ──→ T11 ──→ T12
-
-T01–T14 ──→ T20
-T15–T19 ──→ T20 (opcional)
+T01–T08 ──→ T09
 ```
 
-**Paralelizables desde inicio**: T01 + T02 + T03 + T04 + T08 + T10 (hasta 6 agentes)
+**Parallel from start**: T01 + T07 (up to 2 agents)
 
-**Paralelizables ola 2**: T05 + T11 (tras T01 y T10 respectivamente)
+**Parallel wave 2** (after T02): T03 + T04 (2 agents)
 
-**Paralelizables ola 3**: T06 + T07 + T09 (tras T05/T03)
+**Parallel wave 3** (after T04): T05 + T06 + T08 (3 agents; T08 also needs T07)
 
-**Paralelizables ola 4**: T12 + T13 + T14 (Sprint 3)
+## Recommended execution order
 
-## Orden de ejecución recomendado
+### Wave 0 — Foundation (2 parallel agents)
+- **T01** Vault store + mastery model
+- **T07** Document topic tags
 
-### Ola 0 — Sprint 0 (3 agentes en paralelo)
-- **T01** Key terms sin preguntas
-- **T02** Dedup threshold
-- **T03** Manifest en regen stub
+### Wave 1 — Ingestion (1 agent)
+- **T02** Session-close pipeline (no LLM dedup yet)
 
-### Ola 1 — Fundación contenido (3 agentes en paralelo)
-- **T04** Densidad inventario
-- **T08** Claim coverage
-- **T10** Delimitadores jerarquía
+**Checkpoint**: Study a doc, exit session, vault fills with raw concept names.
 
-### Ola 2 — Overlap preguntas (2–3 agentes)
-- **T05** Question scope (tras T01)
-- **T11** Chunk alignment levers (tras T10)
+### Wave 2 — Visibility + dedup (2 parallel agents)
+- **T03** Debug UI
+- **T04** LLM normalization
 
-### Ola 3 — Anti-overlap avanzado (3 agentes)
-- **T06** Anti-reteaching (tras T05)
-- **T07** Audit overlap (tras T05)
-- **T09** Manifest activo (tras T03)
+**Checkpoint**: Two docs same topic → shared concepts merge in debug UI.
 
-### Ola 4 — Sprint 3 (3 agentes, tras ola 3)
-- **T12** Two-pass inventory (tras T10)
-- **T13** Split explain/questions (tras T09)
-- **T14** Glosario lateral (tras T01)
+### Wave 3 — Consumption (3 parallel agents)
+- **T05** Prompt injection (pack + block generation)
+- **T06** Prerequisite elevation
+- **T08** Assessment presumed-known pre-fill
 
-### Ola 5 — Sprint 4 opcional
-- **T15**, **T16**, **T17**, **T18**, **T19**
+### Wave 4 — Closure
+- **T09** Tests + QA
 
-### Ola 6 — Cierre
-- **T20** Tests + QA
-
-**MVP mínimo útil**: T01 + T02 + T04 + T05 — elimina overlap inmediato y mejora densidad.
+**Minimum useful MVP**: T01 + T02 + T03 — vault populates and is inspectable.
 
 ---
 
-## PROMPT T01 — Key terms sin preguntas (L15)
+## PROMPT T01 — Vault store + mastery model
 
-Implementa **T01** del ROADMAP RSVP Pipeline Levers.
+Implement **T01** from this ROADMAP (Global Knowledge Vault A+).
 
-**Contexto**: Overlapping garantizado entre Key terms y desarrollo del mismo módulo. Spec: `specs/20260617-pipeline-levers/spec.md`. Contrato: `specs/20260617-pipeline-levers/contracts/key-terms-no-questions.md`.
+**Context**: Feature spec `specs/20260618-knowledge-vault-a-plus/spec.md`. Data model `specs/20260618-knowledge-vault-a-plus/data-model.md`. Contracts: `contracts/vault-store-api.md`, `contracts/mastery-model.md`. Research constants in `research.md` (ALPHA=0.3, LAMBDA=0.05, signal weight table).
 
-**Archivos**:
-- `src/js/session.js` — `resolveBlockQuestionConfig(blockIndex)`: leer título de `block_index` o `session.blocks`; si match `/^Key terms:/i`, `/^Overview:/i`, `/^Course map:/i` → `{ n_test: 0, n_socratic: 0, include_connection_questions: false }`
+**Create files**:
+- `src/js/vault/vault-store.js` — loadVault, saveVault, upsertEntry, getEntryById, addSource, clearVault, exportVaultJson, getEntriesByTopic (flexible substring topic match)
+- `src/js/vault/mastery-model.js` — OBSERVATION_WEIGHTS, updateMastery, getCurrentMastery, getMasteryLabel, hydrateMastery, PRESUMED_KNOWN_THRESHOLD=0.7
 
-**Reglas**:
-- Check de título ANTES de merge con `_config` per-block
-- No eliminar bloques Key terms del pack
+**Rules**:
+- Empty/corrupt localStorage → empty vault, no throw
+- `mastery` is runtime-only; persist masteryBase + masteryLastUpdated
+- Split storage at ~300KB following existing large-session localStorage pattern
+- All comments and exports in English
 
-**Criterio de éxito**: Key terms y Overview resuelven 0 preguntas. Ejecuta `/validate` antes de cerrar este mensaje.
+**Do NOT** wire study.js yet — pure modules only.
 
----
-
-## PROMPT T02 — Dedup threshold configurable (L11)
-
-Implementa **T02** del ROADMAP. Independiente.
-
-**Contexto**: Contrato `chunk-alignment-levers.md` sección L11. Umbral ≥3 demasiado alto para vocabulario especializado.
-
-**Archivos**:
-- `src/js/session.js` — `findDeterministicDuplicateMerges`: umbral desde `session._meta.pipelineLevers?.dedupSignatureOverlapThreshold` o `strict ? 2 : 3`; regla secundaria: ≥1 `concept_id` compartido Y ≥2 términos firma → merge
-
-**Criterio de éxito**: strict mode merge con 2 términos compartidos; normal sigue en 3. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: Pure functions testable in Node; 7-day decay lowers getCurrentMastery without new observation. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T03 — coverageManifest en regen (L22)
+## PROMPT T02 — Session-close pipeline (no normalization)
 
-Implementa **T03** del ROADMAP. Independiente.
+Implement **T02** from this ROADMAP. Depends on **T01**.
 
-**Contexto**: Contrato `coverage-manifest.md`. `deepSeekRegenerateBlockQuestions` debe aceptar manifest aunque esté vacío.
+**Context**: Contract `specs/20260618-knowledge-vault-a-plus/contracts/session-close-pipeline.md`. Phase rollout: skip LLM steps 4–5; create entries with canonicalTitle = concept.title from conceptInventory.
 
-**Archivos**:
-- `src/js/api.js` — añadir param `coverageManifest = []` a `deepSeekRegenerateBlockQuestions`; incluir en prompt vía `renderCoverageManifestForPrompt`
-- `src/js/study.js` — pasar `session._meta?.coverageManifest ?? []` en llamadas a regen
+**Create**:
+- `src/js/vault/session-close.js` — updateVaultFromSession(session, mode): filterNewConcepts, collectObservations, applyObservations, persistVault
 
-**Criterio de éxito**: regen recibe y renderiza manifest (vacío no rompe). Ejecuta `/validate` antes de cerrar este mensaje.
+**Modify**:
+- `src/js/study.js` — call updateVaultFromSession on session exit (leave study screen, mode switch with saveable state). Fire-and-forget; do not block navigation.
 
----
+**collectObservations** sources:
+- `session.shared.assessmentSignals` (mode-continuity)
+- Pre-packing assessment outcomes if present in session meta
+- Block responses (MCQ/Socratic) from RSVP slice — map to ObservationType per contract
 
-## PROMPT T04 — Densidad dinámica inventario (L2)
+**Rules**:
+- One vault entry per conceptInventory item on first close (sources array with docId + conceptId)
+- Update lastSeen on repeat sessions
 
-Implementa **T04** del ROADMAP. Independiente.
-
-**Contexto**: Contrato `inventory-density.md`. 30 conceptos en 60 páginas = thin blocks.
-
-**Archivos**:
-- `src/js/session.js` — `runConceptInventory`: calcular `estimatedConceptTarget = clamp(round(wordCount/300)*2, 30, 120)`
-- `src/js/api.js` — prompt inventario con target dinámico
-
-**Criterio de éxito**: doc 15k palabras → target ~100; prompt incluye expectativa. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: After RSVP session + exit, localStorage `mylearning_knowledge_vault` has entries with observations. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T05 — Scope preguntas por tipo (L14)
+## PROMPT T03 — Debug UI
 
-Implementa **T05** del ROADMAP. Depende de **T01**.
+Implement **T03** from this ROADMAP. Depends on **T02**.
 
-**Contexto**: Contrato `question-scope.md`. Tabla ALLOWED/FORBIDDEN por block_type.
+**Context**: Contract `specs/20260618-knowledge-vault-a-plus/contracts/debug-ui.md`. Quickstart scenario 1.
 
-**Archivos**:
-- `src/js/session.js` o nuevo helper — `deriveBlockType(title)`, `buildQuestionScopeContext(blockIndex)`
-- `src/js/api.js` — inyectar sección QUESTION TYPE RESTRICTION en prompt de preguntas; `precedingKeyTermsSignature` del Key terms previo del mismo módulo
+**Create**:
+- `src/js/vault/debug-ui.js` — renderVaultPanel, renderDetail, handleClear, handleExport
 
-**Criterio de éxito**: bloque desarrollo tras Key terms tiene FORBIDDEN con términos del glosario. Ejecuta `/validate` antes de cerrar este mensaje.
+**Modify**:
+- `index.html` — Settings area: button "Knowledge Vault", container for table/modal
+- `src/css/main.css` — table, mastery bar, filter dropdown
+- Wire open handler from existing settings screen (same area as API key)
 
----
+**UI** (English strings):
+- Header: `Knowledge Vault — N concepts`
+- Columns: Concept, Topic, Mastery (%), Last seen, Sources
+- Topic filter dropdown
+- Row click → detail (aliases, prerequisites, recent observations)
+- Buttons: Clear vault (confirm), Export JSON
 
-## PROMPT T06 — Anti-reteaching preguntas (L18)
+**PWA**: If touching src/js, index.html, or css — bump SW_VERSION and ?v= per .cursorrules.
 
-Implementa **T06** del ROADMAP. Depende de **T05**.
-
-**Contexto**: Contrato `question-scope.md` sección ALREADY QUESTIONED.
-
-**Archivos**:
-- `src/js/api.js` — construir `alreadyQuestionedTerms` desde preguntas de bloques anteriores (stems + opciones, heurística local)
-- Añadir reglas 1–3 al prompt de preguntas
-
-**Criterio de éxito**: bloque 3+ incluye lista de términos ya preguntados. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T07 — Audit overlap + retry (L17, L23)
-
-Implementa **T07** del ROADMAP. Depende de **T05**.
-
-**Contexto**: Contrato `overlap-audit.md`. `deepSeekAuditBlockOverlap` existe en api.js pero no se llama.
-
-**Archivos**:
-- `src/js/study.js` — `ensureBlockGenerated`: tras `validateBlockFidelity`, invocar audit si `blockIndex > 0` y no Key terms/Overview; retry con `avoidOverlapWith`
-- `src/js/api.js` — soporte `avoidOverlapWith` en generación explanation + questions
-
-**Criterio de éxito**: audit wired; max 1 retry; skip Key terms. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: After T02 flow, panel shows populated table; export valid JSON; clear empties vault. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T08 — Claim coverage + chunk_coverage (L20, L21)
+## PROMPT T04 — LLM normalization
 
-Implementa **T08** del ROADMAP. Independiente.
+Implement **T04** from this ROADMAP. Depends on **T02**.
 
-**Contexto**: Contrato `claim-coverage.md`.
+**Context**: Contracts `contracts/normalization-llm.md`, `contracts/session-close-pipeline.md` (enable steps 4–5).
 
-**Archivos**:
-- `src/js/fidelity-validation.js` — añadir `chunk_coverage`, `claimCoverageRatio`, `uncoveredClaims`; thresholds strict/normal
-- `src/js/study.js` — retry loop en `ensureBlockGenerated` si `claimCoverageRatio < 0.6` (max 1)
+**Create**:
+- `src/js/vault/normalization.js` — mergeNormalizationResult(vault, mappings, newConcepts, docTopics, docId)
 
-**Criterio de éxito**: explanation omitiendo claims dispara retry. Ejecuta `/validate` antes de cerrar este mensaje.
+**Modify**:
+- `src/js/api.js` — normalizeConceptsToVault({ existingEntries, newConcepts, topic }) with English LLM prompt; JSON-only response
+- `src/js/vault/session-close.js` — call normalization when new concepts exist; empty vault → all-new without LLM; on LLM error → fallback all-new
 
----
+**Rules**:
+- existingEntries input: metadata only (id, canonicalTitle, aliases)
+- merge adds source; alias adds alias string + source; new creates entry with UUID
+- Topic filter via getEntriesByTopic before LLM call
 
-## PROMPT T09 — coverageManifest activo (L16)
-
-Implementa **T09** del ROADMAP. Depende de **T03**.
-
-**Contexto**: Contrato `coverage-manifest.md`.
-
-**Archivos**:
-- `src/js/session.js` — init `session._meta.coverageManifest = []`; helpers `appendCoverageClaims`, `replaceCoverageForBlock`
-- `src/js/study.js` — tras generar preguntas, extraer claims heurísticamente y append; pasar manifest a generador bloque N+1
-- `src/js/api.js` — asegurar `renderCoverageManifestForPrompt` en generación bloque idx≥1
-
-**Criterio de éxito**: manifest crece por bloque; bloque 2+ recibe slice(-20). Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: Two docs same topic → chain rule appears once with 2 sources (SC-001). Empty vault does not error. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T10 — Delimitadores jerarquía (L1)
+## PROMPT T05 — Prompt injection (pack + blocks)
 
-Implementa **T10** del ROADMAP. Independiente.
+Implement **T05** from this ROADMAP. Depends on **T04**.
 
-**Contexto**: Contrato `chunk-alignment-levers.md` L1. Apuntes ética usan ❖ y ➔.
+**Context**: Contract `specs/20260618-knowledge-vault-a-plus/contracts/prompt-injection.md`.
 
-**Archivos**:
-- `src/js/normalization/infer-headings.js` o `src/js/hierarchy.js` — detectar ❖ (L1), ➔/➢ (L2) como secciones con offsets
-- Integrar en pipeline normalización existente (doc-hierarchy feature)
+**Create**:
+- `src/js/vault/prompt-injection.js` — getVaultContextForDoc, buildVaultContextBlock, buildBlockVaultHint
 
-**Criterio de éxito**: texto plano con ❖ produce `docHierarchy` con ≥1 sección. Ejecuta `/validate` antes de cerrar este mensaje.
+**Modify**:
+- `src/js/api.js`:
+  - `buildConceptPackPrompt()` — append buildVaultContextBlock when docTopics + vault entries exist
+  - Block generation context (ensureBlockGenerated / buildBlockGenerationContext) — append buildBlockVaultHint for block concept_ids
 
----
+**Rules**:
+- English prompt sections only
+- Mastered ≥0.7, partial 0.3–0.7, unstable prereqs: dependents.length > 0 && mastery < 0.5
+- No behavior change when vault empty
 
-## PROMPT T11 — Snap + penalización + min words (L9, L8, L10)
-
-Implementa **T11** del ROADMAP. Depende de **T10**.
-
-**Contexto**: Contrato `chunk-alignment-levers.md` L8–L10.
-
-**Archivos**:
-- `src/js/chunk-alignment.js` — snap obligatorio si `docHierarchy.length > 0`; `OVERLAP_PENALTY_TERM_THRESHOLD = 0.4`; `MIN_CHUNK_WORDS = 400` con expand a límite de sección
-
-**Criterio de éxito**: chunks alinean a secciones; penalización por términos compartidos activa. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: Pack prompt log/sniff includes GLOBAL KNOWLEDGE CONTEXT when vault populated; block gen includes mastery hint. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T12 — Inventario dos pasadas (L3)
+## PROMPT T06 — Prerequisite elevation
 
-Implementa **T12** del ROADMAP. Depende de **T10**.
+Implement **T06** from this ROADMAP. Depends on **T04**.
 
-**Contexto**: `research.md` R6. Fase macro + micro por sección docHierarchy.
+**Context**: Contract `specs/20260618-knowledge-vault-a-plus/contracts/prerequisites-elevation.md`.
 
-**Archivos**:
-- `src/js/session.js` — `runConceptInventoryPhase2(section, existingConcepts)`; trigger si `inventory.length < target*0.8 && wordCount > 8000`
-- `src/js/api.js` — prompt fase 2 con lista conceptos fase 1
+**Create**:
+- `src/js/vault/prerequisites.js` — elevatePrerequisiteRelations, addPrerequisiteRelation
 
-**Criterio de éxito**: conceptos level:2 con `secondary: true` en inventario fusionado. Ejecuta `/validate` antes de cerrar este mensaje.
+**Modify**:
+- `src/js/vault/session-close.js` — call elevatePrerequisiteRelations after applyObservations
 
----
+**Rules**:
+- Use concept.prerequisite_ids from shared.conceptInventory
+- Sync prerequisites + dependents arrays bidirectionally
+- Cycles allowed — do not resolve
 
-## PROMPT T13 — Split explanation/questions (L13)
-
-Implementa **T13** del ROADMAP. Depende de **T09**.
-
-**Contexto**: `research.md` R7. Dos LLM calls por bloque.
-
-**Archivos**:
-- `src/js/api.js` — `deepSeekGenerateBlockExplanation`, `deepSeekGenerateBlockQuestions`; `deepSeekGenerateBlockJson` orquesta ambas
-- Paso 2 recibe `coverageManifest`, scope (L14), `avoidOverlapWith`
-
-**Criterio de éxito**: questions generadas con explanation previa como input separado. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: After two docs with shared prereqs, vault detail shows prerequisite links. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T14 — Glosario lateral Key terms (L5-D)
+## PROMPT T07 — Document topic tags
 
-Implementa **T14** del ROADMAP. Depende de **T01**.
+Implement **T07** from this ROADMAP. Independent — can run parallel with T01.
 
-**Contexto**: Key terms fuera de secuencia lineal pero accesible como referencia.
+**Context**: research.md Decision 4; data-model docTopics field.
 
-**Archivos**:
-- `src/js/session.js` — flag `study_sequence: false` en block_index para Key terms
-- `src/js/study.js` — skip Key terms en navegación lineal; UI referencia términos (barra lateral o modal)
-- `index.html` + CSS mínimo si hace falta mount
+**Modify**:
+- `src/js/api.js` — extend buildDocumentHierarchy LLM prompt/output schema with `"topics": ["string"]` (2–5 tags, document language OK for tags)
+- `src/js/session-types.js` — document shared.docTopics: string[]
+- Session save path — persist docTopics on hierarchy build (study.js or session.js wherever hierarchy is stored)
 
-**Criterio de éxito**: sesión lineal salta Key terms; glosario accesible. Ejecuta `/validate` antes de cerrar este mensaje.
+**Rules**:
+- No extra LLM call — piggyback on existing hierarchy call
+- Default docTopics [] for legacy sessions
 
----
-
-## PROMPT T15 — Tipología + pack tuning (L4, L6, L7)
-
-Implementa **T15** del ROADMAP. Depende de **T04**.
-
-**Contexto**: `spec-pipeline-levers.md` L4, L6, L7.
-
-**Archivos**:
-- `src/js/api.js` — prompt inventario con `concept_type`; prompt pack: Key terms solo si módulo ≥4 conceptos; fusión módulos <3 conceptos
-- `src/js/session.js` — `packInventoryDeterministic` fallback con umbrales
-
-**Criterio de éxito**: inventario incluye `concept_type`; módulos pequeños sin Key terms propio. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: New upload stores docTopics on session.shared; visible in session export. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T16 — Pregunta conexión tipificada (L19)
+## PROMPT T08 — Assessment presumed-known pre-fill
 
-Implementa **T16** del ROADMAP. Depende de **T06**.
+Implement **T08** from this ROADMAP. Depends on **T04** and **T07**.
 
-**Contexto**: `spec-pipeline-levers.md` L19. Conexión debe referenciar claim específico de bloque N-1/N-2.
+**Context**: Contract prompt-injection.md assessment section; FR-010; SC-004.
 
-**Archivos**:
-- `src/js/api.js` — sección REQUIRED CONNECTION QUESTION con `prevBlockSummaryForConnection`
+**Modify**:
+- Pre-packing assessment UI flow in `src/js/study.js` (and related assessment UI files from rsvp-assessment-reposition)
+- Use getVaultContextForDoc(session.shared.docTopics)
+- Concepts with getCurrentMastery ≥ 0.7 → show presumed_known UI (check icon); user can override
+- On submit, contradictions emit assessment_partial / assessment_unknown observations into vault via session-close or inline observation helper
 
-**Criterio de éxito**: primera pregunta de bloque >1 referencia claim previo explícito. Ejecuta `/validate` antes de cerrar este mensaje.
+**Rules**:
+- Empty vault → unchanged assessment UX
+- Do not skip assessment entirely
 
----
-
-## PROMPT T17 — Grafo grises + prerequisites (L24, L25)
-
-Implementa **T17** del ROADMAP. Depende de **T15**.
-
-**Contexto**: `spec-pipeline-levers.md` L24, L25.
-
-**Archivos**:
-- `src/js/session.js` o módulo grafo — `buildRsvpMaterialGraph`: nodos `grey` para gaps; aristas `prerequisite` entre bloques
-- `src/js/study.js` — warning si bloque prerequisite no estudiado
-
-**Criterio de éxito**: grafo muestra nodos grey; warning en navegación. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: Third doc same topic shows presumed-known markers; override works; vault records contradiction. Run `/validate` before closing this message.
 
 ---
 
-## PROMPT T18 — Dedup semántico (L12, opcional)
+## PROMPT T09 — Tests + QA closure
 
-Implementa **T18** del ROADMAP. Depende de **T02**. Prioridad P5.
+Implement **T09** from this ROADMAP. Depends on **T01–T08**.
 
-**Contexto**: Embedding similarity >0.85 entre summaries de bloques; solo si nBlocks > expected*1.2.
+**Context**: `specs/20260618-knowledge-vault-a-plus/quickstart.md` — all scenarios.
 
-**Archivos**:
-- Nuevo helper o `session.js` — post `applyDeterministicDedup` embedding pass opcional
-- Flag en `pipelineLevers` para activar
+**Create**:
+- `cursor-tests/20260618_knowledge-vault-a-plus.mjs`
 
-**Criterio de éxito**: pares similares flaggeados o merged cuando flag on. Ejecuta `/validate` antes de cerrar este mensaje.
+**Cover**:
+- updateMastery + getCurrentMastery decay (7+ days)
+- OBSERVATION_WEIGHTS mapping
+- getEntriesByTopic flexible match
+- mergeNormalizationResult merge/alias/new
+- elevatePrerequisiteRelations bidirectional sync
+- empty vault normalization fallback
+- clearVault removes all keys
 
----
+**Update**:
+- Mark all ROADMAP tasks [x] when passing
+- Mark spec quality items in quickstart as verified
 
-## PROMPT T19 — pipelineLevers session meta
-
-Implementa **T19** del ROADMAP. Depende de **T02**.
-
-**Contexto**: `data-model.md` PipelineLeversConfig.
-
-**Archivos**:
-- `src/js/session.js` — init `session._meta.pipelineLevers` con defaults; merge on session create strict mode
-
-**Criterio de éxito**: strict session tiene defaults dedup=2, claimCoverageMin=0.6. Ejecuta `/validate` antes de cerrar este mensaje.
-
----
-
-## PROMPT T20 — Tests + QA closure
-
-Implementa **T20** del ROADMAP. Depende de **T01–T14** mínimo.
-
-**Contexto**: `specs/20260617-pipeline-levers/quickstart.md`
-
-**Archivos**:
-- `cursor-tests/20260617_pipeline-levers.mjs` — tests: resolveBlockQuestionConfig titles, inventory target formula, dedup threshold, manifest append, block type scope (sin LLM live)
-- `cursor-tests/loader.mjs` — registrar si aplica
-- `specs/20260617-pipeline-levers/quickstart.md` — marcar QA checklist
-- `ROADMAP.md` — marcar tareas completadas
-
-**Casos mínimos**:
-- Key terms → n_test=0
-- estimatedConceptTarget formula
-- strict dedup threshold=2
-- coverageManifest passed to regen
-
-**Criterio de éxito**: suite pasa; QA-PL-0..PL-REG documentados. Ejecuta `/validate` antes de cerrar este mensaje.
+**Success criteria**: `node cursor-tests/20260618_knowledge-vault-a-plus.mjs` passes; quickstart scenarios 1–8 documented as PASS/FAIL. Run `/validate` before closing this message.
 
 ---
 
-## Instrucción de ejecución
+## Execution instruction
 
-1. **Lanzar en paralelo** (hasta 6 chats): **PROMPT T01**, **T02**, **T03**, **T04**, **T08**, **T10**
-2. **Esperar** ola 0+1
-3. **Lanzar en paralelo**: **PROMPT T05**, **T11**
-4. **Esperar** T05
-5. **Lanzar en paralelo**: **PROMPT T06**, **T07**, **T09**
-6. **Esperar** T09
-7. **Lanzar en paralelo** (Sprint 3): **PROMPT T12**, **T13**, **T14**
-8. **Opcional Sprint 4**: T15–T19
-9. **Lanzar** **PROMPT T20**
+1. **Launch first** (parallel): **PROMPT T01** + **PROMPT T07**
+2. **Wait** for T01 before **T02**
+3. **After T02**: launch **T03** + **T04** in parallel
+4. **After T04** (and T07 for T08): launch **T05** + **T06** + **T08** in parallel
+5. **After all pass**: **T09** alone
 
-**Tiempo total estimado**: 6 olas; máximo 6 agentes en ola 0.
+Minimum path to first validation: T01 → T02 → T03 (~3 sequential steps).
 
-**Prioridad si hay prisa**: T01 → T04 → T05 (MVP overlap + densidad).
+Each prompt ends with: run `/validate` before closing.

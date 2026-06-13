@@ -140,6 +140,7 @@
       </svg>
     </button>
 
+    <a href="#" id="knowledgeVaultLink" class="corner-link" style="right: 280px">Knowledge Vault</a>
     <a href="#" id="changeKeyLink" class="corner-link">Change API key</a>
     <button
       type="button"
@@ -225,6 +226,10 @@
                 <span class="hint" id="apiKeyStatus" role="status"></span>
               </div>
             </form>
+
+            <div id="knowledgeVaultPanel" class="vault-debug-panel" hidden aria-hidden="true">
+              <div id="knowledgeVaultPanelBody" class="vault-panel-body"></div>
+            </div>
           </div>
         </section>
 
@@ -1572,7 +1577,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260612_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260618_1";
 
       function showBootFailure(message) {
         const banner = document.getElementById("bootErrorBanner");
@@ -1586,7 +1591,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260612_1");
+        await import("./src/js/main.js?v=20260618_1");
       } catch (err) {
         showBootFailure(
           "The app failed to load — a required script is missing or outdated. " +

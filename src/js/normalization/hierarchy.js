@@ -19,7 +19,7 @@ const SUMMARY_MIN_CHARS = 8000;
  * @param {string} markdownText
  * @param {((args: { systemPrompt: string, userPrompt: string, temperature: number, maxTokens: number, signal?: AbortSignal }) => Promise<string>) | null} llmFn
  * @param {{ useCache?: boolean, textHash?: string, minLlmChars?: number, includeSummary?: boolean, signal?: AbortSignal }} [options]
- * @returns {Promise<{ method: 'llm'|'deterministic'|'trivial', tree: import("./types.js").HierarchyNode[], pedagogicalMeta: import("../session-types.js").PedagogicalMeta | null, textHash: string, generatedAt: number, fromCache?: boolean } | null>}
+ * @returns {Promise<{ method: 'llm'|'deterministic'|'trivial', tree: import("./types.js").HierarchyNode[], pedagogicalMeta: import("../session-types.js").PedagogicalMeta | null, topics: string[], textHash: string, generatedAt: number, fromCache?: boolean } | null>}
  */
 export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) {
   const text = String(markdownText ?? "");
@@ -34,6 +34,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       method: "deterministic",
       tree: buildDeterministicHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+      topics: [],
       textHash,
       generatedAt,
     };
@@ -44,6 +45,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       method: "deterministic",
       tree: buildDelimiterHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+      topics: [],
       textHash,
       generatedAt,
     };
@@ -54,6 +56,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       method: "trivial",
       tree: buildTrivialHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+      topics: [],
       textHash,
       generatedAt,
     };
@@ -72,6 +75,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
         pedagogicalMeta:
           cached.pedagogicalMeta ??
           buildDeterministicPedagogicalMeta(analyzeText(text)),
+        topics: Array.isArray(cached.topics) ? cached.topics : [],
         textHash,
         generatedAt,
         fromCache: true,
@@ -105,12 +109,13 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
 
   const pedagogicalMeta =
     parsePedagogicalMetaFromLlm(raw) ?? buildDeterministicPedagogicalMeta(analyzeText(text));
+  const topics = parseTopicsFromLlm(raw);
 
   if (useCache) {
-    setCachedHierarchy(textHash, { tree, method: "llm", pedagogicalMeta });
+    setCachedHierarchy(textHash, { tree, method: "llm", pedagogicalMeta, topics });
   }
 
-  return { method: "llm", tree, pedagogicalMeta, textHash, generatedAt };
+  return { method: "llm", tree, pedagogicalMeta, topics, textHash, generatedAt };
 }
 
 /**
@@ -123,6 +128,7 @@ function deterministicFallback(text, textHash, generatedAt) {
     method: "deterministic",
     tree: buildDeterministicHierarchy(text),
     pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
+    topics: [],
     textHash,
     generatedAt,
   };
@@ -158,8 +164,9 @@ ${summaryRule}
   - conceptual_load: 1-5
   - primary_learning_goal: understand_argument | memorize_facts | learn_procedure | survey_field
   - reasoning: string, máx 20 palabras
+- Devuelve "topics": array de 2 a 5 etiquetas temáticas cortas (idioma del documento OK) para filtrar conocimiento cruzado.
 
-Formato respuesta JSON: { "tree": [...], "pedagogical_meta": { ... } }
+Formato respuesta JSON: { "tree": [...], "pedagogical_meta": { ... }, "topics": ["tag1", "tag2"] }
 
 TEXTO (longitud: ${text.length} chars):
 ${text}
@@ -188,6 +195,29 @@ const PRIMARY_LEARNING_GOALS = new Set([
  * @param {string} raw
  * @returns {import("../session-types.js").PedagogicalMeta | null}
  */
+/**
+ * @param {string} raw
+ * @returns {string[]}
+ */
+export function parseTopicsFromLlm(raw) {
+  const parsed = parseLlmJson(raw);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return [];
+  const topicsRaw = /** @type {Record<string, unknown>} */ (parsed).topics;
+  if (!Array.isArray(topicsRaw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of topicsRaw) {
+    const tag = String(item || "").trim();
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(tag);
+    if (out.length >= 5) break;
+  }
+  return out.length >= 2 ? out : out;
+}
+
 export function parsePedagogicalMetaFromLlm(raw) {
   const parsed = parseLlmJson(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;

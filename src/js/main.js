@@ -30,7 +30,8 @@ import {
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
-import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260607_1";
+import { enterModeSelectScreen, wireStudyHandlers } from "./study.js?v=20260618_1";
+import { wireVaultDebugUi } from "./vault/debug-ui.js";
 
 function clearActiveSessionStorage() {
   try {
@@ -115,6 +116,7 @@ async function bootstrap() {
   initLanguageUi();
   wireStudyHandlers();
   wireReviewHandlers();
+  wireVaultDebugUi(els.knowledgeVaultPanel, els.knowledgeVaultLink, () => showScreen("setup"));
   initGuideChat();
 
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
