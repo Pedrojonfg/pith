@@ -126,7 +126,7 @@ upsertSmItem(smDoc.docId, {
   reviewCount: 0,
 });
 const due = getSmItemsDueToday(smDoc.docId);
-assert(due.length === 2 && due.some((x) => x.sourceMode === "cloze"), "SM-2 pool: both modes");
+assert(due.length === 2 && due.some((x) => x.sourceType === "cloze_item"), "SM-2 pool: both modes");
 
 // dedup conceptInventory
 resetStorage();

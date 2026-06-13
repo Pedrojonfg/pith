@@ -125,14 +125,15 @@ upsertSmItem("doc-thermo", {
 
 syncVaultToReviewPool(getSession("doc-thermo"));
 const synced = getSession("doc-thermo");
-const vaultItems = synced.shared.smItems.filter((i) => i.source === "vault_decay");
+const vaultItems = synced.shared.smItems.filter((i) => i.sourceType === "vault_concept");
 const clozeItems = synced.shared.smItems.filter((i) => i.id === "cloze:item-1");
 
 assert(vaultItems.length === 1, "happy: decaying vault entry synced to smItems");
-assert(vaultItems[0].vaultEntryId === decayTopic.id, "happy: smItem links vaultEntryId");
-assert(vaultItems[0].conceptTitle === "Entropy", "happy: conceptTitle from vault");
-assert(vaultItems[0].priority > 0, "happy: priority is positive");
+assert(vaultItems[0].sourceId === decayTopic.id, "happy: smItem links vault sourceId");
+assert(vaultItems[0].title === "Entropy", "happy: title from vault");
+assert(Number.isFinite(vaultItems[0].scheduledDue), "happy: scheduledDue is set");
 assert(clozeItems.length === 1, "happy: non-vault smItems preserved");
+assert(clozeItems[0].sourceType === "cloze_item", "happy: cloze item canonical sourceType");
 
 // --- review completion updates vault and re-syncs ---
 
@@ -145,7 +146,7 @@ const afterMastery = getCurrentMastery(afterEntry);
 assert(afterMastery > beforeMastery, "happy: review observation increases vault mastery");
 
 const afterSync = getSession("doc-thermo");
-const stillVault = afterSync.shared.smItems.filter((i) => i.source === "vault_decay");
+const stillVault = afterSync.shared.smItems.filter((i) => i.sourceType === "vault_concept");
 assert(stillVault.length <= 1, "edge: pool re-synced after review");
 
 // --- failure: no-op without docId ---
