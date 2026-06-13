@@ -21,6 +21,9 @@ import {
 } from "./markdown.js?v=20260525_1";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
+import { buildReviewQueue, isOnTime, updateSmItem } from "./sm2.js";
+import { getSession, upsertSmItem } from "./session-store.js";
+import { applyVaultReviewObservation } from "./vault/spaced-review.js";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */
@@ -32,6 +35,135 @@ let reviewTestTotal = 0;
 let reviewAnswers = [];
 let reviewGenCancelToken = { cancelled: false };
 let reviewSessionContent = "";
+
+let sm2ReviewDocId = "";
+let sm2ReviewQueue = [];
+let sm2ReviewIndex = 0;
+let sm2ReviewActive = false;
+
+const SM2_SOURCE_LABELS = {
+  rsvp_block: "RSVP block",
+  cloze_item: "Cloze",
+  slow_flashcard: "Slow flashcard",
+  vault_concept: "Vault concept",
+};
+
+function setSm2ReviewDomVisible(active) {
+  sm2ReviewActive = active;
+  const llmHidden = active;
+  if (els.reviewMeta) els.reviewMeta.hidden = llmHidden;
+  if (els.reviewScore) els.reviewScore.hidden = llmHidden;
+  if (els.reviewQuestionText) els.reviewQuestionText.hidden = llmHidden;
+  if (els.reviewTestView) els.reviewTestView.hidden = true;
+  if (els.reviewSocraticView) els.reviewSocraticView.hidden = true;
+  if (els.reviewSm2View) els.reviewSm2View.hidden = !active;
+}
+
+function showSm2ReviewEmptyState() {
+  setSm2ReviewDomVisible(true);
+  if (els.reviewSm2Meta) els.reviewSm2Meta.textContent = "Spaced review";
+  if (els.reviewSm2EarlyChip) els.reviewSm2EarlyChip.classList.add("hidden");
+  if (els.reviewSm2SourceBadge) els.reviewSm2SourceBadge.textContent = "";
+  if (els.reviewSm2Title) els.reviewSm2Title.textContent = "";
+  if (els.reviewSm2Preview) els.reviewSm2Preview.textContent = "";
+  if (els.reviewSm2QualityBtns) els.reviewSm2QualityBtns.hidden = true;
+  if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = false;
+  showScreen("review");
+}
+
+function renderSm2ReviewItem() {
+  const item = sm2ReviewQueue[sm2ReviewIndex];
+  if (!item) {
+    showSm2ReviewSummary();
+    return;
+  }
+
+  setSm2ReviewDomVisible(true);
+  if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = true;
+  if (els.reviewSm2QualityBtns) els.reviewSm2QualityBtns.hidden = false;
+
+  const now = Date.now();
+  const early = !isOnTime(item, now);
+  if (els.reviewSm2Meta) {
+    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length}`;
+  }
+  if (els.reviewSm2EarlyChip) {
+    els.reviewSm2EarlyChip.classList.toggle("hidden", !early);
+  }
+  if (els.reviewSm2SourceBadge) {
+    els.reviewSm2SourceBadge.textContent = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
+  }
+  if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
+  if (els.reviewSm2Preview) {
+    els.reviewSm2Preview.textContent = String(item.contentPreview || "");
+  }
+}
+
+function showSm2ReviewSummary() {
+  setSm2ReviewDomVisible(true);
+  if (els.reviewSm2QualityBtns) els.reviewSm2QualityBtns.hidden = true;
+  if (els.reviewSm2EarlyChip) els.reviewSm2EarlyChip.classList.add("hidden");
+  if (els.reviewSm2Meta) els.reviewSm2Meta.textContent = "Review complete";
+  if (els.reviewSm2SourceBadge) els.reviewSm2SourceBadge.textContent = "";
+  if (els.reviewSm2Title) els.reviewSm2Title.textContent = "Session finished";
+  if (els.reviewSm2Preview) {
+    els.reviewSm2Preview.textContent = `You reviewed ${sm2ReviewQueue.length} item${sm2ReviewQueue.length === 1 ? "" : "s"}.`;
+  }
+  if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = true;
+}
+
+function handleSm2QualityClick(quality) {
+  const item = sm2ReviewQueue[sm2ReviewIndex];
+  if (!item || !sm2ReviewDocId) return;
+
+  const updated = updateSmItem(item, quality);
+  upsertSmItem(sm2ReviewDocId, updated);
+  sm2ReviewQueue[sm2ReviewIndex] = updated;
+
+  if (updated.sourceType === "vault_concept") {
+    const session = getSession(sm2ReviewDocId);
+    if (session) {
+      applyVaultReviewObservation(session, updated.sourceId, {
+        type: quality >= 3 ? "mcq_correct" : "mcq_wrong",
+        correct: quality >= 3,
+      });
+    }
+  }
+
+  sm2ReviewIndex += 1;
+  if (sm2ReviewIndex >= sm2ReviewQueue.length) showSm2ReviewSummary();
+  else renderSm2ReviewItem();
+}
+
+/** Priority-queue spaced review for shared.smItems. */
+export function runSm2ReviewSession(docId) {
+  const id = String(docId || "").trim();
+  const session = getSession(id);
+  if (!session) return;
+
+  sm2ReviewDocId = id;
+  sm2ReviewQueue = buildReviewQueue(session.shared?.smItems || []);
+  sm2ReviewIndex = 0;
+
+  if (!sm2ReviewQueue.length) {
+    showSm2ReviewEmptyState();
+    return;
+  }
+
+  showScreen("review");
+  renderSm2ReviewItem();
+}
+
+export function wireSm2ReviewHandlers() {
+  els.reviewSm2QualityBtns?.querySelectorAll("[data-sm2-quality]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const quality = Number(btn.getAttribute("data-sm2-quality"));
+      if (!Number.isFinite(quality)) return;
+      handleSm2QualityClick(quality);
+    });
+  });
+}
+
 
 export const SLOW_FLASHCARD_SOURCE = "slow_mode";
 
@@ -965,7 +1097,16 @@ export function wireReviewHandlers() {
     showScreen("complete");
   });
 
-  els.reviewQuitBtn.addEventListener("click", () => showScreen("complete"));
+  els.reviewQuitBtn.addEventListener("click", () => {
+    if (sm2ReviewActive) {
+      sm2ReviewActive = false;
+      showScreen("modeSelect");
+      return;
+    }
+    showScreen("complete");
+  });
+
+  wireSm2ReviewHandlers();
 
   els.reviewNextBtn.addEventListener("click", () => {
     const isLast = reviewIndex >= reviewQuestions.length - 1;

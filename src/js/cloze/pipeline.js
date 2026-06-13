@@ -1,5 +1,6 @@
 import { llmChatCompletions } from "../llm.js?v=20260525_1";
 import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260609_1";
+import { createSmItem } from "../sm2.js";
 import {
   getValidItems,
   mergeItemOptions,
@@ -325,20 +326,17 @@ function persistClozeItemsToShared(docId, items) {
   for (const item of valid) {
     if (!item?.id) continue;
     try {
-      upsertSmItem(docId, {
-        id: `cloze:${item.id}`,
-        sourceMode: "cloze",
-        question: String(item.blank_text || item.stem || "").trim(),
-        answer: String(item.correct_answer || item.answer || "").trim(),
-        distractors: (item.options || [])
-          .filter((o) => o && !o.correct)
-          .map((o) => String(o.text || "").trim())
-          .filter(Boolean),
-        easeFactor: 2.5,
-        interval: 0,
-        nextReview: Date.now(),
-        reviewCount: 0,
-      });
+      upsertSmItem(
+        docId,
+        createSmItem({
+          id: `cloze:${item.id}`,
+          sourceType: "cloze_item",
+          sourceId: String(item.id),
+          docId,
+          title: String(item.blank_text || item.stem || "").trim(),
+          contentPreview: String(item.correct_answer || item.answer || "").trim(),
+        }),
+      );
     } catch (err) {
       console.warn("[cloze] upsertSmItem failed", err);
     }

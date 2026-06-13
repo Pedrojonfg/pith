@@ -437,6 +437,10 @@
             </fieldset>
 
             <div class="doc-library-link-row">
+              <button type="button" id="btnReview" class="btn-secondary">
+                Review
+                <span id="reviewBadge" class="review-badge hidden" aria-label="Items due now"></span>
+              </button>
               <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
                 My documents
               </button>
@@ -1266,6 +1270,25 @@
               <button type="button" id="reviewQuitBtn">Quit</button>
             </div>
 
+            <div id="reviewSm2View" class="review-sm2-view" hidden>
+              <div class="review-sm2-head">
+                <span id="reviewSm2Meta" class="hint"></span>
+                <span id="reviewSm2EarlyChip" class="review-early-chip hidden">Early review</span>
+              </div>
+              <p id="reviewSm2SourceBadge" class="review-sm2-source hint"></p>
+              <h2 id="reviewSm2Title" class="review-sm2-title"></h2>
+              <p id="reviewSm2Preview" class="review-sm2-preview"></p>
+              <div id="reviewSm2QualityBtns" class="review-sm2-quality-btns" role="group" aria-label="Rate recall quality">
+                <button type="button" class="btn-secondary" data-sm2-quality="5">I knew it perfectly</button>
+                <button type="button" class="btn-secondary" data-sm2-quality="4">I knew it</button>
+                <button type="button" class="btn-secondary" data-sm2-quality="3">With effort</button>
+                <button type="button" class="btn-secondary" data-sm2-quality="1">I did not know it</button>
+              </div>
+              <p id="reviewSm2Empty" class="hint" hidden>
+                No review items yet. Study in RSVP, Cloze, or Slow Mode to build your queue.
+              </p>
+            </div>
+
             <div class="divider"></div>
 
             <div class="test-question" id="reviewQuestionText"></div>
@@ -1692,8 +1715,8 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260613_2";
-      import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260613_2";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_1";
+      import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
       function showBootFailure(message) {
@@ -1708,7 +1731,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260613_2");
+        await import("./src/js/main.js?v=20260620_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

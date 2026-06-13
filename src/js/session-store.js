@@ -14,6 +14,7 @@ import {
   extractSignalsFromBlockSession,
   mergeAssessmentSignals,
 } from "./assessment-signals.js";
+import { normalizeSmItem } from "./sm2.js";
 import {
   computeCanonicalId,
   inferDocMeta,
@@ -94,6 +95,15 @@ function rehydrateSessionModes(session) {
     }
   }
   return changed ? { ...session, modes } : session;
+}
+
+function normalizeSessionSmItems(session) {
+  if (!session?.shared || !Array.isArray(session.shared.smItems)) return session;
+  const docId = session.docId;
+  const normalized = session.shared.smItems
+    .map((raw) => normalizeSmItem({ ...raw, docId: raw?.docId || docId }))
+    .filter(Boolean);
+  return { ...session, shared: { ...session.shared, smItems: normalized } };
 }
 
 function stripMarkdownForPersist(session) {
@@ -203,7 +213,7 @@ export function getSession(docId) {
   if (!id) return null;
   const found = readSessionsRaw().find((s) => s?.docId === id);
   if (!found) return null;
-  return rehydrateMarkdown(found);
+  return normalizeSessionSmItems(rehydrateMarkdown(found));
 }
 
 export function getActiveSession() {
@@ -380,11 +390,24 @@ export function updateRecommendation(docId, recommendation) {
 export function upsertSmItem(docId, item) {
   const session = getSession(docId);
   if (!session) throw new Error("session not found");
-  if (!item?.id) throw new Error("sm item requires id");
+  const incoming = normalizeSmItem({ ...item, docId: item?.docId || docId });
+  if (!incoming?.id) throw new Error("sm item requires id");
   if (!Array.isArray(session.shared.smItems)) session.shared.smItems = [];
-  const idx = session.shared.smItems.findIndex((x) => x?.id === item.id);
-  if (idx >= 0) session.shared.smItems[idx] = { ...session.shared.smItems[idx], ...item };
-  else session.shared.smItems.push(item);
+
+  const items = session.shared.smItems
+    .map((raw) => normalizeSmItem({ ...raw, docId }))
+    .filter(Boolean);
+
+  let idx = items.findIndex((x) => x.id === incoming.id);
+  if (idx < 0) {
+    idx = items.findIndex(
+      (x) => x.sourceType === incoming.sourceType && x.sourceId === incoming.sourceId,
+    );
+  }
+  if (idx >= 0) items[idx] = { ...items[idx], ...incoming };
+  else items.push(incoming);
+
+  session.shared.smItems = items;
   saveActiveSession(session);
 }
 
@@ -442,10 +465,11 @@ export function getSmItemsDueToday(docId) {
   const sessions = docId ? [getSession(docId)].filter(Boolean) : getAllSessions();
   const due = [];
   for (const session of sessions) {
-    for (const item of session.shared?.smItems || []) {
+    for (const raw of session.shared?.smItems || []) {
+      const item = normalizeSmItem({ ...raw, docId: session.docId });
       if (!item?.id) continue;
-      const next = Number(item.nextReview);
-      if (!Number.isFinite(next) || next <= cutoff) {
+      const scheduledDue = Number(item.scheduledDue);
+      if (!Number.isFinite(scheduledDue) || scheduledDue <= cutoff) {
         due.push({ ...item, docId: session.docId });
       }
     }

@@ -1,4 +1,6 @@
 import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260612_1";
+import { getActiveSession } from "../session-store.js";
+import { mapClozeResultToQuality, registerOrUpdateSmItem } from "../sm2-ingest.js";
 import { getValidItems } from "./normalize.js?v=20260607_1";
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260525_1";
@@ -162,6 +164,21 @@ function handleOptionSelect(session, host, idx) {
   if (isCorrect) correct += 1;
   item.times_shown = (item.times_shown || 0) + 1;
   if (isCorrect) item.times_correct = (item.times_correct || 0) + 1;
+
+  try {
+    const doc = getActiveSession();
+    if (doc?.docId) {
+      registerOrUpdateSmItem(doc.docId, {
+        sourceType: "cloze_item",
+        sourceId: String(item.id),
+        title: String(item.blank_text || item.stem || "").slice(0, 80),
+        contentPreview: String(item.correct_answer || item.answer || ""),
+        quality: mapClozeResultToQuality(isCorrect ? "EASY" : "FAIL"),
+      });
+    }
+  } catch (err) {
+    console.warn("[sm2-ingest] cloze ingest failed", err);
+  }
 
   const feedback = host.querySelector("#clozeStudyFeedback");
   const nextBtn = host.querySelector("#clozeStudyNextBtn");
