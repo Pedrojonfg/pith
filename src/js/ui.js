@@ -13,6 +13,10 @@ let resolveChromeStudyMode = () => "rsvp";
 let resolveChromeHasConcepts = () => false;
 
 let currentScreenId = "setup";
+
+export function getCurrentScreenId() {
+  return currentScreenId;
+}
 let blockReadWanted = false;
 let guideToggleSuppressed = false;
 
@@ -131,6 +135,8 @@ export function syncFloatingChrome() {
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
   knowledgeVaultLink: document.getElementById("knowledgeVaultLink"),
+  knowledgeVaultOverlay: document.getElementById("knowledgeVaultOverlay"),
+  knowledgeVaultCloseBtn: document.getElementById("knowledgeVaultCloseBtn"),
   knowledgeVaultPanel: document.getElementById("knowledgeVaultPanel"),
   knowledgeVaultPanelBody: document.getElementById("knowledgeVaultPanelBody"),
   newSessionBtn: document.getElementById("newSessionBtn"),

@@ -11,6 +11,7 @@ import {
   VAULT_GRAPH_MIN_ENTRIES,
 } from "./vault-graph.js";
 import {
+  addManualEntry,
   clearVault,
   deleteEntry,
   exportVaultJson,
@@ -549,6 +550,11 @@ export function renderVaultPanel(host) {
     ? "Open interactive prerequisite graph"
     : `Add at least ${VAULT_GRAPH_MIN_ENTRIES} concepts to view the graph`;
   graphBtn.addEventListener("click", () => {
+    const overlay = getVaultOverlay(null);
+    if (overlay) {
+      overlay.hidden = true;
+      overlay.setAttribute("aria-hidden", "true");
+    }
     if (typeof onViewGraphHandler === "function") onViewGraphHandler();
   });
   actions.append(addBtn, graphBtn, exportBtn, clearBtn);
@@ -724,23 +730,49 @@ function escapeAttr(text) {
   return escapeHtml(text).replace(/'/g, "&#39;");
 }
 
+function getVaultOverlay(panel) {
+  return (
+    document.getElementById("knowledgeVaultOverlay") ||
+    panel?.closest?.(".vault-overlay") ||
+    null
+  );
+}
+
+function setVaultOverlayOpen(overlay, open, body) {
+  if (!overlay) return;
+  overlay.hidden = !open;
+  overlay.setAttribute("aria-hidden", open ? "false" : "true");
+  document.body.classList.toggle("vault-overlay-open", open);
+  if (open && body) renderVaultPanel(body);
+}
+
 /**
  * @param {HTMLElement | null} panel
  * @param {HTMLElement | null} trigger
- * @param {(() => void) | null} [onOpen]
+ * @param {HTMLElement | null} [overlay]
+ * @param {HTMLElement | null} [closeBtn]
  * @param {(() => void) | null} [onViewGraph]
  */
-export function wireVaultDebugUi(panel, trigger, onOpen = null, onViewGraph = null) {
+export function wireVaultDebugUi(panel, trigger, overlay = null, closeBtn = null, onViewGraph = null) {
   if (!panel || !trigger) return;
   onViewGraphHandler = onViewGraph;
-  const body = panel.classList?.contains("vault-panel-body") ? panel : panel.querySelector(".vault-panel-body") || panel;
+  const shell = overlay || getVaultOverlay(panel);
+  const body = panel.classList?.contains("vault-panel-body")
+    ? panel
+    : panel.querySelector(".vault-panel-body") || panel;
+
+  const closeVault = () => setVaultOverlayOpen(shell, false, body);
+  const openVault = () => setVaultOverlayOpen(shell, true, body);
+
   trigger.addEventListener("click", (e) => {
     e.preventDefault();
-    if (typeof onOpen === "function") onOpen();
-    const shell = panel.classList?.contains("vault-debug-panel") ? panel : panel.closest(".vault-debug-panel") || panel;
-    const open = shell.hidden === true || shell.getAttribute("aria-hidden") === "true";
-    shell.hidden = !open;
-    shell.setAttribute("aria-hidden", open ? "false" : "true");
-    if (open) renderVaultPanel(body);
+    const isOpen = shell && shell.hidden === false && shell.getAttribute("aria-hidden") !== "true";
+    if (isOpen) closeVault();
+    else openVault();
+  });
+
+  closeBtn?.addEventListener("click", closeVault);
+  shell?.addEventListener("click", (e) => {
+    if (e.target === shell) closeVault();
   });
 }
