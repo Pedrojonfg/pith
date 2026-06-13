@@ -123,8 +123,12 @@ async function bootstrap() {
   initLanguageUi();
   wireStudyHandlers();
   wireReviewHandlers();
-  wireVaultDebugUi(els.knowledgeVaultPanel, els.knowledgeVaultLink, () => showScreen("setup"), () =>
-    openVaultGraphScreen(),
+  wireVaultDebugUi(
+    els.knowledgeVaultPanel,
+    els.knowledgeVaultLink,
+    els.knowledgeVaultOverlay,
+    els.knowledgeVaultCloseBtn,
+    () => openVaultGraphScreen(),
   );
   initGuideChat();
 

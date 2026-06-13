@@ -35,8 +35,16 @@ export function syncStudyLanguage(lang) {
   return safe;
 }
 
+let _currentScreenId = "setup";
+
+export function getCurrentScreenId() {
+  return _currentScreenId;
+}
+
 export function initLanguageUi() {}
-export function showScreen() {}
+export function showScreen(which) {
+  if (which) _currentScreenId = which;
+}
 export function toggleSidebar() {}
 export function typesetMath() {}
 export function hideSidebar() {}

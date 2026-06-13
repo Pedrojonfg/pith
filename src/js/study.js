@@ -173,6 +173,7 @@ import {
   els,
   enableUnifiedMaterialUpload,
   getStudyLanguage,
+  getCurrentScreenId,
   hideSidebar,
   setBlockReadContentProvider,
   registerChromeHasConceptsResolver,
@@ -5272,7 +5273,7 @@ export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
   if ((vault.entries || []).length < VAULT_GRAPH_MIN_ENTRIES) return;
 
   materialGraphSource = "vault";
-  materialGraphBackScreen = "setup";
+  materialGraphBackScreen = getCurrentScreenId() || "modeSelect";
   resetVaultGraphChrome();
   layout?.classList.add("vault-graph-active");
   const exportBtn = document.getElementById("slowGraphExportBtn");
