@@ -33,6 +33,10 @@ import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
 import { enterModeSelectScreen, openVaultGraphScreen, wireStudyHandlers } from "./study.js?v=20260618_1";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
+import {
+  readStashedInstallPrompt,
+  showInstallHelpToast,
+} from "./pwa-install.js";
 
 function clearActiveSessionStorage() {
   try {
@@ -132,10 +136,22 @@ async function bootstrap() {
   }
 
   const installPwaBtn = document.getElementById("installPwaBtn");
-  let installPromptEvent = null;
+  let installPromptEvent = readStashedInstallPrompt(window);
+  let installPromptUsed = false;
   const isStandalone =
     window.matchMedia?.("(display-mode: standalone)")?.matches ||
     window.navigator.standalone === true;
+
+  const syncInstallButton = () => {
+    if (!installPwaBtn || isStandalone) return;
+    if (installPromptEvent && !installPromptUsed) {
+      installPwaBtn.hidden = false;
+      installPwaBtn.textContent = "Install app";
+      return;
+    }
+    installPwaBtn.hidden = false;
+    installPwaBtn.textContent = "Install app";
+  };
 
   const showInstallFallbackIfNeeded = () => {
     if (!installPwaBtn) return;
@@ -143,40 +159,43 @@ async function bootstrap() {
       installPwaBtn.hidden = true;
       return;
     }
-    if (!installPromptEvent) {
-      installPwaBtn.hidden = false;
-      installPwaBtn.textContent = "Install app (browser menu)";
-    }
+    syncInstallButton();
   };
 
   if (installPwaBtn) installPwaBtn.hidden = isStandalone;
+  if (installPromptEvent) syncInstallButton();
+
   window.addEventListener("beforeinstallprompt", (e) => {
     e.preventDefault();
     installPromptEvent = e;
-    if (installPwaBtn) {
-      installPwaBtn.hidden = false;
-      installPwaBtn.textContent = "Install app";
-    }
+    installPromptUsed = false;
+    syncInstallButton();
     console.log("PWA install prompt available.");
   });
   window.addEventListener("appinstalled", () => {
     installPromptEvent = null;
+    installPromptUsed = false;
     if (installPwaBtn) installPwaBtn.hidden = true;
     console.log("PWA installed.");
   });
   if (installPwaBtn) {
     installPwaBtn.addEventListener("click", async () => {
-      if (!installPromptEvent) {
-        console.info(
-          "Install prompt not available yet. In Chrome open menu > Install app or Add to Home screen.",
-        );
+      if (!installPromptEvent || installPromptUsed) {
+        showInstallHelpToast(document, window);
         return;
       }
-      installPromptEvent.prompt();
       try {
-        await installPromptEvent.userChoice;
+        await installPromptEvent.prompt();
+        installPromptUsed = true;
+        const { outcome } = await installPromptEvent.userChoice;
+        installPromptEvent = null;
+        if (outcome === "dismissed") {
+          showInstallHelpToast(document, window);
+        }
       } catch {
-        // ignore
+        installPromptEvent = null;
+        installPromptUsed = false;
+        showInstallHelpToast(document, window);
       }
     });
   }

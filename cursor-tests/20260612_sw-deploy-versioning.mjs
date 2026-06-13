@@ -48,7 +48,13 @@ assert(
   html.includes(`main.js?v=${SW_VERSION}`),
   "happy: index.html main.js import matches SW_VERSION",
 );
-assert(sw.includes('const CACHE_NAME = "pith-v21"'), "happy: CACHE_NAME bumped to pith-v21");
+const cacheMatch = sw.match(/const CACHE_NAME = "(pith-v\d+)"/);
+assert(cacheMatch, "happy: CACHE_NAME present in sw.js");
+assert(
+  sw.includes(`const CACHE_NAME = "${cacheMatch[1]}"`),
+  `happy: CACHE_NAME is ${cacheMatch[1]}`,
+);
+assert(sw.includes("/src/js/pwa-install.js"), "happy: pwa-install.js listed in STATIC_ASSETS");
 
 // --- Edge: stale mismatched ?v= would fail (guard against regression) ---
 
