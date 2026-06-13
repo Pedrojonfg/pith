@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { JSDOM } from "jsdom";
+import { SW_VERSION } from "../src/js/sw-update.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const root = join(__dir, "..");
@@ -65,7 +66,7 @@ assert(uiSrc.includes('no visible screen'), "BS: ultimate fallback to setup");
 assert(mainSrc.includes("Failed to open initial screen"), "BS: bootstrap try/catch");
 
 // Happy: cache bust + SW bump
-assert(indexHtml.includes("main.js?v=20260606_1"), "BS: index.html cache bust");
+assert(indexHtml.includes(`main.js?v=${SW_VERSION}`), "BS: index.html cache bust");
 assert(swSrc.includes("pith-v"), "BS: service worker cache uses pith prefix");
 assert(swSrc.includes("/src/css/slow-mode.css"), "BS: slow-mode.css in SW assets");
 

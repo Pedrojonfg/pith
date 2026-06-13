@@ -37,6 +37,7 @@ import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
+import { dismissSplash } from "./splash.js?v=20260613_1";
 
 function clearActiveSessionStorage() {
   try {
@@ -278,6 +279,8 @@ async function bootstrap() {
   } catch (err) {
     console.error("Failed to open initial screen:", err);
     showScreen("setup");
+  } finally {
+    dismissSplash(false);
   }
 }
 

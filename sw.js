@@ -1,4 +1,4 @@
-const CACHE_NAME = "pith-v22";
+const CACHE_NAME = "pith-v24";
 
 const STATIC_ASSETS = [
   "/",
@@ -44,6 +44,7 @@ const STATIC_ASSETS = [
   "/src/js/config.js",
   "/src/js/llm.js",
   "/src/js/sw-update.js",
+  "/src/js/splash.js",
   "/src/js/pwa-install.js",
   "/manifest.json",
 ];
