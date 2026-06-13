@@ -11,6 +11,14 @@ export function getInstallHelpMessage(nav = globalThis.navigator) {
   if (/Edg\//.test(ua)) {
     return "Open the browser menu (⋯) and choose Apps → Install this site as an app.";
   }
+  const isOpera = /OPR\//.test(ua);
+  const isMobile = /Android|Mobile/i.test(ua);
+  if (isOpera && !isMobile) {
+    return "Opera on desktop cannot install PWAs. Open this page in Chrome or Edge and click Install (⊕ in the address bar) or the browser menu → Install app.";
+  }
+  if (isOpera && isMobile) {
+    return "Tap the Opera menu (≡), then Add to Home screen to install Pith.";
+  }
   if (/Firefox\//.test(ua)) {
     return "Firefox has limited PWA support. Use Chrome or Edge, or bookmark this page.";
   }
