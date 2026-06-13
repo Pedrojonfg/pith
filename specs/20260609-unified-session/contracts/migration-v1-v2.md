@@ -12,7 +12,7 @@ export function detectAndMigrateV1()  // void; idempotent; called from main.js b
 
 | Condition | Action |
 |-----------|--------|
-| `mylearning_doc_sessions` exists with any `schemaVersion >= 2` | **Skip** (already migrated) |
+| `pith_doc_sessions` exists with any `schemaVersion >= 2` | **Skip** (already migrated) |
 | `sessions_by_mode` empty/missing AND no legacy data | **Skip** |
 | `sessions_by_mode` has data | **Migrate** |
 
@@ -32,8 +32,8 @@ export function detectAndMigrateV1()  // void; idempotent; called from main.js b
    - `shared.docHierarchy` = first found `docHierarchy` in any slot
    - `shared.smItems` = merge SM items from cloze/rsvp slices if present
 5. `validateDocumentSession(session)` — abort if `!ok` (keep V1 intact)
-6. Write `mylearning_v1_backup` = `{ migratedAt, sessionsByMode: copy, activeSession }`
-7. Append/replace in `mylearning_doc_sessions`
+6. Write `pith_v1_backup` = `{ migratedAt, sessionsByMode: copy, activeSession }`
+7. Append/replace in `pith_doc_sessions`
 8. `setActiveSession(docId)`
 9. Remove `sessions_by_mode` key **only** after steps 5–8 succeed
 
@@ -44,11 +44,11 @@ export function detectAndMigrateV1()  // void; idempotent; called from main.js b
 
 ## Rollback (manual)
 
-User can restore from `mylearning_v1_backup` via settings (future) or dev console:
+User can restore from `pith_v1_backup` via settings (future) or dev console:
 
 ```js
 localStorage.setItem('sessions_by_mode', JSON.stringify(backup.sessionsByMode))
-localStorage.removeItem('mylearning_doc_sessions')
+localStorage.removeItem('pith_doc_sessions')
 ```
 
 ## Tests required

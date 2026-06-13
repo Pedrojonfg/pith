@@ -92,7 +92,7 @@ Problema resuelto: errores opacos tipo “unexpected blocks JSON” por (a) prom
 
 - Un solo `deepSeekSplitIntoBlocks` con material largo en un mensaje user (límites de contexto/tokens).
 - Generar assessment + split + audit sin cola ni idempotencia si el usuario hace doble clic.
-- Cache del SW sin versión ligada al commit/git SHA — solo nombre `mylearning-v5`.
+- Cache del SW sin versión ligada al commit/git SHA — solo nombre `pith-v5`.
 
 **Mejoras obvias**
 

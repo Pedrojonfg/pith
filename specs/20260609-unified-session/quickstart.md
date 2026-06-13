@@ -29,7 +29,7 @@ node --import ./cursor-tests/register.mjs cursor-tests/20260609_unified-session-
 
 1. En DevTools, simular V1: solo `sessions_by_mode` con sesión slow completa
 2. Recargar app
-3. Verificar `mylearning_doc_sessions` creado, `mylearning_v1_backup` presente
+3. Verificar `pith_doc_sessions` creado, `pith_v1_backup` presente
 4. Anotaciones visibles en Slow Mode
 
 ### QA-3 — Slow → Cloze integración
@@ -59,8 +59,8 @@ node --import ./cursor-tests/register.mjs cursor-tests/20260609_unified-session-
 ## Dev inspection
 
 ```js
-JSON.parse(localStorage.getItem('mylearning_doc_sessions'))
-localStorage.getItem('mylearning_active_doc_id')
+JSON.parse(localStorage.getItem('pith_doc_sessions'))
+localStorage.getItem('pith_active_doc_id')
 ```
 
 ## Global done checklist

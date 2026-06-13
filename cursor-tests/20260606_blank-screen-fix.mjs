@@ -66,7 +66,7 @@ assert(mainSrc.includes("Failed to open initial screen"), "BS: bootstrap try/cat
 
 // Happy: cache bust + SW bump
 assert(indexHtml.includes("main.js?v=20260606_1"), "BS: index.html cache bust");
-assert(swSrc.includes("mylearning-v11"), "BS: service worker cache v11");
+assert(swSrc.includes("pith-v"), "BS: service worker cache uses pith prefix");
 assert(swSrc.includes("/src/css/slow-mode.css"), "BS: slow-mode.css in SW assets");
 
 // Edge: simulate showScreen fallback when #screenModeSelect removed from DOM

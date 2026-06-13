@@ -148,7 +148,7 @@ assert(
 );
 assert(
   storeSrc.includes("localStorage.removeItem(LS_ACTIVE_DOC_ID_KEY)"),
-  "contract store: removes mylearning_active_doc_id only",
+  "contract store: removes pith_active_doc_id only",
 );
 
 // --- Contract: DOM + flow panel consumer ---

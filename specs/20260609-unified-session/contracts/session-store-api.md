@@ -6,10 +6,10 @@
 
 | Key | Value |
 |-----|-------|
-| `mylearning_doc_sessions` | `DocumentSession[]` JSON |
-| `mylearning_active_doc_id` | `string \| null` |
-| `mylearning_doc_text_{docId}` | `string` — markdown externalizado |
-| `mylearning_v1_backup` | backup migración (ver migration contract) |
+| `pith_doc_sessions` | `DocumentSession[]` JSON |
+| `pith_active_doc_id` | `string \| null` |
+| `pith_doc_text_{docId}` | `string` — markdown externalizado |
+| `pith_v1_backup` | backup migración (ver migration contract) |
 
 ## Public API
 
@@ -41,7 +41,7 @@ export function computeDocId(rawMarkdown)             // async → string (12 he
 1. Always call `validateDocumentSession` before write.
 2. Update `session.updatedAt = Date.now()` on every save.
 3. If serialized size > 400KB, externalize `rawMarkdown` (see `data-model.md`).
-4. `getActiveSession` reads `mylearning_active_doc_id` then `getSession`.
+4. `getActiveSession` reads `pith_active_doc_id` then `getSession`.
 
 ## createSession defaults
 
@@ -66,5 +66,5 @@ export function computeDocId(rawMarkdown)             // async → string (12 he
 ## Error handling
 
 - `setActiveSession(unknownId)` → throw `Error('session not found')`
-- Corrupt JSON in `mylearning_doc_sessions` → log, return `[]` from `getAllSessions`
+- Corrupt JSON in `pith_doc_sessions` → log, return `[]` from `getAllSessions`
 - Missing externalized text → session load with `rawMarkdown: ''` + console.warn

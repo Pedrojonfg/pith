@@ -19,7 +19,7 @@ You implement ROADMAP **T01 — Vault store + mastery model** for feature `20260
 ## Rules
 - Empty/corrupt localStorage → empty vault, no throw
 - mastery runtime-only; persist masteryBase + masteryLastUpdated
-- Split storage at ~300KB (primary + `mylearning_knowledge_vault_data`)
+- Split storage at ~300KB (primary + `pith_knowledge_vault_data`)
 - All comments and exports in English
 - Do NOT wire study.js
 

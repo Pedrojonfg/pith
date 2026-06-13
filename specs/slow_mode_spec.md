@@ -1,5 +1,5 @@
 # Slow Mode — Especificación de Diseño
-### MyLearning · Módulo de Lectura Profunda
+### Pith · Módulo de Lectura Profunda
 
 > *Versión 1.0 — Junio 2025*
 
@@ -29,7 +29,7 @@
 
 ### El problema con el modo RSVP para ciertos textos
 
-El modo RSVP de MyLearning está diseñado para maximizar throughput cognitivo: ingesta rápida de contenido ya estructurado, con bloques pre-generados, preguntas post-bloque e iteración por spaced repetition. Para apuntes, resúmenes y material factual, este pipeline es eficiente.
+El modo RSVP de Pith está diseñado para maximizar throughput cognitivo: ingesta rápida de contenido ya estructurado, con bloques pre-generados, preguntas post-bloque e iteración por spaced repetition. Para apuntes, resúmenes y material factual, este pipeline es eficiente.
 
 Sin embargo, existe una clase de textos para los que el RSVP no solo es subóptimo sino activamente contraproducente:
 
@@ -939,10 +939,10 @@ Si el Slow Mode se usa principalmente para textos filosóficos, el Modo Crítico
 | **Elaborative interrogation (EI)** | Estrategia de aprendizaje que consiste en responder "¿por qué es verdad esto?" para cada proposición del texto. |
 | **Focus mode** | Estado de la interfaz que oculta todos los elementos de UI excepto el texto y la barra de progreso. |
 | **Generation effect** | Fenómeno por el cual el material que el learner produce es recordado mejor que el material que simplemente lee (Slamecka & Graf, 1978). |
-| **Grafo** | Red de conceptos y relaciones construida por MyLearning a partir de los textos procesados. En Slow Mode, las anotaciones del usuario se integran como nodos propios. |
+| **Grafo** | Red de conceptos y relaciones construida por Pith a partir de los textos procesados. En Slow Mode, las anotaciones del usuario se integran como nodos propios. |
 | **Overjustification effect** | Reducción de la motivación intrínseca para una actividad cuando se introduce una recompensa externa saliente (Deci et al.). Riesgo central en el diseño de gamificación. |
 | **Regresión (lectura)** | Movimiento ocular hacia atrás durante la lectura (saccada regresiva). No es un error — es una herramienta de comprensión usada cuando el procesamiento falla. |
-| **RSVP** | Rapid Serial Visual Presentation. El modo de lectura existente en MyLearning: presenta bloques pre-generados a ritmo controlado. |
+| **RSVP** | Rapid Serial Visual Presentation. El modo de lectura existente en Pith: presenta bloques pre-generados a ritmo controlado. |
 | **Schema** | Estructura de conocimiento previo organizada en la memoria. Los advance organizers activan el schema relevante para el nuevo texto. |
 | **Self-explanation effect** | Mejora de comprensión y transferencia producida por generar explicaciones propias sobre el significado, la coherencia y las conexiones del texto (Chi et al.). |
 | **Slow Mode** | El modo de lectura diseñado en este documento. Lectura auto-paced, paginada, con anotaciones activas, IA bajo demanda, y consolidación post-lectura. |
@@ -952,5 +952,5 @@ Si el Slow Mode se usa principalmente para textos filosóficos, el Modo Crítico
 
 ---
 
-*Documento generado como especificación de diseño para MyLearning — Slow Mode v1.0*  
+*Documento generado como especificación de diseño para Pith — Slow Mode v1.0*  
 *Basado en investigación de: Slamecka & Graf (1978), Bisra et al. (2018), Chi et al., Boo & Conklin (2015), Benedetto et al. (2015), Foroughi et al., Ausubel, van Gelder, Schotter & Rayner, Csikszentmihalyi, y meta-análisis de Hattie / Visible Learning MetaX.*

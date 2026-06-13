@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "MyLearning",
-  "short_name": "MyLearning",
+  "name": "Pith",
+  "short_name": "Pith",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f0f",

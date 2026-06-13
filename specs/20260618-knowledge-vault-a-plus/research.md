@@ -56,7 +56,7 @@
 
 ## Decision 6: Storage split at ~300KB
 
-**Decision**: Primary key holds metadata; overflow to `mylearning_knowledge_vault_data` following large-session pattern.
+**Decision**: Primary key holds metadata; overflow to `pith_knowledge_vault_data` following large-session pattern.
 
 **Rationale**: localStorage 5MB limit; 800–1000 concepts estimated at threshold.
 

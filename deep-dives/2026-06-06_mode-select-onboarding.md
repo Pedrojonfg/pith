@@ -24,7 +24,7 @@ Corregimos una pantalla vacía al arrancar: `showScreen("modeSelect")` podía de
   Alternativa: confiar solo en cache bust; se descartó porque la PWA puede servir HTML/JS desincronizados temporalmente.  
   Trade-off: lógica extra en `ui.js`, pero la app nunca queda con cero pantallas visibles.
 
-- **Cache bust (`main.js?v=20260606_1`) + SW `mylearning-v11`**  
+- **Cache bust (`main.js?v=20260606_1`) + SW `pith-v11`**  
   Elegimos invalidar caché de assets críticos tras el cambio de routing.  
   Alternativa: solo hard refresh manual; se descartó por mala UX en PWA instalada.  
   Trade-off: los usuarios pueden necesitar una recarga tras el deploy, pero el SW nuevo lo facilita.

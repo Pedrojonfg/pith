@@ -1,6 +1,6 @@
 ### 1. Qué construimos
 
-Refactorizamos el subsistema de grafos de MyLearning (RSVP + Slow Mode) en un stack modular bajo `src/js/graph/`. Separámos la **generación pura** del grafo de la **lectura de sesión**, mejoramos el **enlace anotación → mapa argumental** con proximidad por caracteres y fallback semántico ligero (overlap de tokens), simplificamos el **layout SVG** a columnas fijas, y corregimos bugs de contrato: desbloqueo del grafo enriquecido solo al terminar Fase 3, caché de `_meta.material_graph` sin grafo derivado, y constante `LITERATURE_TERM_ID`. Eliminamos el shim legacy `slow/graph-view.js`.
+Refactorizamos el subsistema de grafos de Pith (RSVP + Slow Mode) en un stack modular bajo `src/js/graph/`. Separámos la **generación pura** del grafo de la **lectura de sesión**, mejoramos el **enlace anotación → mapa argumental** con proximidad por caracteres y fallback semántico ligero (overlap de tokens), simplificamos el **layout SVG** a columnas fijas, y corregimos bugs de contrato: desbloqueo del grafo enriquecido solo al terminar Fase 3, caché de `_meta.material_graph` sin grafo derivado, y constante `LITERATURE_TERM_ID`. Eliminamos el shim legacy `slow/graph-view.js`.
 
 ### 2. Decisiones de diseño
 

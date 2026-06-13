@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: User description: "Todas las palancas del pipeline MyLearning en modo estricto (source_fidelity_mode: strict), flujo RSVP. Resolver overlapping estructural de preguntas y bloques thin (poca chicha)."
+**Input**: User description: "Todas las palancas del pipeline Pith en modo estricto (source_fidelity_mode: strict), flujo RSVP. Resolver overlapping estructural de preguntas y bloques thin (poca chicha)."
 
 ## User Scenarios & Testing *(mandatory)*
 

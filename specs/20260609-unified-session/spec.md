@@ -36,11 +36,11 @@ Ver `data-model.md` y `contracts/session-store-api.md` para el contrato formal.
 ### Almacenamiento en localStorage
 
 ```
-localStorage['mylearning_doc_sessions'] = DocumentSession[]
-localStorage['mylearning_active_doc_id'] = string | null
+localStorage['pith_doc_sessions'] = DocumentSession[]
+localStorage['pith_active_doc_id'] = string | null
 ```
 
-Tamaño: una sesión típica (paper de 40 páginas) ocupa ~150-400KB. Con 20 documentos, ~4-8MB — cerca del límite de localStorage. Mitigación: si la sesión supera 400KB, guardar `rawMarkdown` en `mylearning_doc_text_{docId}`.
+Tamaño: una sesión típica (paper de 40 páginas) ocupa ~150-400KB. Con 20 documentos, ~4-8MB — cerca del límite de localStorage. Mitigación: si la sesión supera 400KB, guardar `rawMarkdown` en `pith_doc_text_{docId}`.
 
 ---
 

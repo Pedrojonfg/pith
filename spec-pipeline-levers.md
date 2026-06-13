@@ -1,4 +1,4 @@
-# Spec: Todas las palancas del pipeline MyLearning
+# Spec: Todas las palancas del pipeline Pith
 **Alcance**: modo estricto (`source_fidelity_mode: "strict"`), flujo RSVP  
 **Problemas a resolver**: overlapping estructural de preguntas + bloques thin (poca chicha)  
 **Fecha**: 2026-06-12

@@ -23,7 +23,7 @@
 
 ## R3 — Mitigación tamaño localStorage
 
-**Decision**: Tras `JSON.stringify`, si payload >400KB, mover `shared.rawMarkdown` a `mylearning_doc_text_{docId}` y guardar `shared.rawMarkdownRef: { storageKey, charCount }` en su lugar. `getSession`/`getActiveSession` rehidratan transparentemente.
+**Decision**: Tras `JSON.stringify`, si payload >400KB, mover `shared.rawMarkdown` a `pith_doc_text_{docId}` y guardar `shared.rawMarkdownRef: { storageKey, charCount }` en su lugar. `getSession`/`getActiveSession` rehidratan transparentemente.
 
 **Rationale**: Texto es ~80% del peso; externalizar preserva CRUD simple.
 
@@ -43,7 +43,7 @@
 
 ## R5 — Estrategia migración V1→V2
 
-**Decision**: `detectAndMigrateV1()` idempotente: si `mylearning_doc_sessions` existe y `schemaVersion >= 2`, skip. Si `sessions_by_mode` existe: inferir `rawMarkdown` orden slow > rsvp > cloze > questions (`rawText`, `rawMarkdown`, `materialText`); construir una `DocumentSession`; backup en `mylearning_v1_backup`; borrar `sessions_by_mode` solo tras `validateDocumentSession` OK.
+**Decision**: `detectAndMigrateV1()` idempotente: si `pith_doc_sessions` existe y `schemaVersion >= 2`, skip. Si `sessions_by_mode` existe: inferir `rawMarkdown` orden slow > rsvp > cloze > questions (`rawText`, `rawMarkdown`, `materialText`); construir una `DocumentSession`; backup en `pith_v1_backup`; borrar `sessions_by_mode` solo tras `validateDocumentSession` OK.
 
 **Rationale**: V1 asumía un documento activo; múltiples slots son del mismo doc.
 

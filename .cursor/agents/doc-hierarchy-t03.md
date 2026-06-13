@@ -15,8 +15,8 @@ You implement ROADMAP **T03 — hierarchy-cache.js** for feature `20260609-doc-h
 - `cursor-tests/20260609_doc-hierarchy-cache.mjs` (NEW)
 
 ## Requirements
-- localStorage key `mylearning_hierarchy_{textHash}`
-- TTL 7 days, LRU max 20 entries, index `mylearning_hierarchy_index`
+- localStorage key `pith_hierarchy_{textHash}`
+- TTL 7 days, LRU max 20 entries, index `pith_hierarchy_index`
 
 ## Success
 Second call with same text does not invoke `llmFn` (mocked test).

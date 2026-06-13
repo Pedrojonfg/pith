@@ -161,7 +161,7 @@ export function getCachedHierarchy(textHash)
 // → HierarchyNode[] | null
 
 export function setCachedHierarchy(textHash, tree)
-// Guarda en localStorage['mylearning_hierarchy_{hash}']
+// Guarda en localStorage['pith_hierarchy_{hash}']
 // TTL: 7 días
 // Límite: máx 20 entradas (LRU eviction)
 ```

@@ -14,7 +14,7 @@ Extend Phase A+ GKV with nine incremental capability blocks: manual vault curati
 
 **Primary Dependencies**: A+ vault modules (`src/js/vault/*`), `vault-store.js`, `mastery-model.js`, `session-close.js`, `prompt-injection.js`, `debug-ui.js`, `api.js`, `study.js`, `graph/view.js`, `graph/canvas.js`, `session-store.js` (`shared.smItems`)
 
-**Storage**: `localStorage['mylearning_knowledge_vault']` (extended schema v2); Blocks 8–9 require future backend — out of scope for initial waves
+**Storage**: `localStorage['pith_knowledge_vault']` (extended schema v2); Blocks 8–9 require future backend — out of scope for initial waves
 
 **Testing**: `cursor-tests/20260619_knowledge-vault-post-a-plus.mjs` (new)
 

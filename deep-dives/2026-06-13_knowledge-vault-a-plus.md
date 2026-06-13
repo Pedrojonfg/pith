@@ -32,7 +32,7 @@ A persistent **cross-document knowledge store** in the browser that remembers wh
 
 ### localStorage split at ~300KB
 
-- **Elegido**: Primary key metadata + `mylearning_knowledge_vault_data` for entries overflow (same pattern as large sessions).
+- **Elegido**: Primary key metadata + `pith_knowledge_vault_data` for entries overflow (same pattern as large sessions).
 - **Alternativas**: IndexedDB; LRU eviction.
 - **Trade-off**: Reuses existing patterns; 5MB ceiling still applies.
 

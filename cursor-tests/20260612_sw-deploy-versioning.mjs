@@ -48,7 +48,7 @@ assert(
   html.includes(`main.js?v=${SW_VERSION}`),
   "happy: index.html main.js import matches SW_VERSION",
 );
-assert(sw.includes('const CACHE_NAME = "mylearning-v16"'), "happy: CACHE_NAME bumped to v16");
+assert(sw.includes('const CACHE_NAME = "pith-v21"'), "happy: CACHE_NAME bumped to pith-v21");
 
 // --- Edge: stale mismatched ?v= would fail (guard against regression) ---
 

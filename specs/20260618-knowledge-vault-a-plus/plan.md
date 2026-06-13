@@ -14,7 +14,7 @@ Build a persistent, cross-document **Global Knowledge Vault (GKV)** in localStor
 
 **Primary Dependencies**: `session.js`, `study.js`, `api.js`, `session-types.js`, `assessment-signals.js` (mode-continuity), pre-packing assessment flow (`20260611-rsvp-assessment-reposition`)
 
-**Storage**: `localStorage['mylearning_knowledge_vault']` → `GlobalKnowledgeVault`; split to `mylearning_knowledge_vault_data` when ~300KB exceeded (same pattern as large sessions)
+**Storage**: `localStorage['pith_knowledge_vault']` → `GlobalKnowledgeVault`; split to `pith_knowledge_vault_data` when ~300KB exceeded (same pattern as large sessions)
 
 **Testing**: `cursor-tests/20260618_knowledge-vault-a-plus.mjs` (new)
 
