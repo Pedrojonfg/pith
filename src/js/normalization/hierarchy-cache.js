@@ -3,8 +3,8 @@
  * TTL 7 days, LRU max 20 entries.
  */
 
-const CACHE_PREFIX = "mylearning_hierarchy_";
-const INDEX_KEY = "mylearning_hierarchy_index";
+const CACHE_PREFIX = "pith_hierarchy_";
+const INDEX_KEY = "pith_hierarchy_index";
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_ENTRIES = 20;
 

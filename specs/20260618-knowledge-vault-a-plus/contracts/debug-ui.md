@@ -28,7 +28,7 @@ Settings screen → button **Knowledge Vault** → expand modal or inline panel.
 ## Actions
 
 - **Clear vault**: confirm dialog → `clearVault()` → refresh UI
-- **Export JSON**: download `mylearning-knowledge-vault-{date}.json`
+- **Export JSON**: download `pith-knowledge-vault-{date}.json`
 
 ## Out of scope A+
 

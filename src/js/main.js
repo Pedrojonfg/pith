@@ -1,5 +1,6 @@
 import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260527_1";
 import { detectAndMigrateV1 } from "./session-migration.js?v=20260609_1";
+import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260619_5";
 import {
   clearSessionConceptStorage,
   updateDictionaryButtonVisibility,
@@ -109,6 +110,7 @@ function startNewSessionFlow() {
 }
 
 async function bootstrap() {
+  migrateStorageKeysFromMyLearning();
   await detectAndMigrateV1();
   migrateLegacyActiveSession();
   if (window.offlineMode !== true) window.offlineMode = false;

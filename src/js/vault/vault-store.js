@@ -3,8 +3,8 @@
 import { hydrateMastery } from "./mastery-model.js";
 import { addPrerequisiteSafe, recomputeImportanceScores } from "./prerequisite-graph.js";
 
-export const VAULT_STORAGE_KEY = "mylearning_knowledge_vault";
-export const VAULT_DATA_KEY = "mylearning_knowledge_vault_data";
+export const VAULT_STORAGE_KEY = "pith_knowledge_vault";
+export const VAULT_DATA_KEY = "pith_knowledge_vault_data";
 const SIZE_THRESHOLD = 300 * 1024;
 
 function newVaultId() {

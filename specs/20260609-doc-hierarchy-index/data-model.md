@@ -49,7 +49,7 @@ Salida de `getChunksFromHierarchy(tree, maxChunkSize)`.
 
 ## HierarchyCacheEntry
 
-En `localStorage['mylearning_hierarchy_{textHash}']`.
+En `localStorage['pith_hierarchy_{textHash}']`.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -57,7 +57,7 @@ En `localStorage['mylearning_hierarchy_{textHash}']`.
 | `method` | `string` | Método original |
 | `cachedAt` | `number` | Timestamp para TTL 7 días |
 
-**Eviction**: LRU, máximo 20 entradas; índice en `mylearning_hierarchy_index`
+**Eviction**: LRU, máximo 20 entradas; índice en `pith_hierarchy_index`
 
 ## Session extension
 

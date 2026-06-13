@@ -61,7 +61,7 @@ node --import ./cursor-tests/register.mjs cursor-tests/20260609_flow-recommendat
 ## Dev inspection
 
 ```js
-JSON.parse(localStorage.mylearning_doc_sessions)[0].shared.modeRecommendation
+JSON.parse(localStorage.pith_doc_sessions)[0].shared.modeRecommendation
 ```
 
 ## Done checklist

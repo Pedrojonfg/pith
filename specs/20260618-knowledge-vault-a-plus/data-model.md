@@ -13,8 +13,8 @@ Extends unified session shared layer. Vault is global (not per-document session)
 | `lastUpdated` | `number` | yes | `Date.now()` | Unix ms |
 
 **Storage keys**:
-- Primary: `localStorage['mylearning_knowledge_vault']`
-- Overflow data: `localStorage['mylearning_knowledge_vault_data']` when JSON > ~300KB
+- Primary: `localStorage['pith_knowledge_vault']`
+- Overflow data: `localStorage['pith_knowledge_vault_data']` when JSON > ~300KB
 
 ## KnowledgeVaultEntry
 

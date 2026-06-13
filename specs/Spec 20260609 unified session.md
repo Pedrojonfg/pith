@@ -100,13 +100,13 @@ Excepción: los campos que ahora viven en `shared` se eliminan de los slices par
 ### Almacenamiento en localStorage
 
 ```
-localStorage['mylearning_doc_sessions'] = DocumentSession[]   // array de todas las sesiones
-localStorage['mylearning_active_doc_id'] = string | null      // docId del documento activo
+localStorage['pith_doc_sessions'] = DocumentSession[]   // array de todas las sesiones
+localStorage['pith_active_doc_id'] = string | null      // docId del documento activo
 ```
 
 Tamaño: una sesión típica (paper de 40 páginas) ocupa ~150-400KB. Con 20 documentos, ~4-8MB — cerca del límite de localStorage. Esto es deuda conocida; la solución futura es IndexedDB, pero no está en este spec.
 
-Mitigación temporal: si la sesión supera 400KB, no guardar `rawMarkdown` en `shared` — guardarlo en una clave separada `mylearning_doc_text_{docId}` y referenciarlo. El documento en sí es la parte más pesada.
+Mitigación temporal: si la sesión supera 400KB, no guardar `rawMarkdown` en `shared` — guardarlo en una clave separada `pith_doc_text_{docId}` y referenciarlo. El documento en sí es la parte más pesada.
 
 ---
 
@@ -182,12 +182,12 @@ export function detectAndMigrateV1()
 //   4. Construir DocumentSession con schemaVersion: 2
 //   5. Mover annotations de slow → shared.annotations
 //   6. Mover conceptos detectados → shared.conceptInventory (best effort)
-//   7. Guardar en 'mylearning_doc_sessions'
-//   8. Guardar backup de los datos originales en 'mylearning_v1_backup' (no borrar todavía)
+//   7. Guardar en 'pith_doc_sessions'
+//   8. Guardar backup de los datos originales en 'pith_v1_backup' (no borrar todavía)
 //   9. Borrar 'sessionsByMode' solo después de verificar que la migración fue limpia
 ```
 
-La migración es **no destructiva hasta el paso 9**. Si algo falla, los datos V1 siguen intactos en `mylearning_v1_backup`. El backup se borra solo cuando el usuario lleva 7 días sin problemas (o manualmente desde settings).
+La migración es **no destructiva hasta el paso 9**. Si algo falla, los datos V1 siguen intactos en `pith_v1_backup`. El backup se borra solo cuando el usuario lleva 7 días sin problemas (o manualmente desde settings).
 
 ---
 
@@ -335,7 +335,7 @@ No es obligatoria para que el resto funcione, pero da visibilidad inmediata al v
 
 | Riesgo | Probabilidad | Impacto | Mitigación |
 |--------|-------------|---------|------------|
-| Migración corrompe datos V1 | Media | Alto | Backup en `mylearning_v1_backup` antes de borrar nada |
+| Migración corrompe datos V1 | Media | Alto | Backup en `pith_v1_backup` antes de borrar nada |
 | localStorage se llena con rawMarkdown × N documentos | Alta | Medio | Guardar rawMarkdown en clave separada, referenciarlo por docId |
 | `conceptInventory` duplicado (mismo concepto, label distinto) | Alta | Bajo | Deduplicar por `canonicalId` calculado como hash del label normalizado (lowercase, sin stopwords) |
 | Slow Mode y Cloze escriben en `shared.annotations` concurrentemente | Baja | Bajo | No hay concurrencia real (una pestaña, un modo activo a la vez) |

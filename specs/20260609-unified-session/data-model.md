@@ -13,9 +13,9 @@
 | `shared` | `SharedLayer` | yes | Capa cross-mode |
 | `modes` | `ModeSlices` | yes | Slices por modo (nullable cada uno) |
 
-**Storage**: `localStorage['mylearning_doc_sessions']` — array ordenado por `updatedAt` desc en `getAllSessions()`.
+**Storage**: `localStorage['pith_doc_sessions']` — array ordenado por `updatedAt` desc en `getAllSessions()`.
 
-**Active pointer**: `localStorage['mylearning_active_doc_id']` → `docId`.
+**Active pointer**: `localStorage['pith_active_doc_id']` → `docId`.
 
 ## SharedLayer
 
@@ -92,7 +92,7 @@
 - `slow.annotations` → `shared.annotations` (dual-write en T05)
 - `conceptInventory` en cloze graph meta → `shared.conceptInventory`
 
-## V1 backup (`mylearning_v1_backup`)
+## V1 backup (`pith_v1_backup`)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -104,7 +104,7 @@
 
 ```text
 Boot
-  ├─ mylearning_doc_sessions exists (v2) → skip migration
+  ├─ pith_doc_sessions exists (v2) → skip migration
   └─ sessions_by_mode exists
        ├─ detectAndMigrateV1 → backup → validate → store v2 → remove v1 key
        └─ fail → keep v1, log error

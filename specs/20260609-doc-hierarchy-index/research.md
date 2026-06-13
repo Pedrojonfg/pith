@@ -23,7 +23,7 @@
 
 ## R3 — Hash y cache
 
-**Decision**: Hash ligero no criptográfico (djb2 o FNV sobre string); clave `localStorage['mylearning_hierarchy_{hash}']`; TTL 7 días; LRU 20 entradas.
+**Decision**: Hash ligero no criptográfico (djb2 o FNV sobre string); clave `localStorage['pith_hierarchy_{hash}']`; TTL 7 días; LRU 20 entradas.
 
 **Rationale**: Evita re-llamar LLM en re-subidas; límite de entradas protege quota localStorage.
 
