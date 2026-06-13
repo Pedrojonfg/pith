@@ -208,6 +208,9 @@ export function validateDocumentSession(session) {
     if (sh.assessmentSignals != null && !Array.isArray(sh.assessmentSignals)) {
       errors.push("shared.assessmentSignals must be array");
     }
+    if (sh.docTopics != null && !Array.isArray(sh.docTopics)) {
+      errors.push("shared.docTopics must be array");
+    }
   }
   if (!session.modes || typeof session.modes !== "object") {
     errors.push("modes must be an object");

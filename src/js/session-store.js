@@ -185,6 +185,7 @@ export async function createSession(rawMarkdown, options = {}) {
       modeRecommendation: null,
       uploadMeta: null,
       assessmentSignals: [],
+      docTopics: [],
     },
     modes: { rsvp: null, slow: null, cloze: null, questions: null },
   };

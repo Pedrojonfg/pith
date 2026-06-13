@@ -130,6 +130,9 @@ export function syncFloatingChrome() {
 
 export const els = {
   changeKeyLink: document.getElementById("changeKeyLink"),
+  knowledgeVaultLink: document.getElementById("knowledgeVaultLink"),
+  knowledgeVaultPanel: document.getElementById("knowledgeVaultPanel"),
+  knowledgeVaultPanelBody: document.getElementById("knowledgeVaultPanelBody"),
   newSessionBtn: document.getElementById("newSessionBtn"),
   dictionaryBtn: document.getElementById("dictionaryBtn"),
 

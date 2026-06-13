@@ -10,6 +10,7 @@ import {
   generatePrePackingAssessmentItems,
   evaluatePrePackingAssessmentResponses,
   PREPACKING_DONT_KNOW_ANSWER,
+  PREPACKING_ALREADY_KNOW_ANSWER,
 } from "./api.js?v=20260527_1";
 import {
   ASSESSMENT_FLAGS,
@@ -246,6 +247,11 @@ import {
   syncAssessmentSignalsToShared,
   updateRecommendation,
 } from "./session-store.js?v=20260609_1";
+import {
+  findVaultEntryForConceptId,
+  getVaultContextForDoc,
+} from "./vault/prompt-injection.js";
+import { getCurrentMastery, PRESUMED_KNOWN_THRESHOLD } from "./vault/mastery-model.js";
 
 /**
  * Resolve or create DocumentSession for uploaded markdown; set active doc pointer.
@@ -256,6 +262,8 @@ export function syncSlowDocHierarchyToShared(slowSession) {
   const doc = getActiveSession();
   if (!doc) return;
   doc.shared.docHierarchy = slowSession?.docHierarchy ?? null;
+  const hierarchy = slowSession?.docHierarchy;
+  doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
   saveDocumentSession(doc);
 }
 
@@ -554,6 +562,7 @@ export async function recommendFlowFromUploadedFile(file) {
 
   if (hierarchyResult) {
     doc.shared.docHierarchy = hierarchyResult;
+    doc.shared.docTopics = Array.isArray(hierarchyResult.topics) ? hierarchyResult.topics : [];
     saveDocumentSession(doc);
   }
 
@@ -875,7 +884,72 @@ function resetModeSelectUi() {
   clearFlowRecommendFeedback();
 }
 
+function triggerVaultUpdateOnSessionExit() {
+  const doc = getActiveSession();
+  if (!doc?.docId) return;
+  const mode = String(state.studyMode || "rsvp").trim() || "rsvp";
+  const sessionForVault = {
+    ...doc,
+    modes: {
+      rsvp: loadSessionForMode("rsvp"),
+      slow: loadSessionForMode("slow"),
+      cloze: loadSessionForMode("cloze"),
+      questions: loadSessionForMode("questions"),
+    },
+  };
+  void import("./vault/session-close.js")
+    .then((m) => m.updateVaultFromSession(sessionForVault, mode))
+    .catch((err) => {
+      console.warn("[vault] session-close failed", err);
+    });
+}
+
+function buildVaultPresumedKnownMap(conceptInventory, docTopics) {
+  const entries = getVaultContextForDoc(docTopics);
+  if (!entries.length) return {};
+  const map = /** @type {Record<string, boolean>} */ ({});
+  for (const c of Array.isArray(conceptInventory) ? conceptInventory : []) {
+    const id = String(c?.id || c?.canonicalId || "").trim();
+    if (!id) continue;
+    const entry = findVaultEntryForConceptId(id, entries);
+    if (entry && getCurrentMastery(entry) >= PRESUMED_KNOWN_THRESHOLD) {
+      map[id] = true;
+    }
+  }
+  return map;
+}
+
+function recordVaultAssessmentContradictions(items, responses, presumedMap) {
+  const doc = getActiveSession();
+  if (!doc?.shared) return;
+  const list = Array.isArray(items) ? items : [];
+  const rows = Array.isArray(responses) ? responses : [];
+  const pending = [];
+  const now = Date.now();
+  for (const item of list) {
+    const conceptId = String(item?.concept_id || "").trim();
+    if (!conceptId || !presumedMap[conceptId]) continue;
+    const row = rows.find((r) => String(r?.item_id || "") === String(item?.item_id || ""));
+    const answer = String(row?.answer || row?.userAnswer || "").trim();
+    if (!answer) continue;
+    if (answer === PREPACKING_ALREADY_KNOW_ANSWER) {
+      pending.push({ conceptId, type: "assessment_mastered", timestamp: now, docId: doc.docId });
+    } else if (answer === PREPACKING_DONT_KNOW_ANSWER) {
+      pending.push({ conceptId, type: "assessment_unknown", timestamp: now, docId: doc.docId });
+    } else {
+      pending.push({ conceptId, type: "assessment_partial", timestamp: now, docId: doc.docId });
+    }
+  }
+  if (!pending.length) return;
+  if (!Array.isArray(doc.shared._vaultPendingObservations)) {
+    doc.shared._vaultPendingObservations = [];
+  }
+  doc.shared._vaultPendingObservations.push(...pending);
+  saveDocumentSession(doc);
+}
+
 export function enterModeSelectScreen() {
+  triggerVaultUpdateOnSessionExit();
   syncFlowExitState();
   persistFlowRecommendationProgress();
   resetModeSelectUi();
@@ -5454,17 +5528,32 @@ function renderPrePackingAssessmentQuestion() {
     els.prePackingAssessmentProgress.textContent = `Question ${idx + 1} of ${items.length}`;
   }
   if (els.prePackingAssessmentQuestion) {
+    const conceptId = String(item.concept_id || "").trim();
+    const presumed = Boolean(prePackingFlow.vaultPresumedKnown?.[conceptId]);
     els.prePackingAssessmentQuestion.textContent = String(item.question || "");
+    const existingBadge = els.prePackingAssessmentQuestion.querySelector(".pre-packing-presumed-badge");
+    if (existingBadge) existingBadge.remove();
+    if (presumed) {
+      const badge = document.createElement("span");
+      badge.className = "pre-packing-presumed-badge";
+      badge.textContent = "✓ Presumed known (override below)";
+      els.prePackingAssessmentQuestion.appendChild(badge);
+    }
   }
   const optionsHost = els.prePackingAssessmentOptions;
   if (!optionsHost) return;
   optionsHost.innerHTML = "";
   const groupName = "prePackingAssessmentOption";
-  const options = [...(item.options || []), PREPACKING_DONT_KNOW_ANSWER];
+  const conceptId = String(item.concept_id || "").trim();
+  const presumed = Boolean(prePackingFlow.vaultPresumedKnown?.[conceptId]);
+  const options = [...(item.options || [])];
+  if (presumed) options.unshift(PREPACKING_ALREADY_KNOW_ANSWER);
+  options.push(PREPACKING_DONT_KNOW_ANSWER);
   const saved = prePackingFlow.responses?.find((r) => r.item_id === item.item_id)?.answer;
   for (const opt of options) {
     const label = document.createElement("label");
     label.className = "pre-packing-assessment-option";
+    if (opt === PREPACKING_ALREADY_KNOW_ANSWER) label.classList.add("is-presumed-known");
     const input = document.createElement("input");
     input.type = "radio";
     input.name = groupName;
@@ -5504,6 +5593,11 @@ async function enterPrePackingAssessmentScreen() {
     ensurePrePackingItemsPromise(prePackingFlow);
     const items = await prePackingFlow.itemsPromise;
     prePackingFlow.assessmentItems = Array.isArray(items) ? items : [];
+    const doc = getActiveSession();
+    prePackingFlow.vaultPresumedKnown = buildVaultPresumedKnownMap(
+      prePackingFlow.conceptInventory,
+      doc?.shared?.docTopics || [],
+    );
     if (!prePackingFlow.assessmentItems.length) {
       prePackingFlow.itemsPromise = null;
       throw new Error("Could not generate assessment items.");
@@ -5601,6 +5695,14 @@ async function finishPrePackingAssessment() {
   const assessmentResponses = isPrePackingAssessmentRunner()
     ? prePackingFlow.assessmentResponses
     : prePackingFlow.responses;
+
+  if (prePackingFlow.vaultPresumedKnown) {
+    recordVaultAssessmentContradictions(
+      assessmentItems,
+      assessmentResponses,
+      prePackingFlow.vaultPresumedKnown,
+    );
+  }
 
   const profile = await evaluatePrePackingAssessmentResponses({
     items: assessmentItems,

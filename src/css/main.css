@@ -2045,3 +2045,112 @@ body.assessment-runner-active .assessment-runner-chrome {
   border: 1px solid color-mix(in srgb, #dc2626 45%, transparent);
   color: color-mix(in srgb, #7f1d1d 90%, var(--text, #111));
 }
+
+/* Knowledge Vault debug panel */
+.vault-debug-panel {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #111) 12%, transparent);
+}
+
+.vault-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.vault-panel-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.vault-topic-filter select {
+  margin-left: 6px;
+}
+
+.vault-panel-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vault-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.vault-table th,
+.vault-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--text, #111) 10%, transparent);
+}
+
+.vault-table tbody tr {
+  cursor: pointer;
+}
+
+.vault-table tbody tr:hover,
+.vault-table tbody tr.is-selected {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent);
+}
+
+.vault-mastery-bar {
+  display: inline-block;
+  width: 72px;
+  height: 8px;
+  background: color-mix(in srgb, var(--text, #111) 12%, transparent);
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-right: 6px;
+  overflow: hidden;
+}
+
+.vault-mastery-bar span {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 75%, #16a34a);
+  border-radius: 4px;
+}
+
+.vault-detail {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text, #111) 4%, transparent);
+}
+
+.vault-detail h3 {
+  margin: 0 0 8px;
+}
+
+.vault-detail h4 {
+  margin: 12px 0 6px;
+  font-size: 0.95rem;
+}
+
+.vault-obs-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.vault-empty {
+  margin: 8px 0 16px;
+}
+
+.pre-packing-assessment-option.is-presumed-known span::before {
+  content: "✓ ";
+  color: #16a34a;
+}
+
+.pre-packing-presumed-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.85rem;
+  color: #16a34a;
+}

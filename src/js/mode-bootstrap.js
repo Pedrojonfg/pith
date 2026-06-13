@@ -22,6 +22,8 @@ function isSliceResumable(slice, slot) {
   if (!slice || typeof slice !== "object") return false;
   if (slot === "rsvp" || slot === "questions") {
     const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
+    const nBlocks = Math.floor(Number(slice.n_blocks) || 0);
+    if (nBlocks > 0 && blocks.length > 0) return true;
     return blocks.some(hasGeneratedBlockContent);
   }
   if (slot === "slow") {

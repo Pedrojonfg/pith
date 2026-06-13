@@ -106,6 +106,9 @@ export function getCachedHierarchy(textHash) {
   if (entry.pedagogicalMeta != null) {
     out.pedagogicalMeta = entry.pedagogicalMeta;
   }
+  if (Array.isArray(entry.topics)) {
+    out.topics = entry.topics;
+  }
   return out;
 }
 

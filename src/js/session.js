@@ -2398,7 +2398,7 @@ export async function packInventoryToBlocks(
   inventory,
   nBlocks,
   material,
-  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null, docHierarchy = null } = {},
+  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null, docHierarchy = null, docTopics = null } = {},
 ) {
   const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
@@ -2407,6 +2407,14 @@ export async function packInventoryToBlocks(
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
+  let resolvedDocTopics = docTopics;
+  if (!Array.isArray(resolvedDocTopics)) {
+    try {
+      resolvedDocTopics = getActiveDocumentSession?.()?.shared?.docTopics;
+    } catch {
+      resolvedDocTopics = [];
+    }
+  }
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
@@ -2428,6 +2436,7 @@ export async function packInventoryToBlocks(
       studyNotes: notes,
       language: lang,
       knowledgeProfile: profile,
+      docTopics: Array.isArray(resolvedDocTopics) ? resolvedDocTopics : [],
     }));
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);
