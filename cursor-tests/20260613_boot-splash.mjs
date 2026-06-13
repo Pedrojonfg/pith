@@ -8,9 +8,13 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import {
   SPLASH_SESSION_KEY,
-  SPLASH_MIN_MS,
+  SPLASH_FADE_MS,
+  SPLASH_GLOW_MS,
+  SPLASH_CYCLE_MS,
   SPLASH_MAX_MS,
   shouldShowSplash,
+  dismissSplash,
+  initSplash,
 } from "../src/js/splash.js";
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -45,7 +49,13 @@ assert(indexHtml.includes("initSplash()"), "happy: initSplash called from boot s
 assert(indexHtml.includes("dismissSplash(true)"), "happy: boot failure dismisses splash");
 assert(mainJs.includes('from "./splash.js'), "happy: main.js imports splash");
 assert(mainJs.includes("dismissSplash(false)"), "happy: bootstrap finally dismisses splash");
-assert(mainCss.includes("@keyframes app-splash-in"), "happy: splash animation in main.css");
+assert(mainCss.includes("@keyframes app-splash-fade"), "happy: splash fade animation in main.css");
+assert(mainCss.includes("@keyframes app-splash-halo"), "happy: splash halo animation in main.css");
+assert(mainCss.includes("app-splash--active"), "happy: splash loops while active");
+assert(indexHtml.includes("app-splash-halo"), "happy: halo element in markup");
+assert(indexHtml.includes("app-splash--active"), "happy: inline boot script activates animation");
+assert(indexHtml.includes("@keyframes app-splash-fade"), "happy: critical inline fade keyframes");
+assert(indexHtml.includes("opacity: 0"), "happy: wordmark starts invisible for fade-in");
 assert(mainCss.includes('background: #000'), "happy: splash black background");
 assert(swJs.includes("/src/js/splash.js"), "happy: splash.js in SW static assets");
 
@@ -91,21 +101,39 @@ assert(
 
 // --- Failure: timing constants bounded ---
 
-assert(SPLASH_MIN_MS >= 300 && SPLASH_MIN_MS <= 500, "failure: MIN display is brief");
-assert(SPLASH_MAX_MS >= SPLASH_MIN_MS && SPLASH_MAX_MS <= 1200, "failure: MAX display capped");
+assert(SPLASH_FADE_MS === 150, "failure: fade phase is 150ms");
+assert(SPLASH_GLOW_MS === 300, "failure: glow phase is 300ms");
+assert(SPLASH_CYCLE_MS === 450, "failure: full cycle is 450ms");
+assert(SPLASH_MAX_MS >= SPLASH_CYCLE_MS && SPLASH_MAX_MS <= 1200, "failure: MAX display capped");
 
-// --- Contract: inline critical CSS prevents white flash ---
+const splashSrc = await readFile(join(root, "src/js/splash.js"), "utf8");
+assert(
+  splashSrc.includes('classList.remove("app-splash--active")'),
+  "contract: dismiss stops looping animation",
+);
+assert(
+  !splashSrc.includes("SPLASH_MIN_MS"),
+  "contract: no artificial minimum display delay",
+);
+
+// --- Edge: dismiss on bootstrap-ready (DOM simulation) ---
+
+const dom = new JSDOM(
+  `<div id="app-splash" class="app-splash--active"><span class="app-splash-word">Pith</span></div>`,
+);
+globalThis.document = dom.window.document;
+initSplash();
+dismissSplash(false);
+const live = dom.window.document.getElementById("app-splash");
+assert(live?.classList.contains("app-splash--out"), "edge: bootstrap dismiss adds out class");
+assert(!live?.classList.contains("app-splash--active"), "edge: bootstrap dismiss stops active loop");
 
 assert(
   indexHtml.includes("#app-splash") && indexHtml.includes("background: #000"),
   "contract: critical inline CSS in head",
 );
 
-// --- DOM: splash hidden by default until inline script enables ---
-
-const dom = new JSDOM(indexHtml, { runScripts: "outside-only" });
-const splashEl = dom.window.document.getElementById("app-splash");
-assert(splashEl !== null, "contract: splash element parseable from HTML");
+// --- Contract: inline critical CSS prevents white flash ---
 
 console.log(`\n20260613_boot-splash: ${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);

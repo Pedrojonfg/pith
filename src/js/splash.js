@@ -1,11 +1,11 @@
 /** Brief boot splash — brand veil during cold start; skips on repeat session visits. */
 
 export const SPLASH_SESSION_KEY = "pith_splash_seen";
-export const SPLASH_MIN_MS = 350;
+export const SPLASH_FADE_MS = 150;
+export const SPLASH_GLOW_MS = 300;
+export const SPLASH_CYCLE_MS = SPLASH_FADE_MS + SPLASH_GLOW_MS;
 export const SPLASH_MAX_MS = 900;
 
-let shownAt = 0;
-let dismissTimer = null;
 let maxTimer = null;
 
 /**
@@ -32,10 +32,7 @@ function finishDismiss(el) {
     clearTimeout(maxTimer);
     maxTimer = null;
   }
-  if (dismissTimer) {
-    clearTimeout(dismissTimer);
-    dismissTimer = null;
-  }
+  el.classList.remove("app-splash--active");
   el.classList.add("app-splash--out");
   const remove = () => el.remove();
   el.addEventListener("transitionend", remove, { once: true });
@@ -59,10 +56,7 @@ export function dismissSplash(immediate = false) {
     return;
   }
 
-  const elapsed = shownAt > 0 ? Date.now() - shownAt : SPLASH_MIN_MS;
-  const remaining = Math.max(0, SPLASH_MIN_MS - elapsed);
-  if (dismissTimer) clearTimeout(dismissTimer);
-  dismissTimer = setTimeout(() => finishDismiss(el), remaining);
+  finishDismiss(el);
 }
 
 export function initSplash() {
@@ -74,8 +68,8 @@ export function initSplash() {
     return;
   }
 
-  shownAt = Date.now();
   el.hidden = false;
+  el.classList.add("app-splash--active");
   el.setAttribute("tabindex", "0");
   el.setAttribute("role", "presentation");
   el.setAttribute("aria-label", "Pith");

@@ -37,7 +37,7 @@ import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
-import { dismissSplash } from "./splash.js?v=20260613_1";
+import { dismissSplash } from "./splash.js?v=20260613_2";
 
 function clearActiveSessionStorage() {
   try {
