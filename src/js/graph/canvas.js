@@ -1,6 +1,9 @@
 /** SVG column layout for material graphs (fixed layers, no force simulation). */
 
+import { masteryToNodeColors } from "../vault/mastery-model.js";
+
 const LAYER_COLORS = {
+  vault_concept: { fill: "#94a3b8", stroke: "#64748b", text: "#0f172a" },
   concept: { fill: "#3b82f6", stroke: "#1d4ed8", text: "#eff6ff" },
   block: { fill: "#22c55e", stroke: "#15803d", text: "#f0fdf4" },
   text: { fill: "#14b8a6", stroke: "#0f766e", text: "#f0fdfa" },
@@ -25,6 +28,8 @@ const EDGE_COLORS = {
   contradicts: "#ef4444",
   cuestiona: "#f59e0b",
   refuta: "#ef4444",
+  prerequisite: "#64748b",
+  co_prerequisite: "#94a3b8",
 };
 
 const EDGE_DASH_SOLID = new Set([
@@ -37,6 +42,7 @@ const EDGE_DASH_SOLID = new Set([
   "covers",
   "mentions",
   "instantiates",
+  "prerequisite",
 ]);
 const EDGE_DASH_HEAVY = new Set(["contradicts", "refuta", "cuestiona"]);
 
@@ -60,11 +66,21 @@ function escapeHtml(text) {
 }
 
 function layerColumn(layer) {
-  const cols = { concept: 0, block: 1, text: 2, arg: 2, term: 2, user: 3 };
+  const cols = { concept: 0, block: 1, text: 2, arg: 2, term: 2, user: 3, vault_concept: 2 };
   return cols[layer] ?? 2;
 }
 
-function layoutGraph(graph, width, height) {
+function nodeColumn(n) {
+  if (Number.isFinite(n?.col)) return Number(n.col);
+  return layerColumn(n.layer);
+}
+
+function resolveNodeColors(n) {
+  if (Number.isFinite(n?.mastery)) return masteryToNodeColors(n.mastery);
+  return LAYER_COLORS[n.layer] || LAYER_COLORS.text;
+}
+
+function layoutGraph(graph, width, height, options = {}) {
   const nodes = (graph?.nodes || []).map((n) => ({ ...n }));
   const edges = graph?.edges || [];
   if (!nodes.length) return { nodes: [], edges };
@@ -72,12 +88,24 @@ function layoutGraph(graph, width, height) {
   const padX = 90;
   const padY = 56;
   const usableW = Math.max(320, width - padX * 2);
-  const usableH = Math.max(240, height - padY * 2);
-  const colW = usableW / 4;
+  const maxColNodes = Math.max(
+    1,
+    ...Array.from(
+      nodes.reduce((acc, n) => {
+        const col = nodeColumn(n);
+        acc.set(col, (acc.get(col) || 0) + 1);
+        return acc;
+      }, new Map()),
+    ).map(([, count]) => count),
+  );
+  const minHeight = options.graphMode === "vault" ? Math.min(2400, padY * 2 + maxColNodes * 28) : 240;
+  const usableH = Math.max(minHeight, height - padY * 2);
+  const colCount = Math.max(1, ...nodes.map((n) => nodeColumn(n) + 1));
+  const colW = usableW / colCount;
 
   const byCol = new Map();
   for (const n of nodes) {
-    const col = layerColumn(n.layer);
+    const col = nodeColumn(n);
     if (!byCol.has(col)) byCol.set(col, []);
     byCol.get(col).push(n);
   }
@@ -117,7 +145,22 @@ function edgePath(from, to) {
   return `M ${startX} ${startY} Q ${midX + perpX} ${midY + perpY} ${endX} ${endY}`;
 }
 
-function legendHtml(lang) {
+function vaultLegendHtml(lang) {
+  const es = String(lang || "").toLowerCase().startsWith("es");
+  const low = masteryToNodeColors(0.15);
+  const mid = masteryToNodeColors(0.5);
+  const high = masteryToNodeColors(0.9);
+  return `<ul class="material-graph-legend material-graph-legend-vault">
+    <li><span class="material-graph-legend-dot" style="background:${low.fill};border-color:${low.stroke}"></span>${escapeHtml(es ? "Dominio bajo" : "Low mastery")}</li>
+    <li><span class="material-graph-legend-dot" style="background:${mid.fill};border-color:${mid.stroke}"></span>${escapeHtml(es ? "Parcial" : "Partial")}</li>
+    <li><span class="material-graph-legend-dot" style="background:${high.fill};border-color:${high.stroke}"></span>${escapeHtml(es ? "Alto dominio" : "High mastery")}</li>
+    <li><span class="material-graph-legend-line material-graph-legend-line-solid"></span>${escapeHtml(es ? "Prerrequisito" : "Prerequisite")}</li>
+    <li><span class="material-graph-legend-line material-graph-legend-line-dashed"></span>${escapeHtml(es ? "Co-prerrequisito" : "Co-prerequisite")}</li>
+  </ul>`;
+}
+
+function legendHtml(lang, graphMode) {
+  if (graphMode === "vault") return vaultLegendHtml(lang);
   const es = String(lang || "").toLowerCase().startsWith("es");
   const items = [
     { layer: "concept", label: es ? "Concepto" : "Concept" },
@@ -141,11 +184,16 @@ function legendHtml(lang) {
  */
 export function renderGraphCanvas(graph, containerEl, options = {}) {
   if (!containerEl) return null;
+  const graphMode = options.graphMode || "material";
   const width = Math.max(480, Number(options.width) || containerEl.clientWidth || 720);
-  const height = Math.max(360, Number(options.height) || 480);
+  const nodeCount = (graph?.nodes || []).length;
+  const vaultHeight =
+    graphMode === "vault" ? Math.min(2400, Math.max(360, 56 + nodeCount * 28)) : 480;
+  const height = Math.max(360, Number(options.height) || vaultHeight);
   const lang = options.lang || "English";
-  const { nodes, edges } = layoutGraph(graph, width, height);
+  const { nodes, edges } = layoutGraph(graph, width, height, { graphMode });
   const idToNode = new Map(nodes.map((n) => [n.id, n]));
+  const interactive = typeof options.onNodeClick === "function";
 
   const edgeSvg = edges
     .map((e) => {
@@ -162,10 +210,15 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
 
   const nodeSvg = nodes
     .map((n) => {
-      const colors = LAYER_COLORS[n.layer] || LAYER_COLORS.text;
+      const colors = resolveNodeColors(n);
       const title = escapeHtml(n.label);
       const short = escapeHtml(truncateLabel(n.label, 28));
-      const clickable = n.sourceAnnotationId ? ' class="material-graph-node material-graph-node-clickable" data-annotation-id="' + escapeHtml(n.sourceAnnotationId) + '"' : ' class="material-graph-node"';
+      const classes = ["material-graph-node"];
+      if (interactive || n.sourceAnnotationId) classes.push("material-graph-node-clickable");
+      const annAttr = n.sourceAnnotationId
+        ? ` data-annotation-id="${escapeHtml(n.sourceAnnotationId)}"`
+        : "";
+      const clickable = ` class="${classes.join(" ")}"${annAttr}`;
       return `<g${clickable} data-node-id="${escapeHtml(n.id)}" transform="translate(${n.x},${n.y})">
         <circle r="${n.r || 16}" fill="${colors.fill}" stroke="${colors.stroke}" stroke-width="2.5"/>
         <text class="material-graph-node-label" y="${(n.r || 16) + 14}" text-anchor="middle" fill="var(--text, #e2e8f0)" font-size="11">${short}</text>
@@ -181,10 +234,17 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
         )}</p>`
       : "";
 
+  const ariaLabel =
+    graphMode === "vault"
+      ? String(lang).toLowerCase().startsWith("es")
+        ? "Grafo del Knowledge Vault"
+        : "Knowledge Vault graph"
+      : "Material graph";
+
   containerEl.innerHTML = `
     <div class="material-graph-wrap">
-      ${legendHtml(lang)}
-      <div class="material-graph-canvas-host" tabindex="0" role="img" aria-label="Material graph">
+      ${legendHtml(lang, graphMode)}
+      <div class="material-graph-canvas-host" tabindex="0" role="img" aria-label="${escapeHtml(ariaLabel)}">
         <svg class="material-graph-svg" viewBox="0 0 ${width} ${height}" width="100%" height="${height}" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <marker id="material-graph-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -200,7 +260,7 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
       <p class="hint material-graph-stats">${nodes.length} nodes · ${edges.length} edges</p>
     </div>`;
 
-  if (typeof options.onNodeClick === "function") {
+  if (interactive) {
     containerEl.querySelectorAll(".material-graph-node-clickable").forEach((el) => {
       el.addEventListener("click", () => {
         const annId = el.getAttribute("data-annotation-id");

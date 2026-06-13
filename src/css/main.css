@@ -1514,6 +1514,24 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin-top: 4px;
 }
 
+.create-already-know {
+  margin: 0;
+}
+
+.create-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.create-checkbox-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+}
+
 .create-slow-options {
   display: grid;
   gap: 8px;
@@ -2141,6 +2159,223 @@ body.assessment-runner-active .assessment-runner-chrome {
 
 .vault-empty {
   margin: 8px 0 16px;
+}
+
+.vault-row-actions {
+  white-space: nowrap;
+}
+
+.vault-action-btn {
+  font-size: 0.8rem;
+  padding: 2px 6px;
+  margin-right: 4px;
+}
+
+.vault-delete-btn {
+  color: #dc2626;
+}
+
+.vault-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent);
+  margin-left: 4px;
+}
+
+.vault-badge-co {
+  background: color-mix(in srgb, #8b5cf6 18%, transparent);
+}
+
+.vault-pending-inference {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, #8b5cf6 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, #8b5cf6 6%, transparent);
+}
+
+.vault-pending-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.vault-pending-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--text, #111) 8%, transparent);
+}
+
+.vault-pending-item:last-child {
+  border-bottom: none;
+}
+
+.vault-pending-edge {
+  flex: 1 1 180px;
+}
+
+.vault-pending-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.vault-modal {
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  max-width: 480px;
+  width: calc(100% - 32px);
+  background: var(--bg, #fff);
+  color: var(--text, #111);
+  box-shadow: 0 12px 40px color-mix(in srgb, #000 25%, transparent);
+}
+
+.vault-modal[hidden] {
+  display: none;
+}
+
+.vault-modal-inner {
+  padding: 20px;
+}
+
+.vault-modal-title {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.vault-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.vault-form-field {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.vault-form-field input[type="text"],
+.vault-form-field select {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text, #111) 20%, transparent);
+}
+
+.vault-prereq-list {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-top: 8px;
+  border: 1px solid color-mix(in srgb, var(--text, #111) 12%, transparent);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.vault-prereq-option {
+  display: block;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.vault-prereq-search {
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 4px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text, #111) 20%, transparent);
+}
+
+.vault-warn {
+  color: #dc2626;
+  font-size: 0.9rem;
+}
+
+.vault-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(12px);
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text, #111) 90%, #000);
+  color: #fff;
+  font-size: 0.9rem;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.vault-toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.vault-import-section {
+  margin: 1rem 0 1.25rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.vault-import-heading {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+}
+
+.vault-import-hint {
+  margin: 0 0 0.75rem;
+}
+
+.vault-import-textarea {
+  width: 100%;
+  min-height: 5.5rem;
+  resize: vertical;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+}
+
+.vault-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.vault-import-errors {
+  margin: 0.75rem 0 0;
+  padding-left: 1.25rem;
+  color: #f87171;
+  font-size: 0.9rem;
+}
+
+.vault-file-import-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.vault-file-import-label.is-busy {
+  opacity: 0.65;
+  pointer-events: none;
 }
 
 .pre-packing-assessment-option.is-presumed-known span::before {

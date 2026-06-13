@@ -372,6 +372,8 @@ export function updateRecommendation(docId, recommendation) {
 }
 
 /**
+ * Upsert a spaced-memory item on shared.smItems.
+ * Vault-driven items use source `vault_decay` and include vaultEntryId (see spaced-review.js).
  * @param {string} docId
  * @param {object} item
  */

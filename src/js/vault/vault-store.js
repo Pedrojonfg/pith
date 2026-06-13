@@ -1,6 +1,7 @@
 /** Global Knowledge Vault — localStorage persistence. */
 
 import { hydrateMastery } from "./mastery-model.js";
+import { addPrerequisiteSafe, recomputeImportanceScores } from "./prerequisite-graph.js";
 
 export const VAULT_STORAGE_KEY = "mylearning_knowledge_vault";
 export const VAULT_DATA_KEY = "mylearning_knowledge_vault_data";
@@ -13,8 +14,88 @@ function newVaultId() {
   return `vault_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const SCHEMA_VERSION = 2;
+
 function emptyVault() {
-  return { schemaVersion: 1, entries: [], lastUpdated: Date.now() };
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    entries: [],
+    lastUpdated: Date.now(),
+    importHistory: [],
+    lastInferenceAt: {},
+    pendingInferredEdges: [],
+  };
+}
+
+/**
+ * @param {object} entry
+ */
+function migrateEntryV2(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  const now = Number(entry.masteryLastUpdated) || Date.now();
+  const base = Number(entry.masteryBase) || 0;
+  return {
+    ...entry,
+    misconceptions: Array.isArray(entry.misconceptions) ? [...entry.misconceptions] : [],
+    coPrerequisites: Array.isArray(entry.coPrerequisites) ? [...entry.coPrerequisites] : [],
+    manualOrigin: Boolean(entry.manualOrigin),
+    masteryDeclarativeBase: Number.isFinite(entry.masteryDeclarativeBase)
+      ? entry.masteryDeclarativeBase
+      : base,
+    masteryProceduralBase: Number.isFinite(entry.masteryProceduralBase)
+      ? entry.masteryProceduralBase
+      : base,
+    masteryDeclarativeLastUpdated: Number(entry.masteryDeclarativeLastUpdated) || now,
+    masteryProceduralLastUpdated: Number(entry.masteryProceduralLastUpdated) || now,
+    useBkt: Boolean(entry.useBkt),
+  };
+}
+
+/**
+ * @param {object[]} entries
+ */
+function rebuildDependents(entries) {
+  for (const entry of entries) {
+    entry.dependents = [];
+  }
+  for (const entry of entries) {
+    const id = String(entry?.id || "");
+    for (const prereqId of entry.prerequisites || []) {
+      const prereq = entries.find((e) => String(e?.id || "") === String(prereqId));
+      if (prereq) {
+        if (!Array.isArray(prereq.dependents)) prereq.dependents = [];
+        if (!prereq.dependents.includes(id)) prereq.dependents.push(id);
+      }
+    }
+  }
+}
+
+/**
+ * @param {object[]} entries
+ * @param {string} oldId
+ * @param {string} newId
+ */
+function replaceEntryIdReferences(entries, oldId, newId) {
+  const oldS = String(oldId);
+  const newS = String(newId);
+  if (oldS === newS) return;
+  for (const entry of entries) {
+    if (Array.isArray(entry.prerequisites)) {
+      entry.prerequisites = [...new Set(
+        entry.prerequisites.map((id) => (String(id) === oldS ? newS : String(id))),
+      )].filter((id) => id !== String(entry.id));
+    }
+    if (Array.isArray(entry.dependents)) {
+      entry.dependents = [...new Set(
+        entry.dependents.map((id) => (String(id) === oldS ? newS : String(id))),
+      )].filter((id) => id !== String(entry.id));
+    }
+    if (Array.isArray(entry.coPrerequisites)) {
+      entry.coPrerequisites = [...new Set(
+        entry.coPrerequisites.map((id) => (String(id) === oldS ? newS : String(id))),
+      )].filter((id) => id !== String(entry.id));
+    }
+  }
 }
 
 function readEntriesFromStorage(meta) {
@@ -43,11 +124,25 @@ export function loadVault() {
     if (!raw) return emptyVault();
     const meta = JSON.parse(raw);
     if (!meta || typeof meta !== "object") return emptyVault();
-    const entries = readEntriesFromStorage(meta).map((e) => hydrateMastery(e));
+    let entries = readEntriesFromStorage(meta).map((e) => migrateEntryV2(e));
+    const version = Number(meta.schemaVersion) || 1;
+    if (version < SCHEMA_VERSION) {
+      entries = entries.map((e) => migrateEntryV2(e));
+    }
+    rebuildDependents(entries);
+    recomputeImportanceScores({ entries });
     return {
-      schemaVersion: meta.schemaVersion === 1 ? 1 : 1,
-      entries,
+      schemaVersion: SCHEMA_VERSION,
+      entries: entries.map((e) => hydrateMastery(e)),
       lastUpdated: Number(meta.lastUpdated) || Date.now(),
+      importHistory: Array.isArray(meta.importHistory) ? [...meta.importHistory] : [],
+      lastInferenceAt:
+        meta.lastInferenceAt && typeof meta.lastInferenceAt === "object"
+          ? { ...meta.lastInferenceAt }
+          : {},
+      pendingInferredEdges: Array.isArray(meta.pendingInferredEdges)
+        ? [...meta.pendingInferredEdges]
+        : [],
     };
   } catch (err) {
     console.warn("[vault-store] loadVault: corrupt data", err);
@@ -66,15 +161,27 @@ export function saveVault(vault) {
     const { mastery, ...rest } = entry;
     return rest;
   });
-  const inline = JSON.stringify({ schemaVersion: 1, entries: stripped, lastUpdated: now });
+  const importHistory = Array.isArray(vault?.importHistory) ? vault.importHistory : [];
+  const metaPayload = {
+    schemaVersion: SCHEMA_VERSION,
+    lastUpdated: now,
+    importHistory,
+    lastInferenceAt:
+      vault?.lastInferenceAt && typeof vault.lastInferenceAt === "object"
+        ? vault.lastInferenceAt
+        : {},
+    pendingInferredEdges: Array.isArray(vault?.pendingInferredEdges)
+      ? vault.pendingInferredEdges
+      : [],
+  };
+  const inline = JSON.stringify({ ...metaPayload, entries: stripped });
 
   if (inline.length > SIZE_THRESHOLD) {
     localStorage.setItem(VAULT_DATA_KEY, JSON.stringify(stripped));
     localStorage.setItem(
       VAULT_STORAGE_KEY,
       JSON.stringify({
-        schemaVersion: 1,
-        lastUpdated: now,
+        ...metaPayload,
         entriesRef: {
           storageKey: VAULT_DATA_KEY,
           entryCount: stripped.length,
@@ -89,7 +196,7 @@ export function saveVault(vault) {
     }
     localStorage.setItem(
       VAULT_STORAGE_KEY,
-      JSON.stringify({ schemaVersion: 1, entries: stripped, lastUpdated: now }),
+      JSON.stringify({ ...metaPayload, entries: stripped }),
     );
   }
 }
@@ -198,4 +305,195 @@ export function getEntriesByTopic(docTopics) {
     .map((e) => hydrateMastery(e));
 }
 
-export { newVaultId };
+/**
+ * @param {string} entryId
+ * @param {string} canonicalTitle
+ * @returns {object | null}
+ */
+export function updateEntryTitle(entryId, canonicalTitle) {
+  const id = String(entryId || "").trim();
+  const title = String(canonicalTitle || "").trim();
+  if (!id || !title) return null;
+  const vault = loadVault();
+  const entry = vault.entries.find((e) => String(e?.id || "") === id);
+  if (!entry) return null;
+  entry.canonicalTitle = title;
+  entry.lastSeen = Date.now();
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+  return hydrateMastery(entry);
+}
+
+/**
+ * @param {string} survivorId
+ * @param {string} mergedId
+ * @returns {object | null}
+ */
+export function mergeEntries(survivorId, mergedId) {
+  const survivorS = String(survivorId || "").trim();
+  const mergedS = String(mergedId || "").trim();
+  if (!survivorS || !mergedS || survivorS === mergedS) return null;
+
+  const vault = loadVault();
+  const survivor = vault.entries.find((e) => String(e?.id || "") === survivorS);
+  const merged = vault.entries.find((e) => String(e?.id || "") === mergedS);
+  if (!survivor || !merged) return null;
+
+  const aliasSet = new Set([
+    ...(Array.isArray(survivor.aliases) ? survivor.aliases : []),
+    merged.canonicalTitle,
+    ...(Array.isArray(merged.aliases) ? merged.aliases : []),
+  ]);
+  aliasSet.delete(survivor.canonicalTitle);
+  survivor.aliases = [...aliasSet].filter(Boolean);
+
+  survivor.observations = [
+    ...(Array.isArray(survivor.observations) ? survivor.observations : []),
+    ...(Array.isArray(merged.observations) ? merged.observations : []),
+  ];
+
+  const sourceKey = (s) => `${s?.docId}|${s?.conceptId}`;
+  const sourceMap = new Map();
+  for (const s of [...(survivor.sources || []), ...(merged.sources || [])]) {
+    if (s) sourceMap.set(sourceKey(s), s);
+  }
+  survivor.sources = [...sourceMap.values()];
+
+  const prereqSet = new Set([
+    ...(survivor.prerequisites || []),
+    ...(merged.prerequisites || []),
+  ]);
+  prereqSet.delete(survivorS);
+  prereqSet.delete(mergedS);
+  survivor.prerequisites = [...prereqSet];
+
+  replaceEntryIdReferences(vault.entries, mergedS, survivorS);
+  vault.entries = vault.entries.filter((e) => String(e?.id || "") !== mergedS);
+  rebuildDependents(vault.entries);
+  recomputeImportanceScores(vault);
+
+  survivor.lastSeen = Math.max(Number(survivor.lastSeen) || 0, Number(merged.lastSeen) || 0);
+  survivor.masteryBase = Math.max(Number(survivor.masteryBase) || 0, Number(merged.masteryBase) || 0);
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+  return hydrateMastery(survivor);
+}
+
+/**
+ * @param {string} entryId
+ */
+export function deleteEntry(entryId) {
+  const id = String(entryId || "").trim();
+  if (!id) return;
+  const vault = loadVault();
+  if (!vault.entries.some((e) => String(e?.id || "") === id)) return;
+
+  for (const entry of vault.entries) {
+    if (Array.isArray(entry.prerequisites)) {
+      entry.prerequisites = entry.prerequisites.filter((pid) => String(pid) !== id);
+    }
+    if (Array.isArray(entry.dependents)) {
+      entry.dependents = entry.dependents.filter((did) => String(did) !== id);
+    }
+    if (Array.isArray(entry.coPrerequisites)) {
+      entry.coPrerequisites = entry.coPrerequisites.filter((cid) => String(cid) !== id);
+    }
+  }
+  vault.entries = vault.entries.filter((e) => String(e?.id || "") !== id);
+  rebuildDependents(vault.entries);
+  recomputeImportanceScores(vault);
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+}
+
+/**
+ * @param {{ canonicalTitle: string, topic: string, masteryBase?: number, prerequisites?: string[] }} params
+ * @returns {object | null}
+ */
+export function addManualEntry(params) {
+  const title = String(params?.canonicalTitle || "").trim();
+  const topic = String(params?.topic || "").trim();
+  if (!title || !topic) return null;
+
+  const now = Date.now();
+  const masteryBase = Number(params?.masteryBase);
+  const entry = migrateEntryV2({
+    id: newVaultId(),
+    canonicalTitle: title,
+    aliases: [],
+    topic,
+    masteryBase: Number.isFinite(masteryBase) ? masteryBase : 0.5,
+    masteryLastUpdated: now,
+    lastSeen: now,
+    sources: [],
+    prerequisites: [],
+    dependents: [],
+    observations: [],
+    manualOrigin: true,
+  });
+
+  const vault = loadVault();
+  vault.entries.push(entry);
+  const prereqs = (Array.isArray(params?.prerequisites) ? params.prerequisites : [])
+    .map((p) => String(p || "").trim())
+    .filter((p) => p && p !== entry.id);
+  if (prereqs.length) {
+    entry.prerequisites = prereqs;
+    rebuildDependents(vault.entries);
+    recomputeImportanceScores(vault);
+  }
+  vault.lastUpdated = now;
+  saveVault(vault);
+  return hydrateMastery(entry);
+}
+
+/**
+ * @param {string} entryId
+ * @param {string[]} prerequisiteIds
+ * @returns {object | null}
+ */
+export function setPrerequisites(entryId, prerequisiteIds) {
+  const id = String(entryId || "").trim();
+  if (!id) return null;
+  const vault = loadVault();
+  const entry = vault.entries.find((e) => String(e?.id || "") === id);
+  if (!entry) return null;
+
+  const prereqs = [...new Set(
+    (Array.isArray(prerequisiteIds) ? prerequisiteIds : [])
+      .map((p) => String(p || "").trim())
+      .filter((p) => p && p !== id),
+  )];
+  const newSet = new Set(prereqs);
+  const previousPrereqs = [...(entry.prerequisites || [])].map(String);
+
+  entry.prerequisites = (entry.prerequisites || []).filter((pid) => newSet.has(String(pid)));
+
+  for (const prereqId of prereqs) {
+    if (!previousPrereqs.includes(String(prereqId))) {
+      addPrerequisiteSafe(vault, id, prereqId);
+    }
+  }
+
+  rebuildDependents(vault.entries);
+  recomputeImportanceScores(vault);
+  entry.lastSeen = Date.now();
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+  return hydrateMastery(entry);
+}
+
+/**
+ * @param {object} record
+ */
+export function appendImportRecord(record) {
+  if (!record || typeof record !== "object") return;
+  const vault = loadVault();
+  if (!Array.isArray(vault.importHistory)) vault.importHistory = [];
+  vault.importHistory.unshift(record);
+  vault.importHistory = vault.importHistory.slice(0, 20);
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+}
+
+export { newVaultId, migrateEntryV2, rebuildDependents, SCHEMA_VERSION };

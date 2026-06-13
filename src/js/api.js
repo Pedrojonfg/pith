@@ -3403,6 +3403,54 @@ Be concise overall. Respond in the same language as the question and student ans
 }
 
 /**
+ * Extract concept titles and topics from free-text self-declared knowledge.
+ * @param {string} text
+ * @param {{ llmModel?: string }} [options]
+ * @returns {Promise<Array<{ title: string, topic: string }>>}
+ */
+export async function extractConceptsFromImportText(text, options = {}) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+
+  const systemPrompt = `You extract learning concepts from a student's free-text description of what they already know.
+Return JSON only:
+{"concepts":[{"title":"...","topic":"..."}]}
+
+Rules:
+- title: short canonical concept name (2-5 words)
+- topic: broad subject area tag (single word or short phrase, e.g. "python", "calculus")
+- Extract distinct concepts only; do not invent concepts not implied by the text
+- Respond in the same language as the input text`;
+
+  const content = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(options?.llmModel ?? null),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Text describing known material:\n\n${raw.slice(0, 50000)}` },
+    ],
+    temperature: 0,
+  });
+
+  const parsed = parseModelJsonValue(content);
+  const list = Array.isArray(parsed?.concepts)
+    ? parsed.concepts
+    : Array.isArray(parsed)
+      ? parsed
+      : [];
+  const out = [];
+  for (const row of list) {
+    const title = String(row?.title || row?.canonicalTitle || "").trim();
+    if (!title) continue;
+    out.push({
+      title,
+      topic: String(row?.topic || "general").trim() || "general",
+    });
+  }
+  return out;
+}
+
+/**
  * Normalize new document concepts against existing vault entries (one LLM call).
  * @param {{ existingEntries: Array<{id:string,canonicalTitle:string,aliases?:string[]}>, newConcepts: Array<{id:string,title:string,type?:string}>, topic: string }} params
  * @returns {Promise<Array<{ conceptId: string, action: 'merge'|'alias'|'new', vaultEntryId: string | null }>>}
@@ -3487,5 +3535,140 @@ Respond with JSON only:
       vaultEntryId: null,
     }))
     .filter((m) => m.conceptId);
+}
+
+/**
+ * Optional LLM helper: describe a repeated wrong-answer pattern as a misconception.
+ * @param {{ canonicalTitle?: string, topic?: string }} entry
+ * @param {Array<{ type?: string, wrongAnswer?: string, wrongAnswerPattern?: string }>} observationGroup
+ * @returns {Promise<{ description: string, confidence: number }>}
+ */
+export async function detectMisconceptionPattern(entry, observationGroup) {
+  const title = String(entry?.canonicalTitle || "concept").trim();
+  const group = Array.isArray(observationGroup) ? observationGroup : [];
+  const wrongAnswers = [
+    ...new Set(
+      group
+        .map((o) => String(o?.wrongAnswerPattern || o?.wrongAnswer || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+  const fallbackWrong = wrongAnswers[0] || "incorrect answer";
+  const ruleFallback = {
+    description: `Confuses "${title}" with repeated answer "${fallbackWrong}"`,
+    confidence: Math.min(0.95, 0.55 + group.length * 0.05),
+  };
+  if (!group.length) return ruleFallback;
+
+  const systemPrompt = `You identify learning misconceptions from repeated wrong answers on the same concept.
+Return JSON only:
+{"description":"...","confidence":0.0}
+
+Rules:
+- description: one sentence contrasting correct vs incorrect understanding (max 120 chars)
+- confidence: 0.0-1.0 based on pattern strength
+- Use the same language as the concept title when possible`;
+
+  const userPayload = {
+    conceptTitle: title,
+    topic: String(entry?.topic || "general").trim(),
+    wrongAnswers,
+    observationTypes: group.map((o) => String(o?.type || "")),
+    count: group.length,
+  };
+
+  try {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(null),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+      temperature: 0,
+    });
+    const parsed = parseModelJsonValue(raw);
+    const description = String(parsed?.description || "").trim();
+    const confidence = Number(parsed?.confidence);
+    if (description && Number.isFinite(confidence)) {
+      return { description, confidence: Math.min(1, Math.max(0, confidence)) };
+    }
+  } catch (err) {
+    console.warn("[detectMisconceptionPattern] LLM failed", err?.message || err);
+  }
+
+  return ruleFallback;
+}
+
+/**
+ * Batch LLM inference of cross-document prerequisite edges for a topic.
+ * @param {{ entries: Array<{ id: string, canonicalTitle: string, aliases?: string[] }>, topic: string }} params
+ * @returns {Promise<Array<{ fromId: string, toId: string, confidence: number }>>}
+ */
+export async function inferCrossDocumentPrerequisites({ entries, topic }) {
+  const list = (Array.isArray(entries) ? entries : []).slice(0, 80);
+  if (list.length < 2) return [];
+
+  const topicLabel = String(topic || "general").trim() || "general";
+  const validIds = new Set(list.map((e) => String(e.id || "").trim()).filter(Boolean));
+
+  const systemPrompt = `You infer prerequisite relationships between learning concepts in a personal knowledge vault.
+Concepts may come from different documents on the same topic. Identify edges where understanding the prerequisite concept is required before the dependent concept.
+
+Respond with JSON only:
+{"edges":[{"fromId":"...","toId":"...","confidence":0.0}]}
+
+Rules:
+- fromId: prerequisite concept id (learn first)
+- toId: dependent concept id (requires fromId)
+- confidence: 0.0-1.0 — only include edges you are reasonably sure about (≥0.6)
+- Do NOT include self-loops, duplicate edges, or ids not in the concept list
+- Maximum 30 edges
+- Prefer foundational concepts as prerequisites`;
+
+  const userPayload = {
+    topic: topicLabel,
+    concepts: list.map((e) => ({
+      id: e.id,
+      title: e.canonicalTitle,
+      aliases: e.aliases || [],
+    })),
+  };
+
+  try {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(null),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(userPayload) },
+      ],
+      temperature: 0,
+    });
+    const parsed = parseModelJsonValue(raw);
+    const edges = Array.isArray(parsed?.edges)
+      ? parsed.edges
+      : Array.isArray(parsed)
+        ? parsed
+        : [];
+    const out = [];
+    const seen = new Set();
+    for (const row of edges) {
+      const fromId = String(row?.fromId || "").trim();
+      const toId = String(row?.toId || "").trim();
+      const confidence = Number(row?.confidence);
+      if (!fromId || !toId || fromId === toId) continue;
+      if (!validIds.has(fromId) || !validIds.has(toId)) continue;
+      if (!Number.isFinite(confidence) || confidence < 0.6) continue;
+      const key = `${fromId}|${toId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ fromId, toId, confidence: Math.min(1, Math.max(0, confidence)) });
+    }
+    return out;
+  } catch (err) {
+    console.warn("[inferCrossDocumentPrerequisites] LLM failed", err?.message || err);
+    return [];
+  }
 }
 

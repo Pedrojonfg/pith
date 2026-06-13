@@ -110,3 +110,64 @@
 .blocks-graph-actions {
   margin-top: 12px;
 }
+
+.material-graph-layout.vault-graph-active {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .material-graph-layout.vault-graph-active {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vault-graph-detail-panel {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(15, 23, 42, 0.45);
+  max-height: min(70vh, 640px);
+  overflow: auto;
+}
+
+.vault-graph-detail-panel .vault-detail {
+  margin-top: 0;
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.vault-graph-detail-hint {
+  margin: 0;
+}
+
+.vault-graph-topic-picker {
+  padding: 8px 0;
+}
+
+.material-graph-legend-vault {
+  gap: 8px 14px;
+}
+
+.material-graph-legend-line {
+  display: inline-block;
+  width: 28px;
+  height: 0;
+  border-top: 2px solid #64748b;
+  vertical-align: middle;
+}
+
+.material-graph-legend-line-dashed {
+  border-top-style: dashed;
+}
+
+.material-graph-node-clickable circle {
+  transition: filter 0.15s ease;
+}
+
+.material-graph-node-clickable:hover circle {
+  filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.45));
+}
