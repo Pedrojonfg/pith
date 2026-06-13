@@ -49,25 +49,33 @@ export function shouldIncludeInReviewPool(entry, now = Date.now()) {
 /**
  * @param {object} entry
  * @param {number} priority
+ * @param {string} docId
  * @param {number} [now]
  */
-function buildVaultSmItem(entry, priority, now = Date.now()) {
+function buildVaultSmItem(entry, priority, docId, now = Date.now()) {
   const vaultEntryId = String(entry.id);
+  const definition = String(entry.definition || entry.canonicalDefinition || "").trim();
   return {
     id: `${VAULT_SM_ID_PREFIX}${vaultEntryId}`,
-    vaultEntryId,
-    conceptTitle: String(entry.canonicalTitle || "").trim(),
-    priority,
-    source: "vault_decay",
-    nextReview: now - Math.floor(priority * PRIORITY_SCHEDULE_MS),
+    sourceType: "vault_concept",
+    sourceId: vaultEntryId,
+    docId: String(docId || "").trim(),
+    title: String(entry.canonicalTitle || "").trim() || "Vault concept",
+    contentPreview: definition.slice(0, 80),
+    interval: 1,
     easeFactor: 2.5,
-    interval: 0,
-    reviewCount: 0,
+    repetitions: 0,
+    scheduledDue: now - Math.floor(priority * PRIORITY_SCHEDULE_MS),
+    lastReviewed: null,
+    observations: [],
+    createdAt: now,
+    priority,
   };
 }
 
 function isVaultDecaySmItem(item) {
   return (
+    item?.sourceType === "vault_concept" ||
     item?.source === "vault_decay" ||
     String(item?.id || "").startsWith(VAULT_SM_ID_PREFIX)
   );
@@ -94,14 +102,14 @@ export function syncVaultToReviewPool(session) {
     if (!shouldIncludeInReviewPool(entry, now)) continue;
     const priority = computeVaultReviewPriority(entry, vault, now);
     if (priority == null || priority <= 0) continue;
-    eligible.set(String(entry.id), buildVaultSmItem(entry, priority, now));
+    eligible.set(String(entry.id), buildVaultSmItem(entry, priority, docId, now));
   }
 
   const kept = (Array.isArray(current.shared.smItems) ? current.shared.smItems : []).filter(
     (item) => !isVaultDecaySmItem(item),
   );
   const vaultItems = [...eligible.values()].sort(
-    (a, b) => (Number(b.priority) || 0) - (Number(a.priority) || 0),
+    (a, b) => (Number(a.scheduledDue) || 0) - (Number(b.scheduledDue) || 0),
   );
 
   saveActiveSession({

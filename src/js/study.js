@@ -228,7 +228,9 @@ import {
   wireClozeStudyHandlers,
 } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
-import { startReviewFromSessionBlocks } from "./review.js?v=20260525_1";
+import { startReviewFromSessionBlocks, runSm2ReviewSession } from "./review.js?v=20260525_1";
+import { getQueueStats } from "./sm2.js";
+import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
 import {
   buildModeSliceFromShared,
   resolveModeEntryState,
@@ -969,9 +971,51 @@ export function enterModeSelectScreen() {
   resetModeSelectUi();
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
+  refreshReviewBadge();
   showScreen("modeSelect");
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
+}
+
+function refreshReviewBadge() {
+  const badge = els.reviewBadge;
+  if (!badge) return;
+  const doc = getActiveSession();
+  const items = doc?.shared?.smItems || [];
+  const stats = getQueueStats(items);
+  if (stats.dueNow > 0) {
+    badge.textContent = String(stats.dueNow);
+    badge.setAttribute("aria-label", `${stats.dueNow} items due now`);
+    badge.classList.remove("hidden");
+  } else {
+    badge.textContent = "";
+    badge.setAttribute("aria-label", "Items due now");
+    badge.classList.add("hidden");
+  }
+}
+
+function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, skipped = false }) {
+  try {
+    const doc = getActiveSession();
+    if (!doc?.docId) return;
+    const blocks = getBlocksSafe();
+    const block = blocks[state.activeBlockIndex];
+    const blockId = String(block?.block_id ?? block?.id ?? state.activeBlockIndex);
+    const conceptIds = Array.isArray(block?.concept_ids)
+      ? block.concept_ids
+      : Array.isArray(block?.concepts)
+        ? block.concepts.map((c) => c?.canonicalId || c?.label || c).filter(Boolean)
+        : [];
+    registerOrUpdateSmItem(doc.docId, {
+      sourceType: "rsvp_block",
+      sourceId: blockId,
+      title: getBlockTitleSafe(state.activeBlockIndex),
+      contentPreview: conceptIds.slice(0, 3).join(", "),
+      quality: mapMcqOutcomeToQuality({ correct, firstTry, usedHint, skipped }),
+    });
+  } catch (err) {
+    console.warn("[sm2-ingest] RSVP ingest failed", err);
+  }
 }
 
 function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
@@ -2382,6 +2426,12 @@ function wireSlowScopeHandlers() {
 }
 
 function wireDocLibraryHandlers() {
+  els.btnReview?.addEventListener("click", () => {
+    const doc = getActiveSession();
+    if (!doc?.docId) return;
+    runSm2ReviewSession(doc.docId);
+  });
+
   els.modeSelectDocLibraryBtn?.addEventListener("click", () => {
     enterDocLibraryScreen();
   });
@@ -4490,6 +4540,9 @@ function handleTestAnswer({ chosen, correct, feedback }) {
     correctAnswer: String(correct || ""),
   });
   syncActiveSessionAssessmentSignals();
+  ingestSm2FromTestAnswer({
+    correct: String(chosen || "").trim().toUpperCase() === String(correct || "").trim().toUpperCase(),
+  });
 
   const normalizedChosen = String(chosen || "").trim().toUpperCase();
   const normalizedCorrect = String(correct || "").trim().toUpperCase();

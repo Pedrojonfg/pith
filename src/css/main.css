@@ -1650,6 +1650,77 @@ body.assessment-runner-active .assessment-runner-chrome {
 
 .doc-library-link-row {
   margin: 12px 0 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.review-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.review-badge.hidden {
+  display: none;
+}
+
+.review-early-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.15);
+  color: #b45309;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.review-early-chip.hidden {
+  display: none;
+}
+
+.review-sm2-view {
+  margin: 12px 0;
+}
+
+.review-sm2-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.review-sm2-title {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+}
+
+.review-sm2-preview {
+  margin: 0 0 16px;
+  color: var(--text-muted, #64748b);
+}
+
+.review-sm2-quality-btns {
+  display: grid;
+  gap: 8px;
+}
+
+@media (min-width: 520px) {
+  .review-sm2-quality-btns {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .doc-library-header {

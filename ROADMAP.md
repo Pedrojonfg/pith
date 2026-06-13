@@ -1,383 +1,256 @@
-# ROADMAP — Global Knowledge Vault (Post A+)
+# ROADMAP — SM-2 Priority Queue
 
-**Feature**: `20260619-knowledge-vault-post-a-plus` | **Spec**: `specs/20260619-knowledge-vault-post-a-plus/spec.md` | **Plan**: `specs/20260619-knowledge-vault-post-a-plus/plan.md`
+**Feature**: `20260620-sm2-priority-queue` | **Spec**: `specs/20260620-sm2-priority-queue/spec.md` | **Plan**: `specs/20260620-sm2-priority-queue/plan.md`
 
-**Objective**: Extend A+ GKV with manual curation, external import, misconception detection, finer mastery, prerequisite graph improvements, vault graph UI, and vault-driven spaced review. **Do not start until A+ readiness gate (FR-000) is green.**
+**Objective**: SM-2 spaced repetition with non-blocking priority queue — pure algorithm module, canonical `smItems` schema, ingestion from RSVP/Questions/Cloze/Slow, vault shape alignment, minimal Review UI (badge + study flow).
 
-**A+ status**: `20260618-knowledge-vault-a-plus` tasks T01–T09 complete.
-
-**Post A+ status**: `20260619-knowledge-vault-post-a-plus` tasks T01–T14 complete (integration test `cursor-tests/20260619_knowledge-vault-post-a-plus.mjs` green).
+**Prerequisites**: `20260609-unified-session`, Post A+ T13 vault → smItems bridge.
 
 ## Task table
 
 | ID | Description | Deps | Complexity | Status |
 |----|-------------|------|------------|--------|
-| T01 | Manual vault UI + store APIs (edit, merge, delete, add, prereqs) | — | M | [x] |
-| T02 | External import — free text (LLM extract) | T01 | M | [x] |
-| T03 | External import — document without session | T01 | M | [x] |
-| T04 | External import — CSV/JSON | T02 | S | [x] |
-| T05 | Misconception model + session-close detection | T01 | M | [x] |
-| T06 | Misconception prompt injection | T05 | S | [x] |
-| T07 | Declarative/procedural mastery dimensions | T01 | M | [x] |
-| T08 | Optional BKT path (≥15 obs/concept) | T07 | M | [x] |
-| T09 | Prerequisite cycle detection + co-prerequisites | T01 | S | [x] |
-| T10 | LLM cross-document prerequisite inference | T09 | M | [x] |
-| T11 | Topological importance scoring | T09 | S | [x] |
-| T12 | Vault graph UI (adapter + view) | T09, T11 | M | [x] |
-| T13 | Vault-driven spaced review → smItems | T07, T11 | M | [x] |
-| T14 | cursor-tests + quickstart QA closure | T01–T13 | M | [x] |
-| T15 | Multi-device sync (deferred — backend) | backend | L | [ ] |
-| T16 | Collaborative filtering (deferred — backend) | T15 | L | [ ] |
+| T01 | `sm2.js` pure module + `cursor-tests/sm2.test.mjs` | — | M | [x] |
+| T02 | `normalizeSmItem` + `upsertSmItem` / `getSmItemsDueToday` alignment | T01 | S | [x] |
+| T03 | RSVP / Questions ingestion (`sm2-ingest.js` + `study.js` hooks) | T02 | M | [x] |
+| T04 | Review button + due-now badge on `screenModeSelect` | T01 | S | [x] |
+| T05 | `screenReview` priority-queue study flow | T02 | M | [x] |
+| T06 | Cloze + Slow flashcard ingestion hooks | T02, T03 | S | [x] |
+| T07 | Vault `spaced-review.js` canonical shape + review callback | T02 | S | [x] |
+| T08 | Integration tests + quickstart QA closure | T01–T07 | M | [x] |
 
 ## Dependency graph
 
 ```text
-T01 ──┬──→ T02 ──→ T04
-      ├──→ T03
-      ├──→ T05 ──→ T06
-      ├──→ T07 ──┬──→ T08
-      │          └──→ T13
-      └──→ T09 ──┬──→ T10
-                 ├──→ T11 ──┬──→ T12
-                 │          └──→ T13
+T01 ──┬──→ T02 ──┬──→ T03 ──→ T06
+      │          ├──→ T05
+      │          └──→ T07
+      └──→ T04
 
-T01–T13 ──→ T14
-
-T15 ──→ T16  (deferred)
+T01–T07 ──→ T08
 ```
 
-**Parallel from T01**: up to 3 agents — T02+T03+T09, or T05+T07+T09
+**Parallel after T01**: T02 + T04 (2 agents)
 
-**Parallel after T09**: T10 + T11 (2 agents)
+**Parallel after T02**: T03 + T05 + T07 (3 agents)
 
-**Parallel after T11**: T12 + T13 (2 agents; T13 also needs T07)
+**Sequential**: T06 after T03 validated; T08 after all
 
 ## Recommended execution order
 
-### Gate 0 — Validate A+ (manual, no agent)
+### Wave 1 — Algorithm core (1 agent)
 
-Confirm FR-000: >30 concepts, no obvious dupes, shorter repeat packing, decay works, subjective "app knows what I know".
+- **T01** `src/js/sm2.js` + unit tests
 
-### Wave 1 — Curation (1 agent)
+**Checkpoint**: `node cursor-tests/sm2.test.mjs` green before any wiring.
 
-- **T01** Manual vault management
+### Wave 2 — Storage + badge (2 parallel agents)
 
-**Checkpoint**: User can fix titles, merge dupes, add manual concepts.
+- **T02** session-store normalization
+- **T04** mode-select Review badge (can mock items for badge test)
 
-### Wave 2 — Import (2 parallel agents)
+**Checkpoint**: legacy cloze-shaped item normalizes on read.
 
-- **T02** Text import
-- **T03** Document import
+### Wave 3 — Ingestion + UI (3 parallel agents)
 
-Then **T04** CSV/JSON (1 agent).
+- **T03** RSVP/Questions hooks
+- **T05** Review study flow
+- **T07** vault canonical shape
 
-**Checkpoint**: Import Python knowledge → next doc has shorter assessment.
+**Checkpoint**: RSVP block creates smItem; Review screen works with seeded items.
 
-### Wave 3 — Pedagogy core (3 parallel agents)
+### Wave 4 — Remaining sources (1 agent)
 
-- **T05** Misconceptions
-- **T07** Declarative/procedural mastery
-- **T09** Co-prerequisites
+- **T06** Cloze + Slow hooks (after T03 RSVP path validated)
 
-Then: **T06** (after T05), **T10+T11** parallel (after T09).
+### Wave 5 — QA (1 agent)
 
-### Wave 4 — Visualization + retention (2 parallel agents)
-
-- **T12** Graph UI (needs T11)
-- **T13** Spaced review (needs T07+T11)
-
-### Wave 5 — Precision (optional, when data rich)
-
-- **T08** BKT when ≥15 obs/concept average
-
-### Wave 6 — QA
-
-- **T14** Tests + quickstart closure
-
-### Deferred
-
-- **T15–T16** When backend ships
+- **T08** integration tests + ROADMAP closure
 
 ---
 
-## PROMPT T01 — Manual vault UI + store APIs
+## PROMPT T01 — sm2.js pure module
 
-Implement Post A+ Block 1 — manual vault management.
+Implement SM-2 Priority Queue T01 — core algorithm module.
 
-**Context**: Read `specs/20260619-knowledge-vault-post-a-plus/spec.md` (User Story 1, FR-101–105), `contracts/manual-vault-ui.md`, `data-model.md`. A+ vault lives in `src/js/vault/vault-store.js` and `debug-ui.js`.
+**Context**: Read `specs/20260620-sm2-priority-queue/spec.md` (FR-001–007, FR-013), `contracts/sm2-core.md`, `research.md` R1–R2. Branch `20260620-sm2-priority-queue`.
 
 **Files to touch**:
-- `src/js/vault/vault-store.js` — add `updateEntryTitle`, `mergeEntries`, `deleteEntry`, `addManualEntry`, `setPrerequisites`; schema v2 migration stub if needed
-- `src/js/vault/debug-ui.js` — edit/merge/delete/add UI, prerequisite multi-select
-- `index.html` — modals/buttons in Knowledge Vault section
-- `src/css/main.css` — minimal form/modal styles
-- `sw.js` — bump SW_VERSION if required by project rules
+- `src/js/sm2.js` (NEW) — `SM2_DEFAULTS`, `THRESHOLD_RATIO`, `createSmItem`, `normalizeSmItem`, `isOnTime`, `updateSmItem`, `buildReviewQueue`, `getQueueStats`
+- `cursor-tests/sm2.test.mjs` (NEW) — 8 tests per contract
+
+**Do NOT touch**: `study.js`, `session-store.js`, HTML yet.
 
 **Success criteria**:
-- All five FR-101–105 flows work and persist across reload
-- Merge reassigns observations, sources, prerequisites, dependents without orphans
-- Delete cleans inverse links
+- All pure functions, zero side effects
+- Early review preserves interval; on-time q≥3 grows interval; q&lt;3 resets
+- `normalizeSmItem` maps `nextReview` → `scheduledDue`, legacy `sourceMode` → `sourceType`
 
-**Reference**: `ROADMAP.md` wave 1.
+**Reference**: `ROADMAP.md` Wave 1.
 
-criterio de éxito: manual edit/merge/delete/add/prereq flows pass quickstart Wave 1. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: `node cursor-tests/sm2.test.mjs` passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — External import (free text)
+## PROMPT T02 — Session store normalization
 
-Implement Post A+ Block 2a — import knowledge by pasting text.
+Implement SM-2 T02 — canonical smItems in session-store.
 
-**Context**: `contracts/external-import.md`, `research.md` R2. Depends on T01 store APIs.
+**Context**: `contracts/mode-ingestion.md`, `data-model.md`, `research.md` R3. Depends on T01 `normalizeSmItem`.
 
 **Files to touch**:
-- `src/js/vault/import.js` (NEW) — `importFromText`
-- `src/js/api.js` — `extractConceptsFromImportText` LLM call; reuse `normalizeConceptsToVault`
-- `src/js/vault/debug-ui.js` or `study.js` — Import UI entry
-- `index.html`, `src/css/main.css`
+- `src/js/session-store.js` — call `normalizeSmItem` on read paths; `upsertSmItem` merges canonical; update `getSmItemsDueToday` to use `scheduledDue`
+- `src/js/session-types.js` — validate canonical fields if needed
 
 **Success criteria**:
-- Paste text → concepts in vault with default mastery 0.7
-- Overlaps merge via existing normalization
-- `ImportRecord` appended
+- Legacy cloze items (`nextReview`, `sourceMode: 'cloze'`) round-trip as canonical
+- `getSmItemsDueToday` unchanged call sites, correct semantics
 
-criterio de éxito: quickstart Wave 2 step 1 passes. Ejecuta /validate antes de cerrar este mensaje.
+**Reference**: `ROADMAP.md` Wave 2.
+
+criterio de éxito: manual DevTools upsert/read legacy shape works. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — External import (document without session)
+## PROMPT T03 — RSVP / Questions ingestion
 
-Implement Post A+ Block 2b — upload document marked "already know".
+Implement SM-2 T03 — block answers feed smItems.
 
-**Context**: `contracts/external-import.md`. Reuse normalization pipeline without creating study session.
+**Context**: `contracts/mode-ingestion.md` RSVP section, `research.md` R6. Depends on T02.
 
 **Files to touch**:
-- `src/js/vault/import.js` — `importFromDocument`
-- `src/js/study.js` — upload handler branch for import-only
-- `index.html` — checkbox "Already know this material"
+- `src/js/sm2-ingest.js` (NEW) — `registerOrUpdateSmItem`, `mapMcqOutcomeToQuality`
+- `src/js/study.js` — hook after block answer / assessment signal path
 
 **Success criteria**:
-- Document upload + flag → concepts in vault, mastery ~0.8, no new session in session list
+- Completing RSVP block creates/updates `rsvp_block` smItem with mapped quality
+- No duplicate for same `blockId`
+- Hook failures log warn, do not break study
 
-criterio de éxito: quickstart Wave 2 step 2 passes. Ejecuta /validate antes de cerrar este mensaje.
+**Reference**: `ROADMAP.md` Wave 3.
+
+criterio de éxito: quickstart Wave 3 passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — External import (CSV/JSON)
+## PROMPT T04 — Review badge on mode select
 
-Implement Post A+ Block 2c — structured file import.
+Implement SM-2 T04 — mode select Review entry + badge.
 
-**Context**: `contracts/external-import.md` CSV/JSON schemas.
-
-**Files to touch**:
-- `src/js/vault/import.js` — `importFromCsv`, `importFromJson`
-- Import UI — file picker + result summary
-
-**Success criteria**:
-- Valid rows import; invalid rows reported; partial success works
-
-criterio de éxito: quickstart Wave 2 step 3 passes. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T05 — Misconception detection
-
-Implement Post A+ Block 3 — misconception model and detection.
-
-**Context**: `contracts/misconception-detection.md`, `data-model.md` Misconception entity.
+**Context**: `contracts/review-ui.md`. Depends on T01 `getQueueStats` (T02 optional for real data).
 
 **Files to touch**:
-- `src/js/vault/misconceptions.js` (NEW)
-- `src/js/vault/session-close.js` — extend observation capture (`wrongAnswer`, `taskKind`); call detection after applyObservations
-- `src/js/api.js` — optional `detectMisconceptionPattern`
-- `src/js/vault/debug-ui.js` — show misconceptions in detail view
+- `index.html` — `btnReview`, `reviewBadge` on `screenModeSelect`
+- `src/js/study.js` — badge refresh on mode select show; wire click → `runSm2ReviewSession` stub or T05
+- `src/css/main.css` — `.review-badge`
+- `sw.js` / `sw-update.js` / `index.html` `?v=` if required by project rules
 
 **Success criteria**:
-- ≥3 related negative obs → misconception created
-- <3 → no misconception
-- FR-301–304 satisfied
+- Badge shows `dueNow` count when &gt; 0, hidden otherwise
+- Review button visible on mode select
 
-criterio de éxito: quickstart Wave 3 steps 1–3 pass. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T06 — Misconception prompt injection
-
-Wire misconceptions into generation scaffolding.
-
-**Context**: `contracts/misconception-detection.md` prompt block section.
-
-**Files to touch**:
-- `src/js/vault/prompt-injection.js` — append misconception contrast instructions
-- Verify `api.js` pack/block paths include updated context
-
-**Success criteria**:
-- Active misconception → generation context includes description (test via debug log or exported prompt)
-
-criterio de éxito: quickstart Wave 3 step 4 passes. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T07 — Declarative/procedural mastery
-
-Implement Post A+ Block 4a — dual mastery dimensions.
-
-**Context**: `contracts/mastery-refinement.md`, `research.md` R4.
-
-**Files to touch**:
-- `src/js/vault/mastery-model.js` — dimension updates, weighted `getCurrentMastery`
-- `src/js/vault/session-close.js` — route observations by taskKind
-- Tag task kind at observation creation in study flows where possible
-
-**Success criteria**:
-- Definition vs application signals update separate dimensions
-- Overall mastery = 0.4 declarative + 0.6 procedural when both exist
+**Reference**: `ROADMAP.md` Wave 2.
 
 criterio de éxito: quickstart Wave 4 passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T08 — Optional BKT path
+## PROMPT T05 — Review screen priority queue
 
-Implement Post A+ Block 4b — BKT when data sufficient.
+Implement SM-2 T05 — functional Review study session.
 
-**Context**: `contracts/mastery-refinement.md`, `research.md` R5. Only enable at ≥15 obs/entry.
+**Context**: `contracts/review-ui.md`, `spec.md` User Stories 1 & 4. Depends on T02.
 
 **Files to touch**:
-- `src/js/vault/mastery-model.js` — `bktMastery`, `maybeEnableBkt`
+- `src/js/review.js` — `runSm2ReviewSession`, quality buttons, early chip, empty state
+- `src/js/study.js` — wire `btnReview` to `runSm2ReviewSession`
+- `src/css/main.css` — `.review-early-chip`
 
 **Success criteria**:
-- Entry with 14 obs uses weighted average; 15th obs enables BKT
-- No regression for sparse entries
+- Queue ordered by `scheduledDue`
+- Four quality buttons map to 5/4/3/1
+- Early chip when `!isOnTime`; early submit does not grow interval
+- LLM `reviewSessionBtn` flow unchanged
 
-criterio de éxito: unit tests for BKT gate in cursor-tests. Ejecuta /validate antes de cerrar este mensaje.
+**Reference**: `ROADMAP.md` Wave 3.
+
+criterio de éxito: quickstart Wave 5 passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T09 — Prerequisite cycles + co-prerequisites
+## PROMPT T06 — Cloze + Slow ingestion
 
-Implement Post A+ Block 5a.
+Implement SM-2 T06 — Cloze and Slow flashcard hooks.
 
-**Context**: `contracts/prerequisite-graph.md`, `research.md` R6.
-
-**Files to touch**:
-- `src/js/vault/prerequisite-graph.js` (NEW) — `addPrerequisiteSafe`
-- `src/js/vault/vault-store.js` — use safe add in setPrerequisites
-- `debug-ui.js` — co-prerequisite badge
-
-**Success criteria**:
-- A→B + B→A becomes co-prerequisite pair, no crash, valid graph
-
-criterio de éxito: quickstart Wave 5 step 1 passes. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T10 — LLM cross-document prerequisite inference
-
-Implement Post A+ Block 5b.
-
-**Context**: `contracts/prerequisite-graph.md`, `research.md` R7.
+**Context**: `contracts/mode-ingestion.md` Cloze/Slow sections. Depends on T02, T03 validated.
 
 **Files to touch**:
-- `src/js/vault/prerequisite-graph.js` — `maybeInferPrerequisites`
-- `src/js/api.js` — LLM batch inference prompt
-- Trigger after 5 docs per topic (use `docTopics` from A+)
+- `src/js/cloze/study.js` — answer → `registerOrUpdateSmItem`
+- `src/js/cloze/pipeline.js` — `persistClozeItemsToShared` canonical shape
+- `src/js/slow/phase3.js` — flashcard create → smItem
 
 **Success criteria**:
-- High-confidence edges auto-applied; medium queue for review in debug UI
+- Cloze answer updates `cloze_item` smItem
+- Slow flashcard creates `slow_flashcard` smItem
+- Cloze pipeline generate still works
 
-criterio de éxito: quickstart Wave 5 step 2 passes (or mocked trigger). Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T11 — Topological importance
-
-Implement Post A+ Block 5c.
-
-**Context**: `contracts/prerequisite-graph.md`, `research.md` R8.
-
-**Files to touch**:
-- `src/js/vault/prerequisite-graph.js` — `computeImportanceScore`
-- Recompute on prereq/co-prereq changes
-
-**Success criteria**:
-- Central concepts score higher than leaves with same mastery
-
-criterio de éxito: importance ordering test in cursor-tests. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T12 — Vault graph UI
-
-Implement Post A+ Block 6 — interactive vault graph.
-
-**Context**: `contracts/vault-graph-ui.md`, reuse `src/js/graph/view.js`.
-
-**Files to touch**:
-- `src/js/vault/vault-graph.js` (NEW) — `buildVaultGraph`
-- `src/js/study.js` — navigation to graph screen
-- `index.html` — graph container + "View graph" button
-- `src/css/main.css` — graph screen styles if needed
-
-**Success criteria**:
-- 100 nodes navigable; mastery color; click → detail panel (SC-006)
+**Reference**: `ROADMAP.md` Wave 4.
 
 criterio de éxito: quickstart Wave 6 passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T13 — Vault-driven spaced review
+## PROMPT T07 — Vault canonical shape
 
-Implement Post A+ Block 7 — connect vault decay to `shared.smItems`.
+Implement SM-2 T07 — align vault decay bridge to canonical SmItem.
 
-**Context**: `contracts/spaced-review-vault.md`, `research.md` R10.
+**Context**: `contracts/mode-ingestion.md` vault section, `research.md` R4. Depends on T02.
 
 **Files to touch**:
-- `src/js/vault/spaced-review.js` (NEW) — `syncVaultToReviewPool`
-- `src/js/study.js` — hook on mode-select and session-close
-- `src/js/session-store.js` — extend smItems if shape needs `vaultEntryId`
+- `src/js/vault/spaced-review.js` — `buildVaultSmItem` canonical fields
+- `src/js/review.js` — on vault item review, call `applyVaultReviewObservation`
 
 **Success criteria**:
-- Decaying concepts enter review pool; centrality boosts priority; review updates vault
+- `syncVaultToReviewPool` emits `sourceType: 'vault_concept'`, `scheduledDue`
+- Non-vault smItems preserved (regression from Post A+ T13)
+- Vault review updates mastery
+
+**Reference**: `ROADMAP.md` Wave 3.
 
 criterio de éxito: quickstart Wave 7 passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T14 — Integration tests + QA closure
+## PROMPT T08 — Integration tests + QA closure
 
-Close Post A+ feature with automated and manual QA.
+Close SM-2 feature with tests and ROADMAP update.
 
-**Context**: `quickstart.md`, all contracts, A+ regression.
+**Context**: `quickstart.md`, all contracts.
 
 **Files to touch**:
-- `cursor-tests/20260619_knowledge-vault-post-a-plus.mjs` (NEW)
-- `ROADMAP.md` — mark T01–T14 [x]
-- `ROADMAP.md` (root) — add Post A+ completion note if applicable
+- `cursor-tests/20260620_sm2-priority-queue.mjs` (NEW)
+- `ROADMAP.md` — mark T01–T08 `[x]`
 
 **Tests must cover**:
-- merge/delete/prereq invariants
-- import partial success
-- misconception threshold
-- co-prerequisite cycle
-- importance ordering
-- BKT gate (if T08 done)
-- A+ session-close regression
+- normalize legacy shapes
+- early vs on-time update
+- queue ordering
+- RSVP ingest creates item
+- vault + cloze coexistence
+- `getSmItemsDueToday` regression
 
-criterio de éxito: `node cursor-tests/20260619_knowledge-vault-post-a-plus.mjs` passes; quickstart scenarios documented as checked. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: both cursor-tests green; quickstart scenarios checked. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
 ## Instrucción de ejecución
 
-1. **Primero (manual)**: Valida gate A+ (FR-000). No lances agentes si falla.
-2. **Wave 1**: Lanza **PROMPT T01** (1 agente).
-3. **Wave 2**: En paralelo **T02 + T03**; luego **T04**.
-4. **Wave 3**: En paralelo **T05 + T07 + T09**; luego **T06**; en paralelo **T10 + T11**.
-5. **Wave 4**: En paralelo **T12 + T13** (cuando T11 y T07 listos).
-6. **Wave 5 (opcional)**: **T08** cuando haya ≥15 obs/concepto de media.
-7. **Cierre**: **T14**.
+1. **Wave 1**: Lanza **PROMPT T01** (1 agente). Espera tests green.
+2. **Wave 2 (paralelo)**: **T02 + T04** (2 agentes).
+3. **Wave 3 (paralelo)**: **T03 + T05 + T07** (3 agentes).
+4. **Wave 4**: **T06** tras validar T03 en browser.
+5. **Wave 5**: **T08** cierre.
 
-**Tiempo mínimo**: Waves 2–3 paralelizan hasta 3 agentes → ahorro ~40% vs secuencial total.
+**Tiempo mínimo**: Waves 2–3 paralelizan hasta 3 agentes (~35% ahorro vs secuencial).
 
-**Antes de Wave 4**: Confirma que SM v1 (`shared.smItems`) no pierde ítems al cambiar de modo — requisito para T13.
+**Antes de Wave 3**: Confirma `node cursor-tests/sm2.test.mjs` sigue green.

@@ -12,6 +12,8 @@ import {
   getSlowFlashcardAnnotationIds,
   loadSlowFlashcards,
 } from "../review.js?v=20260528_1";
+import { getActiveSession } from "../session-store.js";
+import { registerOrUpdateSmItem } from "../sm2-ingest.js";
 import {
   PROXIMITY,
   resolveArgumentMapNodeAnchor,
@@ -632,6 +634,21 @@ export function wirePhase3FlashcardConvert(hostEl, session) {
       }
 
       const { added, total } = addSlowFlashcardFromPayload(sessionId, payload);
+      if (added) {
+        try {
+          const doc = getActiveSession();
+          if (doc?.docId) {
+            registerOrUpdateSmItem(doc.docId, {
+              sourceType: "slow_flashcard",
+              sourceId: annId,
+              title: String(payload.front || "").trim(),
+              contentPreview: String(payload.back || "").slice(0, 80),
+            });
+          }
+        } catch (err) {
+          console.warn("[sm2-ingest] slow flashcard ingest failed", err);
+        }
+      }
       if (!added) {
         showStatus(es ? "Esta anotación ya está en cola." : "This annotation is already queued.");
         btn.disabled = true;

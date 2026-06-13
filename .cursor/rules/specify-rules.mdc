@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260619-knowledge-vault-post-a-plus/plan.md`
-- **Spec**: `specs/20260619-knowledge-vault-post-a-plus/spec.md`
-- **Data model**: `specs/20260619-knowledge-vault-post-a-plus/data-model.md`
-- **Contracts**: `specs/20260619-knowledge-vault-post-a-plus/contracts/`
+- **Active plan**: `specs/20260620-sm2-priority-queue/plan.md`
+- **Spec**: `specs/20260620-sm2-priority-queue/spec.md`
+- **Data model**: `specs/20260620-sm2-priority-queue/data-model.md`
+- **Contracts**: `specs/20260620-sm2-priority-queue/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->
