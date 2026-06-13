@@ -70,8 +70,12 @@ check(
 check(readStashedInstallPrompt({}) === null, "edge: empty stash returns null");
 check(readStashedInstallPrompt(undefined) === null, "edge: missing window returns null");
 check(
-  getInstallHelpMessage({ userAgent: "Mozilla/5.0 Edg/120" }).includes("Install this site"),
-  "edge: Edge-specific install instructions",
+  getInstallHelpMessage({ userAgent: "Mozilla/5.0 OPR/110 Chrome/120" }).includes("cannot install PWAs"),
+  "happy: Opera desktop gets explicit unsupported message",
+);
+check(
+  getInstallHelpMessage({ userAgent: "Mozilla/5.0 (Linux; Android 14) OPR/80" }).includes("Home screen"),
+  "happy: Opera Android gets Add to Home screen guidance",
 );
 check(
   getInstallHelpMessage({ userAgent: "" }).includes("browser menu"),
