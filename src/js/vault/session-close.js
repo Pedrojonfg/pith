@@ -2,9 +2,11 @@
 
 import { rehydrateBlocks } from "../block-store.js";
 import { loadSessionForMode } from "../session.js";
-import { updateMastery } from "./mastery-model.js";
+import { resolveTaskKind, updateMastery } from "./mastery-model.js";
 import { buildAllNewMappings, mergeNormalizationResult } from "./normalization.js";
+import { runMisconceptionDetectionForEntries } from "./misconceptions.js";
 import { elevatePrerequisiteRelations } from "./prerequisites.js";
+import { maybeInferPrerequisites } from "./prerequisite-graph.js";
 import { getEntriesByTopic, loadVault, saveVault } from "./vault-store.js";
 
 /**
@@ -70,7 +72,7 @@ function isAnswerCorrect(response) {
  * @param {object} session
  * @param {string} mode
  * @param {string} docId
- * @returns {Array<{ conceptId: string, type: string, rawSignal: number, timestamp: number, docId: string }>}
+ * @returns {Array<{ conceptId: string, type: string, rawSignal?: number, timestamp: number, docId: string, taskKind?: string, wrongAnswer?: string }>}
  */
 export function collectObservations(session, mode, docId) {
   const observations = [];
@@ -89,6 +91,7 @@ export function collectObservations(session, mode, docId) {
       rawSignal: undefined,
       timestamp: Number(signal?.lastAt) || now,
       docId,
+      taskKind: resolveTaskKind({ type: lastResult, taskKind: signal?.taskKind }),
     });
   }
 
@@ -114,6 +117,7 @@ export function collectObservations(session, mode, docId) {
         rawSignal: undefined,
         timestamp: now,
         docId,
+        taskKind: resolveTaskKind({ type, taskKind: item?.taskKind }),
       });
     }
 
@@ -142,13 +146,20 @@ export function collectObservations(session, mode, docId) {
         let type = "mcq_wrong";
         if (qType === "socratic") type = correct ? "socratic_passed" : "socratic_partial";
         else type = correct ? "mcq_correct" : "mcq_wrong";
-        observations.push({
+        const row = {
           conceptId,
           type,
           rawSignal: undefined,
           timestamp: Number(response.answered_at) || now,
           docId,
-        });
+          taskKind: resolveTaskKind({
+            type,
+            taskKind: question?.taskKind,
+            questionKind: question?.kind || question?.question_kind || question?.questionKind,
+          }),
+        };
+        if (!correct) row.wrongAnswer = userAnswer;
+        observations.push(row);
       }
     }
   }
@@ -165,6 +176,10 @@ export function collectObservations(session, mode, docId) {
         rawSignal: undefined,
         timestamp: Number(row?.timestamp) || now,
         docId: String(row?.docId || docId),
+        taskKind: resolveTaskKind({ type, taskKind: row?.taskKind, questionKind: row?.questionKind }),
+        ...(String(row?.wrongAnswer || "").trim() && !type.includes("correct")
+          ? { wrongAnswer: String(row.wrongAnswer).trim() }
+          : {}),
       });
     }
   }
@@ -176,9 +191,11 @@ export function collectObservations(session, mode, docId) {
  * @param {object} vault
  * @param {Array<object>} observations
  * @param {Record<string, string>} normalizationMap
+ * @returns {Set<string>}
  */
 export function applyObservations(vault, observations, normalizationMap) {
   const map = normalizationMap && typeof normalizationMap === "object" ? normalizationMap : {};
+  const touched = new Set();
   for (const obs of Array.isArray(observations) ? observations : []) {
     const vaultId = map[String(obs?.conceptId || "").trim()];
     if (!vaultId) continue;
@@ -189,9 +206,15 @@ export function applyObservations(vault, observations, normalizationMap) {
       rawSignal: obs.rawSignal,
       timestamp: obs.timestamp,
       docId: obs.docId,
+      taskKind: obs.taskKind,
+      questionKind: obs.questionKind,
+      wrongAnswer: obs.wrongAnswer,
+      wrongAnswerPattern: obs.wrongAnswerPattern,
     });
     entry.lastSeen = Math.max(Number(entry.lastSeen) || 0, Number(obs.timestamp) || 0);
+    touched.add(String(vaultId));
   }
+  return touched;
 }
 
 /**
@@ -262,7 +285,8 @@ export async function updateVaultFromSession(session, mode) {
   }
 
   const observations = collectObservations(session, mode, docId);
-  applyObservations(vault, observations, normalizationMap);
+  const touchedEntryIds = applyObservations(vault, observations, normalizationMap);
+  await runMisconceptionDetectionForEntries(vault, touchedEntryIds);
   elevatePrerequisiteRelations(session, normalizationMap);
 
   if (Array.isArray(session?.shared?._vaultPendingObservations)) {
@@ -281,4 +305,15 @@ export async function updateVaultFromSession(session, mode) {
 
   vault.lastUpdated = Date.now();
   saveVault(vault);
+
+  for (const topic of docTopics) {
+    const label = String(topic || "").trim();
+    if (!label) continue;
+    try {
+      vault = loadVault();
+      await maybeInferPrerequisites(vault, label);
+    } catch (err) {
+      console.warn("[session-close] prerequisite inference failed", label, err);
+    }
+  }
 }

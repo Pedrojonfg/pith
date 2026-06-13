@@ -278,6 +278,7 @@ export const els = {
   generateBlocksFooter: document.getElementById("generateBlocksFooter"),
   fileInput: document.getElementById("fileInput"),
   fileExtractHint: document.getElementById("fileExtractHint"),
+  alreadyKnowMaterial: document.getElementById("alreadyKnowMaterial"),
   loadOfflinePackBtn: document.getElementById("loadOfflinePackBtn"),
   offlinePackInput: document.getElementById("offlinePackInput"),
   offlinePackStatus: document.getElementById("offlinePackStatus"),

@@ -252,6 +252,15 @@ import {
   getVaultContextForDoc,
 } from "./vault/prompt-injection.js";
 import { getCurrentMastery, PRESUMED_KNOWN_THRESHOLD } from "./vault/mastery-model.js";
+import { importFromDocument } from "./vault/import.js";
+import {
+  mountVaultGraphScreen,
+  renderVaultGraphTopicPicker,
+  VAULT_GRAPH_MIN_ENTRIES,
+  VAULT_GRAPH_TOPIC_FILTER_THRESHOLD,
+} from "./vault/vault-graph.js";
+import { renderDetail } from "./vault/debug-ui.js";
+import { getEntryById, loadVault } from "./vault/vault-store.js";
 
 /**
  * Resolve or create DocumentSession for uploaded markdown; set active doc pointer.
@@ -898,7 +907,12 @@ function triggerVaultUpdateOnSessionExit() {
     },
   };
   void import("./vault/session-close.js")
-    .then((m) => m.updateVaultFromSession(sessionForVault, mode))
+    .then(async (m) => {
+      await m.updateVaultFromSession(sessionForVault, mode);
+      const { syncVaultToReviewPool } = await import("./vault/spaced-review.js");
+      const fresh = getActiveSession();
+      if (fresh) syncVaultToReviewPool(fresh);
+    })
     .catch((err) => {
       console.warn("[vault] session-close failed", err);
     });
@@ -5123,6 +5137,19 @@ function ensureAssessmentRunnerEls() {
 
 let materialGraphBackScreen = "blocks";
 let lastMaterialGraph = null;
+let materialGraphSource = "session";
+
+function resetVaultGraphChrome() {
+  document.getElementById("slowGraphLayout")?.classList.remove("vault-graph-active");
+  const detail = document.getElementById("vaultGraphDetailPanel");
+  if (detail) {
+    detail.hidden = true;
+    detail.setAttribute("aria-hidden", "true");
+    detail.innerHTML = "";
+  }
+  const exportBtn = document.getElementById("slowGraphExportBtn");
+  if (exportBtn) exportBtn.hidden = false;
+}
 
 function updateMaterialGraphScreenCopy({ title, hint } = {}) {
   const titleEl = document.getElementById("materialGraphTitle");
@@ -5142,6 +5169,8 @@ function openMaterialGraphScreen({
 } = {}) {
   const host = document.getElementById("slowGraphContent");
   if (!host) return;
+  materialGraphSource = "session";
+  resetVaultGraphChrome();
   materialGraphBackScreen = backScreen;
   updateMaterialGraphScreenCopy({
     title: title || "Material graph",
@@ -5173,6 +5202,56 @@ function openMaterialGraphScreen({
     },
   });
   if (session) storeActiveSession(session);
+  showScreen("slowGraph");
+}
+
+/**
+ * Open Knowledge Vault prerequisite graph (Post A+ T12).
+ * @param {{ topicFilter?: string }} [options]
+ */
+export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
+  const host = document.getElementById("slowGraphContent");
+  const detailHost = document.getElementById("vaultGraphDetailPanel");
+  const layout = document.getElementById("slowGraphLayout");
+  if (!host) return;
+
+  const vault = loadVault();
+  if ((vault.entries || []).length < VAULT_GRAPH_MIN_ENTRIES) return;
+
+  materialGraphSource = "vault";
+  materialGraphBackScreen = "setup";
+  resetVaultGraphChrome();
+  layout?.classList.add("vault-graph-active");
+  const exportBtn = document.getElementById("slowGraphExportBtn");
+  if (exportBtn) exportBtn.hidden = true;
+
+  updateMaterialGraphScreenCopy({
+    title: "Knowledge Vault graph",
+    hint: "Nodes colored by mastery. Click a node for concept details.",
+  });
+
+  if (
+    (vault.entries || []).length > VAULT_GRAPH_TOPIC_FILTER_THRESHOLD &&
+    (!topicFilter || topicFilter === "all")
+  ) {
+    renderVaultGraphTopicPicker(host, vault, (topic) => openVaultGraphScreen({ topicFilter: topic }));
+    if (detailHost) {
+      detailHost.hidden = true;
+      detailHost.setAttribute("aria-hidden", "true");
+    }
+    showScreen("slowGraph");
+    return;
+  }
+
+  lastMaterialGraph = mountVaultGraphScreen(host, detailHost, {
+    vault,
+    topicFilter,
+    onNodeClick: (node) => {
+      if (!detailHost) return;
+      const entry = getEntryById(node.vaultEntryId || node.id);
+      if (entry) renderDetail(detailHost, entry);
+    },
+  });
   showScreen("slowGraph");
 }
 
@@ -5911,6 +5990,7 @@ function wireMaterialGraphHandlers() {
   });
 
   document.getElementById("slowGraphBackBtn")?.addEventListener("click", () => {
+    if (materialGraphSource === "vault") resetVaultGraphChrome();
     showScreen(materialGraphBackScreen || "blocks");
   });
 
@@ -6874,6 +6954,74 @@ export function wireStudyHandlers() {
 
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    if (els.alreadyKnowMaterial?.checked) {
+      clearGenerateError();
+      els.generateBlocksStatus.textContent = "";
+      setGenerateLoading(true);
+      try {
+        const resolved = await resolveMaterialForGenerate();
+        if (!resolved) {
+          setGenerateError("Please choose a file (.pdf, .html, .txt, or .md).");
+          return;
+        }
+        const { file, cleanedText, wordCount, originalFormat, normalizedFormat, warnings, fallbackSections } =
+          resolved;
+        if (!String(cleanedText || "").trim()) {
+          setGenerateError("File appears to be empty.");
+          return;
+        }
+        const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+        assertLlmKeyPresent(llmModel);
+        const result = await importFromDocument(
+          file,
+          {
+            cleanedText,
+            wordCount,
+            originalFormat,
+            normalizedFormat,
+            warnings,
+            fallbackSections,
+          },
+          {
+            llmModel,
+            language: getStudyLanguage(),
+            onProgress: (msg) => {
+              if (els.generateBlocksStatus) els.generateBlocksStatus.textContent = msg;
+            },
+          },
+        );
+        const parts = [];
+        if (result.added) parts.push(`${result.added} new`);
+        if (result.merged) parts.push(`${result.merged} merged`);
+        const summary = parts.length
+          ? `Imported ${parts.join(", ")} concept${result.added + result.merged === 1 ? "" : "s"} into Knowledge Vault.`
+          : "No new concepts were added to the Knowledge Vault.";
+        if (result.errors?.length) {
+          const detail = result.errors.join(" ");
+          if (parts.length) {
+            els.generateBlocksStatus.textContent = `${summary} ${detail}`;
+          } else {
+            setGenerateError(detail);
+            els.generateBlocksStatus.textContent = "";
+            return;
+          }
+        } else {
+          els.generateBlocksStatus.textContent = summary;
+        }
+        if (els.fileInput) els.fileInput.value = "";
+        if (els.alreadyKnowMaterial) els.alreadyKnowMaterial.checked = false;
+        if (els.fileExtractHint) els.fileExtractHint.textContent = "";
+        invalidateBlockSplitCacheAndRecommendUi();
+      } catch (err) {
+        setGenerateError(err?.message ? String(err.message) : String(err));
+        if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+      } finally {
+        setGenerateLoading(false);
+      }
+      return;
+    }
+
     const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
     if (!selectedMode) {
       setGenerateError("Please choose a study mode first.");

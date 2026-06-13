@@ -110,14 +110,25 @@ updateMastery(entry, { type: "mcq_wrong", timestamp: Date.now(), docId: "doc1" }
 assert(entry.masteryBase < beforeWrong, "failure case: wrong answer decreases mastery");
 
 // edge: no decay at same timestamp
-const fresh = { ...entry, masteryBase: 0.5, masteryLastUpdated: Date.now() };
+const fresh = {
+  masteryBase: 0.5,
+  masteryDeclarativeBase: 0.5,
+  masteryProceduralBase: 0.5,
+  masteryLastUpdated: Date.now(),
+};
 assertClose(getCurrentMastery(fresh), 0.5, "edge: zero elapsed → no decay");
 
 // edge: mastery bands
-assert(getMasteryLabel({ ...entry, masteryBase: 0.1, masteryLastUpdated: Date.now() }) === "unknown", "edge: unknown band");
-assert(getMasteryLabel({ ...entry, masteryBase: 0.4, masteryLastUpdated: Date.now() }) === "partial", "edge: partial band");
-assert(getMasteryLabel({ ...entry, masteryBase: 0.65, masteryLastUpdated: Date.now() }) === "acquired", "edge: acquired band");
-assert(getMasteryLabel({ ...entry, masteryBase: 0.85, masteryLastUpdated: Date.now() }) === "mastered", "edge: mastered band");
+const bandBase = (m) => ({
+  masteryBase: m,
+  masteryDeclarativeBase: m,
+  masteryProceduralBase: m,
+  masteryLastUpdated: Date.now(),
+});
+assert(getMasteryLabel(bandBase(0.1)) === "unknown", "edge: unknown band");
+assert(getMasteryLabel(bandBase(0.4)) === "partial", "edge: partial band");
+assert(getMasteryLabel(bandBase(0.65)) === "acquired", "edge: acquired band");
+assert(getMasteryLabel(bandBase(0.85)) === "mastered", "edge: mastered band");
 
 // edge: clamp extreme negative
 const clampEntry = { ...entry, masteryBase: 0.1, masteryLastUpdated: Date.now(), observations: [] };
@@ -174,7 +185,7 @@ assert(getEntryById("missing-id") === null, "failure: getEntryById null");
 // happy: export + clear
 saveVault(loaded);
 const exported = JSON.parse(exportVaultJson());
-assert(exported.schemaVersion === 1, "happy: export JSON shape");
+assert(exported.schemaVersion === 2, "happy: export JSON shape (schema v2)");
 clearVault();
 assert(loadVault().entries.length === 0, "happy: clearVault empties");
 
@@ -299,7 +310,7 @@ saveVault({
       masteryLastUpdated: Date.now(),
       lastSeen: Date.now(),
       sources: [{ docId: "d", conceptId: "lim-1", addedAt: Date.now() }],
-      prerequisites: [],
+      prerequisites: ["m2"],
       dependents: [],
       observations: [],
     },
@@ -313,7 +324,7 @@ saveVault({
       lastSeen: Date.now(),
       sources: [{ docId: "d", conceptId: "ed-1", addedAt: Date.now() }],
       prerequisites: [],
-      dependents: ["m1"],
+      dependents: [],
       observations: [],
     },
   ],

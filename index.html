@@ -230,6 +230,17 @@
             <div id="knowledgeVaultPanel" class="vault-debug-panel" hidden aria-hidden="true">
               <div id="knowledgeVaultPanelBody" class="vault-panel-body"></div>
             </div>
+
+            <dialog id="vaultModal" class="vault-modal" hidden aria-hidden="true">
+              <div class="vault-modal-inner">
+                <h3 class="vault-modal-title"></h3>
+                <div class="vault-modal-body"></div>
+                <div class="vault-modal-footer">
+                  <button type="button" class="btn-secondary vault-modal-cancel">Cancel</button>
+                  <button type="button" class="btn-primary vault-modal-save">Save</button>
+                </div>
+              </div>
+            </dialog>
           </div>
         </section>
 
@@ -415,6 +426,20 @@
                   required
                 />
                 <div class="hint" id="fileExtractHint" aria-live="polite"></div>
+              </div>
+
+              <div class="create-already-know">
+                <label class="create-checkbox-label" for="alreadyKnowMaterial">
+                  <input
+                    id="alreadyKnowMaterial"
+                    name="alreadyKnowMaterial"
+                    type="checkbox"
+                  />
+                  Already know this material
+                </label>
+                <div class="hint">
+                  Import concepts into your Knowledge Vault without starting a study session.
+                </div>
               </div>
 
               <label for="llmModelSelect">Model</label>
@@ -1271,7 +1296,10 @@
           <div class="card slow-card">
             <h1 id="materialGraphTitle">Material graph</h1>
             <p class="hint" id="materialGraphHint">Concepts, blocks, and links from your study material.</p>
-            <div id="slowGraphContent" class="slow-graph-content material-graph-content"></div>
+            <div id="slowGraphLayout" class="material-graph-layout">
+              <div id="slowGraphContent" class="slow-graph-content material-graph-content"></div>
+              <aside id="vaultGraphDetailPanel" class="vault-graph-detail-panel" hidden aria-hidden="true"></aside>
+            </div>
             <div class="row">
               <button type="button" id="slowGraphBackBtn">Back</button>
               <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export graph</button>
@@ -1577,7 +1605,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260618_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_4";
 
       function showBootFailure(message) {
         const banner = document.getElementById("bootErrorBanner");
@@ -1591,7 +1619,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260618_1");
+        await import("./src/js/main.js?v=20260619_4");
       } catch (err) {
         showBootFailure(
           "The app failed to load — a required script is missing or outdated. " +

@@ -150,6 +150,7 @@ export function mountMaterialGraphScreen(session, containerEl, options = {}) {
   renderGraphCanvas(graph, canvasHost, {
     lang,
     onNodeClick: options.onNodeClick,
+    graphMode: options.graphMode || (options.mode === "vault" ? "vault" : "material"),
   });
   listHost.querySelector("div").innerHTML = renderEnrichedGraphHtml(graph, lang);
 
