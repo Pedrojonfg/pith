@@ -1,3 +1,59 @@
+function mockEl(tag = "div") {
+  return {
+    tagName: tag.toUpperCase(),
+    className: "",
+    hidden: false,
+    children: [],
+    dataset: {},
+    style: { setProperty() {}, removeProperty() {} },
+    setAttribute() {},
+    getAttribute() {
+      return null;
+    },
+    classList: {
+      toggle() {},
+      add() {},
+      remove() {},
+    },
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    addEventListener() {},
+    textContent: "",
+  };
+}
+
+export function renderBreadcrumb(segments) {
+  const nav = mockEl("nav");
+  nav.className = "study-breadcrumb";
+  for (const segment of Array.isArray(segments) ? segments : []) {
+    if (!segment?.label) continue;
+    const span = mockEl("span");
+    span.textContent = String(segment.label);
+    nav.appendChild(span);
+  }
+  return nav;
+}
+
+export function renderProjectPicker(store, { selectedId, onSelect } = {}) {
+  const root = mockEl("div");
+  root.className = "project-picker";
+  const projects = Array.isArray(store?.projects) ? store.projects : [];
+  for (const project of projects) {
+    const btn = mockEl("button");
+    btn.dataset.projectId = project.id;
+    btn.addEventListener = (evt, fn) => {
+      if (evt === "click" && typeof fn === "function") btn._click = fn;
+    };
+    root.appendChild(btn);
+  }
+  if (typeof onSelect === "function" && projects[0]) {
+    void onSelect;
+  }
+  return root;
+}
+
 function mockScreen() {
   return {
     _ariaHidden: "true",

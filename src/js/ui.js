@@ -296,6 +296,14 @@ export const els = {
   dictionaryBtn: document.getElementById("dictionaryBtn"),
 
   screenApiSetup: document.getElementById("screenApiSetup"),
+  screenAppHome: document.getElementById("screenAppHome"),
+  screenVaultBranch: document.getElementById("screenVaultBranch"),
+  btnAppHomeVault: document.getElementById("btnAppHomeVault"),
+  btnAppHomeSessions: document.getElementById("btnAppHomeSessions"),
+  vaultBranchBackBtn: document.getElementById("vaultBranchBackBtn"),
+  btnVaultBranchKnowledge: document.getElementById("btnVaultBranchKnowledge"),
+  btnVaultBranchReview: document.getElementById("btnVaultBranchReview"),
+  vaultBranchReviewBadge: document.getElementById("vaultBranchReviewBadge"),
   screenModeSelect: document.getElementById("screenModeSelect"),
   screenDocLibrary: document.getElementById("screenDocLibrary"),
   docLibraryList: document.getElementById("docLibraryList"),
@@ -306,6 +314,17 @@ export const els = {
   btnNewSubproject: document.getElementById("btnNewSubproject"),
   modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
   modeSelectHub: document.getElementById("modeSelectHub"),
+  sessionHubActions: document.getElementById("sessionHubActions"),
+  btnDownloadSessionMd: document.getElementById("btnDownloadSessionMd"),
+  btnUploadToVault: document.getElementById("btnUploadToVault"),
+  screenUploadToVaultCandidates: document.getElementById("screenUploadToVaultCandidates"),
+  uploadVaultBackBtn: document.getElementById("uploadVaultBackBtn"),
+  uploadVaultStatus: document.getElementById("uploadVaultStatus"),
+  uploadVaultError: document.getElementById("uploadVaultError"),
+  uploadVaultCandidateList: document.getElementById("uploadVaultCandidateList"),
+  btnUploadVaultCommit: document.getElementById("btnUploadVaultCommit"),
+  btnUploadVaultCancel: document.getElementById("btnUploadVaultCancel"),
+  btnUploadVaultRetry: document.getElementById("btnUploadVaultRetry"),
   modeSelectContinueBtn: document.getElementById("modeSelectContinueBtn"),
   modeSelectLibraryBtn: document.getElementById("modeSelectLibraryBtn"),
   modeSelectReviewBtn: document.getElementById("modeSelectReviewBtn"),
@@ -1102,6 +1121,9 @@ function resolveModeSelectScreenEl() {
 export function showScreen(which) {
   currentScreenId = which;
   const showSetup = which === "setup";
+  const showAppHome = which === "appHome";
+  const showVaultBranch = which === "vaultBranch";
+  const showUploadToVault = which === "uploadToVaultCandidates";
   const showModeSelect = which === "modeSelect";
   const showDocLibrary = which === "docLibrary";
   const showRetrievalHub = which === "retrievalHub";
@@ -1133,6 +1155,9 @@ export function showScreen(which) {
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
+  els.screenAppHome?.setAttribute("aria-hidden", String(!showAppHome));
+  els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
+  els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
   els.screenRetrievalHub?.setAttribute("aria-hidden", String(!showRetrievalHub));

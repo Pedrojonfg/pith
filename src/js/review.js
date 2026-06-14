@@ -30,6 +30,8 @@ import {
 export { getReviewableItemsForProject } from "./review-project-scope.js";
 import { populateReviewScopeSelect } from "./project-library.js";
 import { applyVaultReviewObservation } from "./vault/spaced-review.js";
+import { applyVaultReviewItemObservation } from "./vault/vault-curation.js";
+import { FACET_LABELS } from "./session-types.js";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */
@@ -66,6 +68,7 @@ const SM2_SOURCE_LABELS = {
   cloze_item: "Cloze",
   slow_flashcard: "Slow flashcard",
   vault_concept: "Vault concept",
+  vault_review_item: "Vault review",
 };
 
 function setSm2ReviewDomVisible(active) {
@@ -111,7 +114,12 @@ function renderSm2ReviewItem() {
     els.reviewSm2EarlyChip.classList.toggle("hidden", !early);
   }
   if (els.reviewSm2SourceBadge) {
-    els.reviewSm2SourceBadge.textContent = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
+    const facet = String(item.facet || "").trim();
+    const facetLabel = facet ? FACET_LABELS[facet] || facet : "";
+    const sourceLabel = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
+    els.reviewSm2SourceBadge.textContent = facetLabel
+      ? `${sourceLabel} · ${facetLabel}`
+      : sourceLabel;
   }
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
   if (els.reviewSm2Preview) {
@@ -142,6 +150,21 @@ function showSm2ReviewSummary() {
 function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) return;
+
+  if (item.source === "vault" || item.sourceType === "vault_review_item") {
+    applyVaultReviewItemObservation(
+      item.vaultEntryId || "",
+      item.sourceId || String(item.id || "").replace(/^vaultri:/, ""),
+      quality,
+      { facet: item.facet, docId: item.docId },
+    );
+    const updated = updateSmItem(item, quality);
+    sm2ReviewQueue[sm2ReviewIndex] = updated;
+    sm2ReviewIndex += 1;
+    if (sm2ReviewIndex >= sm2ReviewQueue.length) showSm2ReviewSummary();
+    else renderSm2ReviewItem();
+    return;
+  }
 
   const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
   if (!originDocId) return;

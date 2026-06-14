@@ -20,11 +20,25 @@ function emptyVault() {
   return {
     schemaVersion: SCHEMA_VERSION,
     entries: [],
+    reviewItems: [],
     lastUpdated: Date.now(),
     importHistory: [],
     lastInferenceAt: {},
     pendingInferredEdges: [],
   };
+}
+
+/**
+ * @param {object} entry
+ */
+function migrateEntryCuration(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  const migrated = migrateEntryV2(entry);
+  if (!Array.isArray(migrated.definitions)) migrated.definitions = [];
+  if (!migrated.facetCoverage || typeof migrated.facetCoverage !== "object") {
+    migrated.facetCoverage = {};
+  }
+  return migrated;
 }
 
 /**
@@ -124,16 +138,18 @@ export function loadVault() {
     if (!raw) return emptyVault();
     const meta = JSON.parse(raw);
     if (!meta || typeof meta !== "object") return emptyVault();
-    let entries = readEntriesFromStorage(meta).map((e) => migrateEntryV2(e));
+    let entries = readEntriesFromStorage(meta).map((e) => migrateEntryCuration(e));
     const version = Number(meta.schemaVersion) || 1;
     if (version < SCHEMA_VERSION) {
-      entries = entries.map((e) => migrateEntryV2(e));
+      entries = entries.map((e) => migrateEntryCuration(e));
     }
+    const reviewItems = Array.isArray(meta.reviewItems) ? [...meta.reviewItems] : [];
     rebuildDependents(entries);
     recomputeImportanceScores({ entries });
     return {
       schemaVersion: SCHEMA_VERSION,
       entries: entries.map((e) => hydrateMastery(e)),
+      reviewItems,
       lastUpdated: Number(meta.lastUpdated) || Date.now(),
       importHistory: Array.isArray(meta.importHistory) ? [...meta.importHistory] : [],
       lastInferenceAt:
@@ -155,6 +171,7 @@ export function loadVault() {
  */
 export function saveVault(vault) {
   const entries = Array.isArray(vault?.entries) ? vault.entries : [];
+  const reviewItems = Array.isArray(vault?.reviewItems) ? vault.reviewItems : [];
   const now = Date.now();
   const stripped = entries.map((entry) => {
     if (!entry || typeof entry !== "object") return entry;
@@ -165,6 +182,7 @@ export function saveVault(vault) {
   const metaPayload = {
     schemaVersion: SCHEMA_VERSION,
     lastUpdated: now,
+    reviewItems,
     importHistory,
     lastInferenceAt:
       vault?.lastInferenceAt && typeof vault.lastInferenceAt === "object"
@@ -494,6 +512,66 @@ export function appendImportRecord(record) {
   vault.importHistory = vault.importHistory.slice(0, 20);
   vault.lastUpdated = Date.now();
   saveVault(vault);
+}
+
+/**
+ * @returns {object[]}
+ */
+export function getVaultReviewItems() {
+  const vault = loadVault();
+  return Array.isArray(vault.reviewItems) ? [...vault.reviewItems] : [];
+}
+
+/**
+ * @param {object} item
+ */
+export function upsertVaultReviewItem(item) {
+  if (!item || typeof item !== "object") return null;
+  const vault = loadVault();
+  if (!Array.isArray(vault.reviewItems)) vault.reviewItems = [];
+  const id = String(item.id || "").trim() || newVaultId();
+  const normalized = {
+    id,
+    vaultEntryId: String(item.vaultEntryId || "").trim(),
+    facet: String(item.facet || "synthesis").trim(),
+    prompt: String(item.prompt || "").trim(),
+    answer: String(item.answer || "").trim(),
+    sourceDocId: String(item.sourceDocId || "").trim(),
+    sm2: {
+      interval: Number(item.sm2?.interval) || 0,
+      easeFactor: Number(item.sm2?.easeFactor) || 2.5,
+      dueDate: Number(item.sm2?.dueDate) || Date.now(),
+      repetitions: Number(item.sm2?.repetitions) || 0,
+    },
+    createdAt: Number(item.createdAt) || Date.now(),
+  };
+  const idx = vault.reviewItems.findIndex((r) => String(r?.id || "") === id);
+  if (idx >= 0) vault.reviewItems[idx] = { ...vault.reviewItems[idx], ...normalized };
+  else vault.reviewItems.push(normalized);
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+  return normalized;
+}
+
+/**
+ * @param {string} itemId
+ * @param {object} sm2
+ */
+export function updateVaultReviewItemSm2(itemId, sm2) {
+  const id = String(itemId || "").trim();
+  if (!id || !sm2) return null;
+  const vault = loadVault();
+  const item = (vault.reviewItems || []).find((r) => String(r?.id || "") === id);
+  if (!item) return null;
+  item.sm2 = {
+    interval: Number(sm2.interval) ?? item.sm2?.interval ?? 0,
+    easeFactor: Number(sm2.easeFactor) ?? item.sm2?.easeFactor ?? 2.5,
+    dueDate: Number(sm2.dueDate) ?? item.sm2?.dueDate ?? Date.now(),
+    repetitions: Number(sm2.repetitions) ?? item.sm2?.repetitions ?? 0,
+  };
+  vault.lastUpdated = Date.now();
+  saveVault(vault);
+  return item;
 }
 
 export { newVaultId, migrateEntryV2, rebuildDependents, SCHEMA_VERSION };

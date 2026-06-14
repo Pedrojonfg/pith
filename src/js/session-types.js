@@ -261,4 +261,39 @@ export function validateDocumentSession(session) {
   return { ok: errors.length === 0, errors };
 }
 
+/**
+ * Recall-aligned facet taxonomy for vault review items.
+ * @typedef {'synthesis'|'relational'|'argumentative'|'applicative'|'cloze'} ConceptFacet
+ */
+
+/** @type {readonly ConceptFacet[]} */
+export const CONCEPT_FACETS = Object.freeze([
+  "synthesis",
+  "relational",
+  "argumentative",
+  "applicative",
+  "cloze",
+]);
+
+/** @type {Record<string, string>} */
+export const FACET_LABELS = Object.freeze({
+  synthesis: "Synthesis",
+  relational: "Relational",
+  argumentative: "Argumentative",
+  applicative: "Applicative",
+  cloze: "Cloze",
+});
+
+/**
+ * @typedef {{ text: string, sourceDocId: string, sourceChunk?: string, addedAt: number }} VaultDefinition
+ */
+
+/**
+ * @typedef {{ interval: number, easeFactor: number, dueDate: number, repetitions: number }} VaultReviewSm2
+ */
+
+/**
+ * @typedef {{ id: string, vaultEntryId: string, facet: ConceptFacet, prompt: string, answer: string, sourceDocId: string, sm2: VaultReviewSm2, createdAt: number }} VaultReviewItem
+ */
+
 export { MODE_KEYS };

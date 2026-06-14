@@ -37,6 +37,24 @@ globalThis.document = {
   getElementById: () => null,
   querySelector: () => null,
   querySelectorAll: () => [],
+  createElement: (tag) => ({
+    tagName: String(tag || "div").toUpperCase(),
+    className: "",
+    hidden: false,
+    children: [],
+    dataset: {},
+    style: { setProperty() {}, removeProperty() {} },
+    setAttribute() {},
+    getAttribute: () => null,
+    classList: { toggle() {}, add() {}, remove() {} },
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    addEventListener() {},
+    textContent: "",
+  }),
+  body: { classList: { contains: () => false } },
 };
 
 export function resetStorage() {

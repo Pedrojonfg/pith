@@ -20,6 +20,7 @@ const SOURCE_TYPES = new Set([
   "cloze_item",
   "slow_flashcard",
   "vault_concept",
+  "vault_review_item",
 ]);
 
 const LEGACY_SOURCE_MAP = {
@@ -29,6 +30,7 @@ const LEGACY_SOURCE_MAP = {
   slow: "slow_flashcard",
   vault_decay: "vault_concept",
   vault: "vault_concept",
+  vault_review: "vault_review_item",
 };
 
 function clampQuality(quality) {
@@ -118,7 +120,7 @@ export function normalizeSmItem(raw) {
       ? raw.reviewCount
       : SM2_DEFAULTS.repetitions;
 
-  return {
+  const out = {
     id,
     sourceType,
     sourceId,
@@ -133,6 +135,10 @@ export function normalizeSmItem(raw) {
     observations: Array.isArray(raw.observations) ? [...raw.observations] : [],
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
   };
+  if (raw.source) out.source = raw.source;
+  if (raw.facet) out.facet = raw.facet;
+  if (raw.vaultEntryId) out.vaultEntryId = raw.vaultEntryId;
+  return out;
 }
 
 /**

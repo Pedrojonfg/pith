@@ -31,7 +31,7 @@ import {
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
-import { enterModeSelectScreen, openVaultGraphScreen, wireStudyHandlers } from "./study.js?v=20260618_1";
+import { enterModeSelectScreen, enterAppHome, openVaultGraphScreen, wireStudyHandlers } from "./study.js?v=20260618_1";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
@@ -94,7 +94,7 @@ function resetToNewSession() {
   clearBlockIndexStorage();
   clearSessionConceptStorage();
   clearGuideChatStorage({ removeAllStored: true });
-  if (getStoredKey()) enterModeSelectScreen();
+  if (getStoredKey()) enterAppHome();
   else showScreen("setup");
   updateDictionaryButtonVisibility();
 }
@@ -260,7 +260,7 @@ async function bootstrap() {
     const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
     if (geminiRaw) saveGeminiKey(geminiRaw);
     els.apiKeyStatus.textContent = geminiRaw ? "DeepSeek and Gemini saved." : "DeepSeek saved.";
-    enterModeSelectScreen();
+    enterAppHome();
   });
 
   if (els.geminiApiKeyInput) {
@@ -276,7 +276,7 @@ async function bootstrap() {
 
   try {
     if (getStoredKey()) {
-      enterModeSelectScreen();
+      enterAppHome();
     } else {
       showScreen("setup");
     }
