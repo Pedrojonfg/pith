@@ -2,6 +2,7 @@ import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1"
 import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
+import { MISC_PROJECT_ID } from "./session-types.js";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;
@@ -103,6 +104,152 @@ export function resolveChromeVisibility(ctx) {
   return { showBlockReadFab, showGuideFab };
 }
 
+/**
+ * @param {{ label: string, onClick?: () => void }[]} segments
+ * @returns {HTMLElement}
+ */
+export function renderBreadcrumb(segments) {
+  const nav = document.createElement("nav");
+  nav.className = "study-breadcrumb";
+  nav.setAttribute("aria-label", "Breadcrumb");
+
+  const list = (Array.isArray(segments) ? segments : []).filter(
+    (segment) => segment && String(segment.label || "").trim(),
+  );
+
+  list.forEach((segment, index) => {
+    if (index > 0) {
+      const sep = document.createElement("span");
+      sep.className = "study-breadcrumb-sep";
+      sep.setAttribute("aria-hidden", "true");
+      sep.textContent = "›";
+      nav.appendChild(sep);
+    }
+
+    const label = String(segment.label).trim();
+    const onClick = typeof segment.onClick === "function" ? segment.onClick : null;
+
+    if (onClick) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "study-breadcrumb-link";
+      btn.textContent = label;
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        onClick();
+      });
+      nav.appendChild(btn);
+      return;
+    }
+
+    const span = document.createElement("span");
+    span.className =
+      index === list.length - 1 ? "study-breadcrumb-current" : "study-breadcrumb-text";
+    if (index === list.length - 1) span.setAttribute("aria-current", "page");
+    span.textContent = label;
+    nav.appendChild(span);
+  });
+
+  return nav;
+}
+
+/**
+ * @param {import("./session-types.js").ProjectStore} store
+ * @param {{ selectedId?: string, onSelect?: (projectId: string) => void }} [options]
+ * @returns {HTMLElement}
+ */
+export function renderProjectPicker(store, { selectedId, onSelect } = {}) {
+  const root = document.createElement("div");
+  root.className = "project-picker";
+  root.setAttribute("role", "listbox");
+  root.setAttribute("aria-label", "Project");
+
+  const rows = flattenProjectsForPicker(store);
+  const effectiveSelected = selectedId || MISC_PROJECT_ID;
+
+  const renderRow = (project, depth) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "project-picker-option";
+    btn.setAttribute("role", "option");
+    btn.dataset.projectId = project.id;
+    btn.style.setProperty("--project-picker-indent", `${depth * 14}px`);
+
+    const isSelected = project.id === effectiveSelected;
+    btn.classList.toggle("project-picker-option--selected", isSelected);
+    btn.setAttribute("aria-selected", isSelected ? "true" : "false");
+
+    if (project.color) {
+      const swatch = document.createElement("span");
+      swatch.className = "project-picker-swatch";
+      swatch.style.backgroundColor = project.color;
+      swatch.setAttribute("aria-hidden", "true");
+      btn.appendChild(swatch);
+    }
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "project-picker-label";
+    labelEl.textContent =
+      project.name ||
+      (project.id === MISC_PROJECT_ID ? "Misc" : String(project.id));
+    btn.appendChild(labelEl);
+
+    btn.addEventListener("click", () => {
+      if (typeof onSelect === "function") onSelect(project.id);
+    });
+    root.appendChild(btn);
+  };
+
+  if (rows.length === 0) {
+    renderRow(
+      { id: MISC_PROJECT_ID, name: "Misc", parentId: null, createdAt: 0, updatedAt: 0 },
+      0,
+    );
+    return root;
+  }
+
+  for (const { project, depth } of rows) {
+    renderRow(project, depth);
+  }
+  return root;
+}
+
+/**
+ * @param {import("./session-types.js").ProjectStore | null | undefined} store
+ * @returns {{ project: import("./session-types.js").Project, depth: number }[]}
+ */
+function flattenProjectsForPicker(store) {
+  const projects = Array.isArray(store?.projects) ? store.projects : [];
+  /** @type {Map<string|null, import("./session-types.js").Project[]>} */
+  const byParent = new Map();
+
+  for (const project of projects) {
+    if (!project || typeof project.id !== "string") continue;
+    const parentKey = project.parentId ?? null;
+    if (!byParent.has(parentKey)) byParent.set(parentKey, []);
+    byParent.get(parentKey).push(project);
+  }
+
+  for (const siblings of byParent.values()) {
+    siblings.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  }
+
+  /** @type {{ project: import("./session-types.js").Project, depth: number }[]} */
+  const rows = [];
+
+  /** @param {string|null} parentId @param {number} depth */
+  const walk = (parentId, depth) => {
+    const children = byParent.get(parentId) || [];
+    for (const project of children) {
+      rows.push({ project, depth });
+      walk(project.id, depth + 1);
+    }
+  };
+
+  walk(null, 0);
+  return rows;
+}
+
 export function syncFloatingChrome() {
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
   const blockReadBtn = document.getElementById("block-read-toggle-btn");
@@ -152,7 +299,20 @@ export const els = {
   screenModeSelect: document.getElementById("screenModeSelect"),
   screenDocLibrary: document.getElementById("screenDocLibrary"),
   docLibraryList: document.getElementById("docLibraryList"),
+  docLibraryProjectList: document.getElementById("docLibraryProjectList"),
+  docLibraryBreadcrumb: document.getElementById("docLibraryBreadcrumb"),
   docLibraryBackBtn: document.getElementById("docLibraryBackBtn"),
+  btnNewProject: document.getElementById("btnNewProject"),
+  btnNewSubproject: document.getElementById("btnNewSubproject"),
+  modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
+  modeSelectHub: document.getElementById("modeSelectHub"),
+  modeSelectContinueBtn: document.getElementById("modeSelectContinueBtn"),
+  modeSelectLibraryBtn: document.getElementById("modeSelectLibraryBtn"),
+  modeSelectReviewBtn: document.getElementById("modeSelectReviewBtn"),
+  uploadProjectPickerMount: document.getElementById("uploadProjectPickerMount"),
+  reviewConfigBreadcrumb: document.getElementById("reviewConfigBreadcrumb"),
+  reviewScopeSelect: document.getElementById("reviewScopeSelect"),
+  reviewIncludeSubprojects: document.getElementById("reviewIncludeSubprojects"),
   modeSelectDocLibraryBtn: document.getElementById("modeSelectDocLibraryBtn"),
   btnPracticeDocument: document.getElementById("btnPracticeDocument"),
   screenRetrievalHub: document.getElementById("screenRetrievalHub"),

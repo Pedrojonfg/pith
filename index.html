@@ -389,6 +389,14 @@
               </div>
             </div>
 
+            <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
+
+            <div id="modeSelectHub" class="mode-select-hub row">
+              <button type="button" id="modeSelectContinueBtn" class="btn-primary">Continue</button>
+              <button type="button" id="modeSelectLibraryBtn" class="btn-secondary">Library</button>
+              <button type="button" id="modeSelectReviewBtn" class="btn-secondary">Review</button>
+            </div>
+
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
               <legend class="sr-only">Study mode</legend>
               <div class="study-mode-options">
@@ -463,14 +471,19 @@
           id="screenDocLibrary"
           class="screen doc-library-screen"
           aria-hidden="true"
-          aria-label="My documents"
+          aria-label="Library"
         >
-          <div class="card">
+          <div class="card doc-library-card">
             <div class="doc-library-header">
               <button type="button" id="docLibraryBackBtn" class="create-back-btn">
                 ← Back
               </button>
-              <h1>My documents</h1>
+              <h1>Library</h1>
+            </div>
+            <div id="docLibraryBreadcrumb" class="project-breadcrumb-mount"></div>
+            <div class="doc-library-actions row">
+              <button type="button" id="btnNewProject" class="btn-secondary">New Project</button>
+              <button type="button" id="btnNewSubproject" class="btn-secondary" hidden>New Subproject</button>
             </div>
             <div class="doc-library-vault-row">
               <button type="button" id="btnVaultReview" class="btn-secondary">
@@ -478,7 +491,8 @@
                 <span id="vaultReviewBadge" class="review-badge hidden" aria-label="Items due today across all documents"></span>
               </button>
             </div>
-            <p class="hint">Documents you have studied. Tap one to choose a mode and continue.</p>
+            <p class="hint doc-library-lead">Browse subjects and documents. Tap a project to drill down, or a document to study.</p>
+            <div id="docLibraryProjectList" class="project-library-list" role="list"></div>
             <div id="docLibraryList" class="doc-library-list" role="list"></div>
           </div>
         </section>
@@ -498,6 +512,11 @@
             </div>
             <h1>Configure your session</h1>
             <p class="create-screen-lead">Upload your material, then generate or continue.</p>
+
+            <div id="uploadProjectField" class="upload-project-field">
+              <label for="uploadProjectPickerMount">Project</label>
+              <div id="uploadProjectPickerMount" class="upload-project-picker-mount"></div>
+            </div>
 
             <div id="persistHealthBanner" class="persist-health-banner hidden" role="status" hidden>
               <span id="persistHealthBannerText"></span>
@@ -1191,8 +1210,20 @@
           aria-label="Review session configuration"
         >
           <div class="card">
+            <div id="reviewConfigBreadcrumb" class="project-breadcrumb-mount"></div>
             <h1>Review session</h1>
             <p>Generate questions for the blocks and topics you choose.</p>
+
+            <div class="review-scope-field">
+              <label for="reviewScopeSelect">Review scope</label>
+              <select id="reviewScopeSelect" class="review-scope-select">
+                <option value="all">All subjects</option>
+              </select>
+              <label class="review-scope-include">
+                <input type="checkbox" id="reviewIncludeSubprojects" checked />
+                Include subprojects
+              </label>
+            </div>
 
             <div class="divider"></div>
 
@@ -1806,7 +1837,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260623_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1822,7 +1853,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260622_1");
+        await import("./src/js/main.js?v=20260623_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

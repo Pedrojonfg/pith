@@ -31,6 +31,7 @@ export const LS_DOC_TEXT_PREFIX = "pith_doc_text_";
 export const LS_DOC_BLOCKS_PREFIX = "pith_doc_blocks_";
 export const LS_DOC_RESPONSES_PREFIX = "pith_doc_responses_";
 export const LS_V1_BACKUP_KEY = "pith_v1_backup";
+export const LS_PROJECTS_KEY = "mylearning_projects";
 
 /** Externalize RSVP blocks when inline JSON exceeds this size (bytes). */
 export const BLOCKS_INLINE_THRESHOLD = 200 * 1024;

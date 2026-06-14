@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260622-exposure-retrieval-hub/plan.md`
-- **Spec**: `specs/20260622-exposure-retrieval-hub/spec.md`
-- **Data model**: `specs/20260622-exposure-retrieval-hub/data-model.md`
-- **Contracts**: `specs/20260622-exposure-retrieval-hub/contracts/`
+- **Active plan**: `specs/20260623-study-projects/plan.md`
+- **Spec**: `specs/20260623-study-projects/spec.md`
+- **Data model**: `specs/20260623-study-projects/data-model.md`
+- **Contracts**: `specs/20260623-study-projects/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

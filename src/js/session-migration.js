@@ -6,11 +6,15 @@ import {
 import {
   computeDocId,
   getAllSessions,
+  loadProjectStore,
+  backfillMissingProjectIds,
   saveActiveSession,
+  saveProjectStore,
   setActiveSession,
   validateDocumentSession,
 } from "./session-store.js";
-import { computeCanonicalId, inferDocMeta } from "./session-types.js";
+import { computeCanonicalId, inferDocMeta, MISC_PROJECT_ID } from "./session-types.js";
+import { ensureMiscProject } from "./project-store.js";
 import { parseSessionsByModeRaw } from "./session.js";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 
@@ -155,12 +159,14 @@ async function buildDocumentSessionFromV1(slots) {
     slow: migrateSlot(slots.slow),
     cloze: migrateSlot(slots.cloze),
     questions: migrateSlot(slots.questions),
+    recall: null,
   };
 
   const now = Date.now();
   const session = {
     docId,
     schemaVersion: 2,
+    projectId: MISC_PROJECT_ID,
     createdAt: now,
     updatedAt: now,
     shared: {
@@ -212,6 +218,7 @@ export function stripLegacyReviewSlot(session) {
 }
 
 export async function detectAndMigrateV1() {
+  migrateProjects();
   if (hasV2Sessions()) return;
 
   let rawV1 = localStorage.getItem(LS_SESSIONS_BY_MODE_KEY);
@@ -260,5 +267,29 @@ export async function detectAndMigrateV1() {
     localStorage.removeItem(LS_SESSIONS_BY_MODE_KEY);
   } catch (err) {
     console.error("[migration] failed — keeping V1", err);
+  }
+}
+
+/**
+ * Idempotent project store + session.projectId backfill.
+ * @see specs/20260623-study-projects/contracts/project-migration.md
+ */
+export function migrateProjects() {
+  let storeChanged = false;
+
+  let store = loadProjectStore();
+  if (!store || store.schemaVersion !== 1 || !Array.isArray(store.projects)) {
+    store = ensureMiscProject({ schemaVersion: 1, projects: [] });
+    storeChanged = true;
+  } else {
+    const before = JSON.stringify(store);
+    store = ensureMiscProject(store);
+    if (JSON.stringify(store) !== before) storeChanged = true;
+  }
+
+  const sessionsChanged = backfillMissingProjectIds();
+
+  if (storeChanged || sessionsChanged) {
+    saveProjectStore(store);
   }
 }

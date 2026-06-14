@@ -46,9 +46,10 @@ function assert(cond, msg) {
   console.error(`FAIL: ${msg}`);
 }
 
-const [indexHtml, studySrc, uiSrc, mainCss] = await Promise.all([
+const [indexHtml, studySrc, projectLibrarySrc, uiSrc, mainCss] = await Promise.all([
   readFile(join(root, "index.html"), "utf8"),
   readFile(join(root, "src/js/study.js"), "utf8"),
+  readFile(join(root, "src/js/project-library.js"), "utf8"),
   readFile(join(root, "src/js/ui.js"), "utf8"),
   readFile(join(root, "src/css/main.css"), "utf8"),
 ]);
@@ -76,7 +77,10 @@ assert(studySrc.includes("getSmItemsDueToday"), "T08: uses getSmItemsDueToday");
 assert(studySrc.includes("setActiveSession"), "T08: reopen uses setActiveSession");
 assert(studySrc.includes("enterModeSelectScreen"), "T08: reopen navigates to mode select");
 assert(studySrc.includes("modeSelectDocLibraryBtn"), "T08: mode select button wired");
-assert(studySrc.includes("docLibraryBackBtn"), "T08: back button wired");
+assert(
+  studySrc.includes("docLibraryBackBtn") || projectLibrarySrc.includes("docLibraryBackBtn"),
+  "T08: back button wired",
+);
 
 // --- Static: ui.js showScreen ---
 assert(uiSrc.includes("screenDocLibrary"), "T08: ui els screenDocLibrary");
