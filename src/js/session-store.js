@@ -13,8 +13,10 @@ import {
 import {
   extractSignalsFromBlockSession,
   mergeAssessmentSignals,
+  buildRecallAssessmentSignals,
 } from "./assessment-signals.js";
 import { normalizeSmItem } from "./sm2.js";
+import { normalizeRecallSlice } from "./recall-slice.js";
 import {
   computeCanonicalId,
   inferDocMeta,
@@ -104,6 +106,32 @@ function normalizeSessionSmItems(session) {
     .map((raw) => normalizeSmItem({ ...raw, docId: raw?.docId || docId }))
     .filter(Boolean);
   return { ...session, shared: { ...session.shared, smItems: normalized } };
+}
+
+function normalizeSessionModes(session) {
+  if (!session?.modes || typeof session.modes !== "object") return session;
+  const modes = { ...session.modes };
+  let changed = false;
+  if (!("recall" in modes)) {
+    modes.recall = null;
+    changed = true;
+  }
+  if (modes.recall && typeof modes.recall === "object") {
+    const next = normalizeRecallSlice(modes.recall);
+    if (JSON.stringify(next) !== JSON.stringify(modes.recall)) {
+      modes.recall = next;
+      changed = true;
+    }
+  }
+  if ("review" in modes) {
+    delete modes.review;
+    changed = true;
+  }
+  return changed ? { ...session, modes } : session;
+}
+
+function normalizeLoadedSession(session) {
+  return normalizeSessionModes(normalizeSessionSmItems(session));
 }
 
 function stripMarkdownForPersist(session) {
@@ -197,7 +225,7 @@ export async function createSession(rawMarkdown, options = {}) {
       assessmentSignals: [],
       docTopics: [],
     },
-    modes: { rsvp: null, slow: null, cloze: null, questions: null },
+    modes: { rsvp: null, slow: null, cloze: null, questions: null, recall: null },
   };
   const v = validateDocumentSession(session);
   if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);
@@ -213,7 +241,7 @@ export function getSession(docId) {
   if (!id) return null;
   const found = readSessionsRaw().find((s) => s?.docId === id);
   if (!found) return null;
-  return normalizeSessionSmItems(rehydrateMarkdown(found));
+  return normalizeLoadedSession(rehydrateMarkdown(found));
 }
 
 export function getActiveSession() {
@@ -456,6 +484,26 @@ export function getAssessmentSignals(docId) {
   return Array.isArray(session.shared.assessmentSignals)
     ? [...session.shared.assessmentSignals]
     : [];
+}
+
+/**
+ * @param {string} docId
+ * @param {object} question
+ */
+export function syncAssessmentSignalsFromRecall(docId, question) {
+  const session = getSession(docId);
+  if (!session) throw new Error("session not found");
+  const incoming = buildRecallAssessmentSignals(question);
+  if (!incoming.length) return;
+  const existing = Array.isArray(session.shared.assessmentSignals)
+    ? session.shared.assessmentSignals
+    : [];
+  session.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
+  saveActiveSession(session);
+}
+
+export function getVaultReviewDueCount() {
+  return getSmItemsDueToday().length;
 }
 
 export function getSmItemsDueToday(docId) {

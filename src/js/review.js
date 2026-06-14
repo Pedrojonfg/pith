@@ -22,7 +22,7 @@ import {
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 import { buildReviewQueue, isOnTime, updateSmItem } from "./sm2.js";
-import { getSession, upsertSmItem } from "./session-store.js";
+import { getSession, getSmItemsDueToday, upsertSmItem } from "./session-store.js";
 import { applyVaultReviewObservation } from "./vault/spaced-review.js";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
@@ -95,7 +95,14 @@ function renderSm2ReviewItem() {
   }
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
   if (els.reviewSm2Preview) {
-    els.reviewSm2Preview.textContent = String(item.contentPreview || "");
+    const preview = String(item.contentPreview || "");
+    if (!sm2ReviewDocId && item.docId) {
+      const origin = getSession(item.docId);
+      const docTitle = origin?.shared?.docMeta?.titleInferred || item.docId;
+      els.reviewSm2Preview.textContent = preview ? `${docTitle} · ${preview}` : docTitle;
+    } else {
+      els.reviewSm2Preview.textContent = preview;
+    }
   }
 }
 
@@ -114,14 +121,17 @@ function showSm2ReviewSummary() {
 
 function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
-  if (!item || !sm2ReviewDocId) return;
+  if (!item) return;
+
+  const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
+  if (!originDocId) return;
 
   const updated = updateSmItem(item, quality);
-  upsertSmItem(sm2ReviewDocId, updated);
+  upsertSmItem(originDocId, updated);
   sm2ReviewQueue[sm2ReviewIndex] = updated;
 
   if (updated.sourceType === "vault_concept") {
-    const session = getSession(sm2ReviewDocId);
+    const session = getSession(originDocId);
     if (session) {
       applyVaultReviewObservation(session, updated.sourceId, {
         type: quality >= 3 ? "mcq_correct" : "mcq_wrong",
@@ -135,7 +145,7 @@ function handleSm2QualityClick(quality) {
   else renderSm2ReviewItem();
 }
 
-/** Priority-queue spaced review for shared.smItems. */
+/** Priority-queue spaced review for shared.smItems (single document). */
 export function runSm2ReviewSession(docId) {
   const id = String(docId || "").trim();
   const session = getSession(id);
@@ -143,6 +153,21 @@ export function runSm2ReviewSession(docId) {
 
   sm2ReviewDocId = id;
   sm2ReviewQueue = buildReviewQueue(session.shared?.smItems || []);
+  sm2ReviewIndex = 0;
+
+  if (!sm2ReviewQueue.length) {
+    showSm2ReviewEmptyState();
+    return;
+  }
+
+  showScreen("review");
+  renderSm2ReviewItem();
+}
+
+/** Cross-document vault review from aggregated due items. */
+export function runVaultSm2ReviewSession() {
+  sm2ReviewDocId = "";
+  sm2ReviewQueue = buildReviewQueue(getSmItemsDueToday());
   sm2ReviewIndex = 0;
 
   if (!sm2ReviewQueue.length) {

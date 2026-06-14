@@ -14,12 +14,24 @@ function hasSharedMaterial(doc) {
 }
 
 /**
+ * @param {import('./session-types.js').DocumentSession | null | undefined} doc
+ * @returns {boolean}
+ */
+function hasConceptInventory(doc) {
+  const inv = doc?.shared?.conceptInventory;
+  return Array.isArray(inv) && inv.length > 0;
+}
+
+/**
  * @param {object | null | undefined} slice
- * @param {'rsvp'|'slow'|'cloze'|'questions'} slot
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'} slot
  * @returns {boolean}
  */
 function isSliceResumable(slice, slot) {
   if (!slice || typeof slice !== "object") return false;
+  if (slot === "recall") {
+    return String(slice.status || "").trim() === "in_progress";
+  }
   if (slot === "rsvp" || slot === "questions") {
     const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
     const nBlocks = Math.floor(Number(slice.n_blocks) || 0);
@@ -59,9 +71,9 @@ function resolveMaterialMeta(doc) {
 
 /**
  * @param {import('./session-types.js').DocumentSession | null} doc
- * @param {'rsvp'|'slow'|'cloze'|'questions'|'review'} mode
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} mode
  * @returns {{
- *   kind: 'resume' | 'bootstrap' | 'upload_required',
+ *   kind: 'resume' | 'bootstrap' | 'generate_fresh' | 'upload_required',
  *   mode: string,
  *   reason: string,
  *   existingSlice: object | null,
@@ -92,6 +104,23 @@ export function resolveModeEntryState(doc, mode) {
     };
   }
 
+  if (slot === "recall") {
+    if (hasConceptInventory(doc)) {
+      return {
+        kind: "bootstrap",
+        mode: modeKey,
+        reason: existingSlice ? "inventory_ready_slice_exists" : "inventory_ready",
+        existingSlice: existingSlice && typeof existingSlice === "object" ? existingSlice : null,
+      };
+    }
+    return {
+      kind: "generate_fresh",
+      mode: modeKey,
+      reason: "material_without_inventory",
+      existingSlice: existingSlice && typeof existingSlice === "object" ? existingSlice : null,
+    };
+  }
+
   return {
     kind: "bootstrap",
     mode: modeKey,
@@ -102,7 +131,7 @@ export function resolveModeEntryState(doc, mode) {
 
 /**
  * @param {import('./session-types.js').DocumentSession} doc
- * @param {'rsvp'|'slow'|'cloze'|'questions'|'review'} mode
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} mode
  * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
  * @returns {object}
  */

@@ -165,6 +165,7 @@ import {
 } from "./session.js?v=20260611_2";
 import {
   isZeroQuestionBlockTitle,
+  isKeyTermsBlockTitle,
   overlapAuditNeedsRetry,
   overlapAuditOverlappingConcepts,
   resolveNextStudyBlockIndex,
@@ -229,9 +230,11 @@ import {
   wireClozeStudyHandlers,
 } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
-import { startReviewFromSessionBlocks, runSm2ReviewSession } from "./review.js?v=20260525_1";
-import { getQueueStats } from "./sm2.js";
+import { startReviewFromSessionBlocks, runVaultSm2ReviewSession } from "./review.js?v=20260525_1";
+import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260612_1";
+import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
 import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
+import { createRecallStudyController } from "./recall-study.js";
 import {
   buildModeSliceFromShared,
   resolveModeEntryState,
@@ -244,6 +247,7 @@ import {
   getAllSessions,
   getSession,
   getSmItemsDueToday,
+  getVaultReviewDueCount,
   saveActiveSession as saveDocumentSession,
   setActiveSession,
   setUploadMeta,
@@ -588,23 +592,7 @@ export async function recommendFlowFromUploadedFile(file) {
 }
 
 function startReviewFromRecommendation() {
-  const session =
-    loadSessionForMode("questions") ||
-    loadSessionForMode("rsvp") ||
-    loadActiveSession();
-  if (session) {
-    state.activeSession = session;
-    storeActiveSession(session);
-    const total = Math.max(1, getTotalBlocksSafe());
-    const indices = Array.from({ length: total }, (_, i) => i);
-    try {
-      startReviewFromSessionBlocks({ blockIndices: indices, reviewType: "both" });
-      return;
-    } catch {
-      // fall through to review config
-    }
-  }
-  els.reviewSessionBtn?.click();
+  runVaultSm2ReviewSession();
 }
 
 /**
@@ -880,7 +868,79 @@ function getStudyModeLabel(mode) {
   if (mode === "slow") return "Slow Mode";
   if (mode === "cloze") return "Cloze Detection";
   if (mode === "questions") return "Questions";
+  if (mode === "recall") return "Recall";
   return "RSVP";
+}
+
+/** QA stub — delegates to recall controller when document session exists. */
+export function showRecallStudyStub() {
+  const doc = getActiveSession();
+  if (doc) {
+    void getRecallController().enterRecall({
+      action: "recall_bootstrap",
+      slice: doc.modes?.recall,
+    });
+    return;
+  }
+  if (els.recallQuestionText) {
+    els.recallQuestionText.textContent =
+      "What is the central thesis of the argument, and how does the author support it?";
+  }
+  if (els.recallTypeBadge) {
+    els.recallTypeBadge.textContent = "Synthesis";
+    els.recallTypeBadge.hidden = false;
+  }
+  if (els.recallProgress) els.recallProgress.textContent = "1 / 3";
+  if (els.recallAnswer) els.recallAnswer.value = "";
+  if (els.recallFeedbackPanel) els.recallFeedbackPanel.hidden = true;
+  if (els.recallNextBtn) els.recallNextBtn.hidden = true;
+  if (els.recallSubmitBtn) els.recallSubmitBtn.hidden = false;
+  if (els.recallConceptPeek) els.recallConceptPeek.hidden = true;
+  if (els.recallError) {
+    els.recallError.hidden = true;
+    els.recallError.textContent = "";
+  }
+  if (els.recallStatus) els.recallStatus.textContent = "";
+  state.studyMode = "recall";
+  showScreen("recall");
+}
+
+let recallStudyController = null;
+
+function getRecallController() {
+  if (!recallStudyController) {
+    recallStudyController = createRecallStudyController({
+      els,
+      getDoc: () => getActiveSession(),
+      persistSlice: persistModeSliceToDocument,
+      showScreen,
+      setStudyMode: (mode) => {
+        state.studyMode = mode;
+      },
+      runConceptInventoryForDoc: async () => {
+        const doc = getActiveSession();
+        const text = String(doc?.shared?.rawMarkdown || "").trim();
+        if (!text) throw new Error("No document text for concept inventory.");
+        const { inventory } = await runConceptInventory(text, {
+          llmModel: getSessionLlmModel(),
+          language: getStudyLanguage(),
+        });
+        promoteConceptInventoryToShared(inventory, "recall");
+      },
+      getLanguage: getStudyLanguage,
+      getLlmModel: getSessionLlmModel,
+      updateFlowProgress: (doc) => {
+        if (!doc?.shared?.modeRecommendation) return;
+        const updated = updateFlowProgress(doc.shared.modeRecommendation, doc);
+        updateRecommendation(doc.docId, updated);
+        renderFlowPanel(doc);
+      },
+      onComplete: () => enterModeSelectScreen(),
+      onBack: () => enterModeSelectScreen(),
+    });
+    recallStudyController.wireHandlers();
+  }
+  return recallStudyController;
 }
 
 function setStudyModeRadio(mode) {
@@ -972,27 +1032,114 @@ export function enterModeSelectScreen() {
   resetModeSelectUi();
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
-  refreshReviewBadge();
   showScreen("modeSelect");
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
 }
 
-function refreshReviewBadge() {
-  const badge = els.reviewBadge;
+function refreshVaultReviewBadge() {
+  const badge = els.vaultReviewBadge;
   if (!badge) return;
-  const doc = getActiveSession();
-  const items = doc?.shared?.smItems || [];
-  const stats = getQueueStats(items);
-  if (stats.dueNow > 0) {
-    badge.textContent = String(stats.dueNow);
-    badge.setAttribute("aria-label", `${stats.dueNow} items due now`);
+  const due = getVaultReviewDueCount();
+  if (due > 0) {
+    badge.textContent = String(due);
+    badge.setAttribute("aria-label", `${due} items due today across all documents`);
     badge.classList.remove("hidden");
   } else {
     badge.textContent = "";
-    badge.setAttribute("aria-label", "Items due now");
+    badge.setAttribute("aria-label", "Items due today across all documents");
     badge.classList.add("hidden");
   }
+}
+
+function escapeRetrievalHubHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** @type {{ docId: string, entrySource: string, returnScreen: string }} */
+let retrievalHubContext = {
+  docId: "",
+  entrySource: "mode_select",
+  returnScreen: "modeSelect",
+};
+
+function renderRetrievalHubOptions() {
+  const container = els.retrievalHubOptions;
+  if (!container) return;
+  const modes = getDocumentRetrievalModes();
+  if (!modes.length) {
+    container.innerHTML =
+      '<p class="hint" role="alert">No retrieval modes configured.</p>';
+    return;
+  }
+  container.innerHTML = modes
+    .map(
+      ({ key, label, hint }) => `<button type="button" class="retrieval-hub-option" data-retrieval-mode="${escapeRetrievalHubHtml(key)}" role="listitem">
+        <strong>${escapeRetrievalHubHtml(label)}</strong>
+        <span class="hint">${escapeRetrievalHubHtml(hint)}</span>
+      </button>`,
+    )
+    .join("");
+}
+
+/**
+ * @param {{ docId?: string, entrySource?: string, returnScreen?: string }} [options]
+ */
+export function enterRetrievalHub(options = {}) {
+  const docId = String(options.docId || getActiveSession()?.docId || "").trim();
+  const doc = docId ? getSession(docId) : null;
+  if (!doc) {
+    enterDocLibraryScreen();
+    return;
+  }
+  if (docId !== getActiveSession()?.docId) {
+    setActiveSession(docId);
+    hydrateMaterialStateFromDoc(doc);
+  }
+  const material = String(doc.shared?.rawMarkdown || "").trim();
+  if (!material) {
+    retrievalHubContext = {
+      docId,
+      entrySource: options.entrySource || "mode_select",
+      returnScreen: options.returnScreen || "modeSelect",
+    };
+    if (els.retrievalHubLead) {
+      els.retrievalHubLead.textContent =
+        "Upload your material first, then return here to practice retrieval.";
+    }
+    renderRetrievalHubOptions();
+    showScreen("retrievalHub");
+    return;
+  }
+  retrievalHubContext = {
+    docId,
+    entrySource: options.entrySource || "mode_select",
+    returnScreen: options.returnScreen || "modeSelect",
+  };
+  if (els.retrievalHubLead) {
+    els.retrievalHubLead.textContent =
+      "Choose how you want to practice retrieval. All options use your loaded material.";
+  }
+  renderRetrievalHubOptions();
+  showScreen("retrievalHub");
+}
+
+function exitRetrievalHub() {
+  if (retrievalHubContext.returnScreen === "docLibrary") {
+    enterDocLibraryScreen();
+    return;
+  }
+  enterModeSelectScreen();
+}
+
+function onRetrievalHubPick(modeKey) {
+  const mode = normalizeStudyMode(modeKey);
+  if (!mode || mode === "review") return;
+  void enterModeWithContinuity(mode);
 }
 
 function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, skipped = false }) {
@@ -1121,6 +1268,7 @@ export function renderDocLibrary() {
 }
 
 export function enterDocLibraryScreen() {
+  refreshVaultReviewBadge();
   renderDocLibrary();
   showScreen("docLibrary");
 }
@@ -1180,6 +1328,23 @@ export function applyModeEntry(doc, mode, options = {}) {
   if (resolution.kind === "resume") {
     return { action: "resume", mode: normalized, slice: resolution.existingSlice };
   }
+  if (normalized === "recall") {
+    if (resolution.kind === "bootstrap") {
+      return {
+        action: "recall_bootstrap",
+        mode: normalized,
+        slice: resolution.existingSlice,
+      };
+    }
+    if (resolution.kind === "generate_fresh") {
+      return {
+        action: "recall_generate_fresh",
+        mode: normalized,
+        slice: resolution.existingSlice,
+      };
+    }
+    return { action: "upload_required", mode: normalized, slice: null };
+  }
   if (resolution.kind === "bootstrap" && doc) {
     const slice = buildModeSliceFromShared(doc, mode, options);
     persistModeSliceToDocument(doc, mode, slice);
@@ -1233,7 +1398,7 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
 export async function enterModeWithContinuity(mode) {
   const raw = String(mode || "").trim();
   if (raw === "review") {
-    startReviewFromRecommendation();
+    runVaultSm2ReviewSession();
     return;
   }
   const normalized = normalizeStudyMode(raw);
@@ -1249,7 +1414,13 @@ export async function enterModeWithContinuity(mode) {
     if (normalized === "slow") resumeSlowSession(entry.slice);
     else if (normalized === "cloze") resumeClozeSession(entry.slice);
     else if (normalized === "questions") resumeQuestionsSession(entry.slice);
+    else if (normalized === "recall") void getRecallController().enterRecall(entry);
     else resumeRsvpSession(entry.slice);
+    return;
+  }
+
+  if (entry.action === "recall_bootstrap" || entry.action === "recall_generate_fresh") {
+    if (doc) void getRecallController().enterRecall(entry);
     return;
   }
 
@@ -2427,10 +2598,27 @@ function wireSlowScopeHandlers() {
 }
 
 function wireDocLibraryHandlers() {
-  els.btnReview?.addEventListener("click", () => {
-    const doc = getActiveSession();
-    if (!doc?.docId) return;
-    runSm2ReviewSession(doc.docId);
+  els.btnVaultReview?.addEventListener("click", () => {
+    runVaultSm2ReviewSession();
+  });
+
+  els.btnPracticeDocument?.addEventListener("click", () => {
+    enterRetrievalHub({ entrySource: "mode_select" });
+  });
+
+  els.retrievalHubBackBtn?.addEventListener("click", () => {
+    exitRetrievalHub();
+  });
+
+  els.retrievalHubOptions?.addEventListener("click", (event) => {
+    const btn = event.target.closest?.("[data-retrieval-mode]");
+    if (!btn) return;
+    const mode = btn.getAttribute("data-retrieval-mode");
+    if (mode) onRetrievalHubPick(mode);
+  });
+
+  els.btnPracticeRetrieval?.addEventListener("click", () => {
+    enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
   els.modeSelectDocLibraryBtn?.addEventListener("click", () => {
@@ -3480,6 +3668,88 @@ function showSessionComplete() {
   persistFlowRecommendationProgress();
   syncOfflinePackButtonVisibility();
   showScreen("complete");
+}
+
+function isBlockSkippedInStudySequence(entry) {
+  if (entry?.study_sequence === false) return true;
+  if (entry && isKeyTermsBlockTitle(entry.title) && entry.study_sequence !== true) return true;
+  return false;
+}
+
+function buildQuestionsBlockProxies(blockIndexArr, total) {
+  const proxies = [];
+  for (let i = 0; i < total; i += 1) {
+    const entry = blockIndexArr[i];
+    if (isBlockSkippedInStudySequence(entry)) continue;
+    const conceptIds = Array.isArray(entry?.concept_ids) ? entry.concept_ids : [];
+    if (!conceptIds.length) {
+      proxies.push({ blockIndex: i, canonicalId: `block-${i}` });
+      continue;
+    }
+    for (const rawId of conceptIds) {
+      const cid = String(rawId || "").trim();
+      if (!cid) continue;
+      proxies.push({ blockIndex: i, canonicalId: cid, concept_id: cid });
+    }
+  }
+  return proxies;
+}
+
+function buildQuestionsStudyOrder(doc) {
+  const total = Math.max(1, getTotalBlocksSafe());
+  const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
+  const signals = Array.isArray(doc?.shared?.assessmentSignals) ? doc.shared.assessmentSignals : [];
+  if (!signals.length) return null;
+
+  const proxies = buildQuestionsBlockProxies(blockIndexArr, total);
+  if (!proxies.length) return null;
+
+  const prioritized = prioritizeByAssessmentSignals(proxies, signals);
+  const seen = new Set();
+  const order = [];
+  for (const row of prioritized) {
+    const blockIdx = row.blockIndex;
+    if (seen.has(blockIdx)) continue;
+    seen.add(blockIdx);
+    order.push(blockIdx);
+  }
+  for (let i = 0; i < total; i += 1) {
+    if (seen.has(i)) continue;
+    if (isBlockSkippedInStudySequence(blockIndexArr[i])) continue;
+    order.push(i);
+  }
+  return order.length ? order : null;
+}
+
+function resolveNextQuestionsStudyBlockIndex(fromIndex, studyOrder) {
+  if (!Array.isArray(studyOrder) || !studyOrder.length) return null;
+  const pos = studyOrder.indexOf(fromIndex);
+  if (pos < 0) return studyOrder.find((idx) => idx > fromIndex) ?? null;
+  return pos < studyOrder.length - 1 ? studyOrder[pos + 1] : null;
+}
+
+function isLastQuestionsStudyBlock(blockIndex, studyOrder, total) {
+  if (Array.isArray(studyOrder) && studyOrder.length) {
+    return studyOrder.indexOf(blockIndex) === studyOrder.length - 1;
+  }
+  return blockIndex >= total - 1;
+}
+
+function applyQuestionsStudyOrderForSession(doc) {
+  if (!isQuestionsStudyMode(state.activeSession)) {
+    state.questionsStudyOrder = null;
+    return;
+  }
+  state.questionsStudyOrder = buildQuestionsStudyOrder(doc);
+}
+
+function resolveNextStudyBlockForSession(fromIndex, total) {
+  const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
+  if (isQuestionsStudyMode(state.activeSession) && Array.isArray(state.questionsStudyOrder)) {
+    const next = resolveNextQuestionsStudyBlockIndex(fromIndex, state.questionsStudyOrder);
+    return next != null ? next : total;
+  }
+  return resolveNextStudyBlockIndex(fromIndex, blockIndexArr, total);
 }
 
 function areAllBlocksGenerated(sessionObj) {
@@ -4742,7 +5012,8 @@ async function finishQuestions(blockIndex) {
   setBlockReadSidebarAvailable(false);
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const total = Math.max(1, getTotalBlocksSafe());
-  if (idx >= total - 1) {
+  const studyOrder = isQuestionsStudyMode(state.activeSession) ? state.questionsStudyOrder : null;
+  if (isLastQuestionsStudyBlock(idx, studyOrder, total)) {
     showSessionComplete();
     return;
   }
@@ -4754,8 +5025,7 @@ async function finishQuestions(blockIndex) {
   }
 
   const o = getOrCreateTransitionOverlay();
-  const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
-  const nextIndex = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
+  const nextIndex = resolveNextStudyBlockForSession(idx, total);
   o.title.textContent = `Continue to block ${nextIndex + 1} of ${total}`;
 
   o.finishedBlockIndex = idx;
@@ -6091,7 +6361,7 @@ function wireSlowPhase3Handlers() {
     session.slow.graphEnrichedUnlocked = true;
     storeActiveSession(session);
     exportSessionMarkdown();
-    enterModeSelectScreen();
+    enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
   const observer = new MutationObserver(() => {
@@ -6233,6 +6503,16 @@ export function wireStudyHandlers() {
       savedQ != null && Number.isFinite(Number(savedQ))
         ? Math.max(0, Math.floor(Number(savedQ)))
         : 0;
+    applyQuestionsStudyOrderForSession(getActiveSession());
+    if (
+      isQuestionsStudyMode(state.activeSession) &&
+      Array.isArray(state.questionsStudyOrder) &&
+      state.questionsStudyOrder.length &&
+      state.activeBlockIndex === 0 &&
+      state.activeQuestionIndex === 0
+    ) {
+      state.activeBlockIndex = state.questionsStudyOrder[0];
+    }
     updateStudyProgressUi();
     startBlock(state.activeBlockIndex);
   }

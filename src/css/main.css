@@ -1656,6 +1656,64 @@ body.assessment-runner-active .assessment-runner-chrome {
   align-items: center;
 }
 
+.doc-library-vault-row {
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.retrieval-hub-card {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.retrieval-hub-lead {
+  margin: 0 0 16px;
+}
+
+.retrieval-hub-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.retrieval-hub-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border, rgba(148, 163, 184, 0.35));
+  border-radius: 10px;
+  background: var(--surface, rgba(15, 23, 42, 0.35));
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.retrieval-hub-option:hover,
+.retrieval-hub-option:focus-visible {
+  border-color: var(--border-strong, rgba(148, 163, 184, 0.55));
+  background: var(--surface-hover, rgba(30, 41, 59, 0.45));
+  outline: none;
+}
+
+.retrieval-hub-option strong {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.retrieval-hub-option .hint {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
 .review-badge {
   display: inline-flex;
   align-items: center;
