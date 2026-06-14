@@ -1235,6 +1235,7 @@ export async function deepSeekPackConceptsToBlocks({
   language,
   knowledgeProfile = null,
   docTopics = null,
+  vaultSession = null,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const n = Math.max(1, Math.floor(Number(maxBlocks ?? nBlocks) || 1));
@@ -1245,13 +1246,18 @@ export async function deepSeekPackConceptsToBlocks({
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
 
   let vaultContextBlock = "";
-  if (Array.isArray(docTopics) && docTopics.length) {
+  const sessionForVault =
+    vaultSession ||
+    (Array.isArray(docTopics) && docTopics.length
+      ? { projectId: "misc", shared: { docTopics } }
+      : null);
+  if (sessionForVault?.shared?.docTopics?.length) {
     try {
       const { getVaultContextForDoc, buildVaultContextBlock } = await import(
         "./vault/prompt-injection.js"
       );
-      const entries = getVaultContextForDoc(docTopics);
-      vaultContextBlock = buildVaultContextBlock(entries);
+      const scored = getVaultContextForDoc(sessionForVault);
+      vaultContextBlock = buildVaultContextBlock(scored);
     } catch {
       vaultContextBlock = "";
     }
@@ -2241,14 +2247,20 @@ export async function deepSeekGenerateBlockExplanation({
   claimCoverageMin = null,
   conceptIds = null,
   docTopics = null,
+  vaultSession = null,
 }) {
   let vaultHint = "";
-  if (Array.isArray(conceptIds) && conceptIds.length && Array.isArray(docTopics) && docTopics.length) {
+  const sessionForVault =
+    vaultSession ||
+    (Array.isArray(docTopics) && docTopics.length
+      ? { projectId: "misc", shared: { docTopics } }
+      : null);
+  if (Array.isArray(conceptIds) && conceptIds.length && sessionForVault?.shared?.docTopics?.length) {
     try {
       const { getVaultContextForDoc, buildBlockVaultHint } = await import(
         "./vault/prompt-injection.js"
       );
-      vaultHint = buildBlockVaultHint(conceptIds, getVaultContextForDoc(docTopics));
+      vaultHint = buildBlockVaultHint(conceptIds, getVaultContextForDoc(sessionForVault));
     } catch {
       vaultHint = "";
     }

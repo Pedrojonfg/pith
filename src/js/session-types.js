@@ -1,7 +1,39 @@
 /**
  * DocumentSession V2 types and validation.
  * @see specs/20260609-unified-session/data-model.md
+ * @see specs/20260623-study-projects/data-model.md
  */
+
+/**
+ * User-defined study project (tree node via parentId).
+ * @typedef {{ id: string, name: string, parentId: string|null, color?: string, createdAt: number, updatedAt: number }} Project
+ */
+
+/**
+ * Persisted project hierarchy store (`localStorage['mylearning_projects']`).
+ * @typedef {{ schemaVersion: 1, projects: Project[] }} ProjectStore
+ */
+
+/**
+ * Unified cross-mode document session (schemaVersion 2).
+ * @typedef {object} DocumentSession
+ * @property {string} docId
+ * @property {2} schemaVersion
+ * @property {number} createdAt
+ * @property {number} updatedAt
+ * @property {string} [projectId] Study project assignment; required after migration, default {@link MISC_PROJECT_ID}
+ * @property {object} shared
+ * @property {object} modes
+ */
+
+/** Default catch-all project id; always present after migration. */
+export const MISC_PROJECT_ID = "misc";
+
+/** localStorage key for ProjectStore. */
+export const PROJECT_STORE_KEY = "mylearning_projects";
+
+/** ProjectStore schema version. */
+export const PROJECT_STORE_SCHEMA = 1;
 
 /**
  * @typedef {'tiny'|'short'|'medium'|'long'|'very_long'} SizeCategory
@@ -158,6 +190,11 @@ export function validateDocumentSession(session) {
   }
   if (typeof session.updatedAt !== "number" || !Number.isFinite(session.updatedAt)) {
     errors.push("updatedAt must be a finite number");
+  }
+  if (session.projectId != null) {
+    if (typeof session.projectId !== "string" || !session.projectId.trim()) {
+      errors.push("projectId must be a non-empty string when present");
+    }
   }
   if (!session.shared || typeof session.shared !== "object") {
     errors.push("shared must be an object");

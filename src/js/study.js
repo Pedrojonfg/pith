@@ -231,6 +231,17 @@ import {
 } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
 import { startReviewFromSessionBlocks, runVaultSm2ReviewSession } from "./review.js?v=20260525_1";
+import {
+  enterProjectLibrary,
+  getUploadDefaultProjectId,
+  mountModeSelectBreadcrumb,
+  mountUploadProjectPicker,
+  populateReviewScopeSelect,
+  projectLibraryCallbacks,
+  renderProjectLibraryView,
+  setUploadProjectContext,
+  wireProjectLibraryHandlers,
+} from "./project-library.js";
 import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260612_1";
 import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
 import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
@@ -288,7 +299,7 @@ export async function ensureDocumentSessionForUpload(markdown) {
   const docId = await computeDocId(text);
   let doc = getSession(docId);
   if (!doc) {
-    doc = await createSession(text, { docId });
+    doc = await createSession(text, { docId, projectId: getUploadDefaultProjectId() });
   } else if (doc.shared.rawMarkdown !== text) {
     doc.shared.rawMarkdown = text;
     doc.shared.docMeta = {
@@ -981,8 +992,13 @@ function triggerVaultUpdateOnSessionExit() {
     });
 }
 
-function buildVaultPresumedKnownMap(conceptInventory, docTopics) {
-  const entries = getVaultContextForDoc(docTopics);
+function buildVaultPresumedKnownMap(conceptInventory, docOrTopics) {
+  const doc =
+    docOrTopics && typeof docOrTopics === "object" && !Array.isArray(docOrTopics)
+      ? docOrTopics
+      : { projectId: "misc", shared: { docTopics: Array.isArray(docOrTopics) ? docOrTopics : [] } };
+  const scored = getVaultContextForDoc(doc);
+  const entries = scored.map((s) => s.entry);
   if (!entries.length) return {};
   const map = /** @type {Record<string, boolean>} */ ({});
   for (const c of Array.isArray(conceptInventory) ? conceptInventory : []) {
@@ -1032,6 +1048,7 @@ export function enterModeSelectScreen() {
   resetModeSelectUi();
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
+  mountModeSelectBreadcrumb(getActiveSession());
   showScreen("modeSelect");
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
@@ -1269,7 +1286,7 @@ export function renderDocLibrary() {
 
 export function enterDocLibraryScreen() {
   refreshVaultReviewBadge();
-  renderDocLibrary();
+  enterProjectLibrary({ reset: true });
   showScreen("docLibrary");
 }
 
@@ -1458,6 +1475,7 @@ function resolveActiveCreateMode() {
 
 function showCreateScreen() {
   updateCreateScreenModeVisibility(resolveActiveCreateMode());
+  mountUploadProjectPicker();
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
   showScreen("create");
@@ -2598,6 +2616,10 @@ function wireSlowScopeHandlers() {
 }
 
 function wireDocLibraryHandlers() {
+  projectLibraryCallbacks.onDocumentOpen = (docId) => reopenDocumentFromLibrary(docId);
+  projectLibraryCallbacks.onBack = () => enterModeSelectScreen();
+  wireProjectLibraryHandlers();
+
   els.btnVaultReview?.addEventListener("click", () => {
     runVaultSm2ReviewSession();
   });
@@ -2625,15 +2647,18 @@ function wireDocLibraryHandlers() {
     enterDocLibraryScreen();
   });
 
-  els.docLibraryBackBtn?.addEventListener("click", () => {
-    enterModeSelectScreen();
+  els.modeSelectContinueBtn?.addEventListener("click", () => {
+    const doc = getActiveSession();
+    if (!doc) {
+      window.alert("No active document. Open Library to choose a document.");
+      return;
+    }
+    enterRetrievalHub({ entrySource: "mode_select" });
   });
-
-  els.docLibraryList?.addEventListener("click", (event) => {
-    const item = event.target.closest?.(".doc-library-item");
-    if (!item) return;
-    const docId = item.getAttribute("data-doc-id");
-    if (docId) reopenDocumentFromLibrary(docId);
+  els.modeSelectLibraryBtn?.addEventListener("click", () => enterDocLibraryScreen());
+  els.modeSelectReviewBtn?.addEventListener("click", () => {
+    populateReviewScopeSelect();
+    showScreen("reviewConfig");
   });
 }
 

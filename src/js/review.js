@@ -21,8 +21,14 @@ import {
 } from "./markdown.js?v=20260525_1";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
-import { buildReviewQueue, isOnTime, updateSmItem } from "./sm2.js";
+import { buildReviewQueue, isOnTime, normalizeSmItem, updateSmItem } from "./sm2.js";
 import { getSession, getSmItemsDueToday, upsertSmItem } from "./session-store.js";
+import {
+  filterDueSmItems,
+  getReviewableItemsForProject,
+} from "./review-project-scope.js";
+export { getReviewableItemsForProject } from "./review-project-scope.js";
+import { populateReviewScopeSelect } from "./project-library.js";
 import { applyVaultReviewObservation } from "./vault/spaced-review.js";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
@@ -40,6 +46,20 @@ let sm2ReviewDocId = "";
 let sm2ReviewQueue = [];
 let sm2ReviewIndex = 0;
 let sm2ReviewActive = false;
+
+/** @type {{ projectId: string, includeDescendants: boolean }} */
+let reviewScope = { projectId: "all", includeDescendants: true };
+
+export function getActiveReviewScope() {
+  return { ...reviewScope };
+}
+
+export function setReviewScope(scope) {
+  reviewScope = {
+    projectId: String(scope?.projectId || "all"),
+    includeDescendants: scope?.includeDescendants !== false,
+  };
+}
 
 const SM2_SOURCE_LABELS = {
   rsvp_block: "RSVP block",
@@ -165,9 +185,22 @@ export function runSm2ReviewSession(docId) {
 }
 
 /** Cross-document vault review from aggregated due items. */
-export function runVaultSm2ReviewSession() {
+export function runVaultSm2ReviewSession(scope) {
+  if (scope && typeof scope === "object") {
+    setReviewScope(scope);
+  }
   sm2ReviewDocId = "";
-  sm2ReviewQueue = buildReviewQueue(getSmItemsDueToday());
+  let pool;
+  if (reviewScope.projectId === "all") {
+    pool = getSmItemsDueToday();
+  } else {
+    pool = filterDueSmItems(
+      getReviewableItemsForProject(reviewScope.projectId, {
+        includeDescendants: reviewScope.includeDescendants,
+      }),
+    );
+  }
+  sm2ReviewQueue = buildReviewQueue(pool);
   sm2ReviewIndex = 0;
 
   if (!sm2ReviewQueue.length) {
@@ -973,6 +1006,7 @@ function showReviewConfig() {
     els.reviewFocusInput.value = draft ? String(draft.focus || "") : "";
   }
   renderReviewFlashcardQueue(sessionId);
+  populateReviewScopeSelect();
   setReviewType(reviewType);
   showScreen("reviewConfig");
 }
@@ -1104,6 +1138,22 @@ export function wireReviewHandlers() {
   if (els.reviewFocusInput) {
     els.reviewFocusInput.addEventListener("input", () => persistReviewConfigDraft());
   }
+
+  els.reviewScopeSelect?.addEventListener("change", () => {
+    const projectId = els.reviewScopeSelect.value || "all";
+    setReviewScope({
+      projectId,
+      includeDescendants: Boolean(els.reviewIncludeSubprojects?.checked),
+    });
+    populateReviewScopeSelect();
+  });
+  els.reviewIncludeSubprojects?.addEventListener("change", () => {
+    setReviewScope({
+      projectId: els.reviewScopeSelect?.value || "all",
+      includeDescendants: Boolean(els.reviewIncludeSubprojects.checked),
+    });
+    populateReviewScopeSelect();
+  });
 
   els.reviewStartBtn.addEventListener("click", async () => {
     els.reviewConfigStatus.textContent = "";

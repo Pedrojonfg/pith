@@ -2417,11 +2417,20 @@ export async function packInventoryToBlocks(
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
   let resolvedDocTopics = docTopics;
+  let vaultSession = null;
   if (!Array.isArray(resolvedDocTopics)) {
     try {
-      resolvedDocTopics = getActiveDocumentSession?.()?.shared?.docTopics;
+      const activeDoc = getActiveDocumentSession?.();
+      resolvedDocTopics = activeDoc?.shared?.docTopics;
+      vaultSession = activeDoc || null;
     } catch {
       resolvedDocTopics = [];
+    }
+  } else {
+    try {
+      vaultSession = getActiveDocumentSession?.() || null;
+    } catch {
+      vaultSession = null;
     }
   }
   const progress = (msg) => {
@@ -2446,6 +2455,7 @@ export async function packInventoryToBlocks(
       language: lang,
       knowledgeProfile: profile,
       docTopics: Array.isArray(resolvedDocTopics) ? resolvedDocTopics : [],
+      vaultSession,
     }));
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);

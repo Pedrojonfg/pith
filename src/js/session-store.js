@@ -3,6 +3,7 @@ import {
   LS_ACTIVE_DOC_ID_KEY,
   LS_DOC_SESSIONS_KEY,
   LS_DOC_TEXT_PREFIX,
+  LS_PROJECTS_KEY,
 } from "./config.js";
 import {
   docBlocksKey,
@@ -20,10 +21,13 @@ import { normalizeRecallSlice } from "./recall-slice.js";
 import {
   computeCanonicalId,
   inferDocMeta,
+  MISC_PROJECT_ID,
   normalizeConceptLabel,
   normalizeMarkdownForHash,
+  PROJECT_STORE_SCHEMA,
   validateDocumentSession,
 } from "./session-types.js";
+import { ensureMiscProject } from "./project-store.js";
 
 export {
   computeCanonicalId,
@@ -211,6 +215,7 @@ export async function createSession(rawMarkdown, options = {}) {
   const session = {
     docId,
     schemaVersion: 2,
+    projectId: options.projectId || MISC_PROJECT_ID,
     createdAt: now,
     updatedAt: now,
     shared: {
@@ -523,4 +528,65 @@ export function getSmItemsDueToday(docId) {
     }
   }
   return due;
+}
+
+/**
+ * @returns {import("./session-types.js").ProjectStore|null}
+ */
+export function loadProjectStore() {
+  try {
+    const raw = localStorage.getItem(LS_PROJECTS_KEY);
+    if (!raw || !raw.trim()) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.projects)) {
+      return null;
+    }
+    return /** @type {import("./session-types.js").ProjectStore} */ (parsed);
+  } catch (err) {
+    console.warn("[session-store] corrupt project store JSON", err);
+    return null;
+  }
+}
+
+/**
+ * @param {import("./session-types.js").ProjectStore} store
+ */
+export function saveProjectStore(store) {
+  localStorage.setItem(LS_PROJECTS_KEY, JSON.stringify(store));
+}
+
+/**
+ * @returns {import("./session-types.js").ProjectStore}
+ */
+export function getProjectStore() {
+  const loaded = loadProjectStore();
+  const store = ensureMiscProject(
+    loaded && loaded.schemaVersion === PROJECT_STORE_SCHEMA
+      ? loaded
+      : { schemaVersion: PROJECT_STORE_SCHEMA, projects: [] },
+  );
+  return store;
+}
+
+/**
+ * Persist the in-memory project store (call after mutations).
+ * @param {import("./session-types.js").ProjectStore} store
+ */
+export function persistProjectStore(store) {
+  saveProjectStore(ensureMiscProject(store));
+}
+
+/** Backfill projectId on all persisted sessions missing it. @returns {boolean} whether any session changed */
+export function backfillMissingProjectIds() {
+  const sessions = readSessionsRaw();
+  let changed = false;
+  for (const session of sessions) {
+    if (!session || typeof session !== "object") continue;
+    if (!session.projectId) {
+      session.projectId = MISC_PROJECT_ID;
+      changed = true;
+    }
+  }
+  if (changed) writeSessionsRaw(sessions);
+  return changed;
 }
