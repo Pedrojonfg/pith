@@ -1,256 +1,321 @@
-# ROADMAP — SM-2 Priority Queue
+# ROADMAP — Exposure / Retrieval Hub
 
-**Feature**: `20260620-sm2-priority-queue` | **Spec**: `specs/20260620-sm2-priority-queue/spec.md` | **Plan**: `specs/20260620-sm2-priority-queue/plan.md`
+**Feature**: `20260622-exposure-retrieval-hub` | **Spec**: `specs/20260622-exposure-retrieval-hub/spec.md` | **Plan**: `specs/20260622-exposure-retrieval-hub/plan.md`
 
-**Objective**: SM-2 spaced repetition with non-blocking priority queue — pure algorithm module, canonical `smItems` schema, ingestion from RSVP/Questions/Cloze/Slow, vault shape alignment, minimal Review UI (badge + study flow).
+**Objective**: Formalize exposure vs retrieval taxonomy; add neutral per-document Retrieval Hub (Questions, Cloze, Recall); route post-exposure completions to hub; move Review to vault-level cross-document SM-2 queue. RSVP embedded block test/socratic unchanged.
 
-**Prerequisites**: `20260609-unified-session`, Post A+ T13 vault → smItems bridge.
+**Prerequisites**: `20260612-mode-continuity`, `20260620-sm2-priority-queue`, `20260621-recall-mode`.
+
+**Source draft**: `spec-cambioarch.md`
 
 ## Task table
 
 | ID | Description | Deps | Complexity | Status |
 |----|-------------|------|------------|--------|
-| T01 | `sm2.js` pure module + `cursor-tests/sm2.test.mjs` | — | M | [x] |
-| T02 | `normalizeSmItem` + `upsertSmItem` / `getSmItemsDueToday` alignment | T01 | S | [x] |
-| T03 | RSVP / Questions ingestion (`sm2-ingest.js` + `study.js` hooks) | T02 | M | [x] |
-| T04 | Review button + due-now badge on `screenModeSelect` | T01 | S | [x] |
-| T05 | `screenReview` priority-queue study flow | T02 | M | [x] |
-| T06 | Cloze + Slow flashcard ingestion hooks | T02, T03 | S | [x] |
-| T07 | Vault `spaced-review.js` canonical shape + review callback | T02 | S | [x] |
-| T08 | Integration tests + quickstart QA closure | T01–T07 | M | [x] |
+| T01 | `mode-taxonomy.js` — MODE_TAXONOMY + `getDocumentRetrievalModes()` | — | S | [x] |
+| T02 | `screenRetrievalHub` markup + CSS + ui.js refs | — | M | [x] |
+| T03 | Hub navigation — `enterRetrievalHub`, library/mode-select entry, back | T01, T02 | M | [x] |
+| T04 | Hub option handlers → `enterModeWithContinuity` (Q/C/R) | T03 | S | [x] |
+| T05 | Questions block order via `prioritizeByAssessmentSignals` | T01 | M | [x] |
+| T06 | Vault Review — `runVaultSm2ReviewSession`, cross-doc write path | T01 | L | [x] |
+| T07 | Exposure end redirects — Slow phase 3 + RSVP complete → hub | T03 | M | [x] |
+| T08 | Remove per-doc Review from mode select; vault Review on doc library + badge | T06 | M | [x] |
+| T09 | Legacy `modes.review` migration noop / strip | T08 | S | [x] |
+| T10 | Integration tests + quickstart QA closure | T01–T09 | M | [x] |
 
 ## Dependency graph
 
 ```text
-T01 ──┬──→ T02 ──┬──→ T03 ──→ T06
-      │          ├──→ T05
-      │          └──→ T07
-      └──→ T04
-
-T01–T07 ──→ T08
+T01 ──→ T03 ──→ T04 ──→ T07
+  │       ↑
+T02 ──────┘
+T01 ──→ T05
+T01 ──→ T06 ──→ T08 ──→ T09
+T01–T09 ──→ T10
 ```
 
-**Parallel after T01**: T02 + T04 (2 agents)
+**Parallel Wave 1**: T01 + T02 (2 agents)
 
-**Parallel after T02**: T03 + T05 + T07 (3 agents)
+**Parallel Wave 2**: T03 + T05 + T06 (3 agents; T03 waits for T01+T02)
 
-**Sequential**: T06 after T03 validated; T08 after all
+**Parallel Wave 3**: T04 + T07 + T08 (3 agents after T03/T06)
+
+**Sequential**: T09 after T08; T10 after all
 
 ## Recommended execution order
 
-### Wave 1 — Algorithm core (1 agent)
+### Wave 1 — Taxonomy + hub shell (2 parallel agents)
 
-- **T01** `src/js/sm2.js` + unit tests
+- **T01** pure mode taxonomy module
+- **T02** HTML/CSS/ui refs for hub screen
 
-**Checkpoint**: `node cursor-tests/sm2.test.mjs` green before any wiring.
+**Checkpoint**: `getDocumentRetrievalModes()` returns 3 modes; hub screen visible in DOM.
 
-### Wave 2 — Storage + badge (2 parallel agents)
+### Wave 2 — Navigation + signals + vault (3 parallel agents)
 
-- **T02** session-store normalization
-- **T04** mode-select Review badge (can mock items for badge test)
+- **T03** `enterRetrievalHub` orchestration + practice entry buttons
+- **T05** Questions assessmentSignals block ordering
+- **T06** vault Review session + cross-doc upsert
 
-**Checkpoint**: legacy cloze-shaped item normalizes on read.
+**Checkpoint**: Can open hub from mode select; vault Review loads aggregated queue in DevTools.
 
-### Wave 3 — Ingestion + UI (3 parallel agents)
+### Wave 3 — Wiring + exposure redirects + UI cleanup (3 parallel agents)
 
-- **T03** RSVP/Questions hooks
-- **T05** Review study flow
-- **T07** vault canonical shape
+- **T04** hub picks delegate to existing mode entry
+- **T07** Slow finish + RSVP complete → hub
+- **T08** move Review button to doc library; remove from mode select
 
-**Checkpoint**: RSVP block creates smItem; Review screen works with seeded items.
+**Checkpoint**: Slow phase 3 → hub; doc library Review works cross-session.
 
-### Wave 4 — Remaining sources (1 agent)
+### Wave 4 — Migration (1 agent)
 
-- **T06** Cloze + Slow hooks (after T03 RSVP path validated)
+- **T09** legacy review slot cleanup in session migration
 
-### Wave 5 — QA (1 agent)
+### Wave 5 — QA closure (1 agent)
 
-- **T08** integration tests + ROADMAP closure
+- **T10** cursor-tests + ROADMAP `[x]` + quickstart sign-off
 
 ---
 
-## PROMPT T01 — sm2.js pure module
+## PROMPT T01 — Mode taxonomy module
 
-Implement SM-2 Priority Queue T01 — core algorithm module.
+Implement Exposure/Retrieval Hub T01 — static mode taxonomy.
 
-**Context**: Read `specs/20260620-sm2-priority-queue/spec.md` (FR-001–007, FR-013), `contracts/sm2-core.md`, `research.md` R1–R2. Branch `20260620-sm2-priority-queue`.
+**Context**: Read `specs/20260622-exposure-retrieval-hub/spec.md` (FR-001), `data-model.md`, `contracts/mode-taxonomy.md`. Branch `20260622-exposure-retrieval-hub`. Reference draft `spec-cambioarch.md` §2, §5.2.
 
 **Files to touch**:
-- `src/js/sm2.js` (NEW) — `SM2_DEFAULTS`, `THRESHOLD_RATIO`, `createSmItem`, `normalizeSmItem`, `isOnTime`, `updateSmItem`, `buildReviewQueue`, `getQueueStats`
-- `cursor-tests/sm2.test.mjs` (NEW) — 8 tests per contract
+- `src/js/mode-taxonomy.js` (NEW) — `MODE_TAXONOMY`, `getDocumentRetrievalModes()`, `getModesByRole`, `isExposureMode`, `isVaultMode`
+- Optional: re-export from `session-types.js` if project pattern prefers single import site
 
-**Do NOT touch**: `study.js`, `session-store.js`, HTML yet.
+**Do NOT touch**: study.js, index.html, review.js yet.
 
 **Success criteria**:
-- All pure functions, zero side effects
-- Early review preserves interval; on-time q≥3 grows interval; q&lt;3 resets
-- `normalizeSmItem` maps `nextReview` → `scheduledDue`, legacy `sourceMode` → `sourceType`
+- Hub filter returns exactly `questions`, `cloze`, `recall` in stable order
+- `review` has `scope: 'vault'` and is excluded from document retrieval list
+- Pure module — no DOM/session I/O
 
 **Reference**: `ROADMAP.md` Wave 1.
 
-criterio de éxito: `node cursor-tests/sm2.test.mjs` passes. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: import in DevTools returns 3 hub modes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T02 — Session store normalization
+## PROMPT T02 — Retrieval Hub UI shell
 
-Implement SM-2 T02 — canonical smItems in session-store.
+Implement Exposure/Retrieval Hub T02 — hub screen markup and styles.
 
-**Context**: `contracts/mode-ingestion.md`, `data-model.md`, `research.md` R3. Depends on T01 `normalizeSmItem`.
+**Context**: `contracts/retrieval-hub-ui.md`, `spec.md` User Stories 1–2 and 5. Parallel with T01.
 
 **Files to touch**:
-- `src/js/session-store.js` — call `normalizeSmItem` on read paths; `upsertSmItem` merges canonical; update `getSmItemsDueToday` to use `scheduledDue`
-- `src/js/session-types.js` — validate canonical fields if needed
+- `index.html` — `#screenRetrievalHub`, option cards with `data-retrieval-mode`, `#retrievalHubBackBtn`, `#btnPracticeDocument` on mode select
+- `src/js/ui.js` — element refs; extend `showScreen` for `retrievalHub`
+- `src/css/main.css` — `.retrieval-hub-screen`, equal-weight option cards
+- Bump `SW_VERSION` in `src/js/sw-update.js`, matching `?v=` on `sw-update.js` and `main.js` in `index.html`, and `CACHE_NAME` in `sw.js`
 
 **Success criteria**:
-- Legacy cloze items (`nextReview`, `sourceMode: 'cloze'`) round-trip as canonical
-- `getSmItemsDueToday` unchanged call sites, correct semantics
+- Three neutral cards (no recommended badge); Cloze never disabled
+- Hub hidden by default (`aria-hidden="true"`)
+- Visual parity with mode-select card layout
+
+**Reference**: `ROADMAP.md` Wave 1.
+
+criterio de éxito: hub renders with stub data; SW validate test passes. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+## PROMPT T03 — Hub navigation orchestration
+
+Implement Exposure/Retrieval Hub T03 — enter/exit hub wiring.
+
+**Context**: `contracts/hub-navigation.md`, `research.md` R4/R8. Depends on T01, T02.
+
+**Files to touch**:
+- `src/js/study.js` — `enterRetrievalHub({ docId, entrySource })`, render options from taxonomy, wire `#btnPracticeDocument`, hub back button
+- `src/js/ui.js` — if needed for dynamic option rendering helper
+
+**Do NOT touch**: exposure end redirects (T07) or vault Review (T06) yet.
+
+**Success criteria**:
+- Active doc → Practice → hub with 3 options
+- No material → upload guidance (reuse upload_required pattern)
+- Back returns to mode select or library
 
 **Reference**: `ROADMAP.md` Wave 2.
 
-criterio de éxito: manual DevTools upsert/read legacy shape works. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: manual navigation to hub from mode select works. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T03 — RSVP / Questions ingestion
+## PROMPT T04 — Hub mode delegation
 
-Implement SM-2 T03 — block answers feed smItems.
+Implement Exposure/Retrieval Hub T04 — hub picks call existing mode entry.
 
-**Context**: `contracts/mode-ingestion.md` RSVP section, `research.md` R6. Depends on T02.
+**Context**: `contracts/hub-navigation.md`, `mode-bootstrap.js` existing paths. Depends on T03.
 
 **Files to touch**:
-- `src/js/sm2-ingest.js` (NEW) — `registerOrUpdateSmItem`, `mapMcqOutcomeToQuality`
-- `src/js/study.js` — hook after block answer / assessment signal path
+- `src/js/study.js` — click handlers on `[data-retrieval-mode]` → `enterModeWithContinuity(mode)`
+- Verify Cloze path triggers pipeline without hub generate UI
 
 **Success criteria**:
-- Completing RSVP block creates/updates `rsvp_block` smItem with mapped quality
-- No duplicate for same `blockId`
-- Hook failures log warn, do not break study
+- Each hub option enters correct mode (bootstrap/resume/generate per existing rules)
+- No duplicated mode-entry logic in hub module
+- Cloze cold start works from hub without intermediate screen
 
 **Reference**: `ROADMAP.md` Wave 3.
 
-criterio de éxito: quickstart Wave 3 passes. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: hub → Recall/Questions/Cloze each reach study screen on test doc. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T04 — Review badge on mode select
+## PROMPT T05 — Questions assessmentSignals prioritization
 
-Implement SM-2 T04 — mode select Review entry + badge.
+Implement Exposure/Retrieval Hub T05 — generalize weak-concept targeting to Questions.
 
-**Context**: `contracts/review-ui.md`. Depends on T01 `getQueueStats` (T02 optional for real data).
+**Context**: `contracts/assessment-signals-consumers.md`, `assessment-signals.js`, `spec.md` FR-007. Depends on T01. Can parallel T03.
 
 **Files to touch**:
-- `index.html` — `btnReview`, `reviewBadge` on `screenModeSelect`
-- `src/js/study.js` — badge refresh on mode select show; wire click → `runSm2ReviewSession` stub or T05
-- `src/css/main.css` — `.review-badge`
-- `sw.js` / `sw-update.js` / `index.html` `?v=` if required by project rules
+- `src/js/study.js` (Questions study path) — build block proxies, call `prioritizeByAssessmentSignals`, study in returned order
+- `cursor-tests/20260622_exposure-retrieval-hub.mjs` — start with signal ordering test
 
 **Success criteria**:
-- Badge shows `dueNow` count when &gt; 0, hidden otherwise
-- Review button visible on mode select
+- Blocks with weak signal concepts appear earlier in Questions session
+- Empty signals → default order unchanged
+- Hub and direct mode-select entry both use same ordering
 
 **Reference**: `ROADMAP.md` Wave 2.
 
-criterio de éxito: quickstart Wave 4 passes. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: seeded signals test puts weak-concept block in first half. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T05 — Review screen priority queue
+## PROMPT T06 — Vault-level Review session
 
-Implement SM-2 T05 — functional Review study session.
+Implement Exposure/Retrieval Hub T06 — cross-document SM-2 review.
 
-**Context**: `contracts/review-ui.md`, `spec.md` User Stories 1 & 4. Depends on T02.
+**Context**: `contracts/vault-review.md`, `research.md` R3, `session-store.js` `getSmItemsDueToday()`. Depends on T01. Parallel with T03/T05.
 
 **Files to touch**:
-- `src/js/review.js` — `runSm2ReviewSession`, quality buttons, early chip, empty state
-- `src/js/study.js` — wire `btnReview` to `runSm2ReviewSession`
-- `src/css/main.css` — `.review-early-chip`
+- `src/js/review.js` — `runVaultSm2ReviewSession()`; per-item write via `upsertSmItem(item.docId, ...)`
+- `src/js/session-store.js` — `getVaultReviewDueCount()` helper if needed
+- `src/js/study.js` — redirect `enterModeWithContinuity('review')` to vault path
 
 **Success criteria**:
-- Queue ordered by `scheduledDue`
-- Four quality buttons map to 5/4/3/1
-- Early chip when `!isOnTime`; early submit does not grow interval
-- LLM `reviewSessionBtn` flow unchanged
+- Queue built from all sessions' due items
+- Rating updates origin document without switching active doc
+- Empty queue shows existing empty state
+
+**Reference**: `ROADMAP.md` Wave 2.
+
+criterio de éxito: two docs with due items both appear in vault queue. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+## PROMPT T07 — Exposure completion → hub
+
+Implement Exposure/Retrieval Hub T07 — post-exposure redirects.
+
+**Context**: `contracts/hub-navigation.md`, `research.md` R4, `spec.md` FR-003. Depends on T03.
+
+**Files to touch**:
+- `src/js/study.js` — Slow `slowPhase3FinishBtn`: `enterRetrievalHub` instead of `enterModeSelectScreen`
+- RSVP complete screen CTA → `enterRetrievalHub({ entrySource: 'exposure_complete' })`
+- **Do NOT** change embedded block test/socratic handlers
+
+**Success criteria**:
+- Slow phase 3 finish lands on hub
+- RSVP all-blocks-complete primary path lands on hub
+- Mid-block RSVP flow unchanged (regression)
 
 **Reference**: `ROADMAP.md` Wave 3.
 
-criterio de éxito: quickstart Wave 5 passes. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: quickstart Wave 3 manual pass. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T06 — Cloze + Slow ingestion
+## PROMPT T08 — Review UI relocation
 
-Implement SM-2 T06 — Cloze and Slow flashcard hooks.
+Implement Exposure/Retrieval Hub T08 — vault Review entry on doc library.
 
-**Context**: `contracts/mode-ingestion.md` Cloze/Slow sections. Depends on T02, T03 validated.
+**Context**: `contracts/vault-review.md`, `contracts/retrieval-hub-ui.md`, `spec.md` FR-008, FR-011. Depends on T06.
 
 **Files to touch**:
-- `src/js/cloze/study.js` — answer → `registerOrUpdateSmItem`
-- `src/js/cloze/pipeline.js` — `persistClozeItemsToShared` canonical shape
-- `src/js/slow/phase3.js` — flashcard create → smItem
+- `index.html` — `#btnVaultReview` + badge on `screenDocLibrary`; remove `#btnReview` from mode select
+- `src/js/study.js` — wire vault Review button; `refreshVaultReviewBadge()` on library enter
+- Update `startReviewFromRecommendation()` to use vault Review or hub as appropriate
 
 **Success criteria**:
-- Cloze answer updates `cloze_item` smItem
-- Slow flashcard creates `slow_flashcard` smItem
-- Cloze pipeline generate still works
+- Mode select has no Review button
+- Doc library Review shows aggregate due badge
+- Vault Review opens from library without selecting a document
+
+**Reference**: `ROADMAP.md` Wave 3.
+
+criterio de éxito: quickstart Wave 5 steps 1–2 pass. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+## PROMPT T09 — Legacy review migration
+
+Implement Exposure/Retrieval Hub T09 — session migration for old review slots.
+
+**Context**: `research.md` R2, `data-model.md` legacy section. Depends on T08.
+
+**Files to touch**:
+- `src/js/session-migration.js` (or equivalent normalizer) — strip/noop `modes.review` on load; preserve `shared.smItems`
+
+**Success criteria**:
+- Legacy session JSON with `modes.review` loads without error
+- smItems untouched
+- No schemaVersion bump required
 
 **Reference**: `ROADMAP.md` Wave 4.
 
-criterio de éxito: quickstart Wave 6 passes. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: migration fixture test passes. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## PROMPT T07 — Vault canonical shape
+## PROMPT T10 — Integration tests + QA closure
 
-Implement SM-2 T07 — align vault decay bridge to canonical SmItem.
+Close Exposure/Retrieval Hub with tests and ROADMAP update.
 
-**Context**: `contracts/mode-ingestion.md` vault section, `research.md` R4. Depends on T02.
-
-**Files to touch**:
-- `src/js/vault/spaced-review.js` — `buildVaultSmItem` canonical fields
-- `src/js/review.js` — on vault item review, call `applyVaultReviewObservation`
-
-**Success criteria**:
-- `syncVaultToReviewPool` emits `sourceType: 'vault_concept'`, `scheduledDue`
-- Non-vault smItems preserved (regression from Post A+ T13)
-- Vault review updates mastery
-
-**Reference**: `ROADMAP.md` Wave 3.
-
-criterio de éxito: quickstart Wave 7 passes. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-## PROMPT T08 — Integration tests + QA closure
-
-Close SM-2 feature with tests and ROADMAP update.
-
-**Context**: `quickstart.md`, all contracts.
+**Context**: `quickstart.md`, all contracts, `spec.md` success criteria.
 
 **Files to touch**:
-- `cursor-tests/20260620_sm2-priority-queue.mjs` (NEW)
-- `ROADMAP.md` — mark T01–T08 `[x]`
+- `cursor-tests/20260622_exposure-retrieval-hub.mjs` — taxonomy, hub navigation, signals ordering, vault queue aggregation, migration fixture
+- `ROADMAP.md` — mark T01–T10 `[x]`
+- `specs/20260622-exposure-retrieval-hub/quickstart.md` — note any manual QA gaps
 
 **Tests must cover**:
-- normalize legacy shapes
-- early vs on-time update
-- queue ordering
-- RSVP ingest creates item
-- vault + cloze coexistence
-- `getSmItemsDueToday` regression
+- `getDocumentRetrievalModes()` shape
+- `getSmItemsDueToday()` used for vault queue
+- Questions block prioritization with seeded signals
+- `review` not in MODE_KEYS / hub list
+- Regression: RSVP mid-block path not redirected to hub
 
-criterio de éxito: both cursor-tests green; quickstart scenarios checked. Ejecuta /validate antes de cerrar este mensaje.
+**Reference**: `ROADMAP.md` Wave 5.
+
+criterio de éxito: `node cursor-tests/20260622_exposure-retrieval-hub.mjs` green; ROADMAP all [x]. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-## Instrucción de ejecución
+## Execution instruction
 
-1. **Wave 1**: Lanza **PROMPT T01** (1 agente). Espera tests green.
-2. **Wave 2 (paralelo)**: **T02 + T04** (2 agentes).
-3. **Wave 3 (paralelo)**: **T03 + T05 + T07** (3 agentes).
-4. **Wave 4**: **T06** tras validar T03 en browser.
-5. **Wave 5**: **T08** cierre.
+**Launch first (parallel)**:
+- PROMPT T01 + PROMPT T02 in two separate agent chats
 
-**Tiempo mínimo**: Waves 2–3 paralelizan hasta 3 agentes (~35% ahorro vs secuencial).
+**Wait for**: both complete; hub shell + taxonomy importable
 
-**Antes de Wave 3**: Confirma `node cursor-tests/sm2.test.mjs` sigue green.
+**Launch second (parallel)**:
+- PROMPT T03 + PROMPT T05 + PROMPT T06
+
+**Wait for**: hub navigation works; vault Review callable from console
+
+**Launch third (parallel)**:
+- PROMPT T04 + PROMPT T07 + PROMPT T08
+
+**Then sequential**:
+- PROMPT T09 → PROMPT T10
+
+**Optimal total**: 3 parallel waves + 2 sequential = minimum calendar time with 3 agents in waves 2–3.
+
+**Follow-up spec (not this ROADMAP)**: `exposure-signals-capture` — guide-chat / Slow sidebar → `shared.exposureSignals`.

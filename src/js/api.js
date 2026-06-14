@@ -3672,3 +3672,16 @@ Rules:
   }
 }
 
+export {
+  buildRecallQuestionsSystemPrompt,
+  deepSeekRecallTutor,
+  deriveRecallConfig,
+  deriveRecallQuestionCount,
+  generateRecallQuestions,
+  normalizeRecallQuestions,
+  normalizeRecallTutorFeedback,
+  parseRecallQuestionsFromModel,
+  parseRecallTutorFeedbackFromModelResponse,
+  recallTypesForGoal,
+} from "./recall-api.js";
+

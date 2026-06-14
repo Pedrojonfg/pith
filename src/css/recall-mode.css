@@ -1,0 +1,105 @@
+/** Recall Mode — focused open-ended retrieval study */
+
+.recall-screen .recall-card {
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.recall-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.recall-progress {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.recall-question-area {
+  margin-bottom: 20px;
+}
+
+.recall-type-badge {
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #2a2a2a);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.recall-question-text {
+  font-size: 1.15rem;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.94);
+  white-space: pre-wrap;
+}
+
+.recall-answer-label {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.recall-answer-textarea {
+  min-height: 200px;
+  width: 100%;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.recall-actions {
+  margin-top: 16px;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.recall-feedback-panel {
+  margin-top: 20px;
+}
+
+.recall-quality-badge {
+  margin: 0 0 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.recall-critique {
+  margin-top: 0;
+}
+
+.recall-suggested {
+  margin-top: 14px;
+}
+
+.recall-concept-peek {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border, #2a2a2a);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.recall-concept-peek summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.recall-concept-list {
+  margin: 10px 0 0;
+  padding-left: 1.2rem;
+}
+
+.recall-concept-list li {
+  margin: 6px 0;
+}
+
+body.recall-active .corner-plus,
+body.recall-active #changeKeyLink {
+  display: none !important;
+}

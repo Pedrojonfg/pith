@@ -79,6 +79,7 @@
     <link rel="stylesheet" href="src/css/sidebar.css" />
     <link rel="stylesheet" href="src/css/slow-mode.css" />
     <link rel="stylesheet" href="src/css/cloze-mode.css" />
+    <link rel="stylesheet" href="src/css/recall-mode.css" />
     <link rel="stylesheet" href="src/css/graph.css" />
   </head>
   <body>
@@ -369,6 +370,7 @@
                     <option value="slow">Slow Mode</option>
                     <option value="cloze">Cloze Detection</option>
                     <option value="questions">Questions</option>
+                    <option value="recall">Recall</option>
                   </select>
                 </label>
               </div>
@@ -418,18 +420,42 @@
                     <span class="hint">Quiz-only — graph + concepts, then test and Socratic questions per block (no RSVP reader).</span>
                   </span>
                 </label>
+                <label class="study-mode-option">
+                  <input type="radio" name="studyMode" value="recall" />
+                  <span class="study-mode-option-body">
+                    <strong>Recall</strong>
+                    <span class="hint">Open-ended retrieval — write what you remember; AI tutor gives feedback without revealing answers first.</span>
+                  </span>
+                </label>
               </div>
             </fieldset>
 
             <div class="doc-library-link-row">
-              <button type="button" id="btnReview" class="btn-secondary">
-                Review
-                <span id="reviewBadge" class="review-badge hidden" aria-label="Items due now"></span>
+              <button type="button" id="btnPracticeDocument" class="btn-primary">
+                Practice this document
               </button>
               <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
                 My documents
               </button>
             </div>
+          </div>
+        </section>
+
+        <section
+          id="screenRetrievalHub"
+          class="screen retrieval-hub-screen"
+          aria-hidden="true"
+          aria-label="Practice this document"
+        >
+          <div class="card retrieval-hub-card">
+            <h1 id="retrievalHubTitle">Practice this document</h1>
+            <p id="retrievalHubLead" class="retrieval-hub-lead hint">
+              Choose how you want to practice retrieval. All options use your loaded material.
+            </p>
+            <div id="retrievalHubOptions" class="retrieval-hub-options" role="list"></div>
+            <button type="button" id="retrievalHubBackBtn" class="create-back-btn">
+              ← Back
+            </button>
           </div>
         </section>
 
@@ -445,6 +471,12 @@
                 ← Back
               </button>
               <h1>My documents</h1>
+            </div>
+            <div class="doc-library-vault-row">
+              <button type="button" id="btnVaultReview" class="btn-secondary">
+                Review
+                <span id="vaultReviewBadge" class="review-badge hidden" aria-label="Items due today across all documents"></span>
+              </button>
             </div>
             <p class="hint">Documents you have studied. Tap one to choose a mode and continue.</p>
             <div id="docLibraryList" class="doc-library-list" role="list"></div>
@@ -1145,7 +1177,8 @@
             <h1>Session complete</h1>
             <p>You’re done. Save your session when you’re ready.</p>
             <div class="row" style="justify-content: center">
-              <button type="button" id="saveSessionBtn" class="btn-primary">Save session</button>
+              <button type="button" id="btnPracticeRetrieval" class="btn-primary">Practice retrieval</button>
+              <button type="button" id="saveSessionBtn" class="btn-secondary">Save session</button>
               <button type="button" id="reviewSessionBtn" class="btn-secondary">Review session</button>
             </div>
           </div>
@@ -1399,6 +1432,56 @@
               <button type="button" id="slowGraphBackBtn">Back</button>
               <button type="button" id="slowGraphExportBtn" class="btn-secondary">Export graph</button>
             </div>
+          </div>
+        </section>
+
+        <section
+          id="screenRecall"
+          class="screen recall-screen"
+          aria-hidden="true"
+          aria-label="Recall"
+        >
+          <div class="card recall-card">
+            <div class="recall-header">
+              <button type="button" id="recallBackBtn" class="create-back-btn">← Back</button>
+              <span id="recallProgress" class="recall-progress hint">1 / 1</span>
+            </div>
+
+            <div class="recall-question-area">
+              <span id="recallTypeBadge" class="recall-type-badge hint" hidden></span>
+              <div id="recallQuestionText" class="recall-question-text"></div>
+            </div>
+
+            <label for="recallAnswer" class="recall-answer-label">Your answer</label>
+            <textarea
+              id="recallAnswer"
+              class="recall-answer-textarea answer-textarea"
+              spellcheck="true"
+              rows="8"
+            ></textarea>
+
+            <div class="recall-actions row">
+              <button type="button" id="recallSubmitBtn" class="btn-primary">Submit</button>
+              <button type="button" id="recallNextBtn" class="btn-primary" hidden>Next question</button>
+              <button type="button" id="recallConceptPeekBtn" class="btn-secondary">Concept peek</button>
+              <span id="recallStatus" class="hint" role="status"></span>
+            </div>
+
+            <div id="recallFeedbackPanel" class="recall-feedback-panel" hidden>
+              <p id="recallQualityBadge" class="recall-quality-badge hint"></p>
+              <div id="recallCritique" class="recall-critique response-box"></div>
+              <div id="recallSuggested" class="recall-suggested" hidden>
+                <p class="hint">Suggested answer</p>
+                <div id="recallSuggestedText" class="recall-suggested-text response-box"></div>
+              </div>
+            </div>
+
+            <details id="recallConceptPeek" class="recall-concept-peek" hidden>
+              <summary>Related concepts</summary>
+              <ul id="recallConceptPeekList" class="recall-concept-list"></ul>
+            </details>
+
+            <div id="recallError" class="error" hidden></div>
           </div>
         </section>
 
@@ -1723,7 +1806,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_3";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1739,7 +1822,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260620_3");
+        await import("./src/js/main.js?v=20260622_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

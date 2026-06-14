@@ -7,6 +7,7 @@
 export const TIME_FACTORS = {
   rsvp: (words) => Math.ceil(words / 400),
   slow: (words) => Math.ceil(words / 120),
+  recall: (words) => Math.ceil(words / 600),
   cloze: (items) => Math.ceil(items * 0.5),
   questions: (words) => Math.ceil(words / 800),
   review: (items) => Math.ceil(items * 0.3),
@@ -44,13 +45,34 @@ const MODE_TEMPLATES = {
     label: "Comprehension questions",
     description: "Answer questions to check what you remember",
   },
+  recall: {
+    label: "Recall synthesis",
+    description: "Open-ended questions to reconstruct arguments and relationships",
+  },
   review: {
     label: "Spaced review",
     description: "Revisit material with SM-2 spaced repetition",
   },
 };
 
-/** @typedef {'rsvp'|'slow'|'cloze'|'questions'|'review'} StudyMode */
+/** @typedef {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} StudyMode */
+
+const MIN_RECALL_SIGNALS = 2;
+
+/**
+ * @param {{ doc?: object, completedModes?: string[], pedagogicalMeta?: object, assessmentSignals?: object[] }} ctx
+ * @returns {boolean}
+ */
+export function shouldSuggestRecall(ctx = {}) {
+  const completed = new Set(Array.isArray(ctx.completedModes) ? ctx.completedModes : []);
+  const meta = ctx.pedagogicalMeta || ctx.doc?.shared?.docHierarchy?.pedagogical_meta || {};
+  const density = Number(meta.argumentativeDensity) || 0;
+  if (completed.has("slow")) return true;
+  if (completed.has("rsvp") && density >= 3) return true;
+  const signals =
+    Array.isArray(ctx.assessmentSignals) ? ctx.assessmentSignals : ctx.doc?.shared?.assessmentSignals || [];
+  return signals.length < MIN_RECALL_SIGNALS;
+}
 
 /**
  * @param {number} value
@@ -127,16 +149,16 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
 
   if (argumentativeDensity >= 4 || genre === "philosophical") {
     return {
-      primaryModes: ["slow", "cloze", "review"],
+      primaryModes: ["slow", "recall", "cloze", "review"],
       quickModes: ["rsvp", "questions"],
       reasoning:
-        "Dense argumentative text. Deep reading before practice helps you understand instead of memorizing blindly.",
+        "Dense argumentative text. Deep reading, then recall synthesis, before cloze practice.",
     };
   }
 
   if (genre === "scientific_theoretical" && conceptualLoad >= 3) {
     return {
-      primaryModes: ["slow", "cloze", "review"],
+      primaryModes: ["slow", "recall", "cloze", "review"],
       quickModes: ["rsvp", "cloze"],
       reasoning: "High conceptual load. Build the mental map before active practice.",
     };
@@ -205,7 +227,7 @@ export function computeStepTimes(textMetrics, steps) {
     const mode = step.mode;
     let estimatedTimeMin = 1;
 
-    if (mode === "rsvp" || mode === "slow" || mode === "questions") {
+    if (mode === "rsvp" || mode === "slow" || mode === "questions" || mode === "recall") {
       const factor = TIME_FACTORS[mode];
       estimatedTimeMin = Math.max(1, factor(words));
     } else if (mode === "cloze" || mode === "review") {

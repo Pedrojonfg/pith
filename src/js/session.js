@@ -46,6 +46,11 @@ import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
+export {
+  computeInventoryHash,
+  createEmptyRecallSlice,
+  normalizeRecallSlice,
+} from "./recall-slice.js";
 
 export { getStoredGeminiKey, saveGeminiKey };
 
@@ -329,12 +334,13 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/** @returns {'rsvp'|'slow'|'cloze'|'questions'} */
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'} */
 export function normalizeStudyMode(mode) {
   const m = String(mode || "").trim();
   if (m === "slow") return "slow";
   if (m === "cloze") return "cloze";
   if (m === "questions") return "questions";
+  if (m === "recall") return "recall";
   return "rsvp";
 }
 
@@ -349,7 +355,7 @@ export function isQuestionsStudyMode(sessionOrMode) {
 }
 
 export function emptySessionsByMode() {
-  return { rsvp: null, slow: null, cloze: null, questions: null };
+  return { rsvp: null, slow: null, cloze: null, questions: null, recall: null };
 }
 
 export function parseSessionsByModeRaw(raw) {
@@ -362,6 +368,7 @@ export function parseSessionsByModeRaw(raw) {
       slow: obj.slow && typeof obj.slow === "object" ? obj.slow : null,
       cloze: obj.cloze && typeof obj.cloze === "object" ? obj.cloze : null,
       questions: obj.questions && typeof obj.questions === "object" ? obj.questions : null,
+      recall: obj.recall && typeof obj.recall === "object" ? obj.recall : null,
     };
   } catch {
     return null;
@@ -379,7 +386,7 @@ export function migrateLegacyActiveSession() {
   try {
     const legacy = JSON.parse(legacyRaw);
     if (!legacy || typeof legacy !== "object") return;
-    const migrated = { rsvp: legacy, slow: null, cloze: null, questions: null };
+    const migrated = { rsvp: legacy, slow: null, cloze: null, questions: null, recall: null };
     localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
   } catch {
     // ignore corrupt legacy
@@ -400,6 +407,7 @@ export function loadSessionsByMode() {
     slow: base.slow ? migrateLoadedSession(base.slow) : null,
     cloze: base.cloze ? migrateLoadedSession(base.cloze) : null,
     questions: base.questions,
+    recall: base.recall,
   };
 }
 
@@ -409,6 +417,7 @@ export function storeSessionsByMode(data) {
     slow: data?.slow && typeof data.slow === "object" ? data.slow : null,
     cloze: data?.cloze && typeof data.cloze === "object" ? data.cloze : null,
     questions: data?.questions && typeof data.questions === "object" ? data.questions : null,
+    recall: data?.recall && typeof data.recall === "object" ? data.recall : null,
   };
   localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(safe));
   if (safe.rsvp) {

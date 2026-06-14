@@ -32,12 +32,13 @@ export function registerChromeHasConceptsResolver(resolver) {
   syncFloatingChrome();
 }
 
-/** @returns {'rsvp'|'slow'|'cloze'|'questions'} */
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'} */
 function normalizeChromeStudyMode(mode) {
   const m = String(mode || "").trim();
   if (m === "slow") return "slow";
   if (m === "cloze") return "cloze";
   if (m === "questions") return "questions";
+  if (m === "recall") return "recall";
   return "rsvp";
 }
 
@@ -65,13 +66,17 @@ const CHROME_GUIDE_STUDY_SCREENS = new Set([
   "reviewGenerating",
   "reviewSummary",
   "clozeStudy",
+  "recall",
 ]);
 
 export function resolveChromeVisibility(ctx) {
   const studyMode = normalizeChromeStudyMode(ctx.studyMode);
   const isRsvp = studyMode === "rsvp";
   const isGuideStudyMode =
-    studyMode === "rsvp" || studyMode === "cloze" || studyMode === "questions";
+    studyMode === "rsvp" ||
+    studyMode === "cloze" ||
+    studyMode === "questions" ||
+    studyMode === "recall";
   const assessmentActive = Boolean(ctx.assessmentActive);
   const guideToggleSuppressed = Boolean(ctx.guideToggleSuppressed);
   const screenId = String(ctx.screenId || "");
@@ -85,7 +90,8 @@ export function resolveChromeVisibility(ctx) {
   const onGuideStudyScreen =
     CHROME_GUIDE_STUDY_SCREENS.has(screenId) &&
     (screenId !== "between" || Boolean(ctx.hasConcepts)) &&
-    (screenId !== "clozeStudy" || studyMode === "cloze");
+    (screenId !== "clozeStudy" || studyMode === "cloze") &&
+    (screenId !== "recall" || studyMode === "recall");
 
   const showGuideFab =
     isGuideStudyMode &&
@@ -148,8 +154,15 @@ export const els = {
   docLibraryList: document.getElementById("docLibraryList"),
   docLibraryBackBtn: document.getElementById("docLibraryBackBtn"),
   modeSelectDocLibraryBtn: document.getElementById("modeSelectDocLibraryBtn"),
-  btnReview: document.getElementById("btnReview"),
-  reviewBadge: document.getElementById("reviewBadge"),
+  btnPracticeDocument: document.getElementById("btnPracticeDocument"),
+  screenRetrievalHub: document.getElementById("screenRetrievalHub"),
+  retrievalHubTitle: document.getElementById("retrievalHubTitle"),
+  retrievalHubLead: document.getElementById("retrievalHubLead"),
+  retrievalHubOptions: document.getElementById("retrievalHubOptions"),
+  retrievalHubBackBtn: document.getElementById("retrievalHubBackBtn"),
+  btnVaultReview: document.getElementById("btnVaultReview"),
+  vaultReviewBadge: document.getElementById("vaultReviewBadge"),
+  btnPracticeRetrieval: document.getElementById("btnPracticeRetrieval"),
   reviewSm2View: document.getElementById("reviewSm2View"),
   reviewSm2Meta: document.getElementById("reviewSm2Meta"),
   reviewSm2EarlyChip: document.getElementById("reviewSm2EarlyChip"),
@@ -212,6 +225,25 @@ export const els = {
   screenReviewGenerating: document.getElementById("screenReviewGenerating"),
   screenReview: document.getElementById("screenReview"),
   screenReviewSummary: document.getElementById("screenReviewSummary"),
+
+  screenRecall: document.getElementById("screenRecall"),
+  recallBackBtn: document.getElementById("recallBackBtn"),
+  recallProgress: document.getElementById("recallProgress"),
+  recallTypeBadge: document.getElementById("recallTypeBadge"),
+  recallQuestionText: document.getElementById("recallQuestionText"),
+  recallAnswer: document.getElementById("recallAnswer"),
+  recallSubmitBtn: document.getElementById("recallSubmitBtn"),
+  recallNextBtn: document.getElementById("recallNextBtn"),
+  recallConceptPeekBtn: document.getElementById("recallConceptPeekBtn"),
+  recallStatus: document.getElementById("recallStatus"),
+  recallFeedbackPanel: document.getElementById("recallFeedbackPanel"),
+  recallQualityBadge: document.getElementById("recallQualityBadge"),
+  recallCritique: document.getElementById("recallCritique"),
+  recallSuggested: document.getElementById("recallSuggested"),
+  recallSuggestedText: document.getElementById("recallSuggestedText"),
+  recallConceptPeek: document.getElementById("recallConceptPeek"),
+  recallConceptPeekList: document.getElementById("recallConceptPeekList"),
+  recallError: document.getElementById("recallError"),
 
   apiKeyForm: document.getElementById("apiKeyForm"),
   apiKeyInput: document.getElementById("apiKeyInput"),
@@ -912,6 +944,7 @@ export function showScreen(which) {
   const showSetup = which === "setup";
   const showModeSelect = which === "modeSelect";
   const showDocLibrary = which === "docLibrary";
+  const showRetrievalHub = which === "retrievalHub";
   const modeSelectEl = showModeSelect ? resolveModeSelectScreenEl() : els.screenModeSelect;
   const showModeSelectScreen = showModeSelect && !!modeSelectEl;
   const showCreate = which === "create" || (showModeSelect && !modeSelectEl);
@@ -936,11 +969,13 @@ export function showScreen(which) {
   const showSlowPhase3 = which === "slowPhase3";
   const showSlowGraph = which === "slowGraph";
   const showClozeStudy = which === "clozeStudy";
+  const showRecall = which === "recall";
   const showStudyProgress = showSocratic || showTest || showBetween;
 
   els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
+  els.screenRetrievalHub?.setAttribute("aria-hidden", String(!showRetrievalHub));
   els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
   els.screenPrePackingAssessment?.setAttribute(
     "aria-hidden",
@@ -972,10 +1007,12 @@ export function showScreen(which) {
   els.screenSlowPhase3?.setAttribute("aria-hidden", String(!showSlowPhase3));
   els.screenSlowGraph?.setAttribute("aria-hidden", String(!showSlowGraph));
   els.screenClozeStudy?.setAttribute("aria-hidden", String(!showClozeStudy));
+  els.screenRecall?.setAttribute("aria-hidden", String(!showRecall));
 
   els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
   document.body.classList.toggle("study-active", showStudyProgress);
   document.body.classList.toggle("slow-reader-active", showSlowReader);
+  document.body.classList.toggle("recall-active", showRecall);
   if (!showTest && !showSocratic) {
     setBlockReadSidebarAvailable(false);
   } else if (showTest && els.testQaView?.hidden) {
@@ -1003,6 +1040,14 @@ export function showScreen(which) {
 
   if (showDocLibrary) {
     setTimeout(() => els.docLibraryBackBtn?.focus?.(), 0);
+  }
+
+  if (showRetrievalHub) {
+    setTimeout(() => {
+      const first = els.retrievalHubOptions?.querySelector("[data-retrieval-mode]");
+      if (first) first.focus();
+      else els.retrievalHubBackBtn?.focus?.();
+    }, 0);
   }
 
   if (showCreate) {
@@ -1042,6 +1087,10 @@ export function showScreen(which) {
     els.testFeedback.textContent = "";
     els.testNextBtn.hidden = true;
     els.testNextBtn.textContent = "";
+  }
+
+  if (showRecall) {
+    setTimeout(() => els.recallAnswer?.focus?.(), 0);
   }
 
   const anyVisible = document.querySelector('.screen[aria-hidden="false"]');

@@ -140,6 +140,8 @@ function isModeStepComplete(session, mode) {
       return isClozeModeComplete(slice);
     case "questions":
       return isQuestionsModeComplete(slice);
+    case "recall":
+      return String(slice.status || "").trim() === "complete";
     default:
       return false;
   }

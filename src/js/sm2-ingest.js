@@ -26,6 +26,14 @@ export function mapClozeResultToQuality(result) {
   return 3;
 }
 
+/** @type {Record<string, number>} */
+export const RECALL_QUALITY_TO_SM2 = {
+  strong: 5,
+  adequate: 4,
+  partial: 2,
+  insufficient: 1,
+};
+
 /**
  * @param {string} docId
  * @param {object} params
@@ -67,4 +75,28 @@ export function registerOrUpdateSmItem(docId, params) {
 
   upsertSmItem(docId, item);
   return item;
+}
+
+/**
+ * @param {{ docId: string, question: object }} params
+ */
+export function ingestSm2FromRecallAnswer({ docId, question }) {
+  const q = question && typeof question === "object" ? question : null;
+  const qualityKey = String(q?.tutor_feedback?.quality || "").trim();
+  const quality = RECALL_QUALITY_TO_SM2[qualityKey];
+  if (quality == null) return;
+
+  const title = String(q.question || "").trim();
+  const preview = (Array.isArray(q.concept_ids) ? q.concept_ids : []).join(", ");
+  for (const conceptId of Array.isArray(q.concept_ids) ? q.concept_ids : []) {
+    const id = String(conceptId || "").trim();
+    if (!id) continue;
+    registerOrUpdateSmItem(docId, {
+      sourceType: "recall_question",
+      sourceId: `${String(q.id || "").trim()}:${id}`,
+      title: title.slice(0, 80),
+      contentPreview: preview,
+      quality,
+    });
+  }
 }

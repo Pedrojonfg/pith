@@ -198,6 +198,19 @@ function loadV1Backup() {
 /**
  * Idempotent V1 → V2 migration. Call at boot before study init.
  */
+/**
+ * Strip legacy per-document review slot; smItems remain on shared.
+ * @param {object} session
+ * @returns {object}
+ */
+export function stripLegacyReviewSlot(session) {
+  if (!session?.modes || typeof session.modes !== "object") return session;
+  if (!("review" in session.modes)) return session;
+  const modes = { ...session.modes };
+  delete modes.review;
+  return { ...session, modes };
+}
+
 export async function detectAndMigrateV1() {
   if (hasV2Sessions()) return;
 

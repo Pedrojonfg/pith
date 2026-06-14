@@ -279,3 +279,35 @@ export function prioritizeByAssessmentSignals(items, signals, options = {}) {
 
   return [...frontWeak, ...rest].map((row) => row.item);
 }
+
+/**
+ * @param {object} question RecallQuestion with tutor_feedback
+ * @returns {object[]}
+ */
+export function buildRecallAssessmentSignals(question) {
+  const q = question && typeof question === "object" ? question : null;
+  const quality = String(q?.tutor_feedback?.quality || "").trim();
+  const weak = quality === "partial" || quality === "insufficient";
+  const strong = quality === "strong" || quality === "adequate";
+  if (!weak && !strong) return [];
+
+  const lastResult = weak ? "wrong" : "correct";
+  const now = Date.now();
+  return (Array.isArray(q?.concept_ids) ? q.concept_ids : [])
+    .map((rawId) => {
+      const canonicalId = String(rawId || "").trim();
+      if (!canonicalId) return null;
+      return {
+        canonicalId,
+        conceptLabel: canonicalId,
+        sourceMode: "recall",
+        lastResult,
+        wrongCount: weak ? 1 : 0,
+        correctCount: strong ? 1 : 0,
+        weight: computeAssessmentWeight(weak ? 1 : 0, strong ? 1 : 0, lastResult),
+        lastAt: now,
+      };
+    })
+    .filter(Boolean);
+}
+

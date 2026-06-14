@@ -54,7 +54,7 @@
  * @property {number} weight
  */
 
-const MODE_KEYS = ["rsvp", "slow", "cloze", "questions"];
+const MODE_KEYS = ["rsvp", "slow", "cloze", "questions", "recall"];
 
 const STOPWORDS = new Set([
   "a", "an", "the", "el", "la", "los", "las", "de", "del", "en", "y", "o", "un", "una",

@@ -233,16 +233,17 @@ assert(clozeMerged[0].title === "Merged", "upsert: merged title wins");
 // --- wiring contracts ---
 
 const studySrc = readFileSync(new URL("../src/js/study.js", import.meta.url), "utf8");
-assert(studySrc.includes("refreshReviewBadge"), "study.js: review badge refresh");
-assert(studySrc.includes("runSm2ReviewSession"), "study.js: review session wiring");
+assert(studySrc.includes("refreshVaultReviewBadge"), "study.js: vault review badge refresh");
+assert(studySrc.includes("runVaultSm2ReviewSession"), "study.js: vault review session wiring");
 
 const reviewSrc = readFileSync(new URL("../src/js/review.js", import.meta.url), "utf8");
-assert(reviewSrc.includes("runSm2ReviewSession"), "review.js: SM-2 session export");
+assert(reviewSrc.includes("runVaultSm2ReviewSession"), "review.js: vault SM-2 session export");
+assert(reviewSrc.includes("runSm2ReviewSession"), "review.js: per-doc SM-2 session export");
 assert(reviewSrc.includes("reviewSm2EarlyChip"), "review.js: early review chip wiring");
 
 const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-assert(indexHtml.includes("btnReview"), "index.html: Review button on mode select");
-assert(indexHtml.includes("reviewBadge"), "index.html: review badge markup");
+assert(indexHtml.includes("btnVaultReview"), "index.html: vault Review button on doc library");
+assert(indexHtml.includes("vaultReviewBadge"), "index.html: vault review badge markup");
 
 console.log(`\nSM-2 priority queue: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

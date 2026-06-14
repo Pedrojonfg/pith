@@ -1,4 +1,4 @@
-const CACHE_NAME = "pith-v28";
+const CACHE_NAME = "pith-v31";
 
 const STATIC_ASSETS = [
   "/",
@@ -7,6 +7,7 @@ const STATIC_ASSETS = [
   "/src/css/sidebar.css",
   "/src/css/slow-mode.css",
   "/src/css/cloze-mode.css",
+  "/src/css/recall-mode.css",
   "/src/css/graph.css",
   "/src/js/main.js",
   "/src/js/offline.js",
