@@ -296,4 +296,24 @@ export const FACET_LABELS = Object.freeze({
  * @typedef {{ id: string, vaultEntryId: string, facet: ConceptFacet, prompt: string, answer: string, sourceDocId: string, sm2: VaultReviewSm2, createdAt: number }} VaultReviewItem
  */
 
+/**
+ * @typedef {'CONCEPT'|'CLASS'|'CONVERSATION'|'PROJECT'} VaultEntryType
+ */
+
+/**
+ * @typedef {'pending'|'ready'} VaultEntryStatus
+ */
+
+/**
+ * @typedef {{
+ *   type: VaultEntryType,
+ *   area: string[],
+ *   tags: string[],
+ *   notes: string,
+ *   notesUpdatedAt: number|null,
+ *   related: string[],
+ *   status: VaultEntryStatus
+ * }} VaultPersonalFields
+ */
+
 export { MODE_KEYS };

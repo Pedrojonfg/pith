@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260624-knowledge-vault-curation/plan.md`
-- **Spec**: `specs/20260624-knowledge-vault-curation/spec.md`
-- **Data model**: `specs/20260624-knowledge-vault-curation/data-model.md`
-- **Contracts**: `specs/20260624-knowledge-vault-curation/contracts/`
+- **Active plan**: `specs/20260625-vault-notes-connections/plan.md`
+- **Spec**: `specs/20260625-vault-notes-connections/spec.md`
+- **Data model**: `specs/20260625-vault-notes-connections/data-model.md`
+- **Contracts**: `specs/20260625-vault-notes-connections/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

@@ -185,7 +185,7 @@ assert(getEntryById("missing-id") === null, "failure: getEntryById null");
 // happy: export + clear
 saveVault(loaded);
 const exported = JSON.parse(exportVaultJson());
-assert(exported.schemaVersion === 2, "happy: export JSON shape (schema v2)");
+assert(exported.schemaVersion === 3, "happy: export JSON shape (schema v3)");
 clearVault();
 assert(loadVault().entries.length === 0, "happy: clearVault empties");
 

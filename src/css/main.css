@@ -2049,6 +2049,60 @@ body.assessment-runner-active .assessment-runner-chrome {
   flex-wrap: wrap;
 }
 
+.upload-vault-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.upload-vault-section-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 10px 0 4px;
+}
+
+.upload-vault-notes,
+.upload-vault-area,
+.upload-vault-tags {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.upload-vault-related-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.upload-vault-related-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.85rem;
+}
+
+.vault-upload-resume-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 200, 80, 0.35);
+  background: rgba(255, 200, 80, 0.08);
+}
+
+.vault-upload-resume-banner[hidden] {
+  display: none !important;
+}
+
 .upload-project-field {
   margin-bottom: 16px;
 }

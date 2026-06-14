@@ -10,6 +10,7 @@ import {
   generatePrePackingAssessmentItems,
   evaluatePrePackingAssessmentResponses,
   extractVaultCandidates,
+  normalizeConceptsToVault,
   PREPACKING_DONT_KNOW_ANSWER,
   PREPACKING_ALREADY_KNOW_ANSWER,
 } from "./api.js?v=20260527_1";
@@ -281,11 +282,20 @@ import {
 import { renderDetail } from "./vault/debug-ui.js";
 import { getEntryById, loadVault } from "./vault/vault-store.js";
 import {
+  buildBatchContext,
   buildVaultCandidateContext,
-  commitVaultCuration,
+  getSiblingRelatedCandidates,
   getStudiedConcepts,
   hasDefinitionFromDoc,
 } from "./vault/vault-curation.js";
+import {
+  createUploadQueue,
+  getPendingQueueCount,
+  loadUploadQueue,
+  processUploadQueue,
+  resetStaleProcessingItems,
+} from "./vault/vault-upload-queue.js";
+import { isAutoDraftNotesEnabled, loadVaultSettings, saveVaultSettings } from "./vault/vault-settings.js";
 import { FACET_LABELS } from "./session-types.js";
 
 /**
@@ -1121,12 +1131,12 @@ function renderUploadVaultCandidates() {
   const list = els.uploadVaultCandidateList;
   if (!list) return;
   const doc = getActiveSession();
-  const docId = String(doc?.docId || "").trim();
   if (!uploadVaultCandidateState.length) {
     list.innerHTML = '<p class="hint">No studied concepts to upload yet.</p>';
     if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
     return;
   }
+  const settings = loadVaultSettings();
   list.innerHTML = uploadVaultCandidateState
     .map((row, idx) => {
       const label = escapeUploadVaultHtml(row.label || row.conceptId);
@@ -1143,6 +1153,22 @@ function renderUploadVaultCandidates() {
           </label>`;
         })
         .join("");
+      const areaOptions = (row.areaOptions || [])
+        .map(
+          (a) =>
+            `<option value="${escapeUploadVaultHtml(a)}" ${row.areaSelected?.includes(a) ? "selected" : ""}>${escapeUploadVaultHtml(a)}</option>`,
+        )
+        .join("");
+      const tagsValue = escapeUploadVaultHtml((row.tagsSelected || row.tags || []).join(", "));
+      const relatedChecks = (row.relatedCandidates || [])
+        .map((rel, relIdx) => {
+          const checked = rel.accepted ? "checked" : "";
+          return `<label class="upload-vault-related-chip">
+            <input type="checkbox" data-candidate-idx="${idx}" data-related-idx="${relIdx}" class="upload-vault-related-check" ${checked} />
+            ${escapeUploadVaultHtml(rel.label || rel.id)}
+          </label>`;
+        })
+        .join("");
       return `<article class="upload-vault-concept" data-candidate-idx="${idx}">
         <h3>${label}</h3>
         <label class="upload-vault-def-label">
@@ -1150,11 +1176,72 @@ function renderUploadVaultCandidates() {
           Definition
         </label>
         <textarea class="upload-vault-definition" data-candidate-idx="${idx}" rows="3">${escapeUploadVaultHtml(row.definitionText)}</textarea>
+        <label class="upload-vault-section-label">Notes</label>
+        <textarea class="upload-vault-notes" data-candidate-idx="${idx}" rows="6">${escapeUploadVaultHtml(row.notesText || "")}</textarea>
+        <label class="upload-vault-section-label">Area</label>
+        <select class="upload-vault-area" data-candidate-idx="${idx}" multiple size="3">${areaOptions}</select>
+        <label class="upload-vault-section-label">Tags (comma-separated)</label>
+        <input type="text" class="upload-vault-tags" data-candidate-idx="${idx}" value="${tagsValue}" />
+        <div class="upload-vault-related-list">${relatedChecks || '<span class="hint">No related candidates</span>'}</div>
         <div class="upload-vault-review-list">${reviewCards}</div>
       </article>`;
     })
     .join("");
+  if (els.uploadVaultAutoNotes) {
+    els.uploadVaultAutoNotes.checked = settings.autoDraftNotes;
+  }
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = false;
+}
+
+async function loadDedupSuggestionsForConcept(doc, batchContext, concept) {
+  const conceptId = String(concept?.id || concept?.canonicalId || "").trim();
+  const title = String(concept?.label || concept?.title || conceptId).trim();
+  const vault = loadVault();
+  const existingEntries = vault.entries.slice(0, 40).map((e) => ({
+    id: e.id,
+    canonicalTitle: e.canonicalTitle,
+    aliases: e.aliases || [],
+    area: e.area || [],
+    topic: e.topic || "",
+  }));
+  const topic =
+    batchContext.existingVaultAreas[0] ||
+    doc?.shared?.docTopics?.[0] ||
+    "general";
+  const mappings = await normalizeConceptsToVault({
+    existingEntries,
+    newConcepts: [{ id: conceptId, title, type: "CONCEPT" }],
+    topic: String(topic),
+    batchContext,
+  });
+  return mappings[0] || { areaSuggestion: [], relatedCandidates: [] };
+}
+
+function buildRelatedCandidatesForRow(conceptId, batchContext, dedupRow, vault) {
+  const siblings = getSiblingRelatedCandidates(batchContext, conceptId);
+  const batchConcepts = batchContext?.concepts || [];
+  const candidates = [];
+  siblings.slice(0, 5).forEach((sibId, i) => {
+    const sib = batchConcepts.find((c) => c.id === sibId);
+    candidates.push({
+      id: sibId,
+      label: sib?.title || sibId,
+      kind: "sibling",
+      accepted: i < 2,
+    });
+  });
+  for (const vaultId of dedupRow?.relatedCandidates || []) {
+    const entry = vault.entries.find((e) => String(e.id) === String(vaultId));
+    if (!entry) continue;
+    if (candidates.some((c) => c.id === vaultId)) continue;
+    candidates.push({
+      id: vaultId,
+      label: entry.canonicalTitle || vaultId,
+      kind: "vault",
+      accepted: false,
+    });
+  }
+  return candidates;
 }
 
 async function loadUploadVaultCandidates() {
@@ -1185,24 +1272,45 @@ async function loadUploadVaultCandidates() {
   try {
     assertLlmKeyPresent();
     const contexts = buildVaultCandidateContext(doc, studied);
+    const batchContext = buildBatchContext(doc, studied);
+    const autoDraftNotes = isAutoDraftNotesEnabled();
     const vault = loadVault();
     const { candidates } = await extractVaultCandidates({
       concepts: studied,
       session: doc,
       contexts,
+      batchContext,
+      autoDraftNotes,
     });
     const docId = doc.docId;
-    uploadVaultCandidateState = studied.map((concept) => {
+    const dedupRows = await Promise.all(
+      studied.map((concept) => loadDedupSuggestionsForConcept(doc, batchContext, concept)),
+    );
+    uploadVaultCandidateState = studied.map((concept, index) => {
       const conceptId = String(concept.id || concept.canonicalId || "").trim();
       const ctx = contexts.find((c) => c.conceptId === conceptId);
       const extracted = (candidates || []).find((c) => c.conceptId === conceptId);
+      const dedupRow = dedupRows[index] || {};
       const existingEntry = ctx?.existingEntry;
       const hasDef = existingEntry ? hasDefinitionFromDoc(existingEntry, docId) : false;
+      const areaSuggested = [
+        ...(extracted?.area || []),
+        ...(dedupRow.areaSuggestion || []),
+        ...batchContext.existingVaultAreas.slice(0, 3),
+      ];
+      const areaOptions = [...new Set(areaSuggested.map((a) => String(a || "").trim()).filter(Boolean))];
+      const areaSelected = (extracted?.area?.length ? extracted.area : dedupRow.areaSuggestion || areaOptions.slice(0, 1)).slice(0, 2);
       return {
         conceptId,
         label: String(concept.label || concept.title || conceptId).trim(),
         definitionText: String(extracted?.definition || concept.definition || "").trim(),
         definitionAccepted: !hasDef && Boolean(extracted?.definition || concept.definition),
+        notesText: autoDraftNotes ? String(extracted?.notes || "").trim() : "",
+        areaOptions,
+        areaSelected,
+        tags: extracted?.tags || [],
+        tagsSelected: extracted?.tags || [],
+        relatedCandidates: buildRelatedCandidatesForRow(conceptId, batchContext, dedupRow, vault),
         sourceChunk: String(concept.sourceChunk || "").trim(),
         reviewItems: (extracted?.suggestedReviewItems || []).map((ri) => ({
           facet: ri.facet,
@@ -1242,6 +1350,24 @@ function collectUploadVaultSelectionsFromDom() {
     const defArea = document.querySelector(
       `.upload-vault-definition[data-candidate-idx="${idx}"]`,
     );
+    const notesArea = document.querySelector(`.upload-vault-notes[data-candidate-idx="${idx}"]`);
+    const areaSelect = document.querySelector(`.upload-vault-area[data-candidate-idx="${idx}"]`);
+    const tagsInput = document.querySelector(`.upload-vault-tags[data-candidate-idx="${idx}"]`);
+    const area = areaSelect
+      ? [...areaSelect.selectedOptions].map((o) => String(o.value || "").trim()).filter(Boolean)
+      : row.areaSelected || [];
+    const tags = String(tagsInput?.value || "")
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const relatedAccepted = (row.relatedCandidates || [])
+      .map((rel, relIdx) => {
+        const check = document.querySelector(
+          `.upload-vault-related-check[data-candidate-idx="${idx}"][data-related-idx="${relIdx}"]`,
+        );
+        return check?.checked ? rel.id : null;
+      })
+      .filter(Boolean);
     const reviewItems = (row.reviewItems || []).map((ri, riIdx) => {
       const check = document.querySelector(
         `.upload-vault-review-check[data-candidate-idx="${idx}"][data-review-idx="${riIdx}"]`,
@@ -1266,6 +1392,10 @@ function collectUploadVaultSelectionsFromDom() {
         sourceChunk: row.sourceChunk,
         accepted: Boolean(defCheck?.checked),
       },
+      notes: String(notesArea?.value || row.notesText || "").trim(),
+      area,
+      tags,
+      relatedAccepted,
       reviewItems,
     };
   });
@@ -1277,20 +1407,52 @@ async function commitUploadVaultSelections() {
   const selections = collectUploadVaultSelectionsFromDom().filter(
     (sel) =>
       (sel.definition?.accepted && sel.definition?.text) ||
-      (sel.reviewItems || []).some((ri) => ri.accepted),
+      (sel.reviewItems || []).some((ri) => ri.accepted) ||
+      String(sel.notes || "").trim(),
   );
   if (!selections.length) {
-    window.alert("Select at least one definition or review item.");
+    window.alert("Select at least one definition, review item, or note.");
     return;
   }
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Saving to vault…";
+  const emptyRelated = selections.filter((sel) => !(sel.relatedAccepted || []).length);
+  if (emptyRelated.length) {
+    const proceed = window.confirm(
+      `${emptyRelated.length} concept(s) have no connections. Continue anyway?`,
+    );
+    if (!proceed) return;
+  }
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault upload…";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
   try {
-    const { committed } = await commitVaultCuration(doc, selections);
+    const queueRows = selections.map((sel) => ({
+      conceptId: sel.conceptId,
+      payload: {
+        definition: sel.definition,
+        reviewItems: sel.reviewItems,
+        notes: sel.notes,
+        area: sel.area,
+        tags: sel.tags,
+        relatedAccepted: sel.relatedAccepted,
+      },
+    }));
+    createUploadQueue(doc.docId, queueRows);
     if (els.uploadVaultStatus) {
-      els.uploadVaultStatus.textContent = `Added ${committed} item(s) to your Knowledge Vault.`;
+      els.uploadVaultStatus.textContent = "Uploading to vault in background…";
     }
-    setTimeout(() => enterModeSelectScreen(), 800);
+    const sessionForQueue = doc;
+    void processUploadQueue(sessionForQueue, ({ done, total, error }) => {
+      if (els.uploadVaultStatus) {
+        if (error) {
+          els.uploadVaultStatus.textContent = `Vault upload: ${done}/${total} (${error})`;
+        } else {
+          els.uploadVaultStatus.textContent = `Vault upload: ${done}/${total} complete`;
+        }
+      }
+      syncVaultUploadResumeBanner();
+    }).then(() => {
+      syncVaultUploadResumeBanner();
+      setTimeout(() => enterModeSelectScreen(), 600);
+    });
   } catch (err) {
     if (els.uploadVaultError) {
       els.uploadVaultError.hidden = false;
@@ -1298,6 +1460,35 @@ async function commitUploadVaultSelections() {
     }
     if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = false;
   }
+}
+
+export function syncVaultUploadResumeBanner() {
+  let queue = loadUploadQueue();
+  if (queue) queue = resetStaleProcessingItems(queue);
+  const pending = getPendingQueueCount(queue);
+  const banner = els.vaultUploadResumeBanner;
+  const label = els.vaultUploadResumeLabel;
+  const btn = els.btnVaultUploadResume;
+  if (!banner || !label || !btn) return;
+  if (pending > 0) {
+    banner.hidden = false;
+    label.textContent = `Vault upload pending (${pending} item${pending === 1 ? "" : "s"})`;
+  } else {
+    banner.hidden = true;
+  }
+}
+
+export async function resumeVaultUploadQueue() {
+  const queue = loadUploadQueue();
+  if (!queue || !getPendingQueueCount(queue)) return;
+  const docId = String(queue.docId || "").trim();
+  if (!docId) return;
+  let session = getActiveSession() || getSession(docId);
+  if (!session || session.docId !== docId) {
+    session = getSession(docId) || { docId, shared: { conceptInventory: [], docTopics: [] } };
+  }
+  await processUploadQueue(session, () => syncVaultUploadResumeBanner());
+  syncVaultUploadResumeBanner();
 }
 
 function refreshVaultReviewBadge() {
@@ -2881,6 +3072,11 @@ function wireDocLibraryHandlers() {
   els.btnUploadVaultCancel?.addEventListener("click", () => enterModeSelectScreen());
   els.btnUploadVaultRetry?.addEventListener("click", () => void loadUploadVaultCandidates());
   els.btnUploadVaultCommit?.addEventListener("click", () => void commitUploadVaultSelections());
+  els.uploadVaultAutoNotes?.addEventListener("change", (e) => {
+    saveVaultSettings({ autoDraftNotes: Boolean(e.target?.checked) });
+  });
+  els.btnVaultUploadResume?.addEventListener("click", () => void resumeVaultUploadQueue());
+  syncVaultUploadResumeBanner();
   wireProjectLibraryHandlers();
 
   els.btnVaultReview?.addEventListener("click", () => {

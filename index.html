@@ -272,6 +272,10 @@
 
     <main>
       <div class="container">
+        <div id="vaultUploadResumeBanner" class="vault-upload-resume-banner" hidden role="status">
+          <span id="vaultUploadResumeLabel">Vault upload pending</span>
+          <button type="button" id="btnVaultUploadResume" class="btn-secondary">Resume</button>
+        </div>
         <section
           id="screenApiSetup"
           class="screen"
@@ -501,6 +505,10 @@
             <h1>Add to Knowledge Vault</h1>
             <p id="uploadVaultStatus" class="hint" role="status">Loading suggestions…</p>
             <p id="uploadVaultError" class="upload-vault-error" role="alert" hidden></p>
+            <label class="upload-vault-settings-row create-checkbox-label">
+              <input type="checkbox" id="uploadVaultAutoNotes" checked />
+              Auto-draft notes
+            </label>
             <div id="uploadVaultCandidateList" class="upload-vault-list"></div>
             <div class="upload-vault-actions row">
               <button type="button" id="btnUploadVaultCommit" class="btn-primary" disabled>Add selected to vault</button>
@@ -1898,7 +1906,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260624_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260625_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1914,7 +1922,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260624_1");
+        await import("./src/js/main.js?v=20260625_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

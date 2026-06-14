@@ -11,6 +11,8 @@ import { getCurrentMastery, LAMBDA } from "./mastery-model.js";
 import { mergeNormalizationResult } from "./normalization.js";
 import { applyObservations } from "./session-close.js";
 import {
+  applyRelatedBacklinks,
+  getDistinctAreas,
   getEntriesByTopic,
   getEntryById,
   loadVault,
@@ -236,6 +238,234 @@ export function buildVaultCandidateContext(session, concepts) {
 
 /**
  * @param {object} session
+ * @param {object[]} [studiedOverride]
+ */
+export function buildBatchContext(session, studiedOverride) {
+  const docId = String(session?.docId || "").trim();
+  const studied = Array.isArray(studiedOverride) ? studiedOverride : getStudiedConcepts(session);
+  const vault = loadVault();
+  return {
+    docId,
+    concepts: studied.map((c) => ({
+      id: String(c?.id || c?.canonicalId || "").trim(),
+      title: String(c?.label || c?.title || "").trim(),
+      module: String(c?.module || c?.module_id || "").trim(),
+      prerequisite_ids: Array.isArray(c?.prerequisite_ids)
+        ? c.prerequisite_ids.map((id) => String(id))
+        : [],
+      concept_type: String(c?.concept_type || c?.type || "CONCEPT").trim(),
+    })),
+    existingVaultAreas: getDistinctAreas(vault),
+  };
+}
+
+/**
+ * @param {object} session
+ * @param {string} conceptId
+ */
+export function resolveBatchConceptById(session, conceptId) {
+  const id = String(conceptId || "").trim();
+  return (session?.shared?.conceptInventory || []).find(
+    (c) => String(c?.id || c?.canonicalId || "") === id,
+  );
+}
+
+/**
+ * @param {string[]|string} value
+ * @returns {string[]}
+ */
+export function normalizeAreaArray(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((a) => String(a || "").trim()).filter(Boolean))];
+  }
+  const single = String(value || "").trim();
+  return single ? [single] : [];
+}
+
+/**
+ * @param {object} entry
+ * @param {string} newNotes
+ * @param {number} now
+ */
+export function mergeNotesForEntry(entry, newNotes, now) {
+  const incoming = String(newNotes || "").trim();
+  if (!incoming) return;
+  const existing = String(entry?.notes || "").trim();
+  if (!existing) {
+    entry.notes = incoming;
+    entry.notesUpdatedAt = now;
+    return;
+  }
+  const dateLabel = new Date(now).toISOString().slice(0, 10);
+  entry.notes = `${existing}\n\n## Update ${dateLabel}\n\n${incoming}`;
+  entry.notesUpdatedAt = now;
+}
+
+/**
+ * @param {object} entry
+ * @param {{ area?: string[], tags?: string[], notes?: string, relatedAccepted?: string[] }} payload
+ * @param {number} now
+ * @param {{ isMerge?: boolean }} [opts]
+ */
+export function applyPersonalFieldsToEntry(entry, payload, now, opts = {}) {
+  const area = normalizeAreaArray(payload?.area);
+  if (area.length) {
+    if (opts.isMerge && Array.isArray(entry.area)) {
+      entry.area = [...new Set([...entry.area, ...area])];
+    } else {
+      entry.area = area;
+    }
+    entry.topic = entry.area[0] || entry.topic || "general";
+  }
+  const tags = Array.isArray(payload?.tags)
+    ? payload.tags.map((t) => String(t || "").trim()).filter(Boolean)
+    : [];
+  if (tags.length) {
+    entry.tags = [...new Set([...(entry.tags || []), ...tags])];
+  } else if (!Array.isArray(entry.tags)) {
+    entry.tags = [];
+  }
+  if (String(payload?.notes || "").trim()) {
+    mergeNotesForEntry(entry, payload.notes, now);
+  }
+  const related = Array.isArray(payload?.relatedAccepted)
+    ? payload.relatedAccepted.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  if (related.length) {
+    entry.related = [...new Set([...(entry.related || []), ...related])];
+  } else if (!Array.isArray(entry.related)) {
+    entry.related = [];
+  }
+  entry.type = entry.type || "CONCEPT";
+  entry.status = "ready";
+}
+
+/**
+ * @param {{ session: object, mapping: object, payload: object, batchContext?: object }} params
+ */
+export function commitVaultCurationItem({ session, mapping, payload, batchContext }) {
+  const docId = String(session?.docId || "").trim();
+  const conceptId = String(mapping?.conceptId || "").trim();
+  if (!docId || !conceptId) throw new Error("Missing doc or concept id");
+
+  const docTopics = Array.isArray(session?.shared?.docTopics) ? session.shared.docTopics : [];
+  const topic =
+    docTopics.find((t) => String(t || "").trim()) ||
+    batchContext?.existingVaultAreas?.[0] ||
+    "general";
+  const concept = resolveBatchConceptById(session, conceptId);
+  const title = String(concept?.label || concept?.title || conceptId).trim();
+
+  let vault = loadVault();
+  const normMap = mergeNormalizationResult(
+    vault,
+    [mapping],
+    [{ id: conceptId, title }],
+    docTopics.length ? docTopics : normalizeAreaArray(payload?.area),
+    docId,
+  );
+  saveVault(vault);
+  vault = loadVault();
+  const vaultEntryId = normMap[conceptId];
+  if (!vaultEntryId) throw new Error("Could not resolve vault entry");
+
+  const entry = vault.entries.find((e) => String(e?.id || "") === vaultEntryId);
+  if (!entry) throw new Error("Vault entry missing after normalization");
+
+  const now = Date.now();
+  const isMerge = String(mapping?.action || "").toLowerCase() === "merge";
+
+  if (!Array.isArray(entry.definitions)) entry.definitions = [];
+  if (!entry.facetCoverage || typeof entry.facetCoverage !== "object") {
+    entry.facetCoverage = {};
+  }
+
+  const def = payload?.definition;
+  if (def?.accepted && String(def?.text || "").trim()) {
+    if (!hasDefinitionFromDoc(entry, docId)) {
+      entry.definitions.push({
+        text: String(def.text).trim(),
+        sourceDocId: docId,
+        sourceChunk: String(def.sourceChunk || "").trim() || undefined,
+        addedAt: now,
+      });
+    }
+  }
+
+  for (const ri of payload?.reviewItems || []) {
+    if (!ri?.accepted) continue;
+    const facet = String(ri?.facet || "").trim();
+    if (!CONCEPT_FACETS.includes(facet)) continue;
+    const prompt = String(ri?.prompt || "").trim();
+    const answer = String(ri?.answer || "").trim();
+    if (!prompt) continue;
+    if (!Array.isArray(vault.reviewItems)) vault.reviewItems = [];
+    vault.reviewItems.push({
+      id: newVaultId(),
+      vaultEntryId,
+      facet,
+      prompt,
+      answer,
+      sourceDocId: docId,
+      sm2: { interval: 0, easeFactor: 2.5, repetitions: 0, dueDate: now },
+      createdAt: now,
+    });
+  }
+
+  applyPersonalFieldsToEntry(entry, payload, now, { isMerge });
+
+  vault.lastUpdated = now;
+  saveVault(vault);
+
+  const relatedResolved = resolveRelatedAcceptedIds(session, payload?.relatedAccepted || []);
+
+  return {
+    vaultEntryId,
+    relatedAccepted: relatedResolved,
+  };
+}
+
+/**
+ * Build sibling concept IDs in the same batch for related candidates.
+ * @param {object} batchContext
+ * @param {string} conceptId
+ */
+export function getSiblingRelatedCandidates(batchContext, conceptId) {
+  const self = String(conceptId || "").trim();
+  return (batchContext?.concepts || [])
+    .map((c) => String(c?.id || "").trim())
+    .filter((id) => id && id !== self);
+}
+
+/**
+ * Resolve related targets to vault entry IDs (sibling concept IDs → entries with matching source).
+ * @param {object} session
+ * @param {string[]} relatedAccepted
+ */
+export function resolveRelatedAcceptedIds(session, relatedAccepted) {
+  const docId = String(session?.docId || "").trim();
+  const vault = loadVault();
+  const out = new Set();
+  for (const raw of Array.isArray(relatedAccepted) ? relatedAccepted : []) {
+    const id = String(raw || "").trim();
+    if (!id) continue;
+    const byEntry = vault.entries.find((e) => String(e?.id || "") === id);
+    if (byEntry) {
+      out.add(id);
+      continue;
+    }
+    const bySource = vault.entries.find((e) =>
+      (e.sources || []).some(
+        (s) => String(s?.docId || "") === docId && String(s?.conceptId || "") === id,
+      ),
+    );
+    if (bySource) out.add(String(bySource.id));
+  }
+  return [...out];
+}
+
+/**
+ * @param {object} session
  * @param {Array<object>} selections
  */
 export async function commitVaultCuration(session, selections) {
@@ -244,17 +474,18 @@ export async function commitVaultCuration(session, selections) {
     return { committed: 0 };
   }
 
+  const batchContext = buildBatchContext(session);
   const docTopics = Array.isArray(session?.shared?.docTopics) ? session.shared.docTopics : [];
   const topic =
-    docTopics.find((t) => String(t || "").trim()) || "general";
+    docTopics.find((t) => String(t || "").trim()) ||
+    batchContext.existingVaultAreas[0] ||
+    "general";
 
   const conceptsForNorm = [];
   for (const sel of selections) {
     const conceptId = String(sel?.conceptId || "").trim();
     if (!conceptId) continue;
-    const concept = (session.shared?.conceptInventory || []).find(
-      (c) => String(c?.id || c?.canonicalId || "") === conceptId,
-    );
+    const concept = resolveBatchConceptById(session, conceptId);
     if (concept) {
       conceptsForNorm.push({
         id: conceptId,
@@ -269,82 +500,50 @@ export async function commitVaultCuration(session, selections) {
     id: e.id,
     canonicalTitle: e.canonicalTitle,
     aliases: e.aliases || [],
+    area: Array.isArray(e.area) ? e.area : [],
+    topic: e.topic || "",
   }));
 
   let mappings = await normalizeConceptsToVault({
     existingEntries,
     newConcepts: conceptsForNorm,
     topic: String(topic),
+    batchContext,
   });
   if (!mappings.length) {
     mappings = conceptsForNorm.map((c) => ({
       conceptId: c.id,
       action: "new",
       vaultEntryId: null,
+      areaSuggestion: [],
+      relatedCandidates: [],
     }));
   }
 
-  const normMap = mergeNormalizationResult(
-    vault,
-    mappings,
-    conceptsForNorm,
-    docTopics,
-    docId,
-  );
-  vault = loadVault();
-
   let committed = 0;
-  const now = Date.now();
-
   for (const sel of selections) {
     const conceptId = String(sel?.conceptId || "").trim();
-    const vaultEntryId = normMap[conceptId];
-    if (!vaultEntryId) continue;
-    const entry = vault.entries.find((e) => String(e?.id || "") === vaultEntryId);
-    if (!entry) continue;
-
-    if (!Array.isArray(entry.definitions)) entry.definitions = [];
-    if (!entry.facetCoverage || typeof entry.facetCoverage !== "object") {
-      entry.facetCoverage = {};
-    }
-
-    const def = sel?.definition;
-    if (def?.accepted && String(def?.text || "").trim()) {
-      if (!hasDefinitionFromDoc(entry, docId)) {
-        entry.definitions.push({
-          text: String(def.text).trim(),
-          sourceDocId: docId,
-          sourceChunk: String(def.sourceChunk || "").trim() || undefined,
-          addedAt: now,
-        });
-        committed += 1;
-      }
-    }
-
-    for (const ri of sel?.reviewItems || []) {
-      if (!ri?.accepted) continue;
-      const facet = String(ri?.facet || "").trim();
-      if (!CONCEPT_FACETS.includes(facet)) continue;
-      const prompt = String(ri?.prompt || "").trim();
-      const answer = String(ri?.answer || "").trim();
-      if (!prompt) continue;
-      if (!Array.isArray(vault.reviewItems)) vault.reviewItems = [];
-      vault.reviewItems.push({
-        id: newVaultId(),
-        vaultEntryId,
-        facet,
-        prompt,
-        answer,
-        sourceDocId: docId,
-        sm2: { interval: 0, easeFactor: 2.5, repetitions: 0, dueDate: now },
-        createdAt: now,
-      });
-      committed += 1;
-    }
+    const mapping = mappings.find((m) => m.conceptId === conceptId) || {
+      conceptId,
+      action: "new",
+      vaultEntryId: null,
+    };
+    const payload = {
+      definition: sel?.definition,
+      reviewItems: sel?.reviewItems || [],
+      notes: sel?.notes || "",
+      area: sel?.area || [],
+      tags: sel?.tags || [],
+      relatedAccepted: sel?.relatedAccepted || [],
+    };
+    const result = commitVaultCurationItem({ session, mapping, payload, batchContext });
+    let vaultAfter = loadVault();
+    applyRelatedBacklinks(vaultAfter, result.vaultEntryId, result.relatedAccepted);
+    vaultAfter.lastUpdated = Date.now();
+    saveVault(vaultAfter);
+    committed += 1;
   }
 
-  vault.lastUpdated = now;
-  saveVault(vault);
   return { committed };
 }
 
