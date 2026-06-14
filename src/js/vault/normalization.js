@@ -81,6 +81,8 @@ export function mergeNormalizationResult(
       prerequisites: [],
       dependents: [],
       observations: [],
+      definitions: [],
+      facetCoverage: {},
     });
     map[conceptId] = entryId;
   }

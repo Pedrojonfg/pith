@@ -3550,6 +3550,88 @@ Respond with JSON only:
 }
 
 /**
+ * Batch LLM extraction for Upload to vault candidate screen.
+ * @param {{ concepts: object[], session: object, contexts: object[] }} params
+ */
+export async function extractVaultCandidates({ concepts, session, contexts }) {
+  const conceptRows = Array.isArray(concepts) ? concepts : [];
+  if (!conceptRows.length) return { candidates: [] };
+
+  const docId = String(session?.docId || "").trim();
+  const systemPrompt = `You extract knowledge-vault curation candidates from studied concepts.
+For each concept, using its source chunk (source fidelity — use the material's own terms):
+
+- definition: a concise markdown definition in the source material's notation
+- suggestedReviewItems: 0-3 items, each with a distinct facet from
+  ["synthesis","relational","argumentative","applicative","cloze"].
+  Prioritize facets NOT listed in existingFacets. If existingFacets already covers most facets, suggest fewer or none.
+  Each item needs facet, prompt (question), answer (expected response).
+
+Respond JSON only:
+{"candidates":[{"conceptId":"...","definition":"...","suggestedReviewItems":[{"facet":"relational","prompt":"...","answer":"..."}]}]}`;
+
+  const payload = {
+    docId,
+    concepts: conceptRows.map((c, i) => {
+      const ctx = Array.isArray(contexts) ? contexts[i] : null;
+      const conceptId = String(c?.id || c?.canonicalId || "").trim();
+      return {
+        conceptId,
+        label: String(c?.label || c?.title || conceptId).trim(),
+        definition: String(c?.definition || "").trim(),
+        sourceChunk: String(c?.sourceChunk || c?.source_chunk || "").trim(),
+        existingFacets: ctx?.existingFacets || [],
+        facetCoverage: ctx?.facetCoverage || {},
+      };
+    }),
+  };
+
+  try {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(null),
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+      temperature: 0.2,
+    });
+    const parsed = parseModelJsonValue(raw);
+    const list = Array.isArray(parsed?.candidates) ? parsed.candidates : [];
+    const facets = new Set([
+      "synthesis",
+      "relational",
+      "argumentative",
+      "applicative",
+      "cloze",
+    ]);
+    const candidates = [];
+    for (const row of list) {
+      const conceptId = String(row?.conceptId || "").trim();
+      if (!conceptId) continue;
+      const items = (Array.isArray(row?.suggestedReviewItems) ? row.suggestedReviewItems : [])
+        .map((ri) => ({
+          facet: facets.has(String(ri?.facet || "").trim())
+            ? String(ri.facet).trim()
+            : "synthesis",
+          prompt: String(ri?.prompt || "").trim(),
+          answer: String(ri?.answer || "").trim(),
+        }))
+        .filter((ri) => ri.prompt);
+      candidates.push({
+        conceptId,
+        definition: String(row?.definition || "").trim(),
+        suggestedReviewItems: items.slice(0, 3),
+      });
+    }
+    return { candidates };
+  } catch (err) {
+    console.warn("[extractVaultCandidates] LLM failed", err?.message || err);
+    throw err;
+  }
+}
+
+/**
  * Optional LLM helper: describe a repeated wrong-answer pattern as a misconception.
  * @param {{ canonicalTitle?: string, topic?: string }} entry
  * @param {Array<{ type?: string, wrongAnswer?: string, wrongAnswerPattern?: string }>} observationGroup

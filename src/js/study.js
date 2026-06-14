@@ -9,6 +9,7 @@ import {
   synthesizeAssessmentGaps,
   generatePrePackingAssessmentItems,
   evaluatePrePackingAssessmentResponses,
+  extractVaultCandidates,
   PREPACKING_DONT_KNOW_ANSWER,
   PREPACKING_ALREADY_KNOW_ANSWER,
 } from "./api.js?v=20260527_1";
@@ -279,6 +280,13 @@ import {
 } from "./vault/vault-graph.js";
 import { renderDetail } from "./vault/debug-ui.js";
 import { getEntryById, loadVault } from "./vault/vault-store.js";
+import {
+  buildVaultCandidateContext,
+  commitVaultCuration,
+  getStudiedConcepts,
+  hasDefinitionFromDoc,
+} from "./vault/vault-curation.js";
+import { FACET_LABELS } from "./session-types.js";
 
 /**
  * Resolve or create DocumentSession for uploaded markdown; set active doc pointer.
@@ -1049,9 +1057,247 @@ export function enterModeSelectScreen() {
   resetCreateScreenModeUi();
   renderFlowPanel(getActiveSession());
   mountModeSelectBreadcrumb(getActiveSession());
+  syncSessionHubActions();
   showScreen("modeSelect");
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
+}
+
+export function enterAppHome() {
+  refreshVaultReviewBadge();
+  refreshVaultBranchReviewBadge();
+  showScreen("appHome");
+}
+
+export function enterVaultBranch() {
+  refreshVaultBranchReviewBadge();
+  showScreen("vaultBranch");
+}
+
+function refreshVaultBranchReviewBadge() {
+  const badge = els.vaultBranchReviewBadge;
+  if (!badge) return;
+  const due = getVaultReviewDueCount();
+  if (due > 0) {
+    badge.textContent = String(due);
+    badge.setAttribute("aria-label", `${due} items due today`);
+    badge.classList.remove("hidden");
+  } else {
+    badge.textContent = "";
+    badge.setAttribute("aria-label", "Items due today");
+    badge.classList.add("hidden");
+  }
+}
+
+function syncSessionHubActions() {
+  const doc = getActiveSession();
+  const hasDoc = Boolean(doc?.docId);
+  if (els.sessionHubActions) {
+    els.sessionHubActions.hidden = !hasDoc;
+  }
+  if (els.modeSelectHub) {
+    els.modeSelectHub.hidden = true;
+  }
+  if (els.btnDownloadSessionMd) {
+    els.btnDownloadSessionMd.disabled = !hasDoc;
+  }
+  if (els.btnUploadToVault) {
+    els.btnUploadToVault.disabled = !hasDoc;
+  }
+}
+
+/** @type {object[]} */
+let uploadVaultCandidateState = [];
+
+function escapeUploadVaultHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderUploadVaultCandidates() {
+  const list = els.uploadVaultCandidateList;
+  if (!list) return;
+  const doc = getActiveSession();
+  const docId = String(doc?.docId || "").trim();
+  if (!uploadVaultCandidateState.length) {
+    list.innerHTML = '<p class="hint">No studied concepts to upload yet.</p>';
+    if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
+    return;
+  }
+  list.innerHTML = uploadVaultCandidateState
+    .map((row, idx) => {
+      const label = escapeUploadVaultHtml(row.label || row.conceptId);
+      const defChecked = row.definitionAccepted ? "checked" : "";
+      const reviewCards = (row.reviewItems || [])
+        .map((ri, riIdx) => {
+          const facetLabel = FACET_LABELS[ri.facet] || ri.facet;
+          const checked = ri.accepted ? "checked" : "";
+          return `<label class="upload-vault-review-card">
+            <input type="checkbox" data-candidate-idx="${idx}" data-review-idx="${riIdx}" class="upload-vault-review-check" ${checked} />
+            <span class="facet-badge facet-${escapeUploadVaultHtml(ri.facet)}">${escapeUploadVaultHtml(facetLabel)}</span>
+            <textarea class="upload-vault-prompt" data-candidate-idx="${idx}" data-review-idx="${riIdx}" rows="2">${escapeUploadVaultHtml(ri.prompt)}</textarea>
+            <textarea class="upload-vault-answer hint" data-candidate-idx="${idx}" data-review-idx="${riIdx}" data-field="answer" rows="2">${escapeUploadVaultHtml(ri.answer)}</textarea>
+          </label>`;
+        })
+        .join("");
+      return `<article class="upload-vault-concept" data-candidate-idx="${idx}">
+        <h3>${label}</h3>
+        <label class="upload-vault-def-label">
+          <input type="checkbox" data-candidate-idx="${idx}" class="upload-vault-def-check" ${defChecked} />
+          Definition
+        </label>
+        <textarea class="upload-vault-definition" data-candidate-idx="${idx}" rows="3">${escapeUploadVaultHtml(row.definitionText)}</textarea>
+        <div class="upload-vault-review-list">${reviewCards}</div>
+      </article>`;
+    })
+    .join("");
+  if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = false;
+}
+
+async function loadUploadVaultCandidates() {
+  const doc = getActiveSession();
+  if (!doc?.docId) {
+    enterModeSelectScreen();
+    return;
+  }
+  if (els.uploadVaultError) {
+    els.uploadVaultError.hidden = true;
+    els.uploadVaultError.textContent = "";
+  }
+  if (els.btnUploadVaultRetry) els.btnUploadVaultRetry.hidden = true;
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestions…";
+  if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
+
+  const studied = getStudiedConcepts(doc);
+  if (!studied.length) {
+    uploadVaultCandidateState = [];
+    if (els.uploadVaultStatus) {
+      els.uploadVaultStatus.textContent =
+        "No studied concepts yet. Complete at least one block or recall question first.";
+    }
+    renderUploadVaultCandidates();
+    return;
+  }
+
+  try {
+    assertLlmKeyPresent();
+    const contexts = buildVaultCandidateContext(doc, studied);
+    const vault = loadVault();
+    const { candidates } = await extractVaultCandidates({
+      concepts: studied,
+      session: doc,
+      contexts,
+    });
+    const docId = doc.docId;
+    uploadVaultCandidateState = studied.map((concept) => {
+      const conceptId = String(concept.id || concept.canonicalId || "").trim();
+      const ctx = contexts.find((c) => c.conceptId === conceptId);
+      const extracted = (candidates || []).find((c) => c.conceptId === conceptId);
+      const existingEntry = ctx?.existingEntry;
+      const hasDef = existingEntry ? hasDefinitionFromDoc(existingEntry, docId) : false;
+      return {
+        conceptId,
+        label: String(concept.label || concept.title || conceptId).trim(),
+        definitionText: String(extracted?.definition || concept.definition || "").trim(),
+        definitionAccepted: !hasDef && Boolean(extracted?.definition || concept.definition),
+        sourceChunk: String(concept.sourceChunk || "").trim(),
+        reviewItems: (extracted?.suggestedReviewItems || []).map((ri) => ({
+          facet: ri.facet,
+          prompt: ri.prompt,
+          answer: ri.answer,
+          accepted: false,
+        })),
+      };
+    });
+    if (els.uploadVaultStatus) {
+      els.uploadVaultStatus.textContent = `${uploadVaultCandidateState.length} concept(s) ready to curate.`;
+    }
+    renderUploadVaultCandidates();
+  } catch (err) {
+    if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "";
+    if (els.uploadVaultError) {
+      els.uploadVaultError.hidden = false;
+      els.uploadVaultError.textContent =
+        String(err?.message || err) || "Could not load vault suggestions.";
+    }
+    if (els.btnUploadVaultRetry) els.btnUploadVaultRetry.hidden = false;
+  }
+}
+
+export function enterUploadToVaultCandidates() {
+  showScreen("uploadToVaultCandidates");
+  uploadVaultCandidateState = [];
+  if (els.uploadVaultCandidateList) els.uploadVaultCandidateList.innerHTML = "";
+  void loadUploadVaultCandidates();
+}
+
+function collectUploadVaultSelectionsFromDom() {
+  return uploadVaultCandidateState.map((row, idx) => {
+    const defCheck = document.querySelector(
+      `.upload-vault-def-check[data-candidate-idx="${idx}"]`,
+    );
+    const defArea = document.querySelector(
+      `.upload-vault-definition[data-candidate-idx="${idx}"]`,
+    );
+    const reviewItems = (row.reviewItems || []).map((ri, riIdx) => {
+      const check = document.querySelector(
+        `.upload-vault-review-check[data-candidate-idx="${idx}"][data-review-idx="${riIdx}"]`,
+      );
+      const promptEl = document.querySelector(
+        `.upload-vault-prompt[data-candidate-idx="${idx}"][data-review-idx="${riIdx}"]`,
+      );
+      const answerEl = document.querySelector(
+        `.upload-vault-answer[data-candidate-idx="${idx}"][data-review-idx="${riIdx}"]`,
+      );
+      return {
+        facet: ri.facet,
+        prompt: String(promptEl?.value || ri.prompt || "").trim(),
+        answer: String(answerEl?.value || ri.answer || "").trim(),
+        accepted: Boolean(check?.checked),
+      };
+    });
+    return {
+      conceptId: row.conceptId,
+      definition: {
+        text: String(defArea?.value || row.definitionText || "").trim(),
+        sourceChunk: row.sourceChunk,
+        accepted: Boolean(defCheck?.checked),
+      },
+      reviewItems,
+    };
+  });
+}
+
+async function commitUploadVaultSelections() {
+  const doc = getActiveSession();
+  if (!doc?.docId) return;
+  const selections = collectUploadVaultSelectionsFromDom().filter(
+    (sel) =>
+      (sel.definition?.accepted && sel.definition?.text) ||
+      (sel.reviewItems || []).some((ri) => ri.accepted),
+  );
+  if (!selections.length) {
+    window.alert("Select at least one definition or review item.");
+    return;
+  }
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Saving to vault…";
+  if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
+  try {
+    const { committed } = await commitVaultCuration(doc, selections);
+    if (els.uploadVaultStatus) {
+      els.uploadVaultStatus.textContent = `Added ${committed} item(s) to your Knowledge Vault.`;
+    }
+    setTimeout(() => enterModeSelectScreen(), 800);
+  } catch (err) {
+    if (els.uploadVaultError) {
+      els.uploadVaultError.hidden = false;
+      els.uploadVaultError.textContent = String(err?.message || err) || "Commit failed.";
+    }
+    if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = false;
+  }
 }
 
 function refreshVaultReviewBadge() {
@@ -2617,7 +2863,24 @@ function wireSlowScopeHandlers() {
 
 function wireDocLibraryHandlers() {
   projectLibraryCallbacks.onDocumentOpen = (docId) => reopenDocumentFromLibrary(docId);
-  projectLibraryCallbacks.onBack = () => enterModeSelectScreen();
+  projectLibraryCallbacks.onBack = () => enterAppHome();
+
+  els.btnAppHomeVault?.addEventListener("click", () => enterVaultBranch());
+  els.btnAppHomeSessions?.addEventListener("click", () => enterDocLibraryScreen());
+  els.vaultBranchBackBtn?.addEventListener("click", () => enterAppHome());
+  els.btnVaultBranchKnowledge?.addEventListener("click", () => {
+    els.knowledgeVaultLink?.click();
+  });
+  els.btnVaultBranchReview?.addEventListener("click", () => {
+    populateReviewScopeSelect();
+    showScreen("reviewConfig");
+  });
+  els.btnDownloadSessionMd?.addEventListener("click", () => handleExportSessionClick());
+  els.btnUploadToVault?.addEventListener("click", () => enterUploadToVaultCandidates());
+  els.uploadVaultBackBtn?.addEventListener("click", () => enterModeSelectScreen());
+  els.btnUploadVaultCancel?.addEventListener("click", () => enterModeSelectScreen());
+  els.btnUploadVaultRetry?.addEventListener("click", () => void loadUploadVaultCandidates());
+  els.btnUploadVaultCommit?.addEventListener("click", () => void commitUploadVaultSelections());
   wireProjectLibraryHandlers();
 
   els.btnVaultReview?.addEventListener("click", () => {

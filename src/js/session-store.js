@@ -17,6 +17,7 @@ import {
   buildRecallAssessmentSignals,
 } from "./assessment-signals.js";
 import { normalizeSmItem } from "./sm2.js";
+import { loadVault } from "./vault/vault-store.js";
 import { normalizeRecallSlice } from "./recall-slice.js";
 import {
   computeCanonicalId,
@@ -508,7 +509,16 @@ export function syncAssessmentSignalsFromRecall(docId, question) {
 }
 
 export function getVaultReviewDueCount() {
-  return getSmItemsDueToday().length;
+  const smDue = getSmItemsDueToday().length;
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+  const cutoff = endOfDay.getTime();
+  const vault = loadVault();
+  const vaultDue = (vault.reviewItems || []).filter((item) => {
+    const due = Number(item?.sm2?.dueDate);
+    return !Number.isFinite(due) || due <= cutoff;
+  }).length;
+  return smDue + vaultDue;
 }
 
 export function getSmItemsDueToday(docId) {

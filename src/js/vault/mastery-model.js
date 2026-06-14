@@ -20,14 +20,17 @@ const MS_PER_DAY = 86_400_000;
 /** @type {Record<string, number>} */
 export const OBSERVATION_WEIGHTS = {
   cloze_correct: 1.0,
+  review_correct: 1.0,
   socratic_passed: 0.85,
   assessment_mastered: 0.75,
   mcq_correct: 0.6,
+  review_partial: 0.3,
   socratic_partial: 0.2,
   assessment_partial: 0.1,
   mcq_wrong: -0.3,
-  cloze_wrong: -0.5,
   assessment_unknown: -0.1,
+  cloze_wrong: -0.5,
+  review_wrong: -0.5,
 };
 
 function clamp01(value) {
@@ -290,7 +293,16 @@ export function updateMastery(entry, observation) {
   if (wrongAnswer) stored.wrongAnswer = wrongAnswer;
   const wrongAnswerPattern = String(observation.wrongAnswerPattern || "").trim();
   if (wrongAnswerPattern) stored.wrongAnswerPattern = wrongAnswerPattern;
+  const facet = String(observation.facet || "").trim();
+  if (facet) stored.facet = facet;
   entry.observations.push(stored);
+
+  if (facet) {
+    if (!entry.facetCoverage || typeof entry.facetCoverage !== "object") {
+      entry.facetCoverage = {};
+    }
+    entry.facetCoverage[facet] = timestamp;
+  }
 
   maybeEnableBkt(entry);
 

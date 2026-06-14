@@ -318,6 +318,42 @@
         </section>
 
         <section
+          id="screenAppHome"
+          class="screen app-home-screen"
+          aria-hidden="true"
+          aria-label="App home"
+        >
+          <div class="card app-home-card">
+            <h1>MyLearning</h1>
+            <p class="hint app-home-lead">Choose where you want to work.</p>
+            <div class="app-home-actions row">
+              <button type="button" id="btnAppHomeVault" class="btn-primary">Vault</button>
+              <button type="button" id="btnAppHomeSessions" class="btn-secondary">Sessions</button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenVaultBranch"
+          class="screen vault-branch-screen"
+          aria-hidden="true"
+          aria-label="Vault"
+        >
+          <div class="card vault-branch-card">
+            <button type="button" id="vaultBranchBackBtn" class="create-back-btn">← Back</button>
+            <h1>Vault</h1>
+            <p class="hint vault-branch-lead">Cross-document knowledge and spaced review.</p>
+            <div class="vault-branch-actions row">
+              <button type="button" id="btnVaultBranchKnowledge" class="btn-primary">Knowledge Vault</button>
+              <button type="button" id="btnVaultBranchReview" class="btn-secondary">
+                Review
+                <span id="vaultBranchReviewBadge" class="review-badge hidden" aria-label="Items due today"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section
           id="screenModeSelect"
           class="screen mode-select-screen"
           aria-hidden="true"
@@ -391,7 +427,12 @@
 
             <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
 
-            <div id="modeSelectHub" class="mode-select-hub row">
+            <div id="sessionHubActions" class="session-hub-actions row">
+              <button type="button" id="btnDownloadSessionMd" class="btn-secondary">Download session MD</button>
+              <button type="button" id="btnUploadToVault" class="btn-secondary">Upload to vault</button>
+            </div>
+
+            <div id="modeSelectHub" class="mode-select-hub row" hidden>
               <button type="button" id="modeSelectContinueBtn" class="btn-primary">Continue</button>
               <button type="button" id="modeSelectLibraryBtn" class="btn-secondary">Library</button>
               <button type="button" id="modeSelectReviewBtn" class="btn-secondary">Review</button>
@@ -445,6 +486,26 @@
               <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
                 My documents
               </button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenUploadToVaultCandidates"
+          class="screen upload-vault-screen"
+          aria-hidden="true"
+          aria-label="Add to Knowledge Vault"
+        >
+          <div class="card upload-vault-card">
+            <button type="button" id="uploadVaultBackBtn" class="create-back-btn">← Back</button>
+            <h1>Add to Knowledge Vault</h1>
+            <p id="uploadVaultStatus" class="hint" role="status">Loading suggestions…</p>
+            <p id="uploadVaultError" class="upload-vault-error" role="alert" hidden></p>
+            <div id="uploadVaultCandidateList" class="upload-vault-list"></div>
+            <div class="upload-vault-actions row">
+              <button type="button" id="btnUploadVaultCommit" class="btn-primary" disabled>Add selected to vault</button>
+              <button type="button" id="btnUploadVaultCancel" class="btn-secondary">Cancel</button>
+              <button type="button" id="btnUploadVaultRetry" class="btn-secondary" hidden>Retry</button>
             </div>
           </div>
         </section>
@@ -1837,7 +1898,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260623_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260624_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1853,7 +1914,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260623_1");
+        await import("./src/js/main.js?v=20260624_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

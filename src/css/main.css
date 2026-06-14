@@ -1985,6 +1985,70 @@ body.assessment-runner-active .assessment-runner-chrome {
   flex-wrap: wrap;
 }
 
+.app-home-actions,
+.vault-branch-actions,
+.session-hub-actions {
+  margin: 16px 0;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.upload-vault-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 16px 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.upload-vault-concept {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.upload-vault-concept h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.upload-vault-definition,
+.upload-vault-prompt,
+.upload-vault-answer {
+  width: 100%;
+  margin-top: 6px;
+  box-sizing: border-box;
+}
+
+.upload-vault-review-card {
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px;
+  margin-top: 8px;
+}
+
+.facet-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(120, 160, 255, 0.2);
+  margin: 4px 0;
+}
+
+.upload-vault-error {
+  color: #f87171;
+  margin: 8px 0;
+}
+
+.upload-vault-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .upload-project-field {
   margin-bottom: 16px;
 }

@@ -210,6 +210,7 @@ export function applyObservations(vault, observations, normalizationMap) {
       questionKind: obs.questionKind,
       wrongAnswer: obs.wrongAnswer,
       wrongAnswerPattern: obs.wrongAnswerPattern,
+      facet: obs.facet,
     });
     entry.lastSeen = Math.max(Number(entry.lastSeen) || 0, Number(obs.timestamp) || 0);
     touched.add(String(vaultId));
