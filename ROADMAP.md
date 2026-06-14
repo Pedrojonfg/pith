@@ -1,114 +1,133 @@
-# ROADMAP — Knowledge Vault Curation
+# ROADMAP — Vault Personal Notes, Connections & Resumable Upload
 
-**Feature**: `20260624-knowledge-vault-curation` | **Spec**: `specs/20260624-knowledge-vault-curation/spec.md` | **Plan**: `specs/20260624-knowledge-vault-curation/plan.md`
+**Feature**: `20260625-vault-notes-connections` | **Spec**: `specs/20260625-vault-notes-connections/spec.md` | **Plan**: `specs/20260625-vault-notes-connections/plan.md`
 
-**Objective**: Close session↔vault loop — App Home (Vault/Sessions), Upload to vault with facet-tagged review items, dual-pool Review with mastery decay feedback.
+**Objective**: Extend vault entries with notes/area/tags/related/status; enrich Upload to Vault curation; resumable processing queue with boot resume banner.
 
-**Prerequisites**: `20260618-knowledge-vault-a-plus`, `20260623-study-projects`, `20260621-recall-mode`, `20260620-sm2-priority-queue`.
+**Prerequisites**: `20260624-knowledge-vault-curation`, `20260618-knowledge-vault-a-plus`.
 
-**Source draft**: `spec-knlvaultcur.md`
+**Source draft**: `spec-notes.md`
 
 ## Task table
 
 | ID | Description | Deps | Complexity | Status |
 |----|-------------|------|------------|--------|
-| T01 | Vault schema — types, migration, mastery weights, decay log, sm2 source | — | M | [x] |
-| T02 | App Home + Vault branch navigation; hide modeSelect hub | T01 | M | [x] |
-| T03 | Upload flow — vault-curation.js, extractVaultCandidates, candidate UI | T01 | L | [x] |
-| T04 | Review dual pool + vault item SM-2 / observation routing | T01 | M | [x] |
-| T05 | Integration tests + SW bump + quickstart QA | T01–T04 | M | [x] |
+| T01 | Entry v2 schema + lazy migration (schemaVersion 3) | — | M | [x] |
+| T02 | Extended dedup + extractVaultCandidates LLM | T01 | M | [x] |
+| T03 | Commit, notes append, bidirectional related | T01 | M | [x] |
+| T04 | vault-upload-queue.js + persistence | T01, T03 | M | [x] |
+| T05 | Curation UI (notes/area/tags/related) + enqueue | T02, T04 | L | [x] |
+| T06 | Settings toggle + resume banner | T04, T05 | S | [x] |
+| T07 | Integration tests + SW bump + quickstart QA | T01–T06 | M | [x] |
 
 ## Dependency graph
 
 ```text
 T01 ──→ T02
-T01 ──→ T03
-T01 ──→ T04
-T02,T03,T04 ──→ T05
+T01 ──→ T03 ──→ T04 ──→ T05 ──→ T06 ──→ T07
+T02 ──→ T05
 ```
 
-**Parallel Wave 1**: T01 (1 agent)
+**Parallel Wave 1**: T01
 
-**Parallel Wave 2**: T02 + T03 + T04 (3 agents; all wait for T01)
+**Parallel Wave 2**: T02 + T03 (after T01)
 
-**Sequential**: T05 after all
+**Sequential**: T04 → T05 → T06 → T07
 
 ## Recommended execution order
 
-### Wave 1 — Schema foundation (1 agent)
+### Wave 1 — Schema (1 agent)
 
-- **T01** subagent `kvc-t01-vault-schema`
+- **T01** subagent `vnc-t01-vault-schema`
 
-**Checkpoint**: `loadVault()` returns `reviewItems`; `OBSERVATION_WEIGHTS.review_correct` defined; `normalizeVaultReviewItemForQueue` maps facet.
+### Wave 2 — API + commit (2 parallel agents)
 
-### Wave 2 — Navigation + upload + review (3 parallel agents)
+- **T02** subagent `vnc-t02-dedup-extract`
+- **T03** subagent `vnc-t03-commit-backlinks`
 
-- **T02** subagent `kvc-t02-app-home`
-- **T03** subagent `kvc-t03-upload-flow`
-- **T04** subagent `kvc-t04-review-dual-pool`
+### Wave 3 — Queue (1 agent)
 
-**Checkpoint**: App Home loads; upload commits definition; scoped review includes vault items.
+- **T04** subagent `vnc-t04-upload-queue`
 
-### Wave 3 — QA closure (1 agent)
+### Wave 4 — UI + settings (2 parallel agents)
 
-- **T05** subagent `kvc-t05-qa-closure`
+- **T05** subagent `vnc-t05-curation-ui`
+- **T06** subagent `vnc-t06-settings-banner`
 
----
+### Wave 5 — QA (1 agent)
 
-**PROMPT T01 — Vault schema foundation**
-
-Implement T01 for `20260624-knowledge-vault-curation` on branch `20260624-knowledge-vault-curation`.
-
-Files: `session-types.js`, `vault/decay-calibration.js`, `vault/vault-store.js`, `vault/mastery-model.js`, `sm2.js`.
-
-Add ConceptFacet types, reviewItems persistence, review_* observation weights, facetCoverage updates, vault_review_item SM-2 source.
-
-Reference: `specs/20260624-knowledge-vault-curation/data-model.md`, ROADMAP.md.
-
-criterio de éxito: migration smoke + unit weights pass. Ejecuta /validate antes de cerrar este mensaje.
+- **T07** subagent `vnc-t07-qa-closure`
 
 ---
 
-**PROMPT T02 — App Home navigation**
+**PROMPT T01 — Vault entry v2 schema**
 
-Implement T02 using subagent spec `.cursor/agents/kvc-t02-app-home.md`.
+Implement T01 for `20260625-vault-notes-connections`.
 
-Add `screenAppHome`, `screenVaultBranch`, Session Hub actions, route bootstrap to App Home.
+Files: `vault-store.js`, `session-types.js`, `normalization.js`.
 
-criterio de éxito: manual Scenario 1 in quickstart.md. Ejecuta /validate antes de cerrar este mensaje.
+Add migrateEntryNotesConnections, schemaVersion 3, getDistinctAreas, applyRelatedBacklinks.
 
----
+Reference: `specs/20260625-vault-notes-connections/data-model.md`, ROADMAP.md.
 
-**PROMPT T03 — Upload to vault flow**
-
-Implement T03 using `.cursor/agents/kvc-t03-upload-flow.md`.
-
-Wire LLM `extractVaultCandidates`, candidate screen, `commitVaultCuration`.
-
-criterio de éxito: Scenario 3 in quickstart.md (with API key). Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: migration defaults pass in cursor-tests. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-**PROMPT T04 — Review dual pool**
+**PROMPT T02 — Extended LLM APIs**
 
-Implement T04 using `.cursor/agents/kvc-t04-review-dual-pool.md`.
+Implement T02 using subagent `.cursor/agents/vnc-t02-dedup-extract.md`.
 
-Merge vault.reviewItems into `getReviewableItemsForProject`; vault branch in `handleSm2QualityClick`.
+Extend `normalizeConceptsToVault` and `extractVaultCandidates` in `api.js`.
 
-criterio de éxito: Scenario 4 in quickstart.md. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: mocked JSON shapes match contracts/dedup-related-api.md. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-**PROMPT T05 — QA closure**
+**PROMPT T03 — Commit + backlinks**
 
-Implement T05 using `.cursor/agents/kvc-t05-qa-closure.md`.
+Implement T03 using subagent `.cursor/agents/vnc-t03-commit-backlinks.md`.
 
-Run `node --import ./cursor-tests/register.mjs cursor-tests/20260624_knowledge-vault-curation.mjs` and SW validate test.
+Extend `vault-curation.js`: buildBatchContext, commitVaultCurationItem, mergeNotesForEntry, resolveRelatedAcceptedIds.
 
-criterio de éxito: all tests green, ROADMAP [x]. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: backlink symmetry unit checks pass. Ejecuta /validate antes de cerrar este mensaje.
 
-## Execution instruction
+---
 
-All waves implemented in this session. Subagents created at `.cursor/agents/kvc-t*.md` for future parallel reruns.
+**PROMPT T04 — Upload queue**
 
-Verify manually: `specs/20260624-knowledge-vault-curation/quickstart.md` Scenarios 1–5.
+Implement T04 using subagent `.cursor/agents/vnc-t04-upload-queue.md`.
+
+New `vault-upload-queue.js`; sequential processor with persistence.
+
+criterio de éxito: stale processing reset + pending count tests pass. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+**PROMPT T05 — Curation UI**
+
+Implement T05 using subagent `.cursor/agents/vnc-t05-curation-ui.md`.
+
+Update `study.js`, `index.html`, `main.css` for notes/area/tags/related fields and queue enqueue.
+
+criterio de éxito: quickstart Scenario 1 manual path. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+**PROMPT T06 — Settings + resume banner**
+
+Implement T06 using subagent `.cursor/agents/vnc-t06-settings-banner.md`.
+
+`vault-settings.js`, resume banner in `index.html`, `main.js` boot sync.
+
+criterio de éxito: quickstart Scenarios 2 and 4. Ejecuta /validate antes de cerrar este mensaje.
+
+---
+
+**PROMPT T07 — QA closure**
+
+Implement T07 using subagent `.cursor/agents/vnc-t07-qa-closure.md`.
+
+Add `cursor-tests/20260625_vault-notes-connections.mjs`, bump SW_VERSION, mark ROADMAP [x].
+
+criterio de éxito: full test file green + SW validate. Ejecuta /validate antes de cerrar este mensaje.

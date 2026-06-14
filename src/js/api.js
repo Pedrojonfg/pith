@@ -3464,10 +3464,15 @@ Rules:
 
 /**
  * Normalize new document concepts against existing vault entries (one LLM call).
- * @param {{ existingEntries: Array<{id:string,canonicalTitle:string,aliases?:string[]}>, newConcepts: Array<{id:string,title:string,type?:string}>, topic: string }} params
- * @returns {Promise<Array<{ conceptId: string, action: 'merge'|'alias'|'new', vaultEntryId: string | null }>>}
+ * @param {{ existingEntries: Array<{id:string,canonicalTitle:string,aliases?:string[],area?:string[],topic?:string}>, newConcepts: Array<{id:string,title:string,type?:string}>, topic: string, batchContext?: object }} params
+ * @returns {Promise<Array<{ conceptId: string, action: 'merge'|'alias'|'new', vaultEntryId: string | null, areaSuggestion?: string[], relatedCandidates?: string[] }>>}
  */
-export async function normalizeConceptsToVault({ existingEntries, newConcepts, topic }) {
+export async function normalizeConceptsToVault({
+  existingEntries,
+  newConcepts,
+  topic,
+  batchContext,
+}) {
   const existing = Array.isArray(existingEntries) ? existingEntries : [];
   const concepts = Array.isArray(newConcepts) ? newConcepts : [];
   if (!concepts.length) return [];
@@ -3477,6 +3482,8 @@ export async function normalizeConceptsToVault({ existingEntries, newConcepts, t
         conceptId: String(c.id || "").trim(),
         action: /** @type {'new'} */ ("new"),
         vaultEntryId: null,
+        areaSuggestion: batchContext?.existingVaultAreas?.slice(0, 2) || [],
+        relatedCandidates: [],
       }))
       .filter((m) => m.conceptId);
   }
@@ -3488,15 +3495,23 @@ For each NEW concept, decide:
 - alias: alternate name for an existing entry (use vaultEntryId)
 - new: genuinely distinct concept (vaultEntryId null)
 
+Also suggest:
+- areaSuggestion: 1-2 broad area strings; prefer values from existingVaultAreas when they fit
+- relatedCandidates: vault entry IDs related but NOT duplicates (subset of existing list only)
+
 Respond with JSON only:
-{"mappings":[{"conceptId":"...","action":"merge"|"alias"|"new","vaultEntryId":"..."|null}]}`;
+{"mappings":[{"conceptId":"...","action":"merge"|"alias"|"new","vaultEntryId":"..."|null,"areaSuggestion":["..."],"relatedCandidates":["vaultEntryId"]}]}`;
 
   const userPayload = {
     topic: topicLabel,
+    existingVaultAreas: batchContext?.existingVaultAreas || [],
+    batchConcepts: batchContext?.concepts || [],
     existing: existing.map((e) => ({
       id: e.id,
       canonicalTitle: e.canonicalTitle,
       aliases: e.aliases || [],
+      area: e.area || [],
+      topic: e.topic || "",
     })),
     newConcepts: concepts.map((c) => ({
       id: c.id,
@@ -3522,6 +3537,7 @@ Respond with JSON only:
         ? parsed
         : [];
     const validActions = new Set(["merge", "alias", "new"]);
+    const existingIds = new Set(existing.map((e) => String(e.id)));
     const out = [];
     for (const row of mappings) {
       const conceptId = String(row?.conceptId || "").trim();
@@ -3529,10 +3545,21 @@ Respond with JSON only:
       const action = String(row?.action || "new").toLowerCase();
       const vaultEntryId =
         row?.vaultEntryId == null ? null : String(row.vaultEntryId || "").trim() || null;
+      const areaSuggestion = Array.isArray(row?.areaSuggestion)
+        ? row.areaSuggestion.map((a) => String(a || "").trim()).filter(Boolean).slice(0, 2)
+        : [];
+      const relatedCandidates = Array.isArray(row?.relatedCandidates)
+        ? row.relatedCandidates
+            .map((id) => String(id || "").trim())
+            .filter((id) => existingIds.has(id))
+            .slice(0, 5)
+        : [];
       out.push({
         conceptId,
         action: validActions.has(action) ? /** @type {'merge'|'alias'|'new'} */ (action) : "new",
         vaultEntryId,
+        areaSuggestion,
+        relatedCandidates,
       });
     }
     if (out.length) return out;
@@ -3545,19 +3572,35 @@ Respond with JSON only:
       conceptId: String(c.id || "").trim(),
       action: /** @type {'new'} */ ("new"),
       vaultEntryId: null,
+      areaSuggestion: batchContext?.existingVaultAreas?.slice(0, 1) || [],
+      relatedCandidates: [],
     }))
     .filter((m) => m.conceptId);
 }
 
 /**
  * Batch LLM extraction for Upload to vault candidate screen.
- * @param {{ concepts: object[], session: object, contexts: object[] }} params
+ * @param {{ concepts: object[], session: object, contexts: object[], batchContext?: object, autoDraftNotes?: boolean }} params
  */
-export async function extractVaultCandidates({ concepts, session, contexts }) {
+export async function extractVaultCandidates({
+  concepts,
+  session,
+  contexts,
+  batchContext,
+  autoDraftNotes = true,
+}) {
   const conceptRows = Array.isArray(concepts) ? concepts : [];
   if (!conceptRows.length) return { candidates: [] };
 
   const docId = String(session?.docId || "").trim();
+  const notesInstruction = autoDraftNotes
+    ? `- notes: markdown with sections **Definition** (2-4 sentences), **Context**, **Notes**, and **Related concepts** (short list referencing batch siblings by title)
+- area: 1-2 strings preferring existingVaultAreas
+- tags: 3-6 short free tags`
+    : `- notes: empty string
+- area: 1-2 strings preferring existingVaultAreas
+- tags: optional short list`;
+
   const systemPrompt = `You extract knowledge-vault curation candidates from studied concepts.
 For each concept, using its source chunk (source fidelity — use the material's own terms):
 
@@ -3566,12 +3609,15 @@ For each concept, using its source chunk (source fidelity — use the material's
   ["synthesis","relational","argumentative","applicative","cloze"].
   Prioritize facets NOT listed in existingFacets. If existingFacets already covers most facets, suggest fewer or none.
   Each item needs facet, prompt (question), answer (expected response).
+${notesInstruction}
 
 Respond JSON only:
-{"candidates":[{"conceptId":"...","definition":"...","suggestedReviewItems":[{"facet":"relational","prompt":"...","answer":"..."}]}]}`;
+{"candidates":[{"conceptId":"...","definition":"...","notes":"...","area":["..."],"tags":["..."],"suggestedReviewItems":[{"facet":"relational","prompt":"...","answer":"..."}]}]}`;
 
   const payload = {
     docId,
+    existingVaultAreas: batchContext?.existingVaultAreas || [],
+    batchSiblingTitles: (batchContext?.concepts || []).map((c) => c.title).filter(Boolean),
     concepts: conceptRows.map((c, i) => {
       const ctx = Array.isArray(contexts) ? contexts[i] : null;
       const conceptId = String(c?.id || c?.canonicalId || "").trim();
@@ -3580,6 +3626,7 @@ Respond JSON only:
         label: String(c?.label || c?.title || conceptId).trim(),
         definition: String(c?.definition || "").trim(),
         sourceChunk: String(c?.sourceChunk || c?.source_chunk || "").trim(),
+        module: String(c?.module || c?.module_id || "").trim(),
         existingFacets: ctx?.existingFacets || [],
         facetCoverage: ctx?.facetCoverage || {},
       };
@@ -3618,9 +3665,18 @@ Respond JSON only:
           answer: String(ri?.answer || "").trim(),
         }))
         .filter((ri) => ri.prompt);
+      const area = Array.isArray(row?.area)
+        ? row.area.map((a) => String(a || "").trim()).filter(Boolean).slice(0, 2)
+        : [];
+      const tags = Array.isArray(row?.tags)
+        ? row.tags.map((t) => String(t || "").trim()).filter(Boolean).slice(0, 8)
+        : [];
       candidates.push({
         conceptId,
         definition: String(row?.definition || "").trim(),
+        notes: autoDraftNotes ? String(row?.notes || "").trim() : "",
+        area,
+        tags,
         suggestedReviewItems: items.slice(0, 3),
       });
     }

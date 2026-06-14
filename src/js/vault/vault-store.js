@@ -14,7 +14,18 @@ function newVaultId() {
   return `vault_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+
+/** @type {readonly string[]} */
+export const VAULT_ENTRY_TYPES = Object.freeze([
+  "CONCEPT",
+  "CLASS",
+  "CONVERSATION",
+  "PROJECT",
+]);
+
+/** @type {readonly string[]} */
+export const VAULT_ENTRY_STATUS = Object.freeze(["pending", "ready"]);
 
 function emptyVault() {
   return {
@@ -33,12 +44,52 @@ function emptyVault() {
  */
 function migrateEntryCuration(entry) {
   if (!entry || typeof entry !== "object") return entry;
-  const migrated = migrateEntryV2(entry);
+  const migrated = migrateEntryNotesConnections(migrateEntryV2(entry));
   if (!Array.isArray(migrated.definitions)) migrated.definitions = [];
   if (!migrated.facetCoverage || typeof migrated.facetCoverage !== "object") {
     migrated.facetCoverage = {};
   }
   return migrated;
+}
+
+/**
+ * @param {object} entry
+ */
+function migrateEntryNotesConnections(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  const topic = String(entry.topic || "").trim();
+  const sources = Array.isArray(entry.sources) ? entry.sources : [];
+  const typeRaw = String(entry.type || "CONCEPT").trim().toUpperCase();
+  const type = VAULT_ENTRY_TYPES.includes(typeRaw) ? typeRaw : "CONCEPT";
+  let area = [];
+  if (Array.isArray(entry.area)) {
+    area = entry.area.map((a) => String(a || "").trim()).filter(Boolean);
+  } else if (topic) {
+    area = [topic];
+  }
+  const tags = Array.isArray(entry.tags)
+    ? entry.tags.map((t) => String(t || "").trim()).filter(Boolean)
+    : [];
+  const related = Array.isArray(entry.related)
+    ? [...new Set(entry.related.map((id) => String(id || "").trim()).filter(Boolean))]
+    : [];
+  const statusRaw = String(entry.status || "").trim().toLowerCase();
+  const status =
+    statusRaw === "ready" || statusRaw === "pending"
+      ? statusRaw
+      : sources.length > 0
+        ? "ready"
+        : "pending";
+  return {
+    ...entry,
+    type,
+    area,
+    tags,
+    notes: typeof entry.notes === "string" ? entry.notes : "",
+    notesUpdatedAt: Number.isFinite(entry.notesUpdatedAt) ? entry.notesUpdatedAt : null,
+    related,
+    status,
+  };
 }
 
 /**
@@ -109,6 +160,52 @@ function replaceEntryIdReferences(entries, oldId, newId) {
         entry.coPrerequisites.map((id) => (String(id) === oldS ? newS : String(id))),
       )].filter((id) => id !== String(entry.id));
     }
+    if (Array.isArray(entry.related)) {
+      entry.related = [...new Set(
+        entry.related.map((id) => (String(id) === oldS ? newS : String(id))),
+      )].filter((id) => id !== String(entry.id));
+    }
+  }
+}
+
+/**
+ * @param {{ entries?: object[] }} vault
+ * @returns {string[]}
+ */
+export function getDistinctAreas(vault) {
+  const areas = new Set();
+  for (const entry of vault?.entries || []) {
+    for (const area of entry?.area || []) {
+      const s = String(area || "").trim();
+      if (s) areas.add(s);
+    }
+    const topic = String(entry?.topic || "").trim();
+    if (topic) areas.add(topic);
+  }
+  return [...areas].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Append symmetric related links; neighbor status and other fields unchanged.
+ * @param {{ entries: object[] }} vault
+ * @param {string} entryId
+ * @param {string[]} relatedIds
+ */
+export function applyRelatedBacklinks(vault, entryId, relatedIds) {
+  const sourceId = String(entryId || "").trim();
+  if (!sourceId || !Array.isArray(relatedIds)) return;
+  const source = vault.entries.find((e) => String(e?.id || "") === sourceId);
+  if (!source) return;
+  if (!Array.isArray(source.related)) source.related = [];
+  const validTargets = new Set(
+    relatedIds.map((id) => String(id || "").trim()).filter((id) => id && id !== sourceId),
+  );
+  for (const targetId of validTargets) {
+    const target = vault.entries.find((e) => String(e?.id || "") === targetId);
+    if (!target) continue;
+    if (!source.related.includes(targetId)) source.related.push(targetId);
+    if (!Array.isArray(target.related)) target.related = [];
+    if (!target.related.includes(sourceId)) target.related.push(sourceId);
   }
 }
 
