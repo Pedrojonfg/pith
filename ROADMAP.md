@@ -1,133 +1,106 @@
-# ROADMAP — Vault Personal Notes, Connections & Resumable Upload
+# ROADMAP — Cross-Document Concept Vault & Global Concept Registry
 
-**Feature**: `20260625-vault-notes-connections` | **Spec**: `specs/20260625-vault-notes-connections/spec.md` | **Plan**: `specs/20260625-vault-notes-connections/plan.md`
+**Feature**: `20260626-cross-doc-vault` | **Spec**: `specs/20260626-cross-doc-vault/spec.md` | **Plan**: `specs/20260626-cross-doc-vault/plan.md`
 
-**Objective**: Extend vault entries with notes/area/tags/related/status; enrich Upload to Vault curation; resumable processing queue with boot resume banner.
+**Objective**: Global concept registry with gray/yellow/green maturity, automatic promotion from study modes, global SM-2 per facet, vault graph, ingest-only path, supersede curation gate.
 
-**Prerequisites**: `20260624-knowledge-vault-curation`, `20260618-knowledge-vault-a-plus`.
+**Prerequisites**: unified-session, sm2-priority-queue, recall-mode, study-projects.
 
-**Source draft**: `spec-notes.md`
+**Source draft**: `spec-crossdoc.md`
 
 ## Task table
 
 | ID | Description | Deps | Complexity | Status |
 |----|-------------|------|------------|--------|
-| T01 | Entry v2 schema + lazy migration (schemaVersion 3) | — | M | [x] |
-| T02 | Extended dedup + extractVaultCandidates LLM | T01 | M | [x] |
-| T03 | Commit, notes append, bidirectional related | T01 | M | [x] |
-| T04 | vault-upload-queue.js + persistence | T01, T03 | M | [x] |
-| T05 | Curation UI (notes/area/tags/related) + enqueue | T02, T04 | L | [x] |
-| T06 | Settings toggle + resume banner | T04, T05 | S | [x] |
-| T07 | Integration tests + SW bump + quickstart QA | T01–T06 | M | [x] |
+| T01 | concept-registry-store + session-types extensions | — | M | [x] |
+| T02 | Session migration globalConceptId + smItems flag | T01 | S | [x] |
+| T03 | identity-resolution.js (slug/alias, split bias) | T01 | M | [x] |
+| T04 | promotion.js + mastery.js | T01, T03 | M | [x] |
+| T05 | Mode wiring RSVP/Questions/Cloze/sm2-ingest | T04 | L | [x] |
+| T06 | Global review queue in review.js | T01, T04 | M | [x] |
+| T07 | Recall + Slow Phase 3 green promotion | T04 | M | [x] |
+| T08 | vault-graph-adapter + canvas maturity styles | T01 | M | [x] |
+| T09 | Vault UI graph + concept pages in study.js | T08, T06 | L | [x] |
+| T10 | Recall focusConceptId entry | T04, T07 | S | [x] |
+| T11 | Ingest-only upload path | T02 | M | [x] |
+| T12 | Deprecate curation commit gate | T04 | S | [x] |
+| T13 | Integration tests + SW bump + quickstart QA | T01–T12 | M | [x] |
 
 ## Dependency graph
 
 ```text
-T01 ──→ T02
-T01 ──→ T03 ──→ T04 ──→ T05 ──→ T06 ──→ T07
-T02 ──→ T05
+T01 ──→ T02 ──→ T11
+T01 ──→ T03 ──→ T04 ──→ T05
+                  T04 ──→ T06 ──→ T09
+                  T04 ──→ T07 ──→ T10
+                  T04 ──→ T12
+T01 ───→ T08 ──→ T09
+T05,T06,T07,T08,T09,T10,T11,T12 ──→ T13
 ```
 
 **Parallel Wave 1**: T01
 
-**Parallel Wave 2**: T02 + T03 (after T01)
+**Parallel Wave 2**: T02 + T03 + T08 (after T01)
 
-**Sequential**: T04 → T05 → T06 → T07
+**Parallel Wave 3**: T04 (after T03)
+
+**Parallel Wave 4**: T05 + T06 + T07 + T11 + T12 (after T04)
+
+**Parallel Wave 5**: T09 + T10 (after T06, T07, T08)
+
+**Parallel Wave 6**: T13
 
 ## Recommended execution order
 
-### Wave 1 — Schema (1 agent)
+### Wave 1 — Registry foundation (1 agent)
 
-- **T01** subagent `vnc-t01-vault-schema`
+- **T01** subagent `crossdoc-t01-registry-store`
 
-### Wave 2 — API + commit (2 parallel agents)
+### Wave 2 — Migration + resolution + graph adapter (3 parallel agents)
 
-- **T02** subagent `vnc-t02-dedup-extract`
-- **T03** subagent `vnc-t03-commit-backlinks`
+- **T02** subagent `crossdoc-t02-session-migration`
+- **T03** subagent `crossdoc-t03-identity-resolution`
+- **T08** subagent `crossdoc-t08-vault-graph`
 
-### Wave 3 — Queue (1 agent)
+### Wave 3 — Promotion engine (1 agent)
 
-- **T04** subagent `vnc-t04-upload-queue`
+- **T04** subagent `crossdoc-t04-promotion`
 
-### Wave 4 — UI + settings (2 parallel agents)
+### Wave 4 — Mode + review + ingest (5 parallel agents)
 
-- **T05** subagent `vnc-t05-curation-ui`
-- **T06** subagent `vnc-t06-settings-banner`
+- **T05** subagent `crossdoc-t05-mode-wiring`
+- **T06** subagent `crossdoc-t06-global-review`
+- **T07** subagent `crossdoc-t07-green-promotion`
+- **T11** subagent `crossdoc-t11-ingest-only`
+- **T12** subagent `crossdoc-t12-deprecate-curation`
 
-### Wave 5 — QA (1 agent)
+### Wave 5 — UI + Recall scope (2 parallel agents)
 
-- **T07** subagent `vnc-t07-qa-closure`
+- **T09** subagent `crossdoc-t09-vault-ui`
+- **T10** subagent `crossdoc-t10-focus-concept`
 
----
+### Wave 6 — QA (1 agent)
 
-**PROMPT T01 — Vault entry v2 schema**
-
-Implement T01 for `20260625-vault-notes-connections`.
-
-Files: `vault-store.js`, `session-types.js`, `normalization.js`.
-
-Add migrateEntryNotesConnections, schemaVersion 3, getDistinctAreas, applyRelatedBacklinks.
-
-Reference: `specs/20260625-vault-notes-connections/data-model.md`, ROADMAP.md.
-
-criterio de éxito: migration defaults pass in cursor-tests. Ejecuta /validate antes de cerrar este mensaje.
+- **T13** subagent `crossdoc-t13-qa-closure`
 
 ---
 
-**PROMPT T02 — Extended LLM APIs**
+**PROMPT T01 — Registry store + types**
 
-Implement T02 using subagent `.cursor/agents/vnc-t02-dedup-extract.md`.
+Implement T01 for `20260626-cross-doc-vault`.
 
-Extend `normalizeConceptsToVault` and `extractVaultCandidates` in `api.js`.
+Create `src/js/concept-registry/registry-store.js` per `contracts/concept-registry-store.md`. Extend `session-types.js` with Concept, ConceptFacetSchedule, ConceptContent, ConceptContentBlock, REGISTRY_CONCEPT_FACETS (includes recognition).
 
-criterio de éxito: mocked JSON shapes match contracts/dedup-related-api.md. Ejecuta /validate antes de cerrar este mensaje.
+Reference: `specs/20260626-cross-doc-vault/data-model.md`, ROADMAP.md.
 
----
-
-**PROMPT T03 — Commit + backlinks**
-
-Implement T03 using subagent `.cursor/agents/vnc-t03-commit-backlinks.md`.
-
-Extend `vault-curation.js`: buildBatchContext, commitVaultCurationItem, mergeNotesForEntry, resolveRelatedAcceptedIds.
-
-criterio de éxito: backlink symmetry unit checks pass. Ejecuta /validate antes de cerrar este mensaje.
+criterio de éxito: loadRegistry/saveRegistry round-trip unit tests pass. Ejecuta /validate antes de cerrar este mensaje.
 
 ---
 
-**PROMPT T04 — Upload queue**
+**PROMPT T13 — QA closure**
 
-Implement T04 using subagent `.cursor/agents/vnc-t04-upload-queue.md`.
+Implement T13 using subagent `.cursor/agents/crossdoc-t13-qa-closure.md`.
 
-New `vault-upload-queue.js`; sequential processor with persistence.
-
-criterio de éxito: stale processing reset + pending count tests pass. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-**PROMPT T05 — Curation UI**
-
-Implement T05 using subagent `.cursor/agents/vnc-t05-curation-ui.md`.
-
-Update `study.js`, `index.html`, `main.css` for notes/area/tags/related fields and queue enqueue.
-
-criterio de éxito: quickstart Scenario 1 manual path. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-**PROMPT T06 — Settings + resume banner**
-
-Implement T06 using subagent `.cursor/agents/vnc-t06-settings-banner.md`.
-
-`vault-settings.js`, resume banner in `index.html`, `main.js` boot sync.
-
-criterio de éxito: quickstart Scenarios 2 and 4. Ejecuta /validate antes de cerrar este mensaje.
-
----
-
-**PROMPT T07 — QA closure**
-
-Implement T07 using subagent `.cursor/agents/vnc-t07-qa-closure.md`.
-
-Add `cursor-tests/20260625_vault-notes-connections.mjs`, bump SW_VERSION, mark ROADMAP [x].
+Add `cursor-tests/20260626_cross-doc-vault.mjs`, bump SW_VERSION, mark ROADMAP [x].
 
 criterio de éxito: full test file green + SW validate. Ejecuta /validate antes de cerrar este mensaje.

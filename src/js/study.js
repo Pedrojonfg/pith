@@ -247,6 +247,7 @@ import {
 import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260612_1";
 import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
 import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
+import { promoteFromMcqBlock } from "./concept-registry/ingest.js";
 import { createRecallStudyController } from "./recall-study.js";
 import {
   buildModeSliceFromShared,
@@ -279,6 +280,8 @@ import {
   VAULT_GRAPH_MIN_ENTRIES,
   VAULT_GRAPH_TOPIC_FILTER_THRESHOLD,
 } from "./vault/vault-graph.js";
+import { mountConceptRegistryGraph } from "./concept-registry/graph-mount.js";
+import { getConceptById } from "./concept-registry/registry-store.js";
 import { renderDetail } from "./vault/debug-ui.js";
 import { getEntryById, loadVault } from "./vault/vault-store.js";
 import {
@@ -966,6 +969,7 @@ function getRecallController() {
       },
       onComplete: () => enterModeSelectScreen(),
       onBack: () => enterModeSelectScreen(),
+      getFocusGlobalConceptId: () => recallFocusGlobalConceptId,
     });
     recallStudyController.wireHandlers();
   }
@@ -1084,6 +1088,56 @@ export function enterVaultBranch() {
   showScreen("vaultBranch");
 }
 
+/**
+ * Inventory-only ingest — creates DocumentSession with gray concepts, no mode slices.
+ * @param {object} params
+ */
+export async function runIngestOnlyPipeline({
+  cleanedText,
+  fileName = "document",
+  originalFormat = "md",
+  projectId,
+}) {
+  const text = String(cleanedText || "").trim();
+  if (!text) throw new Error("Ingest requires non-empty material.");
+  const doc = await createSession(text, {
+    projectId: projectId || getUploadDefaultProjectId(),
+  });
+  setUploadMeta(doc.docId, {
+    fileName,
+    originalFormat,
+    uploadedAt: new Date().toISOString(),
+  });
+  const { inventory } = await runConceptInventory(text, {
+    llmModel: getSessionLlmModel(),
+    language: getStudyLanguage(),
+  });
+  promoteConceptInventoryToShared(inventory, "ingest");
+  return getSession(doc.docId);
+}
+
+async function handleIngestOnlyFileSelected() {
+  const file = els.ingestOnlyFileInput?.files?.[0];
+  if (!file) return;
+  try {
+    assertLlmKeyPresent(getSessionLlmModel());
+    const material = await readAndCleanMaterialText(file);
+    if (!String(material.cleanedText || "").trim()) {
+      alert("File appears to be empty.");
+      return;
+    }
+    await runIngestOnlyPipeline({
+      cleanedText: material.cleanedText,
+      fileName: file.name,
+      originalFormat: material.originalFormat,
+    });
+    if (els.ingestOnlyFileInput) els.ingestOnlyFileInput.value = "";
+    enterDocLibraryScreen();
+  } catch (err) {
+    alert(String(err?.message || err || "Ingest failed."));
+  }
+}
+
 function refreshVaultBranchReviewBadge() {
   const badge = els.vaultBranchReviewBadge;
   if (!badge) return;
@@ -1112,7 +1166,8 @@ function syncSessionHubActions() {
     els.btnDownloadSessionMd.disabled = !hasDoc;
   }
   if (els.btnUploadToVault) {
-    els.btnUploadToVault.disabled = !hasDoc;
+    els.btnUploadToVault.hidden = true;
+    els.btnUploadToVault.disabled = true;
   }
 }
 
@@ -1614,6 +1669,15 @@ function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, s
       title: getBlockTitleSafe(state.activeBlockIndex),
       contentPreview: conceptIds.slice(0, 3).join(", "),
       quality: mapMcqOutcomeToQuality({ correct, firstTry, usedHint, skipped }),
+    });
+    void promoteFromMcqBlock({
+      docId: doc.docId,
+      conceptIds,
+      correct,
+      firstTry,
+      usedHint,
+      skipped,
+      source: isQuestionsStudyMode() ? "questions" : "rsvp",
     });
   } catch (err) {
     console.warn("[sm2-ingest] RSVP ingest failed", err);
@@ -3066,6 +3130,9 @@ function wireDocLibraryHandlers() {
     populateReviewScopeSelect();
     showScreen("reviewConfig");
   });
+  els.btnVaultBranchConceptGraph?.addEventListener("click", () => openConceptRegistryGraphScreen());
+  els.btnVaultIngestOnly?.addEventListener("click", () => els.ingestOnlyFileInput?.click());
+  els.ingestOnlyFileInput?.addEventListener("change", () => void handleIngestOnlyFileSelected());
   els.btnDownloadSessionMd?.addEventListener("click", () => handleExportSessionClick());
   els.btnUploadToVault?.addEventListener("click", () => enterUploadToVaultCandidates());
   els.uploadVaultBackBtn?.addEventListener("click", () => enterModeSelectScreen());
@@ -5946,6 +6013,8 @@ function ensureAssessmentRunnerEls() {
 let materialGraphBackScreen = "blocks";
 let lastMaterialGraph = null;
 let materialGraphSource = "session";
+/** @type {string|null} */
+let recallFocusGlobalConceptId = null;
 
 function resetVaultGraphChrome() {
   document.getElementById("slowGraphLayout")?.classList.remove("vault-graph-active");
@@ -6061,6 +6130,61 @@ export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
     },
   });
   showScreen("slowGraph");
+}
+
+/**
+ * Cross-document concept registry graph (gray/yellow/green maturity).
+ * @param {{ focusedDocId?: string|null, projectId?: string|null }} [options]
+ */
+export function openConceptRegistryGraphScreen(options = {}) {
+  const host = document.getElementById("slowGraphContent");
+  const detailHost = document.getElementById("vaultGraphDetailPanel");
+  const layout = document.getElementById("slowGraphLayout");
+  if (!host) return;
+
+  materialGraphSource = "concept_registry";
+  materialGraphBackScreen = getCurrentScreenId() || "vaultBranch";
+  resetVaultGraphChrome();
+  layout?.classList.add("vault-graph-active");
+  const exportBtn = document.getElementById("slowGraphExportBtn");
+  if (exportBtn) exportBtn.hidden = true;
+
+  const doc = getActiveSession();
+  const focusedDocId = options.focusedDocId ?? doc?.docId ?? null;
+
+  updateMaterialGraphScreenCopy({
+    title: "Concept vault graph",
+    hint: focusedDocId
+      ? "Yellow/green concepts plus gray neighbors from the active document."
+      : "Concepts you have engaged with across all documents.",
+  });
+
+  lastMaterialGraph = mountConceptRegistryGraph(host, detailHost, {
+    focusedDocId,
+    projectId: options.projectId ?? null,
+    onStudyConcept: (globalConceptId) => {
+      void enterRecallForGlobalConcept(globalConceptId);
+    },
+  });
+  showScreen("slowGraph");
+}
+
+/**
+ * @param {string} globalConceptId
+ */
+export async function enterRecallForGlobalConcept(globalConceptId) {
+  const concept = getConceptById(globalConceptId);
+  if (!concept) return;
+  const docId = (concept.sourceDocIds || [])[0];
+  if (docId) {
+    const session = getSession(docId);
+    if (session) {
+      setActiveSession(docId);
+      state.activeSession = session;
+    }
+  }
+  recallFocusGlobalConceptId = globalConceptId;
+  await enterModeWithContinuity("recall");
 }
 
 /** Ephemeral RSVP pre-packing flow state (20260611-rsvp-assessment-reposition). */

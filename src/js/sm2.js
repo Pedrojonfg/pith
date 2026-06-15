@@ -21,6 +21,7 @@ const SOURCE_TYPES = new Set([
   "slow_flashcard",
   "vault_concept",
   "vault_review_item",
+  "global_concept",
 ]);
 
 const LEGACY_SOURCE_MAP = {
@@ -137,6 +138,7 @@ export function normalizeSmItem(raw) {
   };
   if (raw.source) out.source = raw.source;
   if (raw.facet) out.facet = raw.facet;
+  if (raw.globalConceptId) out.globalConceptId = raw.globalConceptId;
   if (raw.vaultEntryId) out.vaultEntryId = raw.vaultEntryId;
   return out;
 }

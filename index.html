@@ -349,6 +349,9 @@
             <p class="hint vault-branch-lead">Cross-document knowledge and spaced review.</p>
             <div class="vault-branch-actions row">
               <button type="button" id="btnVaultBranchKnowledge" class="btn-primary">Knowledge Vault</button>
+              <button type="button" id="btnVaultBranchConceptGraph" class="btn-secondary">Concept graph</button>
+              <button type="button" id="btnVaultIngestOnly" class="btn-secondary">Ingest to library</button>
+              <input type="file" id="ingestOnlyFileInput" hidden accept=".pdf,.html,.htm,.txt,.md,.markdown" />
               <button type="button" id="btnVaultBranchReview" class="btn-secondary">
                 Review
                 <span id="vaultBranchReviewBadge" class="review-badge hidden" aria-label="Items due today"></span>
@@ -1906,7 +1909,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260625_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260626_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1922,7 +1925,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260625_1");
+        await import("./src/js/main.js?v=20260626_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

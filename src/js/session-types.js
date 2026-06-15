@@ -84,6 +84,7 @@ export const PROJECT_STORE_SCHEMA = 1;
  * @property {'wrong'|'correct'} lastResult
  * @property {number} lastAt
  * @property {number} weight
+ * @property {string} [globalConceptId] Global registry link when resolved
  */
 
 const MODE_KEYS = ["rsvp", "slow", "cloze", "questions", "recall"];
@@ -179,8 +180,8 @@ export function validateDocumentSession(session) {
   if (!session || typeof session !== "object") {
     return { ok: false, errors: ["session must be an object"] };
   }
-  if (session.schemaVersion !== 2) {
-    errors.push("schemaVersion must be 2");
+  if (session.schemaVersion !== 2 && session.schemaVersion !== 3) {
+    errors.push("schemaVersion must be 2 or 3");
   }
   if (!session.docId || typeof session.docId !== "string" || !session.docId.trim()) {
     errors.push("docId must be a non-empty string");
@@ -274,6 +275,79 @@ export const CONCEPT_FACETS = Object.freeze([
   "applicative",
   "cloze",
 ]);
+
+/**
+ * Global registry facets (includes recognition for RSVP/Cloze).
+ * @typedef {'recognition'|'synthesis'|'relational'|'argumentative'|'applicative'} RegistryConceptFacet
+ */
+
+/** @type {readonly RegistryConceptFacet[]} */
+export const REGISTRY_CONCEPT_FACETS = Object.freeze([
+  "recognition",
+  "synthesis",
+  "relational",
+  "argumentative",
+  "applicative",
+]);
+
+/**
+ * @typedef {object} ConceptFacetSchedule
+ * @property {RegistryConceptFacet} facet
+ * @property {number} interval
+ * @property {number} repetitions
+ * @property {number} easeFactor
+ * @property {string} dueDate
+ * @property {string} lastReviewedAt
+ * @property {number} lastQuality
+ */
+
+/**
+ * @typedef {object} ConceptContentBlock
+ * @property {string} id
+ * @property {RegistryConceptFacet} facet
+ * @property {string} text
+ * @property {string} sourceDocId
+ * @property {string} sourceSessionDate
+ * @property {string|null} supersededBy
+ */
+
+/**
+ * @typedef {object} ConceptContent
+ * @property {ConceptContentBlock[]} blocks
+ */
+
+/**
+ * @typedef {object} Concept
+ * @property {string} id
+ * @property {string} canonicalName
+ * @property {string} slug
+ * @property {string[]} aliases
+ * @property {'yellow'|'green'} maturity
+ * @property {number} mastery
+ * @property {ConceptFacetSchedule[]} facets
+ * @property {ConceptContent|null} content
+ * @property {string[]} sourceDocIds
+ * @property {string[]} [relatedConceptIds]
+ * @property {string} createdAt
+ * @property {string} updatedAt
+ */
+
+/**
+ * @typedef {object} VaultObservationGlobal
+ * @property {string} conceptId
+ * @property {RegistryConceptFacet} facet
+ * @property {string} observedAt
+ * @property {number} quality
+ * @property {string} sourceDocId
+ */
+
+/**
+ * @typedef {object} ConceptRegistry
+ * @property {number} schemaVersion
+ * @property {Concept[]} concepts
+ * @property {VaultObservationGlobal[]} observations
+ * @property {number} lastUpdated
+ */
 
 /** @type {Record<string, string>} */
 export const FACET_LABELS = Object.freeze({

@@ -76,6 +76,18 @@ function nodeColumn(n) {
 }
 
 function resolveNodeColors(n) {
+  if (n.maturity === "gray") {
+    return { fill: "#e2e8f0", stroke: "#94a3b8", text: "#334155" };
+  }
+  if (n.maturity === "yellow") {
+    return { fill: "#fef9c3", stroke: "#ca8a04", text: "#713f12" };
+  }
+  if (n.maturity === "green") {
+    if (Number.isFinite(n?.mastery) && n.mastery < 0.3) {
+      return { fill: "#bbf7d0", stroke: "#16a34a", text: "#14532d" };
+    }
+    return { fill: "#4ade80", stroke: "#15803d", text: "#f0fdf4" };
+  }
   if (Number.isFinite(n?.mastery)) return masteryToNodeColors(n.mastery);
   return LAYER_COLORS[n.layer] || LAYER_COLORS.text;
 }

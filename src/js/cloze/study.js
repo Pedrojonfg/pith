@@ -1,6 +1,7 @@
 import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260612_1";
 import { getActiveSession } from "../session-store.js";
 import { mapClozeResultToQuality, registerOrUpdateSmItem } from "../sm2-ingest.js";
+import { promoteFromCloze } from "../concept-registry/ingest.js";
 import { getValidItems } from "./normalize.js?v=20260607_1";
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260525_1";
@@ -175,6 +176,14 @@ function handleOptionSelect(session, host, idx) {
         contentPreview: String(item.correct_answer || item.answer || ""),
         quality: mapClozeResultToQuality(isCorrect ? "EASY" : "FAIL"),
       });
+      const conceptId = String(item.concept_id || item.conceptId || "").trim();
+      if (conceptId) {
+        void promoteFromCloze({
+          docId: doc.docId,
+          conceptId,
+          quality: mapClozeResultToQuality(isCorrect ? "EASY" : "FAIL"),
+        });
+      }
     }
   } catch (err) {
     console.warn("[sm2-ingest] cloze ingest failed", err);
