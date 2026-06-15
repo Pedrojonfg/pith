@@ -32,6 +32,10 @@ import { populateReviewScopeSelect } from "./project-library.js";
 import { applyVaultReviewObservation } from "./vault/spaced-review.js";
 import { applyVaultReviewItemObservation } from "./vault/vault-curation.js";
 import { FACET_LABELS } from "./session-types.js";
+import {
+  buildGlobalReviewQueue,
+  onGlobalReviewAnswer,
+} from "./concept-registry/global-review.js";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */
@@ -69,6 +73,7 @@ const SM2_SOURCE_LABELS = {
   slow_flashcard: "Slow flashcard",
   vault_concept: "Vault concept",
   vault_review_item: "Vault review",
+  global_concept: "Global concept",
 };
 
 function setSm2ReviewDomVisible(active) {
@@ -151,6 +156,19 @@ function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) return;
 
+  if (item.source === "global" || item.sourceType === "global_concept") {
+    onGlobalReviewAnswer({
+      globalConceptId: item.globalConceptId || item.conceptId || item.sourceId,
+      facet: item.facet || "recognition",
+      quality,
+      sourceDocId: item.docId,
+    });
+    sm2ReviewIndex += 1;
+    if (sm2ReviewIndex >= sm2ReviewQueue.length) showSm2ReviewSummary();
+    else renderSm2ReviewItem();
+    return;
+  }
+
   if (item.source === "vault" || item.sourceType === "vault_review_item") {
     applyVaultReviewItemObservation(
       item.vaultEntryId || "",
@@ -215,15 +233,21 @@ export function runVaultSm2ReviewSession(scope) {
   sm2ReviewDocId = "";
   let pool;
   if (reviewScope.projectId === "all") {
-    pool = getSmItemsDueToday();
+    pool = buildGlobalReviewQueue({ projectId: "all" });
+    if (!pool.length) pool = getSmItemsDueToday();
   } else {
-    pool = filterDueSmItems(
-      getReviewableItemsForProject(reviewScope.projectId, {
-        includeDescendants: reviewScope.includeDescendants,
-      }),
-    );
+    pool = buildGlobalReviewQueue({
+      projectId: reviewScope.projectId,
+    });
+    if (!pool.length) {
+      pool = filterDueSmItems(
+        getReviewableItemsForProject(reviewScope.projectId, {
+          includeDescendants: reviewScope.includeDescendants,
+        }),
+      );
+    }
   }
-  sm2ReviewQueue = buildReviewQueue(pool);
+  sm2ReviewQueue = pool;
   sm2ReviewIndex = 0;
 
   if (!sm2ReviewQueue.length) {

@@ -10,6 +10,7 @@ import {
   normalizeRecallSlice,
 } from "./recall-slice.js";
 import { ingestSm2FromRecallAnswer } from "./sm2-ingest.js";
+import { promoteFromRecall } from "./concept-registry/ingest.js";
 import { syncAssessmentSignalsFromRecall, getAssessmentSignals } from "./session-store.js";
 
 /**
@@ -126,7 +127,26 @@ function escapeHtml(text) {
  * @returns {Promise<object>}
  */
 export async function generateRecallSliceForDoc(doc, options = {}) {
-  const inventory = doc?.shared?.conceptInventory || [];
+  let inventory = doc?.shared?.conceptInventory || [];
+  const focusGlobalId = String(options.focusGlobalConceptId || "").trim();
+  if (focusGlobalId) {
+    inventory = inventory.filter((c) => c.globalConceptId === focusGlobalId);
+    if (!inventory.length) {
+      const concept = await import("./concept-registry/registry-store.js").then((m) =>
+        m.getConceptById(focusGlobalId),
+      );
+      if (concept) {
+        inventory = [
+          {
+            canonicalId: concept.slug,
+            label: concept.canonicalName,
+            definition: "",
+            globalConceptId: concept.id,
+          },
+        ];
+      }
+    }
+  }
   if (!inventory.length) throw new Error("Concept inventory required before recall generation.");
   const meta = doc?.shared?.docHierarchy?.pedagogical_meta || buildDeterministicPedagogicalMetaFallback(doc);
   const config = buildDefaultRecallConfig(doc, meta);
@@ -172,6 +192,7 @@ export function createRecallStudyController(handlers) {
     runConceptInventoryForDoc,
     getLanguage,
     getLlmModel,
+    getFocusGlobalConceptId,
     updateFlowProgress,
     onComplete,
   } = handlers;
@@ -210,6 +231,7 @@ export function createRecallStudyController(handlers) {
       const next = await generateRecallSliceForDoc(doc, {
         language: getLanguage(),
         llmModel: getLlmModel(),
+        focusGlobalConceptId: typeof getFocusGlobalConceptId === "function" ? getFocusGlobalConceptId() : null,
       });
       next.status = "in_progress";
       saveSlice(doc, next);
@@ -307,6 +329,7 @@ export function createRecallStudyController(handlers) {
       const nextSlice = saveSlice(doc, { ...slice, questions, status: "in_progress" });
 
       ingestSm2FromRecallAnswer({ docId: doc.docId, question: updated });
+      void promoteFromRecall({ docId: doc.docId, question: updated });
       syncAssessmentSignalsFromRecall(doc.docId, updated);
 
       renderRecallScreen(els, nextSlice, qi, doc);

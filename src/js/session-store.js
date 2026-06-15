@@ -18,6 +18,7 @@ import {
 } from "./assessment-signals.js";
 import { normalizeSmItem } from "./sm2.js";
 import { loadVault } from "./vault/vault-store.js";
+import { getGlobalReviewDueCount } from "./concept-registry/global-review.js";
 import { normalizeRecallSlice } from "./recall-slice.js";
 import {
   computeCanonicalId,
@@ -136,7 +137,39 @@ function normalizeSessionModes(session) {
 }
 
 function normalizeLoadedSession(session) {
-  return normalizeSessionModes(normalizeSessionSmItems(session));
+  return migrateSessionV3(normalizeSessionModes(normalizeSessionSmItems(session)));
+}
+
+function migrateSessionV3(session) {
+  if (!session?.shared) return session;
+  let changed = false;
+  const sh = session.shared;
+  const inventory = Array.isArray(sh.conceptInventory) ? sh.conceptInventory : [];
+  const nextInv = inventory.map((entry) => {
+    if (entry && typeof entry === "object" && !("globalConceptId" in entry)) {
+      changed = true;
+      return { ...entry, globalConceptId: entry.globalConceptId ?? null };
+    }
+    return entry;
+  });
+  if (changed) sh.conceptInventory = nextInv;
+
+  const signals = Array.isArray(sh.assessmentSignals) ? sh.assessmentSignals : [];
+  const nextSig = signals.map((sig) => {
+    if (sig && typeof sig === "object" && !("globalConceptId" in sig)) {
+      changed = true;
+      return { ...sig, globalConceptId: sig.globalConceptId ?? null };
+    }
+    return sig;
+  });
+  if (changed) sh.assessmentSignals = nextSig;
+
+  const version = Number(session.schemaVersion) || 2;
+  if (version < 3) {
+    changed = true;
+    session.schemaVersion = 3;
+  }
+  return changed ? { ...session, shared: sh } : session;
 }
 
 function stripMarkdownForPersist(session) {
@@ -215,7 +248,7 @@ export async function createSession(rawMarkdown, options = {}) {
   const now = Date.now();
   const session = {
     docId,
-    schemaVersion: 2,
+    schemaVersion: 3,
     projectId: options.projectId || MISC_PROJECT_ID,
     createdAt: now,
     updatedAt: now,
@@ -371,6 +404,7 @@ export function addConceptsToShared(docId, concepts) {
         definition,
         detectedBy: raw.detectedBy || "slow",
         importance: raw.importance != null ? Number(raw.importance) : undefined,
+        globalConceptId: null,
       });
     }
   }
@@ -509,6 +543,7 @@ export function syncAssessmentSignalsFromRecall(docId, question) {
 }
 
 export function getVaultReviewDueCount() {
+  const globalDue = getGlobalReviewDueCount();
   const smDue = getSmItemsDueToday().length;
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
@@ -518,7 +553,7 @@ export function getVaultReviewDueCount() {
     const due = Number(item?.sm2?.dueDate);
     return !Number.isFinite(due) || due <= cutoff;
   }).length;
-  return smDue + vaultDue;
+  return globalDue + smDue + vaultDue;
 }
 
 export function getSmItemsDueToday(docId) {
