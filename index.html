@@ -3,16 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0f0f0f" />
+    <meta name="theme-color" content="#111318" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <title>Pith</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       #app-splash {
         position: fixed;
@@ -32,10 +29,10 @@
       .app-splash-word {
         position: relative;
         z-index: 1;
-        font-family: "Fraunces", Georgia, serif;
+        font-family: "DM Sans", system-ui, sans-serif;
         font-size: 2.5rem;
-        font-weight: 500;
-        letter-spacing: 0.08em;
+        font-weight: 600;
+        letter-spacing: 0;
         color: #fff;
         opacity: 0;
       }
@@ -46,7 +43,7 @@
         border-radius: 50%;
         opacity: 0;
         pointer-events: none;
-        background: radial-gradient(circle, rgba(255, 255, 255, 0.42) 0%, transparent 72%);
+        background: radial-gradient(circle, rgba(24, 196, 170, 0.28) 0%, transparent 72%);
         filter: blur(14px);
         transform: scale(0.88);
       }
@@ -81,6 +78,7 @@
     <link rel="stylesheet" href="src/css/cloze-mode.css" />
     <link rel="stylesheet" href="src/css/recall-mode.css" />
     <link rel="stylesheet" href="src/css/graph.css" />
+    <link rel="stylesheet" href="src/css/design-enforcement.css" />
   </head>
   <body>
     <div id="app-splash" hidden aria-hidden="true">
@@ -1128,8 +1126,8 @@
             <h1>Session ready</h1>
             <p id="sessionReadyMeta">Session ready.</p>
             <div class="row">
-              <button type="button" id="startStudyingBtn" class="btn-primary">Start studying →</button>
-              <button type="button" id="generateFullPackBtn">Generate full pack 📦</button>
+              <button type="button" id="startStudyingBtn" class="btn-primary">Start studying</button>
+              <button type="button" id="generateFullPackBtn">Generate full pack</button>
               <span class="hint" id="startStudyingStatus" role="status"></span>
             </div>
             <div id="startStudyingError" class="error" hidden></div>
@@ -1320,9 +1318,27 @@
           aria-hidden="true"
           aria-label="Session complete"
         >
-          <div class="card" style="text-align: center; padding: 44px 20px">
+          <div class="card">
             <h1>Session complete</h1>
-            <p>You’re done. Save your session when you’re ready.</p>
+            <p class="hint session-complete-lead">Save your session when you are ready.</p>
+            <div id="sessionCompleteStats" class="session-complete-stats" aria-label="Session summary">
+              <div class="session-complete-stat">
+                <span class="session-complete-stat-label">Time studied</span>
+                <span id="sessionCompleteTime" class="session-complete-stat-value">—</span>
+              </div>
+              <div class="session-complete-stat">
+                <span class="session-complete-stat-label">Blocks covered</span>
+                <span id="sessionCompleteBlocks" class="session-complete-stat-value">—</span>
+              </div>
+              <div class="session-complete-stat">
+                <span class="session-complete-stat-label">Questions answered</span>
+                <span id="sessionCompleteQuestions" class="session-complete-stat-value">—</span>
+              </div>
+              <div class="session-complete-stat">
+                <span class="session-complete-stat-label">Correct rate</span>
+                <span id="sessionCompleteCorrect" class="session-complete-stat-value">—</span>
+              </div>
+            </div>
             <div class="row" style="justify-content: center">
               <button type="button" id="btnPracticeRetrieval" class="btn-primary">Practice retrieval</button>
               <button type="button" id="saveSessionBtn" class="btn-secondary">Save session</button>
@@ -1965,7 +1981,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_3";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_5";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1981,7 +1997,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260616_3");
+        await import("./src/js/main.js?v=20260616_5");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

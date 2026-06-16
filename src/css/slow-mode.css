@@ -1847,3 +1847,27 @@
     grid-column: 1;
   }
 }
+
+/* DESIGN.md normalization for Slow Mode surfaces/chrome */
+.slow-screen .card,
+.slow-screen .slow-card,
+.slow-screen button,
+.slow-screen input,
+.slow-screen select,
+.slow-screen textarea,
+.slow-screen .toggle {
+  box-shadow: none;
+  border-radius: var(--radius-sm, 3px);
+}
+
+.slow-screen .slow-reader-toolbar {
+  background: var(--bg-base, #111318);
+}
+
+.slow-screen .slow-reader-typo {
+  border-left-color: var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.slow-screen .slow-scope-list li button[aria-selected="true"] {
+  background: var(--accent-muted, rgba(24, 196, 170, 0.12));
+}

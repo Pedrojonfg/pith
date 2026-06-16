@@ -18,6 +18,32 @@ let currentScreenId = "setup";
 export function getCurrentScreenId() {
   return currentScreenId;
 }
+
+/**
+ * @param {{ timeLabel?: string, blocksLabel?: string, questionsLabel?: string, correctRatePct?: number | null }} summary
+ */
+export function updateSessionCompleteSummary(summary = {}) {
+  const timeLabel = String(summary.timeLabel ?? "—");
+  const blocksLabel = String(summary.blocksLabel ?? "—");
+  const questionsLabel = String(summary.questionsLabel ?? "—");
+  if (els.sessionCompleteTime) els.sessionCompleteTime.textContent = timeLabel;
+  if (els.sessionCompleteBlocks) els.sessionCompleteBlocks.textContent = blocksLabel;
+  if (els.sessionCompleteQuestions) els.sessionCompleteQuestions.textContent = questionsLabel;
+
+  const rateEl = els.sessionCompleteCorrect;
+  if (!rateEl) return;
+  const rate = summary.correctRatePct;
+  rateEl.classList.remove("is-good", "is-warn", "is-bad");
+  if (rate == null || !Number.isFinite(rate)) {
+    rateEl.textContent = "—";
+    return;
+  }
+  const pct = Math.round(rate);
+  rateEl.textContent = `${pct}%`;
+  if (pct > 70) rateEl.classList.add("is-good");
+  else if (pct >= 50) rateEl.classList.add("is-warn");
+  else rateEl.classList.add("is-bad");
+}
 let blockReadWanted = false;
 let guideToggleSuppressed = false;
 
@@ -412,6 +438,10 @@ export const els = {
   testAssessmentChrome: document.getElementById("testAssessmentChrome"),
   socraticAssessmentChrome: document.getElementById("socraticAssessmentChrome"),
   screenComplete: document.getElementById("screenComplete"),
+  sessionCompleteTime: document.getElementById("sessionCompleteTime"),
+  sessionCompleteBlocks: document.getElementById("sessionCompleteBlocks"),
+  sessionCompleteQuestions: document.getElementById("sessionCompleteQuestions"),
+  sessionCompleteCorrect: document.getElementById("sessionCompleteCorrect"),
   screenReviewConfig: document.getElementById("screenReviewConfig"),
   screenReviewGenerating: document.getElementById("screenReviewGenerating"),
   screenReview: document.getElementById("screenReview"),
@@ -809,7 +839,7 @@ function paintPhaseRow(el, status) {
 
 export function setFullPackEntryCta(nBlocks) {
   if (els.generateFullPackBtn) {
-    els.generateFullPackBtn.textContent = "Generate offline pack 📦";
+    els.generateFullPackBtn.textContent = "Generate offline pack";
   }
   const subtitle = ensureFullPackCtaSubtitle();
   if (subtitle) {
@@ -895,7 +925,7 @@ function ensureOfflineModeBanner() {
   const banner = document.createElement("div");
   banner.id = "offlineModeBanner";
   banner.className = "hint";
-  banner.textContent = "📦 Offline mode";
+  banner.textContent = "Offline mode";
   banner.style.marginTop = "6px";
   banner.style.fontSize = "12px";
   banner.hidden = true;

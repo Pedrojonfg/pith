@@ -3,9 +3,9 @@
 .cloze-session-panel {
   margin: 16px 0;
   padding: 14px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--border, #2a2a2a);
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius-md, 4px);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--bg-base, #111318);
 }
 
 .cloze-pipeline-progress {
@@ -52,14 +52,16 @@
   text-align: left;
   width: 100%;
   padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border, #2a2a2a);
+  min-height: 40px;
+  border-radius: var(--radius-sm, 3px);
+  border: 1px solid var(--border-default, rgba(255, 255, 255, 0.1));
   background: transparent;
   cursor: pointer;
 }
 
 .cloze-option-btn:hover:not(:disabled) {
-  border-color: var(--accent, #6366f1);
+  border-color: var(--border-focus, rgba(255, 255, 255, 0.22));
+  background: var(--bg-elevated, #1e2330);
 }
 
 .cloze-option-btn:disabled {
@@ -68,13 +70,13 @@
 }
 
 .cloze-option-correct {
-  border-color: #22c55e;
-  background: rgba(34, 197, 94, 0.12);
+  border-color: var(--success, #1dc990);
+  background: var(--success-muted, rgba(29, 201, 144, 0.12));
 }
 
 .cloze-option-wrong {
-  border-color: #ef4444;
-  background: rgba(239, 68, 68, 0.1);
+  border-color: var(--error, #f0584a);
+  background: var(--error-muted, rgba(240, 88, 74, 0.12));
 }
 
 .cloze-study-feedback {

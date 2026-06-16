@@ -34,9 +34,9 @@
 }
 
 .recall-question-text {
-  font-size: 1.15rem;
-  line-height: 1.65;
-  color: rgba(255, 255, 255, 0.94);
+  font-size: var(--text-md, 17px);
+  line-height: 1.75;
+  color: var(--text-primary, #e4e7f0);
   white-space: pre-wrap;
 }
 
@@ -80,9 +80,9 @@
 .recall-concept-peek {
   margin-top: 18px;
   padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border, #2a2a2a);
-  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-md, 4px);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  background: var(--bg-base, #111318);
 }
 
 .recall-concept-peek summary {
