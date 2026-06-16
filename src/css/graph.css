@@ -29,12 +29,10 @@
 }
 
 .material-graph-canvas-host {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 14px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+  border-radius: var(--radius-md, 4px);
   overflow: hidden;
-  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08), transparent 45%),
-    radial-gradient(circle at 80% 70%, rgba(34, 197, 94, 0.06), transparent 40%),
-    rgba(2, 6, 23, 0.5);
+  background: var(--bg-base, #111318);
 }
 
 .material-graph-svg {
@@ -51,7 +49,7 @@
 }
 
 .material-graph-node-clickable circle {
-  filter: drop-shadow(0 0 6px rgba(236, 72, 153, 0.35));
+  filter: none;
 }
 
 .material-graph-node-label {
@@ -169,5 +167,6 @@
 }
 
 .material-graph-node-clickable:hover circle {
-  filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.45));
+  stroke: var(--accent, #18c4aa);
+  stroke-width: 2px;
 }

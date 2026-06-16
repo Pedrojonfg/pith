@@ -1,6 +1,6 @@
 /** PWA service worker update UX — detect new versions and let users refresh safely. */
 
-export const SW_VERSION = "20260616_3";
+export const SW_VERSION = "20260616_5";
 
 export function getServiceWorkerUrl() {
   return `/sw.js?v=${SW_VERSION}`;
@@ -30,11 +30,9 @@ export function showUpdateToast(document, window, registration) {
   toast.style.gap = "8px";
   toast.style.alignItems = "center";
   toast.style.padding = "10px 12px";
-  toast.style.borderRadius = "12px";
-  toast.style.border = "1px solid rgba(255,255,255,0.2)";
-  toast.style.background = "rgba(15,15,15,0.95)";
-  toast.style.backdropFilter = "blur(8px)";
-  toast.style.boxShadow = "0 8px 24px rgba(0,0,0,0.35)";
+  toast.style.borderRadius = "4px";
+  toast.style.border = "1px solid rgba(255,255,255,0.1)";
+  toast.style.background = "#181c24";
 
   const label = document.createElement("span");
   label.textContent = "A new version is available.";

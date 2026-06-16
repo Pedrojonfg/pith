@@ -1,0 +1,314 @@
+/**
+ * DESIGN.md pass-2 enforcement — loaded last; overrides legacy per-screen styles.
+ * See DESIGN.md for token definitions and anti-patterns.
+ */
+
+/* §10 — subtle base noise (dark mode only) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+[data-theme="light"] body::before {
+  display: none;
+}
+
+/* §11 — hub ambient glow (mode hub screens only) */
+.app-home-screen[aria-hidden="false"] .app-home-card,
+.mode-select-screen[aria-hidden="false"] .mode-select-card,
+.retrieval-hub-screen[aria-hidden="false"] .retrieval-hub-card,
+.vault-branch-screen[aria-hidden="false"] .vault-branch-card {
+  background-image: radial-gradient(
+    ellipse 70% 50% at 50% -5%,
+    rgba(24, 196, 170, 0.06) 0%,
+    transparent 70%
+  );
+  background-color: var(--bg-surface);
+}
+
+/* §5 — no decorative shadows; §5.3 — radius caps */
+.card,
+.vault-overlay-inner,
+.vault-modal,
+.dict-overlay .card,
+.form-collapsible,
+.block-item,
+.review-blocks-list,
+.dict-panel,
+.dict-list,
+.dict-definition,
+.test-rsvp-stage,
+.export-toast,
+.boot-error-banner,
+.project-move-dialog,
+.flow-panel,
+.pre-packing-assessment-option,
+.doc-library-item,
+.project-library-item,
+.retrieval-hub-option,
+.upload-vault-concept,
+.cloze-session-panel,
+.recall-concept-peek,
+.slow-screen .slow-card,
+.material-graph-canvas-host {
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
+}
+
+button,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select,
+textarea,
+.toggle,
+.corner-link,
+.corner-icon-btn,
+.corner-plus,
+.sidebar-close,
+.sidebar-toggle,
+.block-read-toggle,
+.cloze-option-btn,
+.study-mode-option,
+.flow-progress-step {
+  border-radius: var(--radius-sm) !important;
+  box-shadow: none !important;
+}
+
+/* §6.5 — async progress bars: 2px */
+.study-progress .bar,
+.card .bar,
+.progress-track,
+.rsvp-progress-track,
+.assessment-bar-track {
+  height: 2px !important;
+  border-radius: 1px !important;
+  border: none !important;
+  background: var(--border-subtle) !important;
+}
+
+.study-progress .fill,
+.card .bar .fill,
+.progress-fill,
+.rsvp-progress-fill,
+.assessment-bar-fill {
+  border-radius: 1px !important;
+  background: var(--accent) !important;
+}
+
+/* §5.2 — no glow rings; accent border on focus */
+.flow-progress-step.current {
+  box-shadow: none !important;
+  border-color: var(--accent) !important;
+  background: var(--accent-muted) !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+#guide-input:focus {
+  box-shadow: none !important;
+  border-color: var(--accent) !important;
+  outline: none;
+}
+
+/* §11 — no glassmorphism on interactive chrome */
+.study-progress,
+.rsvp-controls,
+.dict-overlay,
+.vault-overlay,
+.rsvp-overlay .rsvp-controls {
+  backdrop-filter: none !important;
+}
+
+.study-progress {
+  background: var(--bg-surface) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.rsvp-controls {
+  background: var(--bg-surface) !important;
+}
+
+.dict-overlay {
+  background: var(--bg-overlay) !important;
+}
+
+/* §6.3 — interactive cards */
+.doc-library-item:hover,
+.project-library-item:hover,
+.retrieval-hub-option:hover,
+.study-mode-option:hover {
+  border-color: var(--border-focus) !important;
+  background: var(--bg-elevated) !important;
+}
+
+.study-mode-option:has(input:checked),
+.cloze-option-btn.cloze-option-correct,
+.pre-packing-assessment-option:has(input:checked) {
+  border-color: var(--accent) !important;
+  background: var(--accent-subtle) !important;
+}
+
+.cloze-option-correct {
+  border-color: var(--success) !important;
+  background: var(--success-muted) !important;
+}
+
+.cloze-option-wrong {
+  border-color: var(--error) !important;
+  background: var(--error-muted) !important;
+}
+
+/* §6.4 — badges */
+.review-badge,
+.recall-type-badge,
+.facet-badge,
+.create-mode-badge,
+.review-early-chip {
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  border-radius: var(--radius-pill) !important;
+}
+
+.review-badge {
+  background: var(--accent-muted) !important;
+  color: var(--accent) !important;
+}
+
+/* §6.1 — text buttons */
+.create-back-btn,
+.reading-mode-switch {
+  background: transparent !important;
+  border: none !important;
+  color: var(--text-secondary) !important;
+  min-height: auto;
+  padding: 6px 0;
+}
+
+.create-back-btn:hover,
+.reading-mode-switch:hover {
+  color: var(--text-primary) !important;
+  background: transparent !important;
+}
+
+/* §9.3 — session complete summary */
+#screenComplete .card {
+  text-align: center;
+  padding: 24px 20px;
+}
+
+#screenComplete h1 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.session-complete-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 20px 0 24px;
+  text-align: left;
+}
+
+.session-complete-stat {
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+
+.session-complete-stat-label {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.session-complete-stat-value {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-complete-stat-value.is-good {
+  color: var(--success);
+}
+
+.session-complete-stat-value.is-warn {
+  color: var(--warning);
+}
+
+.session-complete-stat-value.is-bad {
+  color: var(--error);
+}
+
+/* §3.4 — prose reading */
+.slow-reader-page,
+.paced-reader-page,
+.md-content,
+.block-read-body,
+.recall-question-text {
+  max-width: 68ch;
+  line-height: 1.75;
+}
+
+/* Graph canvas — flat surface, no glow filters */
+.material-graph-canvas-host {
+  background: var(--bg-base) !important;
+  border: 1px solid var(--border-subtle) !important;
+}
+
+.material-graph-node-clickable circle {
+  filter: none !important;
+}
+
+/* Flow panel — flat surface */
+.flow-panel {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-subtle) !important;
+}
+
+.flow-recommend-upload {
+  background: var(--accent-subtle) !important;
+  border: 1px dashed var(--border-default) !important;
+}
+
+/* Vault overlay — elevated layer */
+.vault-overlay-inner,
+.vault-modal {
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary) !important;
+  box-shadow: none !important;
+}
+
+/* Sidebar tokens */
+.guide-sidebar,
+.block-read-sidebar {
+  background: var(--bg-surface) !important;
+}
+
+.message-user {
+  background: var(--accent-subtle) !important;
+  border-color: var(--accent) !important;
+}
+
+#guide-send-btn,
+.sidebar-toggle {
+  background: var(--accent) !important;
+  color: var(--text-inverse) !important;
+}
+
+#guide-send-btn:hover,
+.sidebar-toggle:hover {
+  background: var(--accent-hover) !important;
+}

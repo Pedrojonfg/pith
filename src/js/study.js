@@ -191,6 +191,7 @@ import {
   syncStudyLanguage,
   typesetMath,
   updateFullPackProgressUi,
+  updateSessionCompleteSummary,
 } from "./ui.js?v=20260525_1";
 import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260527_1";
 import {
@@ -3881,7 +3882,7 @@ function setOfflinePackError(message) {
 function setOfflinePackLoading(isLoading) {
   if (els.loadOfflinePackBtn) {
     els.loadOfflinePackBtn.disabled = isLoading;
-    els.loadOfflinePackBtn.textContent = isLoading ? "Loading offline pack…" : "📦 Load offline pack";
+    els.loadOfflinePackBtn.textContent = isLoading ? "Loading offline pack…" : "Load offline pack";
   }
   if (els.offlinePackStatus) {
     els.offlinePackStatus.textContent = isLoading ? "Reading…" : "";
@@ -3971,11 +3972,11 @@ async function loadOfflinePack(text, filename = "") {
   setBlocksReadonlyMode({
     enabled: true,
     bannerText:
-      `📦 ${totalBlocks} blocks · Generated ${generatedAt}`
-      + (failedBlocks > 0 ? ` · ⚠️ ${failedBlocks} blocks have no content` : ""),
+      `${totalBlocks} blocks · Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` · ${failedBlocks} blocks have no content` : ""),
   });
   if (els.confirmBlocksStatus) {
-    els.confirmBlocksStatus.textContent = `📦 ${totalBlocks} blocks · Generated ${generatedAt}`;
+    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks · Generated ${generatedAt}`;
   }
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
@@ -4346,6 +4347,56 @@ function updateStudyProgressUi() {
   els.studyProgressFill.style.width = `${pct}%`;
 }
 
+function computeSessionCompleteSummary() {
+  const session = state.activeSession;
+  const nBlocks = Math.max(1, Number(session?.n_blocks) || state.lastNBlocks || 1);
+  const blocksCovered = Math.min(nBlocks, Math.max(1, Number(state.activeBlockIndex) + 1));
+  const responses =
+    session?._responses && typeof session._responses === "object"
+      ? session._responses
+      : { blocks: {} };
+  const blockMap =
+    responses.blocks && typeof responses.blocks === "object" ? responses.blocks : {};
+
+  let answered = 0;
+  let correct = 0;
+  let gradable = 0;
+  for (const blockResponses of Object.values(blockMap)) {
+    if (!blockResponses || typeof blockResponses !== "object") continue;
+    const questions =
+      blockResponses.questions && typeof blockResponses.questions === "object"
+        ? blockResponses.questions
+        : blockResponses;
+    for (const row of Object.values(questions)) {
+      if (!row || typeof row !== "object") continue;
+      const hasAnswer =
+        row.user_answer != null && String(row.user_answer).trim().length > 0;
+      if (!hasAnswer) continue;
+      answered += 1;
+      if (row.is_correct === true) {
+        correct += 1;
+        gradable += 1;
+      } else if (row.is_correct === false) {
+        gradable += 1;
+      }
+    }
+  }
+
+  const startedAt = Number(session?._meta?.study_started_at);
+  let timeLabel = "—";
+  if (Number.isFinite(startedAt) && startedAt > 0) {
+    const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
+    timeLabel = mins === 1 ? "1 min" : `${mins} min`;
+  }
+
+  return {
+    timeLabel,
+    blocksLabel: `${blocksCovered} / ${nBlocks}`,
+    questionsLabel: String(answered),
+    correctRatePct: gradable > 0 ? (correct / gradable) * 100 : null,
+  };
+}
+
 function showSessionComplete() {
   try {
     commitSessionConceptsForBlock(state.activeBlockIndex);
@@ -4354,6 +4405,7 @@ function showSessionComplete() {
   }
   persistFlowRecommendationProgress();
   syncOfflinePackButtonVisibility();
+  updateSessionCompleteSummary(computeSessionCompleteSummary());
   showScreen("complete");
 }
 
@@ -7239,6 +7291,13 @@ export function wireStudyHandlers() {
       return;
     }
     ensureSessionResponseState();
+    if (!state.activeSession._meta || typeof state.activeSession._meta !== "object") {
+      state.activeSession._meta = {};
+    }
+    if (!Number.isFinite(Number(state.activeSession._meta.study_started_at))) {
+      state.activeSession._meta.study_started_at = Date.now();
+      storeActiveSession(state.activeSession);
+    }
     state.nTest = clampInt(state.activeSession?.n_test, 0, MAX_N_TEST, state.nTest);
     state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
     state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
@@ -9314,6 +9373,7 @@ export function wireStudyHandlers() {
           state.activeBlockIndex = Math.max(0, sessionObj.n_blocks - 1);
           state.activeQuestionIndex = 0;
           syncOfflinePackButtonVisibility();
+          updateSessionCompleteSummary(computeSessionCompleteSummary());
           showScreen("complete");
         } else {
           state.activeBlockIndex = pointer.current_block_index;
