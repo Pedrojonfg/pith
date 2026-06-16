@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Space+Grotesk:wght@500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -32,7 +32,7 @@
       .app-splash-word {
         position: relative;
         z-index: 1;
-        font-family: "Space Grotesk", system-ui, sans-serif;
+        font-family: "Fraunces", Georgia, serif;
         font-size: 2.5rem;
         font-weight: 500;
         letter-spacing: 0.08em;
@@ -556,6 +556,9 @@
             <div class="doc-library-actions row">
               <button type="button" id="btnNewProject" class="btn-secondary">New Project</button>
               <button type="button" id="btnNewSubproject" class="btn-secondary" hidden>New Subproject</button>
+              <button type="button" id="btnCreateProjectSession" class="btn-primary" hidden>
+                Create session in this project
+              </button>
             </div>
             <div class="doc-library-vault-row">
               <button type="button" id="btnVaultReview" class="btn-secondary">
@@ -911,7 +914,7 @@
                 Accept personalised blocks
               </button>
               <button type="button" id="prePackingResultsIgnore" class="btn-secondary">
-                Ignorar y usar todos
+                Ignore and use all
               </button>
             </div>
             <p id="prePackingResultsStatus" class="hint" role="status"></p>
@@ -965,7 +968,7 @@
 
             <div class="import-index-row">
               <button id="import-index-btn-confirm" class="btn-secondary btn-small" type="button">
-                📋 Import existing index
+                Import existing index
               </button>
               <span id="import-index-label-confirm" class="muted-label"></span>
             </div>
@@ -1909,7 +1912,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260626_1";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_2";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1925,7 +1928,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260626_1");
+        await import("./src/js/main.js?v=20260616_2");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

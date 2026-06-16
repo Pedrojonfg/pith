@@ -1,13 +1,13 @@
 :root {
   color-scheme: dark;
-  --bg: #0c0c0c;
-  --fg: #f5f5f5;
-  --muted: rgba(245, 245, 245, 0.62);
-  --border: rgba(255, 255, 255, 0.12);
-  --panel: rgba(255, 255, 255, 0.035);
-  --focus: rgba(125, 211, 252, 0.55);
-  --accent: #7dd3fc;
-  --accent-fg: #0a0a0a;
+  --bg: #070b11;
+  --fg: #eaf1ff;
+  --muted: rgba(226, 236, 255, 0.68);
+  --border: rgba(151, 180, 236, 0.2);
+  --panel: rgba(14, 24, 43, 0.58);
+  --focus: rgba(109, 170, 255, 0.58);
+  --accent: #6daaff;
+  --accent-fg: #051022;
   --good: rgba(34, 197, 94, 0.9);
   --bad: rgba(248, 113, 113, 0.95);
   --radius-sm: 8px;
@@ -27,9 +27,12 @@ body {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(1100px 700px at 12% -10%, rgba(109, 170, 255, 0.2), transparent 62%),
+    radial-gradient(900px 500px at 88% 0%, rgba(117, 89, 255, 0.14), transparent 58%),
+    var(--bg);
   color: var(--fg);
-  font-family: "DM Sans", system-ui, -apple-system, Segoe UI, Helvetica, Arial,
+  font-family: "Manrope", system-ui, -apple-system, Segoe UI, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji";
   font-size: 15px;
   line-height: 1.55;
@@ -122,16 +125,20 @@ body.paced-reader-active main {
 .card {
   width: 100%;
   border: 1px solid var(--border);
-  background: var(--panel);
-  border-radius: var(--radius-lg);
+  background: linear-gradient(170deg, rgba(17, 29, 52, 0.9), rgba(12, 20, 37, 0.78));
+  border-radius: 18px;
   padding: 28px 32px;
+  box-shadow:
+    0 20px 52px rgba(2, 8, 20, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 h1 {
   margin: 0 0 10px 0;
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.025em;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   line-height: 1.2;
 }
 
@@ -163,8 +170,8 @@ select {
   width: 100%;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(160, 188, 238, 0.26);
+  background: rgba(10, 20, 38, 0.66);
   color: var(--fg);
   font-size: 14px;
   font-family: inherit;
@@ -185,7 +192,7 @@ input[type="text"]:focus,
 input[type="number"]:focus,
 select:focus {
   border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(125, 211, 252, 0.12);
+  box-shadow: 0 0 0 3px rgba(109, 170, 255, 0.2);
 }
 
 .blocks-tools {
@@ -217,11 +224,11 @@ select:focus {
 
 button {
   appearance: none;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(160, 188, 238, 0.25);
+  background: rgba(179, 203, 246, 0.08);
   color: var(--fg);
   padding: 10px 16px;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   font-size: 14px;
   font-weight: 500;
   font-family: inherit;
@@ -229,11 +236,13 @@ button {
   transition:
     background 150ms ease-out,
     border-color 150ms ease-out,
-    filter 150ms ease-out;
+    filter 150ms ease-out,
+    transform 150ms ease-out;
 }
 
 button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(179, 203, 246, 0.14);
+  transform: translateY(-1px);
 }
 
 button:focus-visible {
@@ -246,12 +255,18 @@ button:disabled {
   cursor: not-allowed;
 }
 
+button:disabled:hover {
+  transform: none;
+  background: rgba(179, 203, 246, 0.08);
+}
+
 .btn-primary,
 button.btn-primary {
-  background: var(--accent);
+  background: linear-gradient(135deg, #77b4ff, #4a8dff);
   color: var(--accent-fg);
-  border-color: transparent;
+  border-color: rgba(166, 202, 255, 0.45);
   font-weight: 600;
+  box-shadow: 0 10px 24px rgba(63, 128, 245, 0.33);
 }
 
 .btn-primary:hover,
@@ -263,9 +278,9 @@ button.btn-primary:hover {
 .btn-secondary,
 button.secondary,
 button.btn-secondary {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--muted);
+  background: rgba(127, 160, 220, 0.08);
+  border-color: rgba(160, 188, 238, 0.25);
+  color: rgba(223, 235, 255, 0.86);
 }
 
 .btn-secondary:hover,
@@ -328,8 +343,8 @@ button.btn-secondary:hover {
 }
 
 .toggle button[aria-pressed="true"] {
-  background: rgba(125, 211, 252, 0.14);
-  color: var(--fg);
+  background: rgba(109, 170, 255, 0.28);
+  color: #f7fbff;
   font-weight: 600;
 }
 
@@ -338,8 +353,8 @@ textarea {
   min-height: 260px;
   padding: 12px 12px;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(160, 188, 238, 0.26);
+  background: rgba(10, 20, 38, 0.66);
   color: var(--fg);
   font-size: 14px;
   line-height: 1.5;
@@ -349,7 +364,7 @@ textarea {
 
 textarea:focus {
   border-color: var(--focus);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(109, 170, 255, 0.2);
 }
 
 .review-blocks-list {
@@ -1808,16 +1823,16 @@ body.assessment-runner-active .assessment-runner-chrome {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 10px;
-  background: var(--panel, rgba(255, 255, 255, 0.03));
+  border-radius: 12px;
+  background: rgba(168, 199, 255, 0.05);
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .doc-library-item:hover {
-  border-color: rgba(99, 102, 241, 0.45);
-  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(109, 170, 255, 0.56);
+  background: rgba(109, 170, 255, 0.14);
 }
 
 .doc-library-title {
@@ -1954,8 +1969,8 @@ body.assessment-runner-active .assessment-runner-chrome {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  background: rgba(168, 199, 255, 0.05);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -1963,8 +1978,8 @@ body.assessment-runner-active .assessment-runner-chrome {
 }
 
 .project-library-item:hover {
-  border-color: rgba(99, 102, 241, 0.4);
-  background: rgba(99, 102, 241, 0.08);
+  border-color: rgba(109, 170, 255, 0.56);
+  background: rgba(109, 170, 255, 0.14);
 }
 
 .project-library-swatch {
@@ -1977,6 +1992,7 @@ body.assessment-runner-active .assessment-runner-chrome {
 .doc-library-actions {
   margin-bottom: 12px;
   gap: 8px;
+  align-items: center;
 }
 
 .mode-select-hub {
@@ -2912,7 +2928,7 @@ body.vault-overlay-open #screenApiSetup {
 .app-splash-word {
   position: relative;
   z-index: 1;
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: "Fraunces", Georgia, serif;
   font-size: clamp(2rem, 6vw, 2.75rem);
   font-weight: 500;
   letter-spacing: 0.08em;

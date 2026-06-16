@@ -124,7 +124,11 @@ function renderProjectRows(store, parentId, container, onOpenProject) {
   if (!container) return;
   const children = getChildren(store, parentId);
   if (!children.length) {
-    container.innerHTML = "";
+    if (!parentId) {
+      container.innerHTML = '<p class="doc-library-empty hint">No projects yet. Create one to organize your study sessions.</p>';
+    } else {
+      container.innerHTML = "";
+    }
     return;
   }
   container.innerHTML = children
@@ -154,7 +158,7 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
   );
   if (!sessions.length) {
     container.innerHTML = projectId
-      ? '<p class="doc-library-empty hint">No documents in this subject yet.</p>'
+      ? '<p class="doc-library-empty hint">No documents in this project yet. Use "Create session in this project" to start.</p>'
       : "";
     return;
   }
@@ -290,6 +294,7 @@ export function renderProjectLibraryView() {
 
   if (els.btnNewProject) els.btnNewProject.hidden = Boolean(projectId);
   if (els.btnNewSubproject) els.btnNewSubproject.hidden = !projectId;
+  if (els.btnCreateProjectSession) els.btnCreateProjectSession.hidden = !projectId;
 
   renderProjectRows(store, parentForList, els.docLibraryProjectList, (id) => {
     projectLibraryState.currentProjectId = id;
@@ -309,7 +314,7 @@ export function renderProjectLibraryView() {
   }
 }
 
-/** @type {{ onDocumentOpen?: (docId: string) => void, onBack?: () => void }} */
+/** @type {{ onDocumentOpen?: (docId: string) => void, onBack?: () => void, onCreateSessionInProject?: (projectId: string) => void }} */
 export const projectLibraryCallbacks = {};
 
 export function enterProjectLibrary(options = {}) {
@@ -329,6 +334,14 @@ export function wireProjectLibraryHandlers() {
   els.btnNewSubproject?.addEventListener("click", () => {
     if (projectLibraryState.currentProjectId) {
       promptNewProject(projectLibraryState.currentProjectId);
+    }
+  });
+  els.btnCreateProjectSession?.addEventListener("click", () => {
+    const projectId = projectLibraryState.currentProjectId;
+    if (!projectId) return;
+    setUploadProjectContext(projectId);
+    if (typeof projectLibraryCallbacks.onCreateSessionInProject === "function") {
+      projectLibraryCallbacks.onCreateSessionInProject(projectId);
     }
   });
   els.docLibraryBackBtn?.addEventListener("click", () => {
