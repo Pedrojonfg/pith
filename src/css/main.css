@@ -41,6 +41,7 @@
   --ease-exit: ease-in;
   --ease-reveal: cubic-bezier(0, 0, 0.2, 1);
   --content-max: 840px;
+  --chrome-top-reserve: 60px;
   --bg: var(--bg-base);
   --fg: var(--text-primary);
   --muted: var(--text-secondary);
@@ -205,12 +206,24 @@ body.paced-reader-active main {
   place-items: stretch;
 }
 
+/* Full-bleed readers hide corner chrome — no extra top inset */
+body.slow-reader-active main > .container,
+body.paced-reader-active main > .container {
+  padding-top: 0;
+}
+
+/* Study progress bar already offsets main — keep normal vertical rhythm */
+body.study-active main > .container,
+body.recall-active main > .container {
+  padding-top: var(--space-6, 24px);
+}
+
 .container {
   width: 100%;
   max-width: none;
   min-height: 100vh;
   margin: 0;
-  padding: var(--space-6, 24px);
+  padding: var(--chrome-top-reserve) var(--space-6, 24px) var(--space-6, 24px);
   box-sizing: border-box;
 }
 
@@ -224,7 +237,7 @@ body.paced-reader-active main {
 
 /* Full-bleed primary screens — screens are never cards */
 .screen > .card {
-  min-height: calc(100vh - 48px);
+  min-height: calc(100vh - var(--chrome-top-reserve) - var(--space-6, 24px));
   padding: 0;
   background: transparent;
   border: none;

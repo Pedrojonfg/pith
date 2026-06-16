@@ -31,14 +31,24 @@ main > .container {
   max-width: none !important;
   min-height: 100vh;
   margin: 0 !important;
-  padding: var(--space-6, 24px) !important;
+  padding: var(--chrome-top-reserve, 60px) var(--space-6, 24px) var(--space-6, 24px) !important;
   box-sizing: border-box;
+}
+
+body.slow-reader-active main > .container,
+body.paced-reader-active main > .container {
+  padding-top: 0 !important;
+}
+
+body.study-active main > .container,
+body.recall-active main > .container {
+  padding-top: var(--space-6, 24px) !important;
 }
 
 .screen > .card {
   width: 100% !important;
   max-width: none !important;
-  min-height: calc(100vh - 48px);
+  min-height: calc(100vh - var(--chrome-top-reserve, 60px) - var(--space-6, 24px));
   margin: 0 !important;
   padding: 0 !important;
   background: transparent !important;
