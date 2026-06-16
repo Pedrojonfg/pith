@@ -850,3 +850,99 @@ Full token set to be placed in `:root` and `[data-theme="light"]`:
 ---
 
 *DESIGN.md — Pith, v1.0. Compiled June 2026. Update when color system, typeface, or component patterns change. Keep in sync with application-overview.md when new modes introduce new component types.*
+## Mode Selection Screen
+
+### Philosophy
+The mode selection screen presents **one clear recommended action**, not a configuration menu.
+The app already knows what the user should do — the default experience surfaces that decision,
+not a dashboard of competing options.
+
+### Default state: recommended-first
+- Show the recommended flow (e.g. "RSVP → Questions") with a single primary CTA: **Start**
+- One-line rationale beneath the flow name (reuse existing recommendation copy)
+- No dropdowns, no "Go directly to…", no shortcut links competing for attention
+- The flow steps (RSVP → Questions) are **informational labels**, not navigable tabs —
+  remove any internal stepper or tab indicator from this screen
+
+### Manual escape hatch
+- A single low-emphasis text link: **"Choose mode manually →"** (or "Study manually")
+- Toggling it reveals the individual mode cards (RSVP, Slow Mode, Cloze, Questions, Review)
+- Cards link back with **"← Use recommended"**
+
+### What to remove
+| Element | Why |
+|---|---|
+| "Go directly to…" dropdown | Competing CTA; defeats recommended-first |
+| Internal flow stepper (RSVP → Questions tabs) | Creates illusion of sub-navigation within one screen |
+| "Why this flow?" expandable link | Fold rationale into the subtitle line; one less interaction |
+| "Only ~18 min? → Questions" shortcut | Too many affordances; goes in manual mode |
+
+### Continuity block (Library > … > Doc)
+Keep the breadcrumb + Continue / Library buttons — they're the resume path, not mode selection.
+Position below the recommendation card, visually separated.
+
+
+## Core Layout Principle: Compress Before You Overflow
+
+**Rule of thumb**: if content doesn't fit comfortably on one screen, the answer is never
+to scroll or expand the screen — it's to compress the content. Always.
+
+### Compression strategies, in order of preference
+
+1. **Remove it** — does this element earn its place on this screen right now?
+2. **Collapse it** — chevron/disclosure for anything the user won't need on every visit
+3. **Promote a summary, hide the detail** — show a status badge or one-liner;
+   full detail lives one tap away
+4. **Move it to a secondary screen** — settings, configuration, and advanced options
+   belong in dedicated screens, not inline
+
+### Things that are almost always secondary-screen material
+- Model selector (users set it once, rarely revisit)
+- Advanced / pipeline options
+- "Why this flow?" explanations
+- Per-session configuration beyond the one or two most common toggles
+- Progress details and stats (show a summary badge; full view on demand)
+
+### Things that are almost always collapsible
+- Empty-state descriptions that explain a feature the user already used
+- Step-by-step breakdowns when a single label suffices
+- "Ready" / confirmation states that restate what the user just did
+
+### Never do this
+- Stack multiple full-height sections on one screen and let it scroll
+- Show configuration the user doesn't need to make a decision right now
+- Repeat information already visible elsewhere on the screen (e.g. restating
+  the document name when it's in the breadcrumb)
+
+### The test
+> "If I removed this element, would the user be blocked?"  
+> If no → compress or cut. If yes → keep, but minimize.
+
+
+## Layout: Full-Bleed Screens, No Floating Cards
+
+### Rule
+Primary screens occupy the full viewport. No centered card, no floating panel,
+no box with a different background sitting on top of a background.
+
+Content uses internal padding only. The screen IS the container.
+
+### What this means in practice
+- `body` or the root app element is the background — one color, full bleed
+- Screens (`screen*`) are `width: 100%; height: 100%; padding: 2rem` — no `max-width`
+  wrapper with a shadow or border-radius acting as a "card"
+- Navigation chrome (top bar, breadcrumb) is part of the screen, not above it
+
+### When a card/container IS appropriate
+- Modals and dialogs (content that appears over an active screen)
+- Individual list items or option cards within a screen (e.g. mode cards in manual view)
+- Inline panels that are clearly a sub-element, not the whole screen
+
+### Never do this
+- Wrap an entire primary screen's content in a rounded, shadowed container
+- Use a visually distinct background behind a centered panel as the main layout
+- Let Tailwind/CSS defaults produce `max-w-md mx-auto bg-card rounded-xl shadow`
+  as the top-level screen structure
+
+### The rule in one line
+> Cards are for items within a screen. Screens are never cards.

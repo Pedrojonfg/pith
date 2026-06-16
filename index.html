@@ -457,93 +457,75 @@
             </div>
 
             <div id="recommendationPanel" class="flow-panel recommendation-panel" hidden>
-              <p id="recommendationGenreLabel" class="flow-panel-genre"></p>
-              <p id="recommendationFlowTitle" class="flow-panel-flow-title"></p>
-              <p id="recommendationReasoning" class="flow-panel-reasoning"></p>
-              <div class="flow-panel-actions">
-                <button type="button" id="recommendationStartBtn" class="btn-primary"></button>
-                <label class="flow-override-label">
-                  <span class="hint">Another mode</span>
-                  <select
-                    id="recommendationOverrideSelect"
-                    class="flow-override-select"
-                    aria-label="Go directly to another study mode"
-                  >
-                    <option value="">Go directly to…</option>
-                    <option value="rsvp">RSVP</option>
-                    <option value="slow">Slow Mode</option>
-                    <option value="cloze">Cloze Detection</option>
-                    <option value="questions">Questions</option>
-                    <option value="recall">Recall</option>
-                  </select>
-                </label>
-              </div>
-              <details id="recommendationWhyDetails" class="flow-why-details">
-                <summary>Why this flow?</summary>
-                <p id="recommendationWhyBody" class="flow-why-body"></p>
-              </details>
-              <p id="recommendationQuickFlow" class="flow-quick-link" hidden></p>
-              <div id="recommendationProgress" class="flow-progress" hidden>
-                <div
-                  id="recommendationProgressSteps"
-                  class="flow-progress-stepper"
-                  role="list"
-                  aria-label="Study flow progress"
-                ></div>
-              </div>
+              <h2 id="recommendationFlowTitle" class="flow-panel-flow-title"></h2>
+              <p id="recommendationSubtitle" class="flow-panel-subtitle">
+                <span id="recommendationReasoning"></span>
+                <span id="recommendationTime" class="flow-panel-time"></span>
+              </p>
+              <button type="button" id="recommendationStartBtn" class="btn-primary flow-panel-start-btn">Start</button>
+              <button type="button" id="modeSelectChooseManualBtn" class="flow-panel-manual-link">
+                Choose mode manually →
+              </button>
             </div>
 
-            <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
+            <div id="modeSelectContinuity" class="mode-select-continuity">
+              <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
+
+              <div id="modeSelectHub" class="mode-select-hub row" hidden>
+                <button type="button" id="modeSelectContinueBtn" class="btn-primary">Continue</button>
+                <button type="button" id="modeSelectLibraryBtn" class="btn-secondary">Library</button>
+              </div>
+            </div>
 
             <div id="sessionHubActions" class="session-hub-actions row">
               <button type="button" id="btnUploadToVault" class="btn-secondary">Upload to vault</button>
             </div>
 
-            <div id="modeSelectHub" class="mode-select-hub row" hidden>
-              <button type="button" id="modeSelectContinueBtn" class="btn-primary">Continue</button>
-              <button type="button" id="modeSelectLibraryBtn" class="btn-secondary">Library</button>
+            <div id="modeSelectManual" class="mode-select-manual" hidden>
+              <button type="button" id="modeSelectUseRecommendedBtn" class="mode-select-back-link" hidden>
+                ← Use recommended
+              </button>
+              <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
+                <legend class="sr-only">Study mode</legend>
+                <div class="study-mode-options">
+                  <label class="study-mode-option">
+                    <input type="radio" name="studyMode" value="rsvp" />
+                    <span class="study-mode-option-body">
+                      <strong>RSVP</strong>
+                      <span class="hint">Facts, definitions, exam prep — fast blocks with questions.</span>
+                    </span>
+                  </label>
+                  <label class="study-mode-option">
+                    <input type="radio" name="studyMode" value="slow" />
+                    <span class="study-mode-option-body">
+                      <strong>Slow Mode</strong>
+                      <span class="hint">Dense argument — paginated reading, annotations, phases 0–3.</span>
+                    </span>
+                  </label>
+                  <label class="study-mode-option">
+                    <input type="radio" name="studyMode" value="cloze" />
+                    <span class="study-mode-option-body">
+                      <strong>Cloze Detection</strong>
+                      <span class="hint">Active recall — cloze NODE/EDGE items generated from your material.</span>
+                    </span>
+                  </label>
+                  <label class="study-mode-option">
+                    <input type="radio" name="studyMode" value="questions" />
+                    <span class="study-mode-option-body">
+                      <strong>Questions</strong>
+                      <span class="hint">Quiz-only — graph + concepts, then test and Socratic questions per block (no RSVP reader).</span>
+                    </span>
+                  </label>
+                  <label class="study-mode-option">
+                    <input type="radio" name="studyMode" value="recall" />
+                    <span class="study-mode-option-body">
+                      <strong>Recall</strong>
+                      <span class="hint">Open-ended retrieval — write what you remember; AI tutor gives feedback without revealing answers first.</span>
+                    </span>
+                  </label>
+                </div>
+              </fieldset>
             </div>
-
-            <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
-              <legend class="sr-only">Study mode</legend>
-              <div class="study-mode-options">
-                <label class="study-mode-option">
-                  <input type="radio" name="studyMode" value="rsvp" />
-                  <span class="study-mode-option-body">
-                    <strong>RSVP</strong>
-                    <span class="hint">Facts, definitions, exam prep — fast blocks with questions.</span>
-                  </span>
-                </label>
-                <label class="study-mode-option">
-                  <input type="radio" name="studyMode" value="slow" />
-                  <span class="study-mode-option-body">
-                    <strong>Slow Mode</strong>
-                    <span class="hint">Dense argument — paginated reading, annotations, phases 0–3.</span>
-                  </span>
-                </label>
-                <label class="study-mode-option">
-                  <input type="radio" name="studyMode" value="cloze" />
-                  <span class="study-mode-option-body">
-                    <strong>Cloze Detection</strong>
-                    <span class="hint">Active recall — cloze NODE/EDGE items generated from your material.</span>
-                  </span>
-                </label>
-                <label class="study-mode-option">
-                  <input type="radio" name="studyMode" value="questions" />
-                  <span class="study-mode-option-body">
-                    <strong>Questions</strong>
-                    <span class="hint">Quiz-only — graph + concepts, then test and Socratic questions per block (no RSVP reader).</span>
-                  </span>
-                </label>
-                <label class="study-mode-option">
-                  <input type="radio" name="studyMode" value="recall" />
-                  <span class="study-mode-option-body">
-                    <strong>Recall</strong>
-                    <span class="hint">Open-ended retrieval — write what you remember; AI tutor gives feedback without revealing answers first.</span>
-                  </span>
-                </label>
-              </div>
-            </fieldset>
 
           </div>
         </section>
@@ -1981,7 +1963,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_5";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_6";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1997,7 +1979,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260616_5");
+        await import("./src/js/main.js?v=20260616_6");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
