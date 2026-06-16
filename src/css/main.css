@@ -32,8 +32,7 @@ body {
     radial-gradient(900px 500px at 88% 0%, rgba(117, 89, 255, 0.14), transparent 58%),
     var(--bg);
   color: var(--fg);
-  font-family: "Manrope", system-ui, -apple-system, Segoe UI, Helvetica, Arial,
-    "Apple Color Emoji", "Segoe UI Emoji";
+  font-family: "JetBrains Mono", "Cascadia Mono", "Segoe UI Mono", monospace;
   font-size: 15px;
   line-height: 1.55;
   overflow-x: hidden;
@@ -63,10 +62,34 @@ a:focus-visible {
   background: rgba(12, 12, 12, 0.75);
   backdrop-filter: blur(12px);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--muted);
   transition: color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.corner-icon-btn {
+  position: fixed;
+  top: 16px;
+  right: 150px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(12, 12, 12, 0.75);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(12px);
+}
+
+.corner-icon-btn:hover {
+  color: var(--fg);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .corner-link:hover {
@@ -94,7 +117,7 @@ main {
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 40px 32px;
+  padding: 28px 28px;
 }
 
 body.slow-reader-active main {
@@ -127,7 +150,7 @@ body.paced-reader-active main {
   border: 1px solid var(--border);
   background: linear-gradient(170deg, rgba(17, 29, 52, 0.9), rgba(12, 20, 37, 0.78));
   border-radius: 18px;
-  padding: 28px 32px;
+  padding: 22px 24px;
   box-shadow:
     0 20px 52px rgba(2, 8, 20, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -135,10 +158,11 @@ body.paced-reader-active main {
 
 h1 {
   margin: 0 0 10px 0;
-  font-family: "Fraunces", Georgia, serif;
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-family: "Orbitron", "JetBrains Mono", monospace;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
   line-height: 1.2;
 }
 
@@ -1671,6 +1695,21 @@ body.assessment-runner-active .assessment-runner-chrome {
   align-items: center;
 }
 
+.create-session-start-card,
+.mode-select-card,
+.doc-library-card {
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+}
+
+.create-session-start-lead {
+  margin-bottom: 12px;
+}
+
+.create-session-start-actions {
+  justify-content: flex-end;
+}
+
 .doc-library-vault-row {
   margin: 0 0 12px;
   display: flex;
@@ -1996,7 +2035,7 @@ body.assessment-runner-active .assessment-runner-chrome {
 }
 
 .mode-select-hub {
-  margin: 0 0 16px;
+  margin: 0 0 10px;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -2004,7 +2043,7 @@ body.assessment-runner-active .assessment-runner-chrome {
 .app-home-actions,
 .vault-branch-actions,
 .session-hub-actions {
-  margin: 16px 0;
+  margin: 10px 0;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -2152,9 +2191,22 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin-bottom: 8px;
 }
 
+.doc-library-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .doc-library-move-btn {
   align-self: flex-start;
   font-size: 13px;
+}
+
+.doc-library-delete-btn {
+  align-self: flex-start;
+  min-width: 36px;
+  padding: 8px 10px;
+  font-size: 14px;
 }
 
 .project-move-overlay {

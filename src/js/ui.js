@@ -308,6 +308,13 @@ export const els = {
   btnVaultBranchReview: document.getElementById("btnVaultBranchReview"),
   vaultBranchReviewBadge: document.getElementById("vaultBranchReviewBadge"),
   screenModeSelect: document.getElementById("screenModeSelect"),
+  screenCreateSessionStart: document.getElementById("screenCreateSessionStart"),
+  createSessionStartBackBtn: document.getElementById("createSessionStartBackBtn"),
+  createSessionStartBreadcrumb: document.getElementById("createSessionStartBreadcrumb"),
+  createSessionStartFileInput: document.getElementById("createSessionStartFileInput"),
+  createSessionStartNameInput: document.getElementById("createSessionStartNameInput"),
+  createSessionStartStatus: document.getElementById("createSessionStartStatus"),
+  createSessionStartContinueBtn: document.getElementById("createSessionStartContinueBtn"),
   screenDocLibrary: document.getElementById("screenDocLibrary"),
   docLibraryList: document.getElementById("docLibraryList"),
   docLibraryProjectList: document.getElementById("docLibraryProjectList"),
@@ -335,13 +342,10 @@ export const els = {
   btnUploadVaultRetry: document.getElementById("btnUploadVaultRetry"),
   modeSelectContinueBtn: document.getElementById("modeSelectContinueBtn"),
   modeSelectLibraryBtn: document.getElementById("modeSelectLibraryBtn"),
-  modeSelectReviewBtn: document.getElementById("modeSelectReviewBtn"),
   uploadProjectPickerMount: document.getElementById("uploadProjectPickerMount"),
   reviewConfigBreadcrumb: document.getElementById("reviewConfigBreadcrumb"),
   reviewScopeSelect: document.getElementById("reviewScopeSelect"),
   reviewIncludeSubprojects: document.getElementById("reviewIncludeSubprojects"),
-  modeSelectDocLibraryBtn: document.getElementById("modeSelectDocLibraryBtn"),
-  btnPracticeDocument: document.getElementById("btnPracticeDocument"),
   screenRetrievalHub: document.getElementById("screenRetrievalHub"),
   retrievalHubTitle: document.getElementById("retrievalHubTitle"),
   retrievalHubLead: document.getElementById("retrievalHubLead"),
@@ -1132,6 +1136,7 @@ export function showScreen(which) {
   const showAppHome = which === "appHome";
   const showVaultBranch = which === "vaultBranch";
   const showUploadToVault = which === "uploadToVaultCandidates";
+  const showCreateSessionStart = which === "createSessionStart";
   const showModeSelect = which === "modeSelect";
   const showDocLibrary = which === "docLibrary";
   const showRetrievalHub = which === "retrievalHub";
@@ -1166,6 +1171,7 @@ export function showScreen(which) {
   els.screenAppHome?.setAttribute("aria-hidden", String(!showAppHome));
   els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
   els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
+  els.screenCreateSessionStart?.setAttribute("aria-hidden", String(!showCreateSessionStart));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
   els.screenRetrievalHub?.setAttribute("aria-hidden", String(!showRetrievalHub));
@@ -1233,6 +1239,16 @@ export function showScreen(which) {
 
   if (showDocLibrary) {
     setTimeout(() => els.docLibraryBackBtn?.focus?.(), 0);
+  }
+
+  if (showCreateSessionStart) {
+    setTimeout(() => {
+      if (els.createSessionStartFileInput && !els.createSessionStartFileInput.disabled) {
+        els.createSessionStartFileInput.focus();
+      } else {
+        els.createSessionStartNameInput?.focus?.();
+      }
+    }, 0);
   }
 
   if (showRetrievalHub) {

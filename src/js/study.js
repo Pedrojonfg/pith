@@ -1077,6 +1077,141 @@ export function enterModeSelectScreen() {
   syncPersistenceHealthBanner();
 }
 
+let createSessionStartRunId = 0;
+
+function guessSessionNameFromFileName(fileName) {
+  const raw = String(fileName || "").trim();
+  if (!raw) return "Untitled session";
+  return raw.replace(/\.[^/.]+$/, "").trim() || "Untitled session";
+}
+
+function applySessionTitleToActiveDoc(title) {
+  const doc = getActiveSession();
+  const safeTitle = String(title || "").trim();
+  if (!doc || !safeTitle) return;
+  doc.shared.docMeta = {
+    ...(doc.shared.docMeta || {}),
+    titleInferred: safeTitle,
+  };
+  saveDocumentSession(doc);
+}
+
+async function handleCreateSessionStartFilePicked() {
+  const file = els.createSessionStartFileInput?.files?.[0];
+  if (!file) return;
+  const runId = ++createSessionStartRunId;
+  if (els.createSessionStartStatus) {
+    els.createSessionStartStatus.textContent = "Extracting text…";
+  }
+  if (els.createSessionStartContinueBtn) {
+    els.createSessionStartContinueBtn.disabled = true;
+  }
+  if (els.createSessionStartNameInput) {
+    els.createSessionStartNameInput.disabled = true;
+  }
+  try {
+    const { cleanedText, originalFormat } = await readAndCleanMaterialText(file);
+    if (!String(cleanedText || "").trim()) {
+      throw new Error("The file appears to be empty.");
+    }
+    if (runId !== createSessionStartRunId) return;
+    const doc = await ensureDocumentSessionForUpload(cleanedText);
+    const suggestedTitle = guessSessionNameFromFileName(file.name);
+    setUploadMeta(doc.docId, {
+      fileName: String(file.name || ""),
+      originalFormat: String(originalFormat || ""),
+      uploadedAt: new Date().toISOString(),
+    });
+    doc.shared.docMeta = {
+      ...(doc.shared.docMeta || {}),
+      titleInferred: suggestedTitle,
+    };
+    saveDocumentSession(doc);
+    state.lastCleanedMaterialText = cleanedText;
+    state.lastCleanedMaterialWordCount = countWords(cleanedText);
+    state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
+    if (els.createSessionStartNameInput) {
+      els.createSessionStartNameInput.disabled = false;
+      els.createSessionStartNameInput.value = suggestedTitle;
+    }
+    if (els.createSessionStartContinueBtn) {
+      els.createSessionStartContinueBtn.disabled = false;
+    }
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = "Uploaded. Analyzing structure in background…";
+    }
+    mountModeSelectBreadcrumb(doc);
+    const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
+    void buildHierarchyForFlowRecommendation(cleanedText, llmModel)
+      .then((hierarchyResult) => {
+        if (runId !== createSessionStartRunId) return;
+        const activeDoc = getActiveSession();
+        if (!activeDoc?.docId) return;
+        if (hierarchyResult) {
+          activeDoc.shared.docHierarchy = hierarchyResult;
+          activeDoc.shared.docTopics = Array.isArray(hierarchyResult.topics)
+            ? hierarchyResult.topics
+            : [];
+          saveDocumentSession(activeDoc);
+        }
+        computeAndPersistModeRecommendation(activeDoc, cleanedText, hierarchyResult, { force: true });
+        if (els.createSessionStartStatus) {
+          els.createSessionStartStatus.textContent = "Document ready. You can continue.";
+        }
+      })
+      .catch(() => {
+        if (runId !== createSessionStartRunId) return;
+        if (els.createSessionStartStatus) {
+          els.createSessionStartStatus.textContent =
+            "Document uploaded. Background analysis failed; you can continue anyway.";
+        }
+      });
+  } catch (err) {
+    if (runId !== createSessionStartRunId) return;
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = err?.message
+        ? String(err.message)
+        : "Could not process this file.";
+    }
+  }
+}
+
+function handleCreateSessionStartContinue() {
+  const doc = getActiveSession();
+  if (!doc?.docId) {
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = "Upload a file before continuing.";
+    }
+    return;
+  }
+  const title = String(els.createSessionStartNameInput?.value || "").trim();
+  applySessionTitleToActiveDoc(title || "Untitled session");
+  enterModeSelectScreen();
+}
+
+export function enterCreateSessionStartScreen() {
+  createSessionStartRunId += 1;
+  if (els.createSessionStartFileInput) {
+    els.createSessionStartFileInput.value = "";
+  }
+  const doc = getActiveSession();
+  const defaultName = doc?.shared?.docMeta?.titleInferred || "";
+  if (els.createSessionStartNameInput) {
+    els.createSessionStartNameInput.value = defaultName;
+    els.createSessionStartNameInput.disabled = !doc;
+  }
+  if (els.createSessionStartContinueBtn) {
+    els.createSessionStartContinueBtn.disabled = !doc;
+  }
+  if (els.createSessionStartStatus) {
+    els.createSessionStartStatus.textContent = doc
+      ? "Document loaded. Update session name and continue."
+      : "Upload your material to start.";
+  }
+  mountModeSelectBreadcrumb(doc || null);
+  showScreen("createSessionStart");
+}
+
 export function enterAppHome() {
   refreshVaultReviewBadge();
   refreshVaultBranchReviewBadge();
@@ -1163,6 +1298,7 @@ function syncSessionHubActions() {
     els.modeSelectHub.hidden = true;
   }
   if (els.btnDownloadSessionMd) {
+    els.btnDownloadSessionMd.hidden = !hasDoc;
     els.btnDownloadSessionMd.disabled = !hasDoc;
   }
   if (els.btnUploadToVault) {
@@ -3121,7 +3257,7 @@ function wireDocLibraryHandlers() {
   projectLibraryCallbacks.onBack = () => enterAppHome();
   projectLibraryCallbacks.onCreateSessionInProject = (projectId) => {
     setUploadProjectContext(projectId);
-    enterModeSelectScreen();
+    enterCreateSessionStartScreen();
   };
 
   els.btnAppHomeVault?.addEventListener("click", () => enterVaultBranch());
@@ -3154,10 +3290,6 @@ function wireDocLibraryHandlers() {
     runVaultSm2ReviewSession();
   });
 
-  els.btnPracticeDocument?.addEventListener("click", () => {
-    enterRetrievalHub({ entrySource: "mode_select" });
-  });
-
   els.retrievalHubBackBtn?.addEventListener("click", () => {
     exitRetrievalHub();
   });
@@ -3173,10 +3305,6 @@ function wireDocLibraryHandlers() {
     enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
-  els.modeSelectDocLibraryBtn?.addEventListener("click", () => {
-    enterDocLibraryScreen();
-  });
-
   els.modeSelectContinueBtn?.addEventListener("click", () => {
     const doc = getActiveSession();
     if (!doc) {
@@ -3186,9 +3314,13 @@ function wireDocLibraryHandlers() {
     enterRetrievalHub({ entrySource: "mode_select" });
   });
   els.modeSelectLibraryBtn?.addEventListener("click", () => enterDocLibraryScreen());
-  els.modeSelectReviewBtn?.addEventListener("click", () => {
-    populateReviewScopeSelect();
-    showScreen("reviewConfig");
+
+  els.createSessionStartBackBtn?.addEventListener("click", () => enterDocLibraryScreen());
+  els.createSessionStartFileInput?.addEventListener("change", () => {
+    void handleCreateSessionStartFilePicked();
+  });
+  els.createSessionStartContinueBtn?.addEventListener("click", () => {
+    handleCreateSessionStartContinue();
   });
 }
 

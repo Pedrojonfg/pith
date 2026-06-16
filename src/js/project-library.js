@@ -4,6 +4,7 @@
  */
 
 import {
+  deleteSession,
   getAllSessions,
   getProjectStore,
   getSession,
@@ -180,7 +181,10 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
             <span class="doc-library-date">${escapeHtml(formatDocLibraryDate(doc.updatedAt))}</span>
           </span>
         </button>
-        <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to project…</button>
+        <div class="doc-library-row-actions">
+          <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to project…</button>
+          <button type="button" class="btn-secondary doc-library-delete-btn" data-delete-doc-id="${escapeHtml(doc.docId)}" aria-label="Delete session" title="Delete session">🗑</button>
+        </div>
       </div>`;
     })
     .join("");
@@ -195,6 +199,16 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-move-doc-id");
       if (id) promptMoveDocument(id);
+    });
+  });
+  container.querySelectorAll("[data-delete-doc-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-delete-doc-id");
+      if (!id) return;
+      const ok = window.confirm("Delete this session? This cannot be undone.");
+      if (!ok) return;
+      deleteSession(id);
+      renderProjectLibraryView();
     });
   });
 }
