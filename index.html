@@ -621,25 +621,12 @@
             <h1>Configure your session</h1>
             <p class="create-screen-lead">Upload your material, then generate or continue.</p>
 
-            <div id="uploadProjectField" class="upload-project-field">
-              <label for="uploadProjectPickerMount">Project</label>
-              <div id="uploadProjectPickerMount" class="upload-project-picker-mount"></div>
-            </div>
-
             <div id="persistHealthBanner" class="persist-health-banner hidden" role="status" hidden>
               <span id="persistHealthBannerText"></span>
               <div class="persist-health-banner-actions">
                 <button type="button" id="persistHealthRecoverBtn" class="btn-secondary" hidden>Import from backup</button>
                 <button type="button" id="persistHealthDismissBtn" class="btn-secondary">Dismiss</button>
               </div>
-            </div>
-
-            <div id="modeMaterialLoadedBanner" class="mode-material-loaded-banner" hidden>
-              <strong class="mode-material-loaded-title">Document ready</strong>
-              <p class="mode-material-loaded-meta hint">
-                Your material is already loaded for this study mode.
-              </p>
-              <p class="mode-material-loaded-doc hint"></p>
             </div>
 
             <div id="modeResumePanel" class="mode-resume-panel" hidden>
@@ -743,16 +730,11 @@
                 <div id="rsvpBlocksSection" class="form-collapsible-body">
                   <div id="rsvpBlocksCountGroup" class="rsvp-blocks-count-group">
                     <label for="blocksInput">Blocks</label>
-                    <div class="recommend-blocks-controls">
-                      <button type="button" id="recommendBlocksBtn" class="recommend-blocks-btn">
-                        Recommend block count
-                      </button>
-                      <span
-                        id="recommendBlocksStatus"
-                        class="recommend-blocks-status hint"
-                        role="status"
-                      ></span>
-                    </div>
+                    <span
+                      id="recommendBlocksStatus"
+                      class="recommend-blocks-status hint"
+                      role="status"
+                    ></span>
                     <input
                       id="blocksInput"
                       name="blocks"
@@ -1963,7 +1945,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_7";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260627_2";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1979,7 +1961,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260616_7");
+        await import("./src/js/main.js?v=20260627_2");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

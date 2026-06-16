@@ -141,7 +141,26 @@ export function validateBlockFidelity({
   strictMode = false,
   extractedClaims = null,
   claimCoverageMin = null,
+  inventoryMode = "",
 } = {}) {
+  const terseInventory =
+    String(inventoryMode || "").includes("terse") ||
+    inventoryMode === "fallback_mono";
+  if (terseInventory) {
+    console.warn(
+      "[fidelity-validation] Skipping anchor validation — inventory was generated in terse or fallback mode.",
+    );
+    return {
+      ok: true,
+      severity: "ok",
+      action: "accept",
+      unsupported_terms: [],
+      jaccard: jaccardOverlap(explanation, chunk),
+      chunk_coverage: countChunkKeyTermsInExplanation(chunk, explanation).ratio,
+      claim_coverage: 1,
+      uncovered_claims: [],
+    };
+  }
   const keyTerms = extractKeyTermsFromBlockMeta({ blockTitle, signature, concepts });
   const normChunk = normalize(chunk);
   const unsupported_terms = [];

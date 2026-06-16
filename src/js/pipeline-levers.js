@@ -32,7 +32,6 @@ export const DEFAULT_PIPELINE_LEVERS_STRICT = Object.freeze({
   jaccardThreshold: { strict: 0.35, normal: 0.2 },
   claimCoverageMin: 0.6,
   inventoryCap: 120,
-  twoPassInventory: true,
   semanticDedupEnabled: false,
 });
 
@@ -43,7 +42,6 @@ export const DEFAULT_PIPELINE_LEVERS_NORMAL = Object.freeze({
   jaccardThreshold: { strict: 0.35, normal: 0.2 },
   claimCoverageMin: 0.5,
   inventoryCap: 120,
-  twoPassInventory: false,
   semanticDedupEnabled: false,
 });
 
