@@ -20,17 +20,66 @@ body::before {
   display: none;
 }
 
-/* §11 — hub ambient glow (mode hub screens only) */
-.app-home-screen[aria-hidden="false"] .app-home-card,
-.mode-select-screen[aria-hidden="false"] .mode-select-card,
-.retrieval-hub-screen[aria-hidden="false"] .retrieval-hub-card,
-.vault-branch-screen[aria-hidden="false"] .vault-branch-card {
+/* Full-bleed screens — primary layout is the viewport, not a floating card */
+main {
+  place-items: stretch !important;
+  padding: 0 !important;
+}
+
+main > .container {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100vh;
+  margin: 0 !important;
+  padding: var(--space-6, 24px) !important;
+  box-sizing: border-box;
+}
+
+.screen > .card {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: calc(100vh - 48px);
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+.create-session-start-card,
+.mode-select-card,
+.doc-library-card,
+.app-home-card,
+.retrieval-hub-card,
+.vault-branch-card {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+.mode-select-screen .card {
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+#screenComplete > .card {
+  min-height: auto;
+  padding: 24px 20px;
+}
+
+/* §11 — hub ambient glow (full-bleed hub screens) */
+.app-home-screen[aria-hidden="false"],
+.mode-select-screen[aria-hidden="false"],
+.retrieval-hub-screen[aria-hidden="false"],
+.vault-branch-screen[aria-hidden="false"] {
   background-image: radial-gradient(
     ellipse 70% 50% at 50% -5%,
     rgba(24, 196, 170, 0.06) 0%,
     transparent 70%
   );
-  background-color: var(--bg-surface);
+  background-color: var(--bg-base);
 }
 
 /* §5 — no decorative shadows; §5.3 — radius caps */
@@ -80,8 +129,12 @@ textarea,
   box-shadow: none !important;
 }
 
+/* §9.1 — in-session progress: fractional count only (hide linear bar) */
+.study-progress .bar {
+  display: none !important;
+}
+
 /* §6.5 — async progress bars: 2px */
-.study-progress .bar,
 .card .bar,
 .progress-track,
 .rsvp-progress-track,
@@ -92,7 +145,6 @@ textarea,
   background: var(--border-subtle) !important;
 }
 
-.study-progress .fill,
 .card .bar .fill,
 .progress-fill,
 .rsvp-progress-fill,
@@ -311,4 +363,39 @@ textarea:focus,
 #guide-send-btn:hover,
 .sidebar-toggle:hover {
   background: var(--accent-hover) !important;
+}
+
+/* §5 — no hover lift; §3 — no monospace body chrome */
+button:hover,
+a:hover,
+.study-mode-option:hover,
+.retrieval-hub-option:hover,
+.doc-library-item:hover,
+.project-library-item:hover,
+.block-item:hover,
+.corner-plus:hover {
+  transform: none !important;
+}
+
+.corner-plus {
+  border-radius: var(--radius-sm) !important;
+}
+
+.rsvp-word-display {
+  font-family: var(--font-sans) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Slow overlays — flat elevated panels, no glass */
+.slow-ia-overlay,
+.slow-steelman-nudge {
+  backdrop-filter: none !important;
+}
+
+.slow-ia-overlay-panel,
+.slow-steelman-nudge-panel {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
 }

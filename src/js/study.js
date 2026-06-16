@@ -3951,7 +3951,7 @@ async function loadOfflinePack(text, filename = "") {
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
     els.confirmBlocksError.textContent =
-      failedBlocks > 0 ? `⚠️ ${failedBlocks} blocks have no content` : "";
+      failedBlocks > 0 ? `Warning: ${failedBlocks} blocks have no content` : "";
   }
   renderBlockIndexEditor(state.lastBlockIndex, { readOnly: true });
   if (els.blocksListOutput) {
