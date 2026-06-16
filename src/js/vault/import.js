@@ -2,7 +2,7 @@
 
 import { extractConceptsFromImportText, normalizeConceptsToVault } from "../api.js";
 import { buildDocumentHierarchy } from "../normalization/hierarchy.js";
-import { runConceptInventory } from "../session.js";
+import { runConceptInventoryWithFallback } from "../session.js";
 import { computeDocId } from "../session-store.js";
 import { buildAllNewMappings, mergeNormalizationResult } from "./normalization.js";
 import { filterNewConcepts } from "./session-close.js";
@@ -655,12 +655,26 @@ export async function importFromDocument(file, normalizedDoc, options = {}) {
   let inventory = [];
   try {
     options.onProgress?.("Indexing concepts…");
-    const invResult = await runConceptInventory(cleanedText, {
+    let docHierarchy = null;
+    try {
+      docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
+    } catch {
+      docHierarchy = null;
+    }
+    const invResult = await runConceptInventoryWithFallback(cleanedText, {
       llmModel: options.llmModel,
       language: options.language,
       onProgress: options.onProgress,
-      docHierarchy: null,
+      docHierarchy,
+      wordCount: cleanedText.split(/\s+/).filter(Boolean).length,
     });
+    if (invResult.kind === "fallback_mono") {
+      return {
+        added: 0,
+        merged: 0,
+        errors: ["Concept inventory unavailable; simplified split not supported for vault import."],
+      };
+    }
     inventory = Array.isArray(invResult?.inventory) ? invResult.inventory : [];
   } catch (err) {
     return {

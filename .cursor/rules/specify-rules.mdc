@@ -6,10 +6,10 @@ alwaysApply: true
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read:
 
-- **Active plan**: `specs/20260626-cross-doc-vault/plan.md`
-- **Spec**: `specs/20260626-cross-doc-vault/spec.md`
-- **Data model**: `specs/20260626-cross-doc-vault/data-model.md`
-- **Contracts**: `specs/20260626-cross-doc-vault/contracts/`
+- **Active plan**: `specs/20260627-inventory-truncation-map-reduce/plan.md`
+- **Spec**: `specs/20260627-inventory-truncation-map-reduce/spec.md`
+- **Data model**: `specs/20260627-inventory-truncation-map-reduce/data-model.md`
+- **Contracts**: `specs/20260627-inventory-truncation-map-reduce/contracts/`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 - **Execution roadmap (prompts)**: `ROADMAP.md`
 <!-- SPECKIT END -->

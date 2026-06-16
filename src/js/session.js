@@ -2206,21 +2206,91 @@ export function validatePackInvariants({
   return { ok: errors.length === 0, errors };
 }
 
-export async function runConceptInventoryPhase2(sectionText, existingConcepts, { llmModel, language } = {}) {
-  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
-  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
-  const { deepSeekConceptInventoryPhase2 } = await import("./api.js?v=20260611_2");
-  return deepSeekConceptInventoryPhase2({
-    llmModel: model,
-    sectionText: String(sectionText || "").trim(),
-    existingConcepts: Array.isArray(existingConcepts) ? existingConcepts : [],
-    language: lang,
-  });
+export async function runConceptInventoryMapReduce(
+  materialText,
+  docHierarchy,
+  splitOpts = {},
+) {
+  const {
+    buildInventoryChunks,
+    deepSeekConceptInventoryChunk,
+    deepSeekMergeConceptInventories,
+    INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
+    INVENTORY_MAX_PARALLEL_CALLS,
+  } = await import("./api.js?v=20260611_2");
+
+  const wordCount =
+    Number(splitOpts.wordCount) ||
+    materialText.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= INVENTORY_MAP_REDUCE_WORD_THRESHOLD || !docHierarchy?.tree?.length) {
+    return null;
+  }
+
+  const chunks = buildInventoryChunks(docHierarchy, materialText);
+  if (!chunks || chunks.length < 2) return null;
+
+  const progress = (msg) => {
+    if (typeof splitOpts.onProgress === "function" && msg) splitOpts.onProgress(String(msg));
+  };
+  progress(`Indexing concepts (${chunks.length} sections)…`);
+
+  if (chunks.length > INVENTORY_MAX_PARALLEL_CALLS) {
+    console.warn(
+      `Map-reduce inventory: ${chunks.length} chunks exceed parallel cap ${INVENTORY_MAX_PARALLEL_CALLS}; processing in batches.`,
+    );
+  }
+
+  const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
+  /** @type {{ label: string, concepts: object[] }[]} */
+  const partials = [];
+  /** @type {string[]} */
+  const failedChunks = [];
+
+  for (let i = 0; i < chunks.length; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
+    const settled = await Promise.allSettled(
+      batch.map((chunk) =>
+        deepSeekConceptInventoryChunk(chunk, {
+          ...splitOpts,
+          totalWordCount: wordCount,
+        }),
+      ),
+    );
+    settled.forEach((result, idx) => {
+      const chunk = batch[idx];
+      if (result.status === "fulfilled" && result.value?.concepts?.length) {
+        partials.push({
+          label: chunk.label,
+          concepts: result.value.concepts,
+        });
+      } else {
+        failedChunks.push(chunk.label);
+        const reason =
+          result.status === "rejected"
+            ? result.reason?.message || result.reason
+            : "empty inventory";
+        console.warn(`Map-reduce chunk failed (${chunk.label}):`, reason);
+      }
+    });
+  }
+
+  if (!partials.length) {
+    throw new Error("All inventory chunks failed.");
+  }
+
+  progress("Merging concept inventories…");
+  const merged = await deepSeekMergeConceptInventories(partials, splitOpts);
+  return {
+    inventory: merged.concepts,
+    inventoryMode: merged.inventoryMode || "map_reduce",
+    chunkCount: chunks.length,
+    failedChunks,
+  };
 }
 
 export async function runConceptInventory(
   material,
-  { llmModel, studyNotes, language, onProgress, docHierarchy } = {},
+  { llmModel, studyNotes, language, onProgress, docHierarchy, wordCount: wordCountIn } = {},
 ) {
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
   const materialText = String(material || "").trim();
@@ -2230,16 +2300,50 @@ export async function runConceptInventory(
   const strict =
     String(session._meta?.source_fidelity_mode || "").trim().toLowerCase() === "strict";
   const pipelineLevers = ensureSessionPipelineLevers(session, strict);
-  const wordCount = materialText.split(/\s+/).filter(Boolean).length;
+  const wordCount =
+    Number(wordCountIn) || materialText.split(/\s+/).filter(Boolean).length;
   const estimatedConceptTarget = computeEstimatedConceptTarget(wordCount, pipelineLevers);
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
-  const { deepSeekConceptInventory } = await import("./api.js?v=20260611_2");
+  const splitOpts = {
+    llmModel: model,
+    studyNotes: notes,
+    language: lang,
+    onProgress,
+    estimatedConceptTarget,
+    wordCount,
+  };
 
+  let hierarchy = docHierarchy;
+  if (!hierarchy?.tree?.length && wordCount > 8000) {
+    try {
+      const { buildDocumentHierarchy } = await import("./normalization/hierarchy.js");
+      progress("Building document structure…");
+      hierarchy = await buildDocumentHierarchy(materialText, null, { useCache: true });
+    } catch (err) {
+      console.warn("runConceptInventory: hierarchy build failed, single-pass", err?.message || err);
+      hierarchy = null;
+    }
+  }
+
+  const mapResult = await runConceptInventoryMapReduce(materialText, hierarchy, splitOpts);
+  if (mapResult) {
+    return {
+      inventory: mapResult.inventory,
+      inventoryMode: mapResult.inventoryMode,
+      chunkCount: mapResult.chunkCount,
+      failedChunks: mapResult.failedChunks,
+      concept_count: mapResult.inventory.length,
+      estimatedConceptTarget,
+      wordCount,
+    };
+  }
+
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260611_2");
   progress("Indexing concepts…");
-  let inventory = await deepSeekConceptInventory({
+  const result = await deepSeekConceptInventory({
     llmModel: model,
     materialText,
     studyNotes: notes,
@@ -2248,35 +2352,78 @@ export async function runConceptInventory(
     wordCount,
   });
 
-  const needsTwoPass =
-    pipelineLevers.twoPassInventory &&
-    inventory.length < estimatedConceptTarget * 0.8 &&
-    wordCount > 8000;
-  if (needsTwoPass && docHierarchy?.tree?.length) {
-    progress("Second-pass concept scan…");
-    const { flattenHierarchy } = await import("./normalization/hierarchy.js");
-    const sections = flattenHierarchy(docHierarchy.tree, 2);
-    const existingIds = new Set(inventory.map((c) => String(c.id)));
-    for (const section of sections) {
-      const start = Number(section.startOffset) || 0;
-      const end = Number(section.endOffset) || materialText.length;
-      const slice = materialText.slice(start, end).trim();
-      if (slice.length < 200) continue;
-      try {
-        const micro = await runConceptInventoryPhase2(slice, inventory, { llmModel: model, language: lang });
-        for (const c of micro) {
-          if (!c?.id || existingIds.has(String(c.id))) continue;
-          existingIds.add(String(c.id));
-          inventory.push({ ...c, level: 2, secondary: true });
-        }
-      } catch (err) {
-        console.warn("runConceptInventory phase 2 section failed:", err?.message || err);
-      }
-    }
-    inventory.sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-  }
+  return {
+    inventory: result.concepts,
+    inventoryMode: result.inventoryMode || "full",
+    concept_count: result.concepts.length,
+    estimatedConceptTarget,
+    wordCount,
+  };
+}
 
-  return { inventory, concept_count: inventory.length, estimatedConceptTarget, wordCount };
+/**
+ * Inventory with mono-phase fallback — all entry points should use this.
+ * @returns {Promise<{ kind: 'inventory', inventory: object[], inventoryMode?: string, chunkCount?: number, failedChunks?: string[], concept_count: number, estimatedConceptTarget: number, wordCount: number } | { kind: 'fallback_mono', blockIndex: object[], splitRunMeta: object, inventoryMode: 'fallback_mono' }>}
+ */
+export async function runConceptInventoryWithFallback(
+  material,
+  { llmModel, studyNotes, language, onProgress, docHierarchy, nBlocks, wordCount } = {},
+) {
+  const materialText = String(material || "").trim();
+  const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
+  const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
+  const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 12));
+  const progress = (msg) => {
+    if (typeof onProgress === "function" && msg) onProgress(String(msg));
+  };
+
+  const runFallback = async (reason) => {
+    progress("Using classic split (fallback)…");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260611_2");
+    const parsed = await deepSeekSplitIntoBlocks({
+      llmModel: model,
+      nBlocks: requested_n,
+      materialText,
+      studyNotes: notes,
+      language: lang,
+    });
+    let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
+    if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
+    const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
+      docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
+    });
+    return {
+      kind: "fallback_mono",
+      blockIndex,
+      splitRunMeta: {
+        requested_n,
+        final_n: blockIndex.length,
+        pipeline: "fallback_mono",
+        inventory_fallback_reason: reason || "inventory_failed",
+      },
+      inventoryMode: "fallback_mono",
+    };
+  };
+
+  try {
+    const result = await runConceptInventory(materialText, {
+      llmModel: model,
+      studyNotes: notes,
+      language: lang,
+      onProgress,
+      docHierarchy,
+      wordCount,
+    });
+    return { kind: "inventory", ...result };
+  } catch (err) {
+    const truncated = err?.code === "CONCEPT_INVENTORY_TRUNCATED";
+    console.warn(
+      "runConceptInventoryWithFallback: falling back to mono split",
+      truncated ? "(truncated)" : err?.message || err,
+    );
+    return runFallback(truncated ? "truncated" : "parse_error");
+  }
 }
 
 /** Local pack when LLM output truncates — no network, assigns every concept once. */
@@ -2617,13 +2764,20 @@ export async function twoPhaseConceptSplit(
   };
 
   try {
-    const { inventory } = await runConceptInventory(material, {
+    const invResult = await runConceptInventoryWithFallback(material, {
       llmModel,
       studyNotes,
       language,
       onProgress,
+      nBlocks: requested_n,
     });
-    return await packInventoryToBlocks(inventory, nBlocks, material, {
+    if (invResult.kind === "fallback_mono") {
+      return {
+        blockIndex: invResult.blockIndex,
+        splitRunMeta: invResult.splitRunMeta,
+      };
+    }
+    return await packInventoryToBlocks(invResult.inventory, nBlocks, material, {
       llmModel,
       studyNotes,
       language,

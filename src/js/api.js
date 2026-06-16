@@ -804,6 +804,106 @@ Cover the full material. Respond entirely in ${lang}.`;
 /** DeepSeek/Gemini output ceiling for block-pack JSON (large inventories need headroom). */
 export const CONCEPT_PACK_MAX_TOKENS = 8192;
 
+/** Phase 1 single-pass: ≤8k words (~54 concepts × ~200 tok ≈ 10.8k). */
+export const CONCEPT_INVENTORY_MAX_TOKENS = 12288;
+
+/** Phase 1 map-reduce per-chunk: ~3500 words (~22 concepts × ~200 tok ≈ 4.4k). */
+export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 6144;
+
+/** Phase 1 map-reduce merge: consolidated partials, deduped output. */
+export const CONCEPT_INVENTORY_MERGE_MAX_TOKENS = 8192;
+
+export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
+export const INVENTORY_TARGET_CHUNK_WORDS = 3500;
+export const INVENTORY_MAX_PARALLEL_CALLS = 8;
+
+export function countInventoryWords(text) {
+  return String(text || "").split(/\s+/).filter(Boolean).length;
+}
+
+/**
+ * @param {{ tree?: { title?: string, startOffset?: number, endOffset?: number, children?: object[] }[] }} docHierarchy
+ * @param {string} rawMarkdown
+ * @returns {{ label: string, text: string, wordCount: number }[] | null}
+ */
+export function buildInventoryChunks(docHierarchy, rawMarkdown) {
+  const tree = docHierarchy?.tree;
+  if (!Array.isArray(tree) || !tree.length) return null;
+  const material = String(rawMarkdown || "");
+  const TARGET = INVENTORY_TARGET_CHUNK_WORDS;
+
+  /** @type {{ label: string, text: string, wordCount: number }[]} */
+  const chunks = [];
+  /** @type {{ sections: object[], wordCount: number }} */
+  let pending = { sections: [], wordCount: 0 };
+
+  function extractSectionText(node) {
+    const start = Number(node?.startOffset) || 0;
+    const end = Number(node?.endOffset) || material.length;
+    return material.slice(start, end).trim();
+  }
+
+  function flushPending() {
+    if (!pending.sections.length) return;
+    const first = pending.sections[0];
+    const label =
+      pending.sections.length > 1
+        ? `${String(first?.title || "Section")} + ${pending.sections.length - 1} more`
+        : String(first?.title || "Section");
+    const text = pending.sections.map(extractSectionText).join("\n\n");
+    chunks.push({ label, text, wordCount: countInventoryWords(text) });
+    pending = { sections: [], wordCount: 0 };
+  }
+
+  for (const section of tree) {
+    const sectionText = extractSectionText(section);
+    const sectionWords = countInventoryWords(sectionText);
+
+    if (sectionWords > TARGET * 2) {
+      flushPending();
+      const children = Array.isArray(section.children) ? section.children : [];
+      if (children.length) {
+        for (const child of children) {
+          const childText = extractSectionText(child);
+          chunks.push({
+            label: `${String(section.title || "Section")} / ${String(child.title || "Part")}`,
+            text: childText,
+            wordCount: countInventoryWords(childText),
+          });
+        }
+      } else {
+        chunks.push({
+          label: String(section.title || "Section"),
+          text: sectionText,
+          wordCount: sectionWords,
+        });
+      }
+    } else if (pending.wordCount + sectionWords > TARGET && pending.sections.length > 0) {
+      flushPending();
+      pending = { sections: [section], wordCount: sectionWords };
+    } else {
+      pending.sections.push(section);
+      pending.wordCount += sectionWords;
+    }
+  }
+  flushPending();
+
+  if (chunks.length < 2) return null;
+  return chunks;
+}
+
+export function throwConceptInventoryParseError(lastRaw) {
+  if (looksLikeTruncatedModelJson(lastRaw)) {
+    const err = new Error("concept_inventory_truncated");
+    err.code = "CONCEPT_INVENTORY_TRUNCATED";
+    err.raw = lastRaw;
+    throw err;
+  }
+  throw new Error(
+    "Model returned concept inventory JSON we could not parse. Please try generating blocks again.",
+  );
+}
+
 export function slimInventoryForPack(inventory) {
   return (Array.isArray(inventory) ? inventory : []).map((c) => {
     if (!c || typeof c !== "object") return c;
@@ -944,20 +1044,17 @@ Output JSON only (no markdown, no preamble):
 Respond entirely in ${language}.`;
 }
 
-export function buildConceptInventoryPhase2Prompt(lang) {
+export function buildConceptInventoryTersePrompt(lang) {
   const language = String(lang || "English").trim() || "English";
-  return `You are extracting SECONDARY (level-2) concepts from ONE section of a longer document.
-
-${SOURCE_FIDELITY_RULES}
+  return `You are extracting a minimal ordered concept inventory from study material.
 
 Rules:
-- Identify sub-concepts, examples, critical distinctions, and named arguments in THIS section only.
-- Do NOT repeat concepts already in the provided phase-1 list (match by title or id).
-- Mark each new concept with level 2 — use new ids continuing the sequence.
-- Each concept: id, order, title, scope_one_line, source_phrase when possible, module, concept_type.
+- Return ONLY these fields per concept: id, order, title, scope_one_line.
+- Do NOT include source_phrase, anchor_type, module, concept_type, or prerequisite_ids.
+- Order by learning prerequisites. Valid JSON only.
 
 Output JSON only:
-{"concepts":[{"id":"c99","order":99,"title":"...","scope_one_line":"...","source_phrase":"...","module":"...","concept_type":"example","level":2,"secondary":true}]}
+{"concepts":[{"id":"c1","order":1,"title":"Short name","scope_one_line":"What this covers"}]}
 
 Respond entirely in ${language}.`;
 }
@@ -1007,28 +1104,37 @@ export function parseConceptInventoryFromModelResponse(text) {
   return out;
 }
 
-export async function deepSeekConceptInventory({
+export async function callConceptInventoryLlm({
   llmModel,
-  apiKey: _legacyApiKey,
   materialText,
   studyNotes,
   language,
   estimatedConceptTarget,
   wordCount,
+  max_tokens = CONCEPT_INVENTORY_MAX_TOKENS,
+  chunkLabel = "",
+  terseOnly = false,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const lang = String(language || "English").trim() || "English";
   const notes = String(studyNotes || "").trim();
   const material = String(materialText || "").trim();
-  const wc = Number(wordCount) || material.split(/\s+/).filter(Boolean).length;
+  const wc = Number(wordCount) || countInventoryWords(material);
 
-  function buildMessages(compact) {
-    const system = buildConceptInventoryPrompt(lang, {
-      wordCount: wc,
-      estimatedConceptTarget,
-    });
-    const messages = [{ role: "system", content: compact ? `${system}\n\nBe concise. Valid JSON only.` : system }];
-    if (notes) {
+  function buildMessages(compact, terse) {
+    const system = terse
+      ? buildConceptInventoryTersePrompt(lang)
+      : buildConceptInventoryPrompt(lang, { wordCount: wc, estimatedConceptTarget });
+    const sectionHint = chunkLabel
+      ? `\n\nYou are extracting concepts from ONE section of a longer document: "${chunkLabel}". Extract prerequisites within this section only.`
+      : "";
+    const messages = [
+      {
+        role: "system",
+        content: terse ? system : `${system}${sectionHint}`,
+      },
+    ];
+    if (notes && !chunkLabel) {
       messages.push({
         role: "user",
         content: `Student comments / study focus:\n${notes}`,
@@ -1043,26 +1149,31 @@ export async function deepSeekConceptInventory({
     return messages;
   }
 
-  const attempts = [
-    { compact: false, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: false },
-  ];
+  const attempts = terseOnly
+    ? [{ compact: true, terse: true, useJsonObjectMode: true }]
+    : [
+        { compact: false, terse: false, useJsonObjectMode: true },
+        { compact: true, terse: false, useJsonObjectMode: true },
+        { compact: true, terse: false, useJsonObjectMode: false },
+        { compact: true, terse: true, useJsonObjectMode: true },
+      ];
 
   let lastRaw = "";
   for (const attempt of attempts) {
     try {
       lastRaw = await callLlmSplit({
         llmModel: model,
-        messages: buildMessages(attempt.compact),
+        messages: buildMessages(attempt.compact, attempt.terse),
         useJsonObjectMode: attempt.useJsonObjectMode,
+        max_tokens,
       });
     } catch (err) {
       if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
         lastRaw = await callLlmSplit({
           llmModel: model,
-          messages: buildMessages(attempt.compact),
+          messages: buildMessages(attempt.compact, attempt.terse),
           useJsonObjectMode: false,
+          max_tokens,
         });
       } else {
         throw err;
@@ -1071,43 +1182,152 @@ export async function deepSeekConceptInventory({
 
     const concepts = parseConceptInventoryFromModelResponse(lastRaw);
     if (Array.isArray(concepts) && concepts.length) {
-      return concepts;
+      return {
+        concepts,
+        inventoryMode: attempt.terse ? "terse" : "full",
+      };
     }
     console.warn("Concept inventory: parse failed, trying next attempt…", lastRaw.slice(0, 400));
   }
 
   console.warn("Concept inventory: all parse attempts failed:", lastRaw.slice(0, 800));
-  throw new Error(
-    "Model returned concept inventory JSON we could not parse. Please try generating blocks again.",
-  );
+  throwConceptInventoryParseError(lastRaw);
 }
 
-export async function deepSeekConceptInventoryPhase2({
+export async function deepSeekConceptInventory({
   llmModel,
-  sectionText,
-  existingConcepts,
+  apiKey: _legacyApiKey,
+  materialText,
+  studyNotes,
   language,
+  estimatedConceptTarget,
+  wordCount,
+  max_tokens = CONCEPT_INVENTORY_MAX_TOKENS,
+  chunkLabel = "",
 }) {
+  return callConceptInventoryLlm({
+    llmModel,
+    materialText,
+    studyNotes,
+    language,
+    estimatedConceptTarget,
+    wordCount,
+    max_tokens,
+    chunkLabel,
+  });
+}
+
+export async function deepSeekConceptInventoryChunk(chunk, splitOpts = {}) {
+  const {
+    llmModel,
+    studyNotes,
+    language,
+    estimatedConceptTarget,
+    totalWordCount,
+  } = splitOpts;
+  const chunkWords = Number(chunk?.wordCount) || countInventoryWords(chunk?.text);
+  const total = Math.max(1, Number(totalWordCount) || chunkWords);
+  const globalTarget = Math.max(5, Number(estimatedConceptTarget) || 30);
+  const chunkTarget = Math.max(
+    5,
+    Math.ceil(globalTarget * (chunkWords / total)),
+  );
+  return deepSeekConceptInventory({
+    llmModel,
+    materialText: chunk.text,
+    studyNotes,
+    language,
+    estimatedConceptTarget: chunkTarget,
+    wordCount: chunkWords,
+    max_tokens: CONCEPT_INVENTORY_CHUNK_MAX_TOKENS,
+    chunkLabel: String(chunk.label || "Section"),
+  });
+}
+
+export function buildMergeConceptInventoriesPrompt(lang, partialsJson) {
+  const language = String(lang || "English").trim() || "English";
+  return `You are merging partial concept inventories from sections of one document into a single ordered inventory.
+
+Rules:
+1. Deduplicate: merge concepts that represent the same idea across sections. Keep the richest title and source_phrase.
+2. Assign final ids c1, c2, … in document order (by first appearance).
+3. Resolve cross-section prerequisite_ids using the new final ids.
+4. Set module from the section label of first appearance.
+5. Preserve concept_type, anchor_type, source_phrase from the richest partial entry.
+
+Output JSON only:
+{"concepts":[{"id":"c1","order":1,"title":"...","scope_one_line":"...","source_phrase":"...","anchor_type":"cited","module":"...","prerequisite_ids":[],"concept_type":"argument"}]}
+
+Partial inventories by section:
+${partialsJson}
+
+Respond entirely in ${language}.`;
+}
+
+export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) {
+  const { llmModel, language } = splitOpts;
   const model = resolveLlmModelArg(llmModel);
   const lang = String(language || "English").trim() || "English";
-  const section = String(sectionText || "").trim();
-  const existing = Array.isArray(existingConcepts) ? existingConcepts : [];
-  const existingList = existing
-    .map((c) => `- ${String(c.id || "")}: ${String(c.title || "").trim()}`)
-    .join("\n");
-  const system = buildConceptInventoryPhase2Prompt(lang);
-  const userContent = `Phase-1 concepts already identified (do NOT duplicate):\n${existingList || "(none)"}\n\nSection text:\n${section}`;
-  const raw = await llmChatCompletions({
-    llmModel: model,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: userContent },
-    ],
-    temperature: 0.2,
-  });
-  const concepts = parseConceptInventoryFromModelResponse(raw);
-  return Array.isArray(concepts) ? concepts : [];
+  const payload = (Array.isArray(partials) ? partials : [])
+    .map((p) => ({
+      label: String(p?.label || "Section"),
+      concepts: Array.isArray(p?.concepts) ? p.concepts : [],
+    }))
+    .filter((p) => p.concepts.length > 0);
+  if (!payload.length) {
+    throw new Error("No partial inventories to merge.");
+  }
+  const partialsJson = JSON.stringify(payload);
+  const system = buildMergeConceptInventoriesPrompt(lang, partialsJson);
+  const attempts = [
+    { compact: false, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: true },
+    { compact: true, useJsonObjectMode: false },
+    { compact: true, terse: true, useJsonObjectMode: true },
+  ];
+  let lastRaw = "";
+  for (const attempt of attempts) {
+    const userContent = attempt.terse
+      ? "Merge into one inventory. JSON only. If needed omit source_phrase and optional fields."
+      : attempt.compact
+        ? "Merge partial inventories. JSON only. Be concise."
+        : "Merge the partial inventories into one ordered concept list.";
+    try {
+      lastRaw = await callLlmSplit({
+        llmModel: model,
+        messages: [
+          { role: "system", content: attempt.terse ? buildConceptInventoryTersePrompt(lang) : system },
+          { role: "user", content: userContent },
+        ],
+        useJsonObjectMode: attempt.useJsonObjectMode,
+        max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
+      });
+    } catch (err) {
+      if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+        lastRaw = await callLlmSplit({
+          llmModel: model,
+          messages: [
+            { role: "system", content: attempt.terse ? buildConceptInventoryTersePrompt(lang) : system },
+            { role: "user", content: userContent },
+          ],
+          useJsonObjectMode: false,
+          max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
+        });
+      } else {
+        throw err;
+      }
+    }
+    const concepts = parseConceptInventoryFromModelResponse(lastRaw);
+    if (Array.isArray(concepts) && concepts.length) {
+      return {
+        concepts,
+        inventoryMode: attempt.terse ? "map_reduce_terse" : "map_reduce",
+      };
+    }
+    console.warn("Concept inventory merge: parse failed, trying next attempt…", lastRaw.slice(0, 400));
+  }
+  console.warn("Concept inventory merge: all parse attempts failed:", lastRaw.slice(0, 800));
+  throwConceptInventoryParseError(lastRaw);
 }
 
 export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null, vaultContextBlock = "" } = {}) {

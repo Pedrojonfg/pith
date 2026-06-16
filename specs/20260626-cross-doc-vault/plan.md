@@ -1,106 +1,113 @@
-# Implementation Plan: Cross-Document Concept Vault
+# Implementation Plan: [FEATURE]
 
-**Branch**: `20260626-cross-doc-vault` | **Date**: 2026-06-15 | **Spec**: [spec.md](./spec.md)
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 
-**Input**: Feature specification from `/specs/20260626-cross-doc-vault/spec.md`
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
+
+**Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
 
 ## Summary
 
-Introduce a global concept registry (`concept-registry-store.js`) above per-document `shared` data with gray/yellow/green maturity, lazy identity resolution at gray→yellow, global `ConceptFacetSchedule` replacing per-document `smItems`, automatic promotion from all study modes, vault graph view reusing `graph/view.js` + `canvas.js`, ingest-only upload path, and removal of the manual vault curation commit gate. Phase 1 ships registry + yellow; Phase 2 green via Recall/Slow; Phase 3 vault navigation.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: JavaScript ES modules (browser + Node cursor-tests)
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
 
-**Primary Dependencies**: `session-store.js`, `session-migration.js`, `sm2.js`, `vault/mastery-model.js`, `vault/session-close.js`, `graph/view.js`, `graph/canvas.js`, `graph/adapters.js`, `review.js`, `study.js`, `api.js` (embedding/dedup), Recall/Slow/Cloze mode modules
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]
 
-**Storage**: `localStorage['mylearning_concept_registry']` (new); existing `pith_doc_sessions`, `pith_knowledge_vault` (legacy vault entries coexist until migration path defined)
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]
 
-**Testing**: `cursor-tests/20260626_cross-doc-vault*.mjs` integration; unit tests per module
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
-**Target Platform**: SPA offline-first PWA
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
 
-**Project Type**: Web application — vanilla JS modules + DOM
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
 
-**Performance Goals**: Identity resolution &lt; 3s per concept; vault cold graph &lt; 2s for 500 concepts; `buildReviewQueue` global merge &lt; 10ms for 500 facet schedules
+**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]
 
-**Constraints**: English UI; `concept-registry-store.js` as Supabase seam; no speculative green pages; maturity monotonic; bump `SW_VERSION` on asset changes; bias split on ambiguous resolution
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]
 
-**Scale/Scope**: ~13 implementation tasks across 3 rollout phases; new store + promotion + resolution modules; graph adapter; UI for vault tab and concept pages; deprecate curation gate
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]
 
-**External prerequisites**: `20260609-unified-session`, `20260620-sm2-priority-queue`, `20260621-recall-mode`, `20260623-study-projects`, `20260624-knowledge-vault-curation` (partial supersession)
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
-*GATE: Project uses `.cursorrules` (constitution template not ratified).*
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-| Principle | Status | Notes |
-|-----------|--------|-------|
-| English prompts / UI | PASS | All new strings in English |
-| No frameworks | PASS | Pure JS modules + DOM |
-| Simplicity / surgical | PASS | Single registry store seam; reuse graph/SM-2 |
-| PWA versioning | PASS | SW bump when touching shipped assets |
-| Testability | PASS | Pure promotion/resolution functions unit-tested |
-| Heuristics in English | PASS | Resolution prompts in English |
-
-**Post-design re-check**: PASS
+[Gates determined based on constitution file]
 
 ## Project Structure
 
 ### Documentation (this feature)
 
 ```text
-specs/20260626-cross-doc-vault/
-├── plan.md
-├── research.md
-├── data-model.md
-├── quickstart.md
-├── contracts/
-│   ├── concept-registry-store.md
-│   ├── identity-resolution.md
-│   ├── promotion-rules.md
-│   ├── vault-graph.md
-│   └── review-global-queue.md
-├── checklists/
-│   └── requirements.md
-└── spec.md
+specs/[###-feature]/
+├── plan.md              # This file (/speckit-plan command output)
+├── research.md          # Phase 0 output (/speckit-plan command)
+├── data-model.md        # Phase 1 output (/speckit-plan command)
+├── quickstart.md        # Phase 1 output (/speckit-plan command)
+├── contracts/           # Phase 1 output (/speckit-plan command)
+└── tasks.md             # Phase 2 output (/speckit-tasks command - NOT created by /speckit-plan)
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
-src/js/
-├── concept-registry/
-│   ├── registry-store.js       # NEW: CRUD, localStorage, Supabase-ready API
-│   ├── identity-resolution.js  # NEW: embedding + fuzzy match, split bias
-│   ├── promotion.js            # NEW: gray→yellow, yellow→green rules
-│   ├── mastery.js              # NEW: global mastery cache + decay
-│   └── vault-graph-adapter.js  # NEW: nodes/edges for graph/view.js
-├── session-types.js            # extend: Concept, ConceptFacetSchedule, ConceptContent
-├── session-migration.js        # extend: globalConceptId, smItems migration flag
-├── session-store.js            # extend: globalConceptId on signals/inventory
-├── sm2-ingest.js               # extend: write global facet schedules
-├── review.js                   # extend: global ConceptFacetSchedule queue
-├── study.js                    # vault tab, concept pages, ingest path, deprecate curation
-├── graph/canvas.js             # extend: yellow/green maturity styles
-└── vault/vault-curation.js     # deprecate commit gate; bridge to promotion
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
 
-cursor-tests/
-└── 20260626_cross-doc-vault.mjs
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
+backend/
+├── src/
+│   ├── models/
+│   ├── services/
+│   └── api/
+└── tests/
+
+frontend/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   └── services/
+└── tests/
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: New `concept-registry/` package mirrors `vault/` pattern; single store seam for Supabase migration per spec §14.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 
+> **Fill ONLY if Constitution Check has violations that must be justified**
+
 | Violation | Why Needed | Simpler Alternative Rejected Because |
 |-----------|------------|-------------------------------------|
-| Parallel registry alongside legacy vault | Gradual migration; existing vault entries have different shape | Big-bang replace would break Post A+ vault features mid-rollout |
-| Per-facet global schedules | Spec requires facet-specific SM-2 while single mastery scalar | Document-level smItems cannot express cross-doc facet schedules |
-
-## Phasing
-
-1. **Phase 1 (T01–T06)**: Registry store, schema migration, identity resolution, gray→yellow from RSVP/Questions/Cloze, smItems→global schedule migration, vault graph yellow nodes
-2. **Phase 2 (T07)**: Yellow→green via Recall + Slow Phase 3, ConceptContent storage
-3. **Phase 3 (T08–T12)**: Vault navigation UI, focusConceptId, ingest-only, curation gate removal
-4. **Phase 4 (T13)**: Integration tests, SW bump, quickstart QA
+| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |

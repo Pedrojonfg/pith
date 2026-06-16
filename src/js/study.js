@@ -143,6 +143,7 @@ import {
   describeSplitRunMetaForUi,
   storeDefaultQuestionConfig,
   runConceptInventory,
+  runConceptInventoryWithFallback,
   packInventoryToBlocks,
   twoPhaseConceptSplit,
   state,
@@ -188,6 +189,7 @@ import {
   setPrefetchIndicator,
   showScreen,
   showSidebar,
+  showInventoryStatusBanner,
   syncStudyLanguage,
   typesetMath,
   updateFullPackProgressUi,
@@ -238,7 +240,6 @@ import {
   enterProjectLibrary,
   getUploadDefaultProjectId,
   mountModeSelectBreadcrumb,
-  mountUploadProjectPicker,
   populateReviewScopeSelect,
   projectLibraryCallbacks,
   renderProjectLibraryView,
@@ -923,11 +924,20 @@ function getRecallController() {
         const doc = getActiveSession();
         const text = String(doc?.shared?.rawMarkdown || "").trim();
         if (!text) throw new Error("No document text for concept inventory.");
-        const { inventory } = await runConceptInventory(text, {
+        const wc = text.split(/\s+/).filter(Boolean).length;
+        const invResult = await runConceptInventoryWithFallback(text, {
           llmModel: getSessionLlmModel(),
           language: getStudyLanguage(),
+          docHierarchy: doc?.shared?.docHierarchy,
+          wordCount: wc,
         });
-        promoteConceptInventoryToShared(inventory, "recall");
+        if (invResult.kind === "fallback_mono") {
+          notifyInventoryRunStatus(invResult);
+          throw new Error("Concept inventory unavailable for recall.");
+        }
+        promoteConceptInventoryToShared(invResult.inventory, "recall");
+        persistInventoryRunMeta(doc, invResult);
+        notifyInventoryRunStatus(invResult);
       },
       getLanguage: getStudyLanguage,
       getLlmModel: getSessionLlmModel,
@@ -1214,11 +1224,17 @@ export async function runIngestOnlyPipeline({
     originalFormat,
     uploadedAt: new Date().toISOString(),
   });
-  const { inventory } = await runConceptInventory(text, {
+  const invResult = await runConceptInventoryWithFallback(text, {
     llmModel: getSessionLlmModel(),
     language: getStudyLanguage(),
+    docHierarchy: doc?.shared?.docHierarchy,
+    wordCount: text.split(/\s+/).filter(Boolean).length,
   });
-  promoteConceptInventoryToShared(inventory, "ingest");
+  if (invResult.kind === "fallback_mono") {
+    notifyInventoryRunStatus(invResult);
+    throw new Error("Concept inventory unavailable for ingest.");
+  }
+  promoteConceptInventoryToShared(invResult.inventory, "ingest");
   return getSession(doc.docId);
 }
 
@@ -1810,6 +1826,47 @@ function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
   if (concepts.length) addConceptsToShared(doc.docId, concepts);
 }
 
+function persistInventoryRunMeta(doc, invResult) {
+  if (!doc?.docId || invResult?.kind !== "inventory") return;
+  if (!doc.modes) doc.modes = {};
+  if (!doc.modes.rsvp) doc.modes.rsvp = {};
+  if (!doc.modes.rsvp._meta) doc.modes.rsvp._meta = {};
+  const meta = doc.modes.rsvp._meta;
+  if (invResult.inventoryMode) meta.inventoryMode = invResult.inventoryMode;
+  if (invResult.chunkCount != null) meta.inventoryChunkCount = invResult.chunkCount;
+  if (Array.isArray(invResult.failedChunks) && invResult.failedChunks.length) {
+    meta.inventoryFailedChunks = invResult.failedChunks;
+  }
+  saveDocumentSession(doc);
+}
+
+function notifyInventoryRunStatus(invResult) {
+  if (!invResult || typeof invResult !== "object") return;
+  if (invResult.kind === "fallback_mono") {
+    showInventoryStatusBanner(
+      "Concept inventory could not be generated. Using a simplified block split instead. Concept-level features (assessment, vault tagging) will not be available for this session.",
+    );
+    return;
+  }
+  if (Array.isArray(invResult.failedChunks) && invResult.failedChunks.length) {
+    showInventoryStatusBanner(
+      "Concept inventory partially recovered — some sections could not be processed. Results may be incomplete.",
+    );
+  }
+}
+
+async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onProgress) {
+  let docHierarchy = doc?.shared?.docHierarchy;
+  if (docHierarchy?.tree?.length || wordCount <= 8000) return docHierarchy;
+  if (typeof onProgress === "function") onProgress("Building document structure…");
+  docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
+  if (doc?.shared && docHierarchy) {
+    doc.shared.docHierarchy = docHierarchy;
+    saveDocumentSession(doc);
+  }
+  return docHierarchy;
+}
+
 function syncActiveSessionAssessmentSignals() {
   const doc = getActiveSession();
   const session = state.activeSession;
@@ -1915,22 +1972,12 @@ function hydrateMaterialStateFromDoc(doc) {
 
 function clearMaterialBootstrapUi() {
   state.materialBootstrapActive = false;
-  if (els.modeMaterialLoadedBanner) els.modeMaterialLoadedBanner.hidden = true;
   if (els.studyFileInputRow) els.studyFileInputRow.hidden = false;
   if (els.fileInput) els.fileInput.required = true;
 }
 
 function setMaterialBootstrapUi(active, doc) {
   state.materialBootstrapActive = Boolean(active);
-  if (els.modeMaterialLoadedBanner) {
-    els.modeMaterialLoadedBanner.hidden = !active;
-    if (active) {
-      const docTitle = els.modeMaterialLoadedBanner.querySelector(".mode-material-loaded-doc");
-      if (docTitle) {
-        docTitle.textContent = String(doc?.shared?.docMeta?.titleInferred || "").trim();
-      }
-    }
-  }
   if (els.studyFileInputRow) els.studyFileInputRow.hidden = active;
   if (els.fileInput) {
     els.fileInput.required = !active;
@@ -2083,10 +2130,10 @@ function resolveActiveCreateMode() {
 
 function showCreateScreen() {
   updateCreateScreenModeVisibility(resolveActiveCreateMode());
-  mountUploadProjectPicker();
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();
   showScreen("create");
+  void maybeAutoRecommendBlockCount();
 }
 
 function setGenerateBlocksFormHidden(hidden) {
@@ -2110,8 +2157,8 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
-  if (els.recommendBlocksBtn) els.recommendBlocksBtn.hidden = !isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
+  else void maybeAutoRecommendBlockCount();
   if (els.rsvpAdvancedDetails) {
     const summary = els.rsvpAdvancedDetails.querySelector("summary");
     if (summary) {
@@ -3654,8 +3701,27 @@ function invalidateBlockSplitCacheAndRecommendUi() {
   clearRecommendBlocksUi();
 }
 
+let recommendBlockCountRunId = 0;
+
 function setRecommendLoading(isLoading) {
-  if (els.recommendBlocksBtn) els.recommendBlocksBtn.disabled = isLoading;
+  if (els.blocksInput) els.blocksInput.disabled = isLoading;
+}
+
+function hasMaterialForBlockRecommend() {
+  const hasFile = Boolean(els.fileInput?.files?.length);
+  const doc = getActiveSession();
+  const hasBootstrap =
+    Boolean(state.materialBootstrapActive) && Boolean(String(doc?.shared?.rawMarkdown || "").trim());
+  return hasFile || hasBootstrap;
+}
+
+async function maybeAutoRecommendBlockCount() {
+  const mode = resolveActiveCreateMode();
+  if (mode !== "rsvp") return;
+  if (!els.generateBlocksForm || els.generateBlocksForm.hidden) return;
+  if (!hasMaterialForBlockRecommend()) return;
+  const runId = ++recommendBlockCountRunId;
+  await handleRecommendBlockCount(runId);
 }
 
 function resolveSectionCountFromText(cleanedText) {
@@ -3728,7 +3794,7 @@ async function resolveMaterialForGenerate() {
   return { file, ...material, fromBootstrap: false };
 }
 
-async function handleRecommendBlockCount() {
+async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
   const selectedMode = getSelectedStudyModeRadio() || normalizeStudyMode(state.studyMode);
   if (selectedMode !== "rsvp") return;
 
@@ -3759,6 +3825,7 @@ async function handleRecommendBlockCount() {
   setRecommendLoading(true);
   try {
     const resolved = await resolveMaterialForGenerate();
+    if (runId !== recommendBlockCountRunId) return;
     if (!resolved) {
       if (els.recommendBlocksStatus) {
         els.recommendBlocksStatus.textContent =
@@ -3776,6 +3843,7 @@ async function handleRecommendBlockCount() {
       }
     }
     if (!cleanedText.trim()) throw new Error("File appears to be empty.");
+    if (runId !== recommendBlockCountRunId) return;
 
     const fingerprint = buildBlockSplitFingerprint({
       file,
@@ -3788,15 +3856,34 @@ async function handleRecommendBlockCount() {
     if (isBlockSplitCacheValid(cache, fingerprint)) {
       inventory = cache.conceptInventory;
     } else {
-      const { inventory: indexed } = await runConceptInventory(cleanedText, {
+      const doc = getActiveSession();
+      const docHierarchy = await ensureDocHierarchyForInventory(
+        doc,
+        cleanedText,
+        wordCount,
+        (msg) => {
+          if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
+        },
+      );
+      const invResult = await runConceptInventoryWithFallback(cleanedText, {
         llmModel,
         studyNotes: String(state.studyNotes || ""),
         language: getStudyLanguage(),
+        docHierarchy,
+        wordCount,
+        nBlocks: Number(els.blocksInput?.value) || 12,
         onProgress: (msg) => {
           if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
         },
       });
-      inventory = indexed;
+      notifyInventoryRunStatus(invResult);
+      if (invResult.kind === "fallback_mono") {
+        throw new Error(
+          "Concept inventory could not be generated. Try a shorter section or chapter scope.",
+        );
+      }
+      inventory = invResult.inventory;
+      persistInventoryRunMeta(doc, invResult);
       setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
     }
 
@@ -3809,6 +3896,7 @@ async function handleRecommendBlockCount() {
       pedagogicalMeta,
     );
     const recommendation = computeBlockCountRecommendation(signals);
+    if (runId !== recommendBlockCountRunId) return;
 
     setBlockSplitCache({
       fingerprint,
@@ -3833,7 +3921,7 @@ async function handleRecommendBlockCount() {
           : "Could not recommend block count. Try again or set blocks manually.";
     }
   } finally {
-    setRecommendLoading(false);
+    if (runId === recommendBlockCountRunId) setRecommendLoading(false);
   }
 }
 
@@ -8011,7 +8099,9 @@ export function wireStudyHandlers() {
       }
       clearTimeout(studyNotesInvalidationTimer);
       studyNotesInvalidationTimer = setTimeout(() => {
-        invalidateBlockSplitCacheAndRecommendUi();
+        invalidateBlockSplitCache();
+        clearRecommendBlocksUi();
+        void maybeAutoRecommendBlockCount();
       }, 500);
     });
   }
@@ -8046,18 +8136,13 @@ export function wireStudyHandlers() {
       state.lastCleanedMaterialText = "";
       state.lastCleanedMaterialWordCount = 0;
       invalidateBlockSplitCacheAndRecommendUi();
+      void maybeAutoRecommendBlockCount();
     } catch {
       els.fileExtractHint.textContent = "";
     }
   });
 
   enableUnifiedMaterialUpload();
-
-  if (els.recommendBlocksBtn) {
-    els.recommendBlocksBtn.addEventListener("click", () => {
-      void handleRecommendBlockCount();
-    });
-  }
 
   els.generateBlocksForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -8414,7 +8499,33 @@ export function wireStudyHandlers() {
       if (isBlockSplitCacheValid(cache, fingerprint)) {
         conceptInventory = cache.conceptInventory;
       } else {
-        const invResult = await runConceptInventory(cleanedText, splitOpts);
+        const docHierarchy = await ensureDocHierarchyForInventory(
+          doc,
+          cleanedText,
+          wordCount,
+          (msg) => {
+            els.generateBlocksStatus.textContent = msg;
+          },
+        );
+        const invResult = await runConceptInventoryWithFallback(cleanedText, {
+          ...splitOpts,
+          docHierarchy,
+          nBlocks,
+          wordCount,
+        });
+        notifyInventoryRunStatus(invResult);
+        persistInventoryRunMeta(doc, invResult);
+        if (invResult.kind === "fallback_mono") {
+          promoteConceptInventoryToShared([], "rsvp");
+          applyPackedBlocksToEditor(
+            {
+              blockIndex: invResult.blockIndex,
+              splitRunMeta: invResult.splitRunMeta,
+            },
+            [],
+          );
+          return;
+        }
         conceptInventory = invResult.inventory;
         if (Array.isArray(conceptInventory) && conceptInventory.length > 0) {
           setBlockSplitCache({
@@ -8679,15 +8790,9 @@ export function wireStudyHandlers() {
         conceptInventory: mgInventory,
       };
       promoteConceptInventoryToShared(mgInventory, "rsvp");
-      // #region agent log
-      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5',location:'src/js/study.js:2816',message:'confirm blocks before storeActiveSession',data:{nBlocks,sessionBlocks:Array.isArray(sessionObj.blocks)?sessionObj.blocks.length:null,stateActiveSessionBefore:!!state.activeSession,indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       storeActiveSession(sessionObj);
       state.activeSession = sessionObj;
       refreshGuideContext();
-      // #region agent log
-      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H6',location:'src/js/study.js:2820',message:'confirm blocks after storeActiveSession',data:{storedSessionExists:!!loadActiveSession(),stateActiveSessionAfterStore:!!state.activeSession},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (prePackingDraftMeta) {
         if (prePackingDraftMeta.assessmentSkipped) {
           setAssessmentSkipped(sessionObj, true);
@@ -8737,9 +8842,6 @@ export function wireStudyHandlers() {
   if (els.generateFullPackBtn) {
     els.generateFullPackBtn.addEventListener("click", async () => {
       const blockIndex = Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex : [];
-      // #region agent log
-      fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H5,H6,H7',location:'src/js/study.js:2835',message:'generate offline pack clicked',data:{blockIndexLength:blockIndex.length,stateActiveSession:!!state.activeSession,storedSessionExists:!!loadActiveSession(),indexWasImported:window.indexWasImported===true},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (!blockIndex.length) {
         if (els.startStudyingError) {
           els.startStudyingError.hidden = false;

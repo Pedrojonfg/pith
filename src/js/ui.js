@@ -368,7 +368,6 @@ export const els = {
   btnUploadVaultRetry: document.getElementById("btnUploadVaultRetry"),
   modeSelectContinueBtn: document.getElementById("modeSelectContinueBtn"),
   modeSelectLibraryBtn: document.getElementById("modeSelectLibraryBtn"),
-  uploadProjectPickerMount: document.getElementById("uploadProjectPickerMount"),
   reviewConfigBreadcrumb: document.getElementById("reviewConfigBreadcrumb"),
   reviewScopeSelect: document.getElementById("reviewScopeSelect"),
   reviewIncludeSubprojects: document.getElementById("reviewIncludeSubprojects"),
@@ -556,7 +555,6 @@ export const els = {
   resumeSessionStatus: document.getElementById("resumeSessionStatus"),
   resumeSessionError: document.getElementById("resumeSessionError"),
   blocksInput: document.getElementById("blocksInput"),
-  recommendBlocksBtn: document.getElementById("recommendBlocksBtn"),
   recommendBlocksStatus: document.getElementById("recommendBlocksStatus"),
   recommendBlocksWhy: document.getElementById("recommendBlocksWhy"),
   languageSelect: document.getElementById("languageSelect"),
@@ -607,7 +605,6 @@ export const els = {
   assessmentGeneratingError: document.getElementById("assessmentGeneratingError"),
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
-  modeMaterialLoadedBanner: document.getElementById("modeMaterialLoadedBanner"),
   studyFileInputRow: document.getElementById("studyFileInputRow"),
   modeResumePanel: document.getElementById("modeResumePanel"),
   modeResumeHint: document.getElementById("modeResumeHint"),
@@ -762,9 +759,53 @@ export const els = {
   testError: document.getElementById("testError"),
 };
 
-// #region agent log
-fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H1',location:'src/js/ui.js:204',message:'DOM refs snapshot',data:{hasLoadOfflinePackBtn:!!els.loadOfflinePackBtn,hasImportIndexBtn:!!els.importIndexBtn,hasImportIndexFile:!!els.importIndexFile,hasImportIndexLabel:!!els.importIndexLabel},timestamp:Date.now()})}).catch(()=>{});
-// #endregion
+export function showInventoryStatusBanner(message, { id = "inventory-status-banner" } = {}) {
+  if (typeof document === "undefined" || !message) return null;
+  let banner = document.getElementById(id);
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = id;
+    banner.setAttribute("role", "status");
+    banner.style.position = "fixed";
+    banner.style.left = "50%";
+    banner.style.top = "12px";
+    banner.style.transform = "translateX(-50%)";
+    banner.style.zIndex = "3500";
+    banner.style.maxWidth = "min(560px, 92vw)";
+    banner.style.padding = "10px 36px 10px 12px";
+    banner.style.borderRadius = "6px";
+    banner.style.border = "1px solid rgba(255,255,255,0.12)";
+    banner.style.background = "#1e2430";
+    banner.style.color = "#e8edf5";
+    banner.style.fontSize = "13px";
+    banner.style.lineHeight = "1.45";
+    banner.style.boxShadow = "0 4px 20px rgba(0,0,0,0.35)";
+
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", "Dismiss");
+    dismiss.textContent = "×";
+    dismiss.style.position = "absolute";
+    dismiss.style.right = "8px";
+    dismiss.style.top = "6px";
+    dismiss.style.border = "none";
+    dismiss.style.background = "transparent";
+    dismiss.style.color = "inherit";
+    dismiss.style.fontSize = "18px";
+    dismiss.style.cursor = "pointer";
+    dismiss.addEventListener("click", () => banner.remove());
+    banner.style.position = "fixed";
+    banner.appendChild(dismiss);
+
+    const text = document.createElement("span");
+    text.className = "inventory-status-banner-text";
+    banner.insertBefore(text, dismiss);
+    document.body.appendChild(banner);
+  }
+  const textEl = banner.querySelector(".inventory-status-banner-text");
+  if (textEl) textEl.textContent = String(message);
+  return banner;
+}
 
 function ensureFullPackCtaSubtitle() {
   if (els.fullPackCtaSubtitle) return els.fullPackCtaSubtitle;
@@ -1298,9 +1339,6 @@ export function showScreen(which) {
   }
 
   if (showBlocks) {
-    // #region agent log
-    fetch('http://127.0.0.1:7501/ingest/6a96a96a-b441-41a6-a2c1-f773e722183c',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'fe9701'},body:JSON.stringify({sessionId:'fe9701',runId:'pre-fix',hypothesisId:'H3',location:'src/js/ui.js:598',message:'showScreen blocks',data:{hasImportBtn:!!els.importIndexBtn,importBtnText:els.importIndexBtn?els.importIndexBtn.textContent:'',importBtnHiddenAttr:els.importIndexBtn?els.importIndexBtn.hidden:null,hasImportRow:!!document.querySelector('.import-index-row')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     setTimeout(() => els.blocksListOutput.focus(), 0);
   }
 

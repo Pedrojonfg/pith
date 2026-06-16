@@ -385,31 +385,28 @@ async function testRecommendDomSmoke() {
   const dom = new JSDOM(indexHtml);
   const doc = dom.window.document;
   const section = doc.getElementById("rsvpBlocksSection");
-  const btn = doc.getElementById("recommendBlocksBtn");
   const status = doc.getElementById("recommendBlocksStatus");
   const why = doc.getElementById("recommendBlocksWhy");
 
   assert(section, "rsvpBlocksSection present");
-  assert(btn, "recommendBlocksBtn present");
   assert(status, "recommendBlocksStatus present");
   assert(why, "recommendBlocksWhy present");
-  assert(section.contains(btn), "recommendBlocksBtn inside rsvpBlocksSection");
   assert(section.contains(status), "recommendBlocksStatus inside rsvpBlocksSection");
   assert(section.contains(why), "recommendBlocksWhy inside rsvpBlocksSection");
-  assert(btn.textContent.includes("Recommend block count"), "recommend button copy EN");
   assert(why.hidden === true, "recommendBlocksWhy hidden by default");
   assert(why.getAttribute("aria-live") === "polite", "recommendBlocksWhy aria-live");
+  assert(!doc.getElementById("uploadProjectField"), "upload project field removed from configure screen");
+  assert(!doc.getElementById("modeMaterialLoadedBanner"), "document ready banner removed");
 
-  assert(uiSrc.includes('recommendBlocksBtn: document.getElementById("recommendBlocksBtn")'), "ui.js els.recommendBlocksBtn");
   assert(uiSrc.includes('recommendBlocksStatus: document.getElementById("recommendBlocksStatus")'), "ui.js els.recommendBlocksStatus");
   assert(uiSrc.includes('recommendBlocksWhy: document.getElementById("recommendBlocksWhy")'), "ui.js els.recommendBlocksWhy");
 
-  assert(mainCss.includes(".recommend-blocks-btn"), "recommend blocks CSS present");
+  assert(mainCss.includes(".recommend-blocks-status"), "recommend blocks status CSS present");
   assert(studySrc.includes("handleRecommendBlockCount"), "study.js recommend handler");
+  assert(studySrc.includes("maybeAutoRecommendBlockCount"), "study.js auto-recommend on configure");
   assert(studySrc.includes("invalidateBlockSplitCacheAndRecommendUi"), "study.js cache invalidation helper");
   assert(studySrc.includes("packInventoryToBlocks"), "study.js generate uses packInventoryToBlocks");
   assert(studySrc.includes("runConceptInventory"), "study.js recommend uses runConceptInventory");
-  assert(studySrc.includes("els.recommendBlocksBtn.hidden = !isRsvp"), "recommend btn RSVP-only visibility");
 }
 
 // ── Run ──
