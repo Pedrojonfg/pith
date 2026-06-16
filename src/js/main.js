@@ -31,7 +31,7 @@ import {
 } from "./ui.js?v=20260525_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
-import { enterModeSelectScreen, enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260618_1";
+import { enterCreateSessionStartScreen, enterModeSelectScreen, enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260618_1";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
@@ -112,6 +112,9 @@ function startNewSessionFlow() {
     }
   }
   resetToNewSession();
+  if (getStoredKey()) {
+    enterCreateSessionStartScreen();
+  }
 }
 
 async function bootstrap() {

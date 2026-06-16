@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Orbitron:wght@500;700&display=swap"
       rel="stylesheet"
     />
     <style>
@@ -228,8 +228,33 @@
       </svg>
     </button>
 
-    <a href="#" id="knowledgeVaultLink" class="corner-link" style="right: 280px">Knowledge Vault</a>
+    <a href="#" id="knowledgeVaultLink" hidden aria-hidden="true">Knowledge Vault</a>
     <a href="#" id="changeKeyLink" class="corner-link">Change API key</a>
+    <button
+      type="button"
+      id="btnDownloadSessionMd"
+      class="corner-icon-btn"
+      aria-label="Download session markdown"
+      title="Download session markdown"
+      hidden
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <path
+          d="M12 4v11m0 0l4-4m-4 4l-4-4M4 20h16"
+          stroke="currentColor"
+          stroke-width="1.9"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </svg>
+    </button>
     <button
       type="button"
       id="installPwaBtn"
@@ -328,7 +353,7 @@
           aria-label="App home"
         >
           <div class="card app-home-card">
-            <h1>MyLearning</h1>
+            <h1>Pith</h1>
             <p class="hint app-home-lead">Choose where you want to work.</p>
             <div class="app-home-actions row">
               <button type="button" id="btnAppHomeVault" class="btn-primary">Vault</button>
@@ -355,6 +380,44 @@
               <button type="button" id="btnVaultBranchReview" class="btn-secondary">
                 Review
                 <span id="vaultBranchReviewBadge" class="review-badge hidden" aria-label="Items due today"></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenCreateSessionStart"
+          class="screen create-session-start-screen"
+          aria-hidden="true"
+          aria-label="Create session"
+        >
+          <div class="card create-session-start-card">
+            <button type="button" id="createSessionStartBackBtn" class="create-back-btn">← Library</button>
+            <h1>Create a new session</h1>
+            <p class="hint create-session-start-lead">
+              Upload your material first. We will analyze it in the background while you pick how to study.
+            </p>
+            <div id="createSessionStartBreadcrumb" class="project-breadcrumb-mount"></div>
+            <label for="createSessionStartFileInput">Material file</label>
+            <input
+              id="createSessionStartFileInput"
+              name="createSessionStartFileInput"
+              type="file"
+              accept=".pdf,.html,.txt,.md"
+            />
+            <p id="createSessionStartStatus" class="hint" role="status"></p>
+            <label for="createSessionStartNameInput">Session name</label>
+            <input
+              id="createSessionStartNameInput"
+              name="createSessionStartNameInput"
+              type="text"
+              placeholder="My document"
+              maxlength="120"
+              disabled
+            />
+            <div class="row create-session-start-actions">
+              <button type="button" id="createSessionStartContinueBtn" class="btn-primary" disabled>
+                Continue
               </button>
             </div>
           </div>
@@ -435,14 +498,12 @@
             <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
 
             <div id="sessionHubActions" class="session-hub-actions row">
-              <button type="button" id="btnDownloadSessionMd" class="btn-secondary">Download session MD</button>
               <button type="button" id="btnUploadToVault" class="btn-secondary">Upload to vault</button>
             </div>
 
             <div id="modeSelectHub" class="mode-select-hub row" hidden>
               <button type="button" id="modeSelectContinueBtn" class="btn-primary">Continue</button>
               <button type="button" id="modeSelectLibraryBtn" class="btn-secondary">Library</button>
-              <button type="button" id="modeSelectReviewBtn" class="btn-secondary">Review</button>
             </div>
 
             <fieldset id="studyModeSelector" class="study-mode-selector" aria-label="Study mode">
@@ -486,14 +547,6 @@
               </div>
             </fieldset>
 
-            <div class="doc-library-link-row">
-              <button type="button" id="btnPracticeDocument" class="btn-primary">
-                Practice this document
-              </button>
-              <button type="button" id="modeSelectDocLibraryBtn" class="btn-secondary">
-                My documents
-              </button>
-            </div>
           </div>
         </section>
 
@@ -1912,7 +1965,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_2";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260616_3";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1928,7 +1981,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260616_2");
+        await import("./src/js/main.js?v=20260616_3");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
