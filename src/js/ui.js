@@ -315,6 +315,7 @@ export const els = {
   docLibraryBackBtn: document.getElementById("docLibraryBackBtn"),
   btnNewProject: document.getElementById("btnNewProject"),
   btnNewSubproject: document.getElementById("btnNewSubproject"),
+  btnCreateProjectSession: document.getElementById("btnCreateProjectSession"),
   modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
   modeSelectHub: document.getElementById("modeSelectHub"),
   sessionHubActions: document.getElementById("sessionHubActions"),

@@ -3119,6 +3119,10 @@ function wireSlowScopeHandlers() {
 function wireDocLibraryHandlers() {
   projectLibraryCallbacks.onDocumentOpen = (docId) => reopenDocumentFromLibrary(docId);
   projectLibraryCallbacks.onBack = () => enterAppHome();
+  projectLibraryCallbacks.onCreateSessionInProject = (projectId) => {
+    setUploadProjectContext(projectId);
+    enterModeSelectScreen();
+  };
 
   els.btnAppHomeVault?.addEventListener("click", () => enterVaultBranch());
   els.btnAppHomeSessions?.addEventListener("click", () => enterDocLibraryScreen());
