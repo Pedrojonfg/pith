@@ -213,9 +213,16 @@ function ensureRsvpContainer() {
   } else {
     const container = document.createElement("div");
     container.className = "rsvp-container";
-    if (els.rsvpChunk.parentNode) {
-      els.rsvpChunk.parentNode.insertBefore(container, els.rsvpChunk);
+    const stage = els.rsvpOverlay?.querySelector(".rsvp-stage");
+    if (els.rsvpChunk && stage) {
+      if (els.rsvpChunk.parentNode) {
+        els.rsvpChunk.parentNode.insertBefore(container, els.rsvpChunk);
+      } else {
+        stage.appendChild(container);
+      }
       container.appendChild(els.rsvpChunk);
+    } else if (stage) {
+      stage.appendChild(container);
     }
     rsvpContainerEl = container;
   }
@@ -1309,6 +1316,15 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   syncRsvpFocusMode();
   ensureRsvpContainer();
   syncRsvpBlockTitleUi();
+
+  if (!rsvpState.chunks.length) {
+    els.rsvpChunk.textContent = "No reading text for this block.";
+    rsvpState.playing = false;
+    rsvpState.countdownActive = false;
+    els.rsvpPlayPauseBtn.textContent = "Play";
+    updateRsvpProgressUi();
+    return;
+  }
 
   // Ensure the container size is adequate on first load.
   const container =

@@ -4994,9 +4994,21 @@ function getOrCreateTransitionOverlay() {
   return transitionOverlayEls;
 }
 
+function blockHasReadableExplanation(block) {
+  const text = String(block?.explanation || "").trim();
+  return Boolean(text) && !text.startsWith("[Generation failed");
+}
+
 async function ensureBlockGenerated(blockIndex) {
   const existing = getBlock(blockIndex);
-  if (hasGeneratedBlockContent(existing)) return existing;
+  const needsReaderText = !isQuestionsStudyMode(state.activeSession);
+  if (needsReaderText) {
+    if (blockHasReadableExplanation(existing) && hasGeneratedBlockContent(existing)) {
+      return existing;
+    }
+  } else if (hasGeneratedBlockContent(existing)) {
+    return existing;
+  }
   if (isOfflineMode()) {
     throw new Error("Missing offline block data.");
   }
@@ -5391,9 +5403,17 @@ function beginRsvpForCurrentBlock({ onDone }) {
   const block = blocks[state.activeBlockIndex];
   if (!block) {
     const msg = "Missing block.";
-    setSocraticError(msg);
-    els.testError.hidden = false;
-    els.testError.textContent = msg;
+    setTestError(msg);
+    showScreen("test");
+    return;
+  }
+  if (!blockHasReadableExplanation(block)) {
+    if (typeof onDone === "function") {
+      onDone();
+      return;
+    }
+    setTestError("This block has no reading text. Regenerate the block or skip to questions.");
+    showScreen("test");
     return;
   }
   setBlockReadSidebarAvailable(false);
@@ -5406,9 +5426,17 @@ function beginPacedReadForCurrentBlock({ onDone }) {
   const block = blocks[state.activeBlockIndex];
   if (!block) {
     const msg = "Missing block.";
-    setSocraticError(msg);
-    els.testError.hidden = false;
-    els.testError.textContent = msg;
+    setTestError(msg);
+    showScreen("test");
+    return;
+  }
+  if (!blockHasReadableExplanation(block)) {
+    if (typeof onDone === "function") {
+      onDone();
+      return;
+    }
+    setTestError("This block has no reading text. Regenerate the block or skip to questions.");
+    showScreen("test");
     return;
   }
   setBlockReadSidebarAvailable(false);
@@ -5462,13 +5490,13 @@ async function startTestBlock() {
   els.testNextBtn.textContent = "";
   els.testOptions.innerHTML = "";
   clearMarkdownContainer(els.testQuestionText);
-  els.testRsvpStatus.textContent = "";
-  els.testRsvpView.hidden = true;
   els.testQaView.hidden = true;
+  els.testRsvpView.hidden = false;
+  if (els.testRsvpWord) els.testRsvpWord.textContent = "";
+  els.testRsvpStatus.textContent = "Generating block…";
 
   try {
     els.testRsvpSkipBtn.disabled = true;
-    els.testRsvpStatus.textContent = "Generating block…";
     await ensureBlockGenerated(state.activeBlockIndex);
   } catch (err) {
     setTestError(err?.message ? String(err.message) : String(err));
@@ -5476,9 +5504,11 @@ async function startTestBlock() {
     els.testRsvpSkipBtn.disabled = false;
     return;
   } finally {
-    els.testRsvpStatus.textContent = "";
     els.testRsvpSkipBtn.disabled = false;
   }
+
+  els.testRsvpStatus.textContent = "";
+  els.testRsvpView.hidden = true;
 
   if (isQuestionsStudyMode(state.activeSession)) {
     showScreen("test");
