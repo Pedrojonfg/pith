@@ -2142,31 +2142,32 @@ function setGenerateBlocksFormHidden(hidden) {
   if (!hidden) updateCreateScreenModeVisibility(resolveActiveCreateMode());
 }
 
+function shouldRunPrePackingAssessment() {
+  if (!isPrePackingAssessmentEnabled()) return false;
+  if (isOfflineMode()) return false;
+  return els.rsvpRunAssessment?.checked !== false;
+}
+
 function updateCreateScreenModeVisibility(mode) {
   const isSlow = mode === "slow";
   const isRsvp = mode === "rsvp";
   const isCloze = mode === "cloze";
   const isQuestions = mode === "questions";
-  const showAdvancedConfig = isRsvp || isQuestions;
+  const showComments = isRsvp || isQuestions;
   if (els.generateBlocksForm) {
     els.generateBlocksForm.classList.toggle("create-form--slow", isSlow);
   }
-  if (els.rsvpImportDetails) els.rsvpImportDetails.hidden = !isRsvp;
-  if (els.rsvpAdvancedDetails) els.rsvpAdvancedDetails.hidden = !showAdvancedConfig;
+  if (els.rsvpOfflinePackRow) els.rsvpOfflinePackRow.hidden = !isRsvp;
   if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isRsvp;
+  if (els.rsvpCommentsGroup) els.rsvpCommentsGroup.hidden = !showComments;
+  if (els.rsvpAssessmentOption) {
+    els.rsvpAssessmentOption.hidden = !isRsvp || isOfflineMode() || !isPrePackingAssessmentEnabled();
+  }
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   else void maybeAutoRecommendBlockCount();
-  if (els.rsvpAdvancedDetails) {
-    const summary = els.rsvpAdvancedDetails.querySelector("summary");
-    if (summary) {
-      summary.textContent = isQuestions
-        ? "Comments & questions"
-        : "Blocks, comments & questions";
-    }
-  }
   if (els.generateBlocksBtn) {
     const bootstrapped = Boolean(state.materialBootstrapActive);
     if (bootstrapped && (isSlow || isCloze)) {
@@ -2183,7 +2184,6 @@ function updateCreateScreenModeVisibility(mode) {
 
 function resetCreateScreenModeUi() {
   clearMaterialBootstrapUi();
-  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   setGenerateBlocksFormHidden(true);
   if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
   if (els.createModeLabel) els.createModeLabel.textContent = "";
@@ -2399,22 +2399,9 @@ function mountClozeGraph(session) {
 }
 
 function showModeResumeOrUpload(mode) {
-  const slot = loadSessionForMode(mode);
   state.studyMode = mode;
   updateCreateScreenModeVisibility(mode);
-  if (slot) {
-    if (els.modeResumePanel) {
-      els.modeResumePanel.hidden = false;
-      if (els.modeResumeHint) {
-        const label = getStudyModeLabel(mode);
-        els.modeResumeHint.textContent = `You have a saved ${label} session. Continue where you left off or start fresh.`;
-      }
-    }
-    setGenerateBlocksFormHidden(true);
-  } else {
-    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    setGenerateBlocksFormHidden(false);
-  }
+  setGenerateBlocksFormHidden(false);
 }
 
 function resumeSlowSession(session) {
@@ -8480,7 +8467,7 @@ export function wireStudyHandlers() {
 
       resetPrePackingFlow();
       prePackingDraftMeta = null;
-      const prePackingOn = isPrePackingAssessmentEnabled();
+      const prePackingOn = shouldRunPrePackingAssessment();
 
       if (!prePackingOn) {
         let packed;

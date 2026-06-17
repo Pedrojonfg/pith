@@ -1701,6 +1701,12 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin: 0;
 }
 
+.rsvp-offline-pack-row {
+  margin: 0;
+  gap: 8px;
+  align-items: center;
+}
+
 .create-checkbox-label {
   display: flex;
   align-items: center;

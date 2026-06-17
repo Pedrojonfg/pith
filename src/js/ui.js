@@ -606,16 +606,11 @@ export const els = {
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   studyFileInputRow: document.getElementById("studyFileInputRow"),
-  modeResumePanel: document.getElementById("modeResumePanel"),
-  modeResumeHint: document.getElementById("modeResumeHint"),
-  rsvpImportDetails: document.getElementById("rsvpImportDetails"),
-  rsvpAdvancedDetails: document.getElementById("rsvpAdvancedDetails"),
+  rsvpOfflinePackRow: document.getElementById("rsvpOfflinePackRow"),
+  rsvpRunAssessment: document.getElementById("rsvpRunAssessment"),
+  rsvpCommentsGroup: document.getElementById("rsvpCommentsGroup"),
   createBackToModesBtn: document.getElementById("createBackToModesBtn"),
   createModeLabel: document.getElementById("createModeLabel"),
-  continueSessionBtn: document.getElementById("continueSessionBtn"),
-  newSessionModeBtn: document.getElementById("newSessionModeBtn"),
-  rsvpOnlyControls: document.getElementById("rsvpOnlyControls"),
-  rsvpBlocksSection: document.getElementById("rsvpBlocksSection"),
   rsvpBlocksCountGroup: document.getElementById("rsvpBlocksCountGroup"),
   slowOnlyControls: document.getElementById("slowOnlyControls"),
   criticalModeToggleBtn: document.getElementById("criticalModeToggleBtn"),
@@ -983,16 +978,6 @@ function applyOfflineUiRestrictions() {
   if (els.generateFullPackBtn) {
     els.generateFullPackBtn.hidden = offline;
   }
-  const llmLabel = document.querySelector('label[for="llmModelSelect"]');
-  if (llmLabel) llmLabel.style.display = offline ? "none" : "";
-  if (els.llmModelSelect) {
-    els.llmModelSelect.hidden = offline;
-    els.llmModelSelect.disabled = offline;
-    const llmHint = els.llmModelSelect.nextElementSibling;
-    if (llmHint?.classList?.contains("hint")) {
-      llmHint.style.display = offline ? "none" : "";
-    }
-  }
   syncFloatingChrome();
 }
 
@@ -1332,8 +1317,6 @@ export function showScreen(which) {
     setTimeout(() => {
       if (els.fileInput && !els.generateBlocksForm?.hidden) {
         els.fileInput.focus();
-      } else if (els.continueSessionBtn && !els.modeResumePanel?.hidden) {
-        els.continueSessionBtn.focus();
       }
     }, 0);
   }
