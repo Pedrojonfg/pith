@@ -1,8 +1,30 @@
-.cursorrules
+# Windows alternate data stream metadata
 *:Zone.Identifier
 
-# Fixtures locales para pruebas manuales (no versionar)
-fixtures/
+# Dependencies (install with: npm ci)
+node_modules/
 
-# Muestras genéricas de export .md de sesión (revisión manual)
+# Local Cursor IDE workflow (implementation agents, skills, debug logs)
+.cursor/
+
+# Speckit / Specify local tooling
+.specify
+.specify/
+
+# Cursor agent integration tests (local QA only)
+cursor-tests/
+
+# Project docs (not versioned for now)
+docs/
+
+# Manual test fixtures and samples
+fixtures/
 fixtures/session-samples/
+test-material.txt
+
+# Environment and OS noise
+.env
+.env.*
+*.log
+.DS_Store
+Thumbs.db
