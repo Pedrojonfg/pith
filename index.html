@@ -629,14 +629,6 @@
               </div>
             </div>
 
-            <div id="modeResumePanel" class="mode-resume-panel" hidden>
-              <p id="modeResumeHint" class="hint"></p>
-              <div class="row mode-resume-actions">
-                <button type="button" id="continueSessionBtn" class="btn-primary">Continue session</button>
-                <button type="button" id="newSessionModeBtn">New session</button>
-              </div>
-            </div>
-
             <form id="generateBlocksForm" class="create-form" hidden>
               <div id="studyFileInputRow">
                 <label for="fileInput">Material file</label>
@@ -649,6 +641,23 @@
                 />
                 <div class="hint" id="fileExtractHint" aria-live="polite"></div>
               </div>
+
+              <div id="rsvpOfflinePackRow" class="row rsvp-offline-pack-row" hidden>
+                <button type="button" id="loadOfflinePackBtn" class="btn-secondary btn-small">
+                  Load offline pack
+                </button>
+                <span class="hint" id="offlinePackStatus" role="status"></span>
+              </div>
+              <input
+                id="offlinePackInput"
+                name="offlinePack"
+                type="file"
+                accept=".md,.markdown,.txt,text/markdown"
+                hidden
+                aria-hidden="true"
+                tabindex="-1"
+              />
+              <div id="offlinePackError" class="error" hidden></div>
 
               <div class="create-already-know">
                 <label class="create-checkbox-label" for="alreadyKnowMaterial">
@@ -663,13 +672,6 @@
                   Import concepts into your Knowledge Vault without starting a study session.
                 </div>
               </div>
-
-              <label for="llmModelSelect">Model</label>
-              <select id="llmModelSelect" name="llmModel" aria-label="LLM for this session">
-                <option value="deepseek" selected>DeepSeek (default)</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              </select>
-              <div class="hint">Used for all API calls in this new session.</div>
 
               <label for="languageSelect">Language</label>
               <select
@@ -689,111 +691,55 @@
                 </div>
               </div>
 
-              <div class="create-collapsibles">
-              <details id="rsvpImportDetails" class="form-collapsible" hidden>
-                <summary>Offline pack &amp; index import</summary>
-                <div id="rsvpOnlyControls" class="form-collapsible-body">
-                  <div class="row">
-                    <button type="button" id="loadOfflinePackBtn">Load offline pack</button>
-                    <span class="hint" id="offlinePackStatus" role="status"></span>
-                  </div>
-                  <div class="import-index-row">
-                    <button id="import-index-btn" class="btn-secondary btn-small" type="button">
-                      Import existing index
-                    </button>
-                    <span id="import-index-label" class="muted-label"></span>
-                  </div>
+              <div id="rsvpBlocksCountGroup" class="rsvp-blocks-count-group" hidden>
+                <label for="blocksInput">Blocks</label>
+                <span
+                  id="recommendBlocksStatus"
+                  class="recommend-blocks-status hint"
+                  role="status"
+                ></span>
+                <input
+                  id="blocksInput"
+                  name="blocks"
+                  type="number"
+                  min="5"
+                  max="60"
+                  step="1"
+                  value="20"
+                  required
+                />
+                <p
+                  id="recommendBlocksWhy"
+                  class="recommend-blocks-why hint"
+                  hidden
+                  aria-live="polite"
+                ></p>
+              </div>
+
+              <div id="rsvpAssessmentOption" class="create-already-know" hidden>
+                <label class="create-checkbox-label" for="rsvpRunAssessment">
                   <input
-                    id="import-index-file"
-                    name="importIndexFile"
-                    type="file"
-                    accept=".json,.txt"
-                    hidden
-                    aria-hidden="true"
-                    tabindex="-1"
+                    id="rsvpRunAssessment"
+                    name="rsvpRunAssessment"
+                    type="checkbox"
+                    checked
                   />
-                  <input
-                    id="offlinePackInput"
-                    name="offlinePack"
-                    type="file"
-                    accept=".md,.markdown,.txt,text/markdown"
-                    hidden
-                    aria-hidden="true"
-                    tabindex="-1"
-                  />
-                  <div id="offlinePackError" class="error" hidden></div>
+                  Quick knowledge check before packing
+                </label>
+                <div class="hint">
+                  Answer a few questions so we can skip concepts you already know when building blocks.
                 </div>
-              </details>
+              </div>
 
-              <details id="rsvpAdvancedDetails" class="form-collapsible" hidden>
-                <summary>Blocks, comments &amp; questions</summary>
-                <div id="rsvpBlocksSection" class="form-collapsible-body">
-                  <div id="rsvpBlocksCountGroup" class="rsvp-blocks-count-group">
-                    <label for="blocksInput">Blocks</label>
-                    <span
-                      id="recommendBlocksStatus"
-                      class="recommend-blocks-status hint"
-                      role="status"
-                    ></span>
-                    <input
-                      id="blocksInput"
-                      name="blocks"
-                      type="number"
-                      min="5"
-                      max="60"
-                      step="1"
-                      value="20"
-                      required
-                    />
-                    <p
-                      id="recommendBlocksWhy"
-                      class="recommend-blocks-why hint"
-                      hidden
-                      aria-live="polite"
-                    ></p>
-                  </div>
-
-                  <label for="studyNotesInput">Comments / study focus (optional)</label>
-                  <textarea
-                    id="studyNotesInput"
-                    name="studyNotes"
-                    placeholder="E.g. Focus on exam-relevant topics only. Skip unrelated sections."
-                    rows="2"
-                    spellcheck="true"
-                  ></textarea>
-
-                  <label>Questions per block</label>
-                  <div class="row create-q-row">
-                    <button type="button" id="nTestMinusBtn" aria-label="Decrease test questions">−</button>
-                    <div id="nTestValue" class="create-q-value" aria-label="Test questions per block">2</div>
-                    <button type="button" id="nTestPlusBtn" aria-label="Increase test questions">+</button>
-                    <span class="hint">Test questions</span>
-                  </div>
-                  <div class="row create-q-row">
-                    <button type="button" id="nSocraticMinusBtn" aria-label="Decrease socratic questions">−</button>
-                    <div id="nSocraticValue" class="create-q-value" aria-label="Socratic questions per block">1</div>
-                    <button type="button" id="nSocraticPlusBtn" aria-label="Increase socratic questions">+</button>
-                    <span class="hint">Socratic questions</span>
-                  </div>
-                  <div class="toggle" role="group" aria-label="Connection question type">
-                    <button type="button" id="connectionQuestionsToggleBtn" aria-pressed="true">
-                      Connection questions with prior blocks (blocks 2..N)
-                    </button>
-                  </div>
-                  <div class="hint" id="connectionQuestionsToggleSubtitle" hidden>
-                    Off: connection questions will not be generated for blocks.
-                  </div>
-                  <div class="toggle" role="group" aria-label="Source fidelity strict mode">
-                    <button type="button" id="sourceFidelityStrictToggleBtn" aria-pressed="false">
-                      Strict mode (translate source only)
-                    </button>
-                  </div>
-                  <div class="hint" id="sourceFidelityStrictHint" hidden>
-                    On: extract claims from each chunk before RSVP rewrite (extra LLM call per block).
-                  </div>
-                  <div class="hint" id="questionsPreviewLabel" aria-live="polite"></div>
-                </div>
-              </details>
+              <div id="rsvpCommentsGroup" hidden>
+                <label for="studyNotesInput">Comments / study focus (optional)</label>
+                <textarea
+                  id="studyNotesInput"
+                  name="studyNotes"
+                  placeholder="E.g. Focus on exam-relevant topics only. Skip unrelated sections."
+                  rows="2"
+                  spellcheck="true"
+                ></textarea>
               </div>
             </form>
 
@@ -835,34 +781,6 @@
               </div>
             </details>
 
-            <details id="resumeSessionDetails" class="form-collapsible">
-              <summary>Resume saved session</summary>
-              <div class="form-collapsible-body">
-                <p class="subtle form-collapsible-intro">
-                  Upload the <strong>original</strong> material and your latest
-                  <strong>exported</strong> markdown (must include the resume footer).
-                </p>
-                <label for="resumeMaterialInput">Original material file</label>
-                <input
-                  id="resumeMaterialInput"
-                  name="resumeMaterial"
-                  type="file"
-                  accept=".pdf,.html,.txt,.md"
-                />
-                <label for="resumeMdInput">Session markdown</label>
-                <input
-                  id="resumeMdInput"
-                  name="resumeMd"
-                  type="file"
-                  accept=".md,.markdown,.txt,text/markdown"
-                />
-                <div class="row">
-                  <button type="button" id="resumeSessionBtn">Resume session</button>
-                  <span class="hint" id="resumeSessionStatus" role="status"></span>
-                </div>
-                <div id="resumeSessionError" class="error" hidden></div>
-              </div>
-            </details>
             </div>
 
             <div id="generateBlocksFooter" class="create-primary-actions" hidden>
@@ -981,12 +899,6 @@
               tabindex="-1"
             ></textarea>
 
-            <div class="import-index-row">
-              <button id="import-index-btn-confirm" class="btn-secondary btn-small" type="button">
-                Import existing index
-              </button>
-              <span id="import-index-label-confirm" class="muted-label"></span>
-            </div>
             <div id="blocksGraphActions" class="blocks-graph-actions" hidden></div>
             <div class="row">
               <button type="button" id="confirmBlocksBtn" class="btn-primary">
@@ -1945,7 +1857,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260627_4";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260627_5";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1961,7 +1873,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260627_4");
+        await import("./src/js/main.js?v=20260627_5");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
