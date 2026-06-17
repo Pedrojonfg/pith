@@ -1,0 +1,32 @@
+todas las heurísticas, razonamientos, prompts a llms y tal, todo en inglés, nunca en castellano. toda la aplicación en inglés, incluido lo interno (se puede aceptar cosas en español para mantener compatibilidad con archivos legacy)
+
+## PWA deploy versioning (mandatory)
+Any commit that changes `src/js/**`, `index.html`, or `src/css/**` MUST bump these together before merge:
+1. `SW_VERSION` in `src/js/sw-update.js` (single source of truth for deploy identity)
+2. `?v=` on `sw-update.js` and `main.js` imports in `index.html` — both must equal `SW_VERSION`
+3. `CACHE_NAME` in `sw.js` when static assets, CSS, or SW fetch strategy change
+
+Never clear `localStorage` or API keys in update flows. Run `cursor-tests/20260606_validate-sw-update-flow.mjs` after any SW-related change.
+
+## PWA install UX (mandatory)
+- Capture `beforeinstallprompt` in an inline `<script>` in `index.html` before module load; stash on `window.__pithDeferredInstallPrompt`.
+- `main.js` must read the stash via `readStashedInstallPrompt` and register a `beforeinstallprompt` listener as backup.
+- Install button clicks must never be silent: if the deferred prompt is unavailable or already used, show visible fallback UI (`showInstallHelpToast`), not `console.info` only.
+- `prompt()` is one-shot per event: clear state after use; on dismiss or error, show manual install instructions.
+- Run `cursor-tests/20260613_pwa-install.mjs` after any PWA install flow change.
+
+## LLM structured JSON output (mandatory)
+1. Every LLM call that expects a JSON response larger than ~20 fields **must** declare an explicit `max_tokens` constant — named, with a comment stating the sizing rationale (expected item count × tokens-per-item). Omitting `max_tokens` is a bug.
+2. Post-LLM parse failures must distinguish: `TRUNCATED` (`looksLikeTruncatedModelJson`), `PARSE_ERROR` (JSON.parse on non-truncated output), `SCHEMA_ERROR` (parsed but failed business validation). Each category gets a distinct user message and may have a distinct recovery path.
+3. Any fallback path documented in a spec or contract must be implemented in **every** call site that can reach that failure, not only the original call site.
+
+
+Before adding any UI element, ask: "if I removed this, would the user be blocked?" 
+If no → compress or cut (collapsible, secondary screen, or delete).
+
+For any change that involves UI, read carefully DESIGN.md and follow its guidelines
+
+Primary screens are always full-bleed: full viewport width and height, internal padding only.
+Never wrap a primary screen's content in a centered card, panel, or container with a
+distinct background, border-radius, or shadow. "Cards are for items within a screen.
+Screens are never cards."
