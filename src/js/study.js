@@ -3691,8 +3691,13 @@ function invalidateBlockSplitCacheAndRecommendUi() {
 function autoGrowStudyNotesInput() {
   const el = els.studyNotesInput;
   if (!el) return;
+  const style = getComputedStyle(el);
+  const lineHeight = parseFloat(style.lineHeight) || 22.5;
+  const pad =
+    parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) || 20;
+  const minHeight = lineHeight * 2 + pad;
   el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
+  el.style.height = `${Math.max(el.scrollHeight, minHeight)}px`;
 }
 
 let recommendBlockCountRunId = 0;

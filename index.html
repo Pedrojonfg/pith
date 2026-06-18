@@ -738,7 +738,7 @@
                   class="create-study-notes-input"
                   name="studyNotes"
                   placeholder="E.g. Focus on exam-relevant topics only. Skip unrelated sections."
-                  rows="1"
+                  rows="2"
                   spellcheck="true"
                 ></textarea>
               </div>
@@ -1858,7 +1858,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260627_7";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260627_8";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260620_1";
       initSplash();
 
@@ -1874,7 +1874,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260627_7");
+        await import("./src/js/main.js?v=20260627_8");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
