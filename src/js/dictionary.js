@@ -495,26 +495,15 @@ export function setDictionaryOverlayOpen(isOpen) {
 }
 
 export function updateDictionaryButtonVisibility() {
-  if (!els.dictionaryBtn) return;
   const concepts = getSortedSessionConcepts();
   const any = concepts.length > 0;
   const inSession =
     els.screenSocratic.getAttribute("aria-hidden") === "false" ||
-    els.screenTest.getAttribute("aria-hidden") === "false" ||
-    els.screenBetweenBlocks.getAttribute("aria-hidden") === "false";
+    els.screenTest.getAttribute("aria-hidden") === "false";
   const okBlock = state.activeBlockIndex >= 1;
-  els.dictionaryBtn.hidden = !(any && inSession && okBlock);
   dictionaryChromeSyncHook?.();
 }
 
-export function renderBetweenBlocksDictionary({ nextBlockIndex }) {
-  const concepts = getSortedSessionConcepts();
-  const shouldShow = Number(nextBlockIndex) >= 1 && concepts.length > 0;
-  els.betweenBlocksDictionaryWrap.hidden = !shouldShow;
-  if (!shouldShow) return;
-  renderConceptDictionaryInto({
-    listEl: els.betweenBlocksDictList,
-    defEl: els.betweenBlocksDictDef,
-    concepts,
-  });
+export function renderBetweenBlocksDictionary() {
+  // screenBetweenBlocks removed — no-op.
 }

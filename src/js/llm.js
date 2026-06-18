@@ -2,6 +2,7 @@ import {
   DS_CHAT_COMPLETIONS_URL,
   GEMINI_OPENAI_CHAT_URL,
   LS_ACTIVE_SESSION_KEY,
+  LS_DEFAULT_LLM_MODEL_KEY,
   LS_GEMINI_KEY,
   LS_KEY,
 } from "./config.js?v=20260525_1";
@@ -73,9 +74,23 @@ export function assertLlmKeyPresent(llmModel) {
   const key = getApiKeyForLlmModel(id);
   if (key) return key;
   if (id === LLM_MODEL_GEMINI) {
-    throw new Error("Missing Gemini API key. Open API setup to add it.");
+    throw new Error("Missing Gemini API key. Open Settings to add it.");
   }
-  throw new Error("Missing DeepSeek API key. Open API setup to add it.");
+  throw new Error("Missing DeepSeek API key. Open Settings to add it.");
+}
+
+export function getDefaultLlmModel() {
+  try {
+    const v = localStorage.getItem(LS_DEFAULT_LLM_MODEL_KEY);
+    if (v) return normalizeLlmModel(v);
+  } catch {
+    // ignore
+  }
+  return DEFAULT_LLM_MODEL;
+}
+
+export function saveDefaultLlmModel(model) {
+  localStorage.setItem(LS_DEFAULT_LLM_MODEL_KEY, normalizeLlmModel(model));
 }
 
 export function getActiveSessionLlmModel() {

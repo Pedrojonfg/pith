@@ -22,13 +22,16 @@ import {
   state,
 } from "./session.js?v=20260611_2";
 import {
+  closeSettingsScreen,
   closeBlockReadSidebar,
   initLanguageUi,
+  initLlmModelUi,
   els,
+  openSettingsScreen,
   showScreen,
   toggleBlockReadSidebar,
   toggleSidebar,
-} from "./ui.js?v=20260525_1";
+} from "./ui.js?v=20260618_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
 import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
 import { enterCreateSessionStartScreen, enterModeSelectScreen, enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260618_1";
@@ -72,15 +75,10 @@ function resetToNewSession() {
   state.activeBlockIndex = 0;
   state.activeQuestionIndex = 0;
   state.includeConnectionQuestions = true;
-  if (els.connectionQuestionsToggleBtn) {
-    els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", "true");
-    if (els.connectionQuestionsToggleSubtitle) els.connectionQuestionsToggleSubtitle.hidden = true;
-  }
 
   if (els.fileInput) els.fileInput.value = "";
   if (els.blocksFilterInput) els.blocksFilterInput.value = "";
   if (els.blocksListEditor) els.blocksListEditor.innerHTML = "";
-  if (els.blocksListOutput) els.blocksListOutput.value = "";
   if (els.generateBlocksError) {
     els.generateBlocksError.hidden = true;
     els.generateBlocksError.textContent = "";
@@ -95,7 +93,7 @@ function resetToNewSession() {
   clearSessionConceptStorage();
   clearGuideChatStorage({ removeAllStored: true });
   if (getStoredKey()) enterAppHome();
-  else showScreen("setup");
+  else showScreen("settings");
   updateDictionaryButtonVisibility();
 }
 
@@ -124,6 +122,7 @@ async function bootstrap() {
   if (window.offlineMode !== true) window.offlineMode = false;
   if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
+  initLlmModelUi();
   wireStudyHandlers();
   wireReviewHandlers();
   wireVaultDebugUi(
@@ -242,9 +241,13 @@ async function bootstrap() {
     });
   }
 
-  els.changeKeyLink.addEventListener("click", (e) => {
+  els.settingsBtn?.addEventListener("click", (e) => {
     e.preventDefault();
-    showScreen("setup");
+    openSettingsScreen();
+  });
+
+  els.settingsBackBtn?.addEventListener("click", () => {
+    closeSettingsScreen();
   });
 
   els.newSessionBtn.addEventListener("click", () => {
@@ -282,11 +285,11 @@ async function bootstrap() {
       syncVaultUploadResumeBanner();
       enterAppHome();
     } else {
-      showScreen("setup");
+      showScreen("settings");
     }
   } catch (err) {
     console.error("Failed to open initial screen:", err);
-    showScreen("setup");
+    showScreen("settings");
   } finally {
     dismissSplash(false);
   }
