@@ -311,6 +311,14 @@ function shouldSkipClozePhase0(session, doc) {
   );
   if (retrySkip) return { skip: true, fromShared: false };
 
+  if (session?.cloze?.epistemicGraph?.nodes?.length) {
+    return { skip: true, fromShared: false };
+  }
+
+  if (doc?.shared?.conceptGraph?.nodes?.length) {
+    return { skip: true, fromShared: true };
+  }
+
   const shared = doc?.shared;
   const slowSlice = doc?.modes?.slow;
   const slowPayload = slowSlice?.slow && typeof slowSlice.slow === "object" ? slowSlice.slow : slowSlice;
@@ -360,7 +368,10 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
     onPhase(0, "phase0", { epistemicGraph });
   } else if (fromShared && !epistemicGraph?.nodes?.length) {
     onPhase(0, "phase0", { epistemicGraph: null });
-    epistemicGraph = epistemicGraphFromShared(doc?.shared);
+    epistemicGraph =
+      doc?.shared?.conceptGraph?.nodes?.length
+        ? doc.shared.conceptGraph
+        : epistemicGraphFromShared(doc?.shared);
     onPhase(0, "phase0", { epistemicGraph });
   }
 

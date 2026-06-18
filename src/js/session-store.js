@@ -144,6 +144,28 @@ function migrateSessionV3(session) {
   if (!session?.shared) return session;
   let changed = false;
   const sh = session.shared;
+  if (!sh.preparation) {
+    sh.preparation = {
+      status: "legacy",
+      fingerprint: "",
+      startedAt: null,
+      completedAt: null,
+      currentPhase: null,
+      currentWave: 0,
+      waves: [],
+      phaseResults: {},
+      errors: [],
+    };
+    changed = true;
+  }
+  const clozeGraph =
+    session.modes?.cloze?.cloze?.epistemicGraph ||
+    session.modes?.cloze?.epistemicGraph ||
+    null;
+  if (clozeGraph?.nodes?.length && !sh.conceptGraph?.nodes?.length) {
+    sh.conceptGraph = clozeGraph;
+    changed = true;
+  }
   const inventory = Array.isArray(sh.conceptInventory) ? sh.conceptInventory : [];
   const nextInv = inventory.map((entry) => {
     if (entry && typeof entry === "object" && !("globalConceptId" in entry)) {
@@ -263,6 +285,20 @@ export async function createSession(rawMarkdown, options = {}) {
       uploadMeta: null,
       assessmentSignals: [],
       docTopics: [],
+      preparation: {
+        status: "pending",
+        fingerprint: "",
+        startedAt: null,
+        completedAt: null,
+        currentPhase: null,
+        currentWave: 0,
+        waves: [],
+        phaseResults: {},
+        errors: [],
+      },
+      conceptGraph: null,
+      blockRecommendation: null,
+      slowOrientation: null,
     },
     modes: { rsvp: null, slow: null, cloze: null, questions: null, recall: null },
   };

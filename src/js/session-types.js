@@ -390,4 +390,67 @@ export const FACET_LABELS = Object.freeze({
  * }} VaultPersonalFields
  */
 
+/** @type {readonly string[]} */
+export const PREPARATION_STATUSES = Object.freeze([
+  "pending",
+  "running",
+  "ready",
+  "partial",
+  "failed",
+  "legacy",
+]);
+
+/**
+ * @param {unknown} raw
+ * @returns {object}
+ */
+export function createEmptyPreparationState(fingerprint = "") {
+  return {
+    status: "pending",
+    fingerprint: String(fingerprint || ""),
+    startedAt: null,
+    completedAt: null,
+    currentPhase: null,
+    currentWave: 0,
+    waves: [],
+    phaseResults: {},
+    errors: [],
+  };
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {object}
+ */
+export function normalizePreparationState(raw) {
+  const base = createEmptyPreparationState();
+  if (!raw || typeof raw !== "object") return base;
+  const status = String(raw.status || "pending").trim();
+  base.status = PREPARATION_STATUSES.includes(status) ? status : "pending";
+  base.fingerprint = String(raw.fingerprint || "");
+  base.startedAt = Number.isFinite(Number(raw.startedAt)) ? Number(raw.startedAt) : null;
+  base.completedAt = Number.isFinite(Number(raw.completedAt)) ? Number(raw.completedAt) : null;
+  base.currentPhase = raw.currentPhase != null ? String(raw.currentPhase) : null;
+  base.currentWave = Number.isFinite(Number(raw.currentWave)) ? Math.floor(Number(raw.currentWave)) : 0;
+  base.waves = Array.isArray(raw.waves) ? raw.waves : [];
+  base.phaseResults =
+    raw.phaseResults && typeof raw.phaseResults === "object" && !Array.isArray(raw.phaseResults)
+      ? { ...raw.phaseResults }
+      : {};
+  base.errors = Array.isArray(raw.errors) ? [...raw.errors] : [];
+  return base;
+}
+
+/**
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function isTier1PreparationComplete(session) {
+  const prep = normalizePreparationState(session?.shared?.preparation);
+  if (prep.status === "ready" || prep.status === "legacy") return true;
+  if (prep.status !== "partial" && prep.status !== "running") return false;
+  const inv = session?.shared?.conceptInventory;
+  return Array.isArray(inv) && inv.length > 0;
+}
+
 export { MODE_KEYS };
