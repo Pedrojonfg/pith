@@ -6913,6 +6913,7 @@ async function handlePrePackingSkip() {
   setGenerateLoading(true);
   try {
     const packed = await runPrePackingPack({ knowledgeProfile: null });
+    if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     stashPrePackingDraftMeta();
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
@@ -7003,13 +7004,14 @@ async function finishPrePackingAssessment() {
   prePackingFlow.packingIgnoredProfile = false;
 
   if (ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING && profile) {
+    const flow = prePackingFlow;
     prePackingFlow.packingPromise = runPrePackingPack({
       knowledgeProfile: profile,
       onProgress: (msg) => {
         if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = msg;
       },
     }).then((packed) => {
-      prePackingFlow.packedResult = packed;
+      if (prePackingFlow === flow) flow.packedResult = packed;
       return packed;
     });
   }
@@ -7022,6 +7024,7 @@ async function finishPrePackingAssessment() {
       });
     }
     const packed = await prePackingFlow.packingPromise;
+    if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     stashPrePackingDraftMeta();
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
@@ -7076,6 +7079,7 @@ async function handlePrePackingAccept() {
         knowledgeProfile: prePackingFlow.knowledgeProfile,
       });
     }
+    if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF && els.prePackingResultsDiff) {
       els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} → ${packed.blockIndex.length}`;
@@ -7099,7 +7103,9 @@ async function handlePrePackingIgnore() {
     els.prePackingResultsStatus.textContent = "Re-packing without profile…";
   }
   try {
+    prePackingFlow.packingPromise = null;
     const packed = await runPrePackingPack({ knowledgeProfile: null });
+    if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     stashPrePackingDraftMeta();
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
