@@ -3688,6 +3688,13 @@ function invalidateBlockSplitCacheAndRecommendUi() {
   clearRecommendBlocksUi();
 }
 
+function autoGrowStudyNotesInput() {
+  const el = els.studyNotesInput;
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 let recommendBlockCountRunId = 0;
 
 function setRecommendLoading(isLoading) {
@@ -8105,8 +8112,10 @@ export function wireStudyHandlers() {
     const stored = String(localStorage.getItem(LS_STUDY_NOTES_KEY) || "");
     els.studyNotesInput.value = stored;
     state.studyNotes = stored;
+    autoGrowStudyNotesInput();
     let studyNotesInvalidationTimer = null;
     els.studyNotesInput.addEventListener("input", () => {
+      autoGrowStudyNotesInput();
       const v = String(els.studyNotesInput.value || "");
       state.studyNotes = v;
       try {

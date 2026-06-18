@@ -1697,6 +1697,16 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin-top: 4px;
 }
 
+.create-study-notes-input {
+  min-height: 0;
+  height: auto;
+  resize: none;
+  overflow-y: hidden;
+  field-sizing: content;
+  padding-block: 10px;
+  line-height: 1.5;
+}
+
 .create-already-know {
   margin: 0;
 }
