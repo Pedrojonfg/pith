@@ -1815,6 +1815,10 @@ const BLOCK_JSON_SCHEMA = `{
   ]
 }`;
 
+const EXPLANATION_PEDAGOGICAL_HEADER = `You are explaining this content to a student who needs to understand it well enough to explain it back and answer exam questions on it. Write for understanding, not for reference. Use concrete examples, analogies, or consequences where they add clarity. Avoid encyclopedic neutrality — teach.`;
+
+const EXPLANATION_OPENING_HOOK = `Always open with the core idea of this block stated plainly in one sentence (bolded). Then expand. Do not open with historical context, author biography, or background — lead with the concept itself.`;
+
 const EXPLANATION_RSVP_THOROUGH = `You are writing study material optimized for RSVP reading (rapid serial visual presentation). The student reads word by word at high speed and CANNOT re-read. This imposes strict rules:
 
 CONTENT STRUCTURE (mandatory drafting order—never expose these step names in the explanation text):
@@ -2116,11 +2120,12 @@ export function buildBlockGenerationSystemPrompt({
     strictMode,
     extractedClaims,
   });
+  const explanationPreamble = `${EXPLANATION_PEDAGOGICAL_HEADER}\n\n${EXPLANATION_OPENING_HOOK}\n\n`;
   const explanationSection = isVocabularyBlock
-    ? `${EXPLANATION_VOCABULARY_BLOCK}\n${sourceStructure}\n${paragraphRule}`
+    ? `${explanationPreamble}${EXPLANATION_VOCABULARY_BLOCK}\n${sourceStructure}\n${paragraphRule}`
     : profile === "brief_deep"
-      ? `${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
-      : `${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
+      ? `${explanationPreamble}${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
+      : `${explanationPreamble}${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
   const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
   const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
 
