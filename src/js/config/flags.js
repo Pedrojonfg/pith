@@ -9,7 +9,18 @@ export const ASSESSMENT_FLAGS = Object.freeze({
   ASSESSMENT_MASTERY_THRESHOLD: 0.85,
   ASSESSMENT_SHOW_DIFF: true,
   ASSESSMENT_PARALLEL_PACKING: true,
+  /** Document-wide map-reduce assessment (20260618-holistic-assessment-coverage). */
+  HOLISTIC_ASSESSMENT_ENABLED: true,
+  HOLISTIC_ASSESSMENT_MAX: 50,
 });
+
+export function isHolisticAssessmentEnabled() {
+  return (
+    ASSESSMENT_FLAGS.HOLISTIC_ASSESSMENT_ENABLED === true &&
+    isPrePackingAssessmentEnabled() &&
+    isAssessmentQuestionsUiEnabled()
+  );
+}
 
 export function isPrePackingAssessmentEnabled() {
   return ASSESSMENT_FLAGS.ASSESSMENT_BEFORE_PACKING === true;

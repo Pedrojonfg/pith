@@ -1,4 +1,4 @@
-import { MAX_N_TEST } from "./config.js?v=20260527_1";
+import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260527_1";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
@@ -25,6 +25,14 @@ import {
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
 import { renderCoverageManifestForPrompt } from "./coverage-manifest.js";
+import {
+  buildAssessmentCoveragePlan,
+  computeHolisticAssessmentBudget,
+  deriveInventoryEdges,
+  filterEdgesForBatch,
+  filterInventoryForBatch,
+  mergeHolisticAssessmentQuestions,
+} from "./assessment-coverage.js?v=20260618_1";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -2927,6 +2935,9 @@ const PREPACKING_ASSESSMENT_JSON_SCHEMA = `{
   }]
 }`;
 
+/** Per-batch holistic assessment JSON (~15 test + 3 socratic × ~450 tokens). */
+const HOLISTIC_ASSESSMENT_BATCH_MAX_TOKENS = 8000;
+
 function truncateMaterialExcerpt(text, maxChars = 12000) {
   const s = String(text || "").trim();
   if (s.length <= maxChars) return s;
@@ -2941,7 +2952,7 @@ function inventoryIdSet(inventory) {
   );
 }
 
-/** @param {{ language, n_test, n_socratic, conceptInventory, edges, materialExcerpt }} opts */
+/** @param {{ language, n_test, n_socratic, conceptInventory, edges, materialExcerpt, edgeTestQuota?, materialMaxChars? }} opts */
 export function buildPrePackingAssessmentSystemPrompt({
   language,
   n_test,
@@ -2949,13 +2960,25 @@ export function buildPrePackingAssessmentSystemPrompt({
   conceptInventory,
   edges,
   materialExcerpt,
+  edgeTestQuota = 0,
+  materialMaxChars = 12000,
 }) {
-  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const nTest = Math.max(0, Math.min(HOLISTIC_ASSESSMENT_MAX, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(5, Math.round(Number(n_socratic))));
   const lang = String(language || "English").trim() || "English";
   const inv = Array.isArray(conceptInventory) ? conceptInventory : [];
   const edgeList = Array.isArray(edges) ? edges : [];
-  const excerpt = truncateMaterialExcerpt(materialExcerpt);
+  const excerpt = truncateMaterialExcerpt(materialExcerpt, materialMaxChars);
+  const edgeQuota = Math.max(0, Math.floor(Number(edgeTestQuota) || 0));
+
+  const edgeRules =
+    edgeQuota > 0
+      ? `
+Relationship questions (required): generate exactly ${edgeQuota} test question(s) about links between concepts.
+Each relationship test question MUST include edge: {"from":"<concept_id>","to":"<concept_id>"} plus concept_id (the primary concept tested).
+Use prerequisite, support, contrast, or sequence links from the Edges list when possible.
+`
+      : "";
 
   const basePrompt = `You will receive a concept inventory and source material excerpt. Generate a document-wide knowledge check before block packing.
 Return a single JSON object with this schema:
@@ -2969,7 +2992,9 @@ Socratic questions: open-ended, no options, no answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 Each question MUST include concept_id from the inventory (required).
+Cover the FULL provided concept subset evenly — do not cluster on the first concepts only.
 Prioritize THESIS and ARGUMENT concepts for coverage; include prerequisite edges when useful.
+${edgeRules}
 ${QUESTION_PEDAGOGY_RULES}
 Questions must be answerable from the provided material excerpt and concept labels alone.
 Every LaTeX backslash MUST be escaped for JSON strings: use "\\\\(", "\\\\)", "\\\\nabla", "\\\\cdot", etc.
@@ -3005,9 +3030,14 @@ function unwrapPrePackingQuestions(raw) {
  * Normalize LLM output to Questions-mode assessment items.
  * @returns {object[]}
  */
-export function normalizePrePackingAssessmentQuestions(raw, { n_test, n_socratic, inventory } = {}) {
-  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+export function normalizePrePackingAssessmentQuestions(
+  raw,
+  { n_test, n_socratic, inventory, maxTest, maxSocratic } = {},
+) {
+  const testCeiling = maxTest != null ? maxTest : MAX_N_TEST;
+  const socCeiling = maxSocratic != null ? maxSocratic : 3;
+  const nTest = Math.max(0, Math.min(testCeiling, Math.round(Number(n_test))));
+  const nSocratic = Math.max(0, Math.min(socCeiling, Math.round(Number(n_socratic))));
   const arr = unwrapPrePackingQuestions(raw);
   if (!Array.isArray(arr) || !arr.length) {
     throw new Error("Assessment questions array is empty.");
@@ -3154,18 +3184,39 @@ export function scorePrePackingTestResponses(items, responses) {
     const concept_id = String(item.concept_id || "").trim();
     if (!concept_id) continue;
 
+    const edge =
+      item.edge && typeof item.edge === "object"
+        ? {
+            from: String(item.edge.from || "").trim(),
+            to: String(item.edge.to || "").trim(),
+          }
+        : null;
+
     const userAnswer = String(r.userAnswer ?? r.answer ?? "").trim();
     if (isDontKnowAnswer(userAnswer)) {
       rows.push({ concept_id, mastery: "none", confidence: 0.1 });
+      if (edge?.from && edge?.to) {
+        rows.push({ concept_id: edge.from, mastery: "none", confidence: 0.08 });
+        rows.push({ concept_id: edge.to, mastery: "none", confidence: 0.08 });
+      }
       continue;
     }
 
     const chosen = extractTestAnswerLetter(userAnswer);
     const correct = String(item.answer || "").trim().toUpperCase();
+
     if (chosen && correct && chosen === correct) {
       rows.push({ concept_id, mastery: "partial", confidence: 0.65 });
+      if (edge?.from && edge?.to) {
+        rows.push({ concept_id: edge.from, mastery: "partial", confidence: 0.55 });
+        rows.push({ concept_id: edge.to, mastery: "partial", confidence: 0.55 });
+      }
     } else {
       rows.push({ concept_id, mastery: "none", confidence: 0.2 });
+      if (edge?.from && edge?.to) {
+        rows.push({ concept_id: edge.from, mastery: "none", confidence: 0.12 });
+        rows.push({ concept_id: edge.to, mastery: "none", confidence: 0.12 });
+      }
     }
   }
 
@@ -3422,6 +3473,10 @@ export async function generatePrePackingAssessmentItems({
   llmModel,
   language,
   legacyMcq,
+  holisticBatch,
+  edgeTestQuota,
+  materialMaxChars,
+  coverageBatchId,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
@@ -3481,13 +3536,19 @@ Respond in ${lang}.`;
   if (!Number.isFinite(rawSocratic)) {
     throw new Error("n_socratic must be a finite number.");
   }
-  const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(rawTest)));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(rawSocratic)));
-  const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
+  const nTest = holisticBatch
+    ? Math.max(0, Math.min(HOLISTIC_ASSESSMENT_MAX, Math.round(rawTest)))
+    : Math.max(0, Math.min(MAX_N_TEST, Math.round(rawTest)));
+  const nSocratic = holisticBatch
+    ? Math.max(0, Math.min(5, Math.round(rawSocratic)))
+    : Math.max(0, Math.min(3, Math.round(rawSocratic)));
+  const cap = holisticBatch
+    ? HOLISTIC_ASSESSMENT_MAX
+    : Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
   if (nTest + nSocratic <= 0) {
     throw new Error("Assessment needs at least one question (n_test + n_socratic).");
   }
-  if (nTest + nSocratic > cap) {
+  if (!holisticBatch && nTest + nSocratic > cap) {
     throw new Error(`Assessment question count ${nTest + nSocratic} exceeds safety cap ${cap}.`);
   }
 
@@ -3498,6 +3559,8 @@ Respond in ${lang}.`;
     conceptInventory: inventory,
     edges: edgeList,
     materialExcerpt: material,
+    edgeTestQuota: edgeTestQuota || 0,
+    materialMaxChars: materialMaxChars || (holisticBatch ? 24000 : 12000),
   });
 
   const content = await llmChatCompletions({
@@ -3509,10 +3572,12 @@ Respond in ${lang}.`;
         role: "user",
         content: JSON.stringify({
           task: "Generate the knowledge check questions JSON object.",
+          coverage_batch: coverageBatchId || undefined,
         }),
       },
     ],
     temperature: 0.2,
+    ...(holisticBatch ? { max_tokens: HOLISTIC_ASSESSMENT_BATCH_MAX_TOKENS } : {}),
   });
 
   const parsed = parseModelJsonValue(content);
@@ -3520,8 +3585,98 @@ Respond in ${lang}.`;
     n_test: nTest,
     n_socratic: nSocratic,
     inventory,
+    maxTest: holisticBatch ? HOLISTIC_ASSESSMENT_MAX : undefined,
+    maxSocratic: holisticBatch ? 5 : undefined,
   });
-  return shuffleTestQuestionsInList(normalized);
+  const tagged = coverageBatchId
+    ? normalized.map((q) => ({ ...q, coverage_batch: coverageBatchId }))
+    : normalized;
+  return shuffleTestQuestionsInList(tagged);
+}
+
+/**
+ * Map-reduce holistic assessment across document sections.
+ * @see specs/20260618-holistic-assessment-coverage/
+ */
+export async function generateHolisticPrePackingAssessmentItems({
+  conceptInventory,
+  edges,
+  materialText,
+  docHierarchy,
+  conceptGraph,
+  plan: planIn,
+  onProgress,
+  llmModel,
+  language,
+}) {
+  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  if (!inventory.length) throw new Error("Missing concept inventory.");
+  const material = String(materialText ?? "").trim();
+  if (!material) throw new Error("Missing material text for assessment generation.");
+
+  const edgeList =
+    Array.isArray(edges) && edges.length
+      ? edges
+      : deriveInventoryEdges(inventory, conceptGraph);
+
+  const budget = computeHolisticAssessmentBudget(inventory, edgeList);
+  const chunks = buildInventoryChunks(docHierarchy, material);
+  const plan =
+    planIn ||
+    buildAssessmentCoveragePlan({
+      inventory,
+      edges: edgeList,
+      inventoryChunks: chunks,
+      rawMarkdown: material,
+      budget,
+    });
+  if (!plan?.batches?.length) {
+    throw new Error("Could not build holistic assessment coverage plan.");
+  }
+
+  const batches = plan.batches;
+  const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
+  /** @type {object[][]} */
+  const batchResults = [];
+
+  for (let i = 0; i < batches.length; i += batchSize) {
+    const slice = batches.slice(i, i + batchSize);
+    const batchNum = i + 1;
+    const totalBatches = batches.length;
+    if (typeof onProgress === "function") {
+      onProgress(`Generating questions ${batchNum}–${Math.min(i + slice.length, totalBatches)}/${totalBatches}…`);
+    }
+
+    const sliceResults = await Promise.all(
+      slice.map(async (batch) => {
+        const scopedInventory = filterInventoryForBatch(inventory, batch.conceptIds);
+        const scopedEdges = filterEdgesForBatch(edgeList, batch.edgeIds);
+        if (!scopedInventory.length) return [];
+        try {
+          return await generatePrePackingAssessmentItems({
+            conceptInventory: scopedInventory,
+            edges: scopedEdges,
+            materialText: batch.materialText || material,
+            n_test: batch.n_test,
+            n_socratic: batch.n_socratic,
+            edgeTestQuota: batch.edgeTestQuota,
+            llmModel,
+            language,
+            holisticBatch: true,
+            materialMaxChars: 24000,
+            coverageBatchId: batch.batchId,
+          });
+        } catch (err) {
+          console.warn(`Holistic assessment batch ${batch.batchId} failed:`, err?.message || err);
+          return [];
+        }
+      }),
+    );
+    batchResults.push(...sliceResults);
+  }
+
+  const merged = mergeHolisticAssessmentQuestions(batchResults, plan);
+  return shuffleTestQuestionsInList(merged);
 }
 
 export async function evaluatePrePackingAssessmentResponses({

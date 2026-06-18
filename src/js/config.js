@@ -43,6 +43,10 @@ export const DOC_SESSION_SIZE_THRESHOLD = 400 * 1024;
 /** Maximum test (MCQ) questions per study block. */
 export const MAX_N_TEST = 10;
 
+/** Holistic pre-packing assessment totals (test + socratic). */
+export const HOLISTIC_ASSESSMENT_MAX = 50;
+export const HOLISTIC_ASSESSMENT_MIN = 8;
+
 export const DS_CHAT_COMPLETIONS_URL =
   "https://api.deepseek.com/v1/chat/completions";
 
