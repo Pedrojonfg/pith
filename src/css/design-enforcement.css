@@ -42,7 +42,14 @@ body.paced-reader-active main > .container {
 
 body.study-active main > .container,
 body.recall-active main > .container {
-  padding-top: var(--space-6, 24px) !important;
+  padding-top: calc(var(--study-progress-reserve, 52px) + var(--space-6, 24px)) !important;
+}
+
+body.study-active .screen > .card,
+body.recall-active .screen > .card {
+  min-height: calc(
+    100vh - var(--study-progress-reserve, 52px) - var(--space-6, 24px)
+  ) !important;
 }
 
 .screen > .card {
@@ -191,6 +198,12 @@ textarea:focus,
 .study-progress {
   background: var(--bg-surface) !important;
   border-bottom: 1px solid var(--border-subtle) !important;
+}
+
+.study-progress .container {
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .rsvp-controls {
