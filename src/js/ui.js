@@ -1,5 +1,5 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
-import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
+import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
+import { getStoredGeminiKey, getDefaultLlmModel, saveDefaultLlmModel, normalizeLlmModel } from "./llm.js?v=20260525_1";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { MISC_PROJECT_ID } from "./session-types.js";
@@ -13,7 +13,8 @@ let resolveChromeStudyMode = () => "rsvp";
 /** @type {() => boolean} */
 let resolveChromeHasConcepts = () => false;
 
-let currentScreenId = "setup";
+let currentScreenId = "settings";
+let settingsReturnScreen = "appHome";
 
 export function getCurrentScreenId() {
   return currentScreenId;
@@ -88,13 +89,26 @@ function normalizeChromeStudyMode(mode) {
 const CHROME_GUIDE_STUDY_SCREENS = new Set([
   "test",
   "socratic",
-  "between",
   "review",
   "reviewGenerating",
   "reviewSummary",
   "clozeStudy",
   "recall",
+  "slowReader",
 ]);
+
+const NEW_SESSION_SCREENS = new Set(["appHome", "docLibrary", "modeSelect"]);
+const EXPORT_SCREENS = new Set(["complete", "test", "socratic"]);
+const INSTALL_PWA_SCREENS = new Set(["appHome"]);
+
+export function openSettingsScreen(returnTo = null) {
+  settingsReturnScreen = returnTo || currentScreenId || "appHome";
+  showScreen("settings");
+}
+
+export function closeSettingsScreen() {
+  showScreen(settingsReturnScreen || "appHome");
+}
 
 export function resolveChromeVisibility(ctx) {
   const studyMode = normalizeChromeStudyMode(ctx.studyMode);
@@ -116,7 +130,6 @@ export function resolveChromeVisibility(ctx) {
 
   const onGuideStudyScreen =
     CHROME_GUIDE_STUDY_SCREENS.has(screenId) &&
-    (screenId !== "between" || Boolean(ctx.hasConcepts)) &&
     (screenId !== "clozeStudy" || studyMode === "cloze") &&
     (screenId !== "recall" || studyMode === "recall");
 
@@ -309,19 +322,42 @@ export function syncFloatingChrome() {
       blockReadSidebar.hidden = false;
     }
   }
+
+  syncGlobalChromeVisibility();
+}
+
+function syncGlobalChromeVisibility() {
+  const screenId = String(currentScreenId || "");
+  const inSlowReader =
+    screenId === "slowReader" || document.body.classList.contains("slow-reader-active");
+
+  if (els.newSessionBtn) {
+    els.newSessionBtn.hidden = !NEW_SESSION_SCREENS.has(screenId);
+  }
+  if (els.btnDownloadSessionMd) {
+    els.btnDownloadSessionMd.hidden = !EXPORT_SCREENS.has(screenId);
+  }
+  if (els.settingsBtn) {
+    els.settingsBtn.hidden = inSlowReader;
+  }
+  const installBtn = document.getElementById("installPwaBtn");
+  if (installBtn) {
+    installBtn.hidden = !INSTALL_PWA_SCREENS.has(screenId);
+  }
 }
 
 export const els = {
-  changeKeyLink: document.getElementById("changeKeyLink"),
+  settingsBtn: document.getElementById("settingsBtn"),
+  settingsBackBtn: document.getElementById("settingsBackBtn"),
+  settingsOnboardingBanner: document.getElementById("settingsOnboardingBanner"),
   knowledgeVaultLink: document.getElementById("knowledgeVaultLink"),
   knowledgeVaultOverlay: document.getElementById("knowledgeVaultOverlay"),
   knowledgeVaultCloseBtn: document.getElementById("knowledgeVaultCloseBtn"),
   knowledgeVaultPanel: document.getElementById("knowledgeVaultPanel"),
   knowledgeVaultPanelBody: document.getElementById("knowledgeVaultPanelBody"),
   newSessionBtn: document.getElementById("newSessionBtn"),
-  dictionaryBtn: document.getElementById("dictionaryBtn"),
 
-  screenApiSetup: document.getElementById("screenApiSetup"),
+  screenSettings: document.getElementById("screenSettings"),
   screenAppHome: document.getElementById("screenAppHome"),
   screenVaultBranch: document.getElementById("screenVaultBranch"),
   btnAppHomeVault: document.getElementById("btnAppHomeVault"),
@@ -332,8 +368,8 @@ export const els = {
   btnVaultIngestOnly: document.getElementById("btnVaultIngestOnly"),
   ingestOnlyFileInput: document.getElementById("ingestOnlyFileInput"),
   btnVaultBranchReview: document.getElementById("btnVaultBranchReview"),
-  vaultBranchReviewBadge: document.getElementById("vaultBranchReviewBadge"),
   screenModeSelect: document.getElementById("screenModeSelect"),
+  modeSelectBackBtn: document.getElementById("modeSelectBackBtn"),
   screenCreateSessionStart: document.getElementById("screenCreateSessionStart"),
   createSessionStartBackBtn: document.getElementById("createSessionStartBackBtn"),
   createSessionStartBreadcrumb: document.getElementById("createSessionStartBreadcrumb"),
@@ -350,7 +386,6 @@ export const els = {
   btnNewSubproject: document.getElementById("btnNewSubproject"),
   btnCreateProjectSession: document.getElementById("btnCreateProjectSession"),
   modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
-  modeSelectHub: document.getElementById("modeSelectHub"),
   sessionHubActions: document.getElementById("sessionHubActions"),
   btnDownloadSessionMd: document.getElementById("btnDownloadSessionMd"),
   btnUploadToVault: document.getElementById("btnUploadToVault"),
@@ -364,10 +399,7 @@ export const els = {
   vaultUploadResumeLabel: document.getElementById("vaultUploadResumeLabel"),
   btnVaultUploadResume: document.getElementById("btnVaultUploadResume"),
   btnUploadVaultCommit: document.getElementById("btnUploadVaultCommit"),
-  btnUploadVaultCancel: document.getElementById("btnUploadVaultCancel"),
   btnUploadVaultRetry: document.getElementById("btnUploadVaultRetry"),
-  modeSelectContinueBtn: document.getElementById("modeSelectContinueBtn"),
-  modeSelectLibraryBtn: document.getElementById("modeSelectLibraryBtn"),
   reviewConfigBreadcrumb: document.getElementById("reviewConfigBreadcrumb"),
   reviewScopeSelect: document.getElementById("reviewScopeSelect"),
   reviewIncludeSubprojects: document.getElementById("reviewIncludeSubprojects"),
@@ -387,11 +419,6 @@ export const els = {
   reviewSm2Preview: document.getElementById("reviewSm2Preview"),
   reviewSm2QualityBtns: document.getElementById("reviewSm2QualityBtns"),
   reviewSm2Empty: document.getElementById("reviewSm2Empty"),
-  flowRecommendUpload: document.getElementById("flowRecommendUpload"),
-  flowRecommendBtn: document.getElementById("flowRecommendBtn"),
-  flowRecommendFileInput: document.getElementById("flowRecommendFileInput"),
-  flowRecommendStatus: document.getElementById("flowRecommendStatus"),
-  flowRecommendError: document.getElementById("flowRecommendError"),
   recommendationPanel: document.getElementById("recommendationPanel"),
   recommendationFlowTitle: document.getElementById("recommendationFlowTitle"),
   recommendationReasoning: document.getElementById("recommendationReasoning"),
@@ -426,14 +453,10 @@ export const els = {
   screenAssessmentGenerating: document.getElementById("screenAssessmentGenerating"),
   screenSessionReady: document.getElementById("screenSessionReady"),
   screenFullPackGenerating: document.getElementById("screenFullPackGenerating"),
-  screenBetweenBlocks: document.getElementById("screenBetweenBlocks"),
   screenSocratic: document.getElementById("screenSocratic"),
   screenTest: document.getElementById("screenTest"),
   assessmentRunnerRetry: document.getElementById("assessmentRunnerRetry"),
-  assessmentRunnerSkip: document.getElementById("assessmentRunnerSkip"),
-  assessmentRunnerSkipSocratic: document.getElementById("assessmentRunnerSkipSocratic"),
   testAssessmentChrome: document.getElementById("testAssessmentChrome"),
-  socraticAssessmentChrome: document.getElementById("socraticAssessmentChrome"),
   screenComplete: document.getElementById("screenComplete"),
   sessionCompleteTime: document.getElementById("sessionCompleteTime"),
   sessionCompleteBlocks: document.getElementById("sessionCompleteBlocks"),
@@ -452,7 +475,6 @@ export const els = {
   recallAnswer: document.getElementById("recallAnswer"),
   recallSubmitBtn: document.getElementById("recallSubmitBtn"),
   recallNextBtn: document.getElementById("recallNextBtn"),
-  recallConceptPeekBtn: document.getElementById("recallConceptPeekBtn"),
   recallStatus: document.getElementById("recallStatus"),
   recallFeedbackPanel: document.getElementById("recallFeedbackPanel"),
   recallQualityBadge: document.getElementById("recallQualityBadge"),
@@ -473,21 +495,10 @@ export const els = {
   studyProgressLabel: document.getElementById("studyProgressLabel"),
   studyProgressTitle: document.getElementById("studyProgressTitle"),
   studyProgressFill: document.getElementById("studyProgressFill"),
-  saveSessionInlineBtn: document.getElementById("saveSessionInlineBtn"),
   summarySoFarBtn: document.getElementById("summarySoFarBtn"),
 
-  saveSessionBtn: document.getElementById("saveSessionBtn"),
   downloadOfflinePackBtn: document.getElementById("downloadOfflinePackBtn"),
   reviewSessionBtn: document.getElementById("reviewSessionBtn"),
-
-  betweenBlocksDictionaryWrap: document.getElementById(
-    "betweenBlocksDictionaryWrap",
-  ),
-  betweenBlocksDictionaryOpenBtn: document.getElementById(
-    "betweenBlocksDictionaryOpenBtn",
-  ),
-  betweenBlocksDictList: document.getElementById("betweenBlocksDictList"),
-  betweenBlocksDictDef: document.getElementById("betweenBlocksDictDef"),
 
   dictionaryOverlay: document.getElementById("dictionaryOverlay"),
   dictionaryCloseBtn: document.getElementById("dictionaryCloseBtn"),
@@ -545,33 +556,14 @@ export const els = {
   fileInput: document.getElementById("fileInput"),
   fileExtractHint: document.getElementById("fileExtractHint"),
   alreadyKnowMaterial: document.getElementById("alreadyKnowMaterial"),
-  loadOfflinePackBtn: document.getElementById("loadOfflinePackBtn"),
-  offlinePackInput: document.getElementById("offlinePackInput"),
-  offlinePackStatus: document.getElementById("offlinePackStatus"),
   offlinePackError: document.getElementById("offlinePackError"),
-  resumeMaterialInput: document.getElementById("resumeMaterialInput"),
-  resumeMdInput: document.getElementById("resumeMdInput"),
-  resumeSessionBtn: document.getElementById("resumeSessionBtn"),
-  resumeSessionStatus: document.getElementById("resumeSessionStatus"),
-  resumeSessionError: document.getElementById("resumeSessionError"),
   blocksInput: document.getElementById("blocksInput"),
   recommendBlocksStatus: document.getElementById("recommendBlocksStatus"),
   recommendBlocksWhy: document.getElementById("recommendBlocksWhy"),
   languageSelect: document.getElementById("languageSelect"),
   studyNotesInput: document.getElementById("studyNotesInput"),
-  nTestMinusBtn: document.getElementById("nTestMinusBtn"),
-  nTestPlusBtn: document.getElementById("nTestPlusBtn"),
-  nTestValue: document.getElementById("nTestValue"),
-  nSocraticMinusBtn: document.getElementById("nSocraticMinusBtn"),
-  nSocraticPlusBtn: document.getElementById("nSocraticPlusBtn"),
-  nSocraticValue: document.getElementById("nSocraticValue"),
-  connectionQuestionsToggleBtn: document.getElementById("connectionQuestionsToggleBtn"),
-  connectionQuestionsToggleSubtitle: document.getElementById(
-    "connectionQuestionsToggleSubtitle",
-  ),
   sourceFidelityStrictToggleBtn: document.getElementById("sourceFidelityStrictToggleBtn"),
   sourceFidelityStrictHint: document.getElementById("sourceFidelityStrictHint"),
-  questionsPreviewLabel: document.getElementById("questionsPreviewLabel"),
   generateBlocksBtn: document.getElementById("generateBlocksBtn"),
   generateBlocksStatus: document.getElementById("generateBlocksStatus"),
   generateBlocksError: document.getElementById("generateBlocksError"),
@@ -581,12 +573,6 @@ export const els = {
   blocksClearFilterBtn: document.getElementById("blocksClearFilterBtn"),
   blocksListEditor: document.getElementById("blocksListEditor"),
   blocksReadonlyBanner: document.getElementById("blocksReadonlyBanner"),
-  blocksListOutput: document.getElementById("blocksListOutput"),
-  importIndexBtn: document.getElementById("import-index-btn"),
-  importIndexLabel: document.getElementById("import-index-label"),
-  importIndexFile: document.getElementById("import-index-file"),
-  importIndexConfirmBtn: document.getElementById("import-index-btn-confirm"),
-  importIndexConfirmLabel: document.getElementById("import-index-label-confirm"),
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
   confirmBlocksError: document.getElementById("confirmBlocksError"),
@@ -683,14 +669,6 @@ export const els = {
   fullPackCancelBtn: document.getElementById("fullPackCancelBtn"),
   fullPackStudyNowBtn: document.getElementById("fullPackStudyNowBtn"),
   fullPackExitBtn: document.getElementById("fullPackExitBtn"),
-
-  betweenBlocksHeader: document.getElementById("betweenBlocksHeader"),
-  betweenBlocksMeta: document.getElementById("betweenBlocksMeta"),
-  betweenBlocksInput: document.getElementById("betweenBlocksInput"),
-  betweenBlocksSkipBtn: document.getElementById("betweenBlocksSkipBtn"),
-  betweenBlocksSendBtn: document.getElementById("betweenBlocksSendBtn"),
-  betweenBlocksStatus: document.getElementById("betweenBlocksStatus"),
-  betweenBlocksError: document.getElementById("betweenBlocksError"),
 
   socraticHeader: document.getElementById("socraticHeader"),
   socraticMeta: document.getElementById("socraticMeta"),
@@ -948,9 +926,7 @@ export function setOfflinePackButtonVisibility(isVisible) {
 }
 
 export function enableUnifiedMaterialUpload() {
-  if (els.loadOfflinePackBtn) {
-    els.loadOfflinePackBtn.hidden = false;
-  }
+  // Offline pack load removed from create screen — no-op.
 }
 
 function ensureOfflineModeBanner() {
@@ -1161,6 +1137,14 @@ export function initLanguageUi() {
   });
 }
 
+export function initLlmModelUi() {
+  if (!els.llmModelSelect) return;
+  els.llmModelSelect.value = getDefaultLlmModel();
+  els.llmModelSelect.addEventListener("change", () => {
+    saveDefaultLlmModel(els.llmModelSelect.value);
+  });
+}
+
 export function getStudyLanguage() {
   const stored = localStorage.getItem(LS_STUDY_LANG_KEY);
   if (stored && STUDY_LANG_OPTIONS.some((o) => o.value === stored)) {
@@ -1185,8 +1169,9 @@ function resolveModeSelectScreenEl() {
 }
 
 export function showScreen(which) {
+  if (which === "setup") which = "settings";
   currentScreenId = which;
-  const showSetup = which === "setup";
+  const showSettings = which === "settings";
   const showAppHome = which === "appHome";
   const showVaultBranch = which === "vaultBranch";
   const showUploadToVault = which === "uploadToVaultCandidates";
@@ -1204,7 +1189,6 @@ export function showScreen(which) {
   const showAssessmentGenerating = which === "assessmentGenerating";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
-  const showBetween = which === "between";
   const showSocratic = which === "socratic";
   const showTest = which === "test";
   const showComplete = which === "complete";
@@ -1219,9 +1203,9 @@ export function showScreen(which) {
   const showSlowGraph = which === "slowGraph";
   const showClozeStudy = which === "clozeStudy";
   const showRecall = which === "recall";
-  const showStudyProgress = showSocratic || showTest || showBetween;
+  const showStudyProgress = showSocratic || showTest;
 
-  els.screenApiSetup.setAttribute("aria-hidden", String(!showSetup));
+  els.screenSettings?.setAttribute("aria-hidden", String(!showSettings));
   els.screenAppHome?.setAttribute("aria-hidden", String(!showAppHome));
   els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
   els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
@@ -1243,7 +1227,6 @@ export function showScreen(which) {
   );
   els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
   els.screenFullPackGenerating.setAttribute("aria-hidden", String(!showFullPackGenerating));
-  els.screenBetweenBlocks.setAttribute("aria-hidden", String(!showBetween));
   els.screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
   els.screenTest.setAttribute("aria-hidden", String(!showTest));
   els.screenComplete.setAttribute("aria-hidden", String(!showComplete));
@@ -1274,14 +1257,17 @@ export function showScreen(which) {
   applyOfflineUiRestrictions();
   syncFloatingChrome();
 
-  if (showSetup) {
-    els.apiKeyInput.value = "";
+  if (showSettings) {
+    const hasKey = Boolean(String(localStorage.getItem(LS_KEY) || "").trim());
+    if (els.settingsOnboardingBanner) {
+      els.settingsOnboardingBanner.hidden = hasKey;
+    }
     els.apiKeyStatus.textContent = "";
     if (els.geminiApiKeyInput) {
       const gk = getStoredGeminiKey();
       els.geminiApiKeyInput.value = gk || "";
     }
-    setTimeout(() => els.apiKeyInput.focus(), 0);
+    setTimeout(() => els.apiKeyInput?.focus?.(), 0);
   }
 
   if (showModeSelectScreen) {
@@ -1322,19 +1308,11 @@ export function showScreen(which) {
   }
 
   if (showBlocks) {
-    setTimeout(() => els.blocksListOutput.focus(), 0);
+    setTimeout(() => els.blocksListEditor?.focus?.(), 0);
   }
 
   if (showAssessment) {
     setTimeout(() => els.assessmentSkipBtn?.focus?.(), 0);
-  }
-
-  if (showBetween) {
-    els.betweenBlocksStatus.textContent = "";
-    els.betweenBlocksError.hidden = true;
-    els.betweenBlocksError.textContent = "";
-    els.betweenBlocksInput.value = "";
-    setTimeout(() => els.betweenBlocksInput.focus(), 0);
   }
 
   if (showTest) {
@@ -1353,8 +1331,8 @@ export function showScreen(which) {
 
   const anyVisible = document.querySelector('.screen[aria-hidden="false"]');
   if (!anyVisible) {
-    console.warn(`showScreen("${which}"): no visible screen — falling back to setup`);
-    els.screenApiSetup.setAttribute("aria-hidden", "false");
+    console.warn(`showScreen("${which}"): no visible screen — falling back to settings`);
+    els.screenSettings?.setAttribute("aria-hidden", "false");
   }
 }
 

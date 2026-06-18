@@ -367,9 +367,6 @@ export function createRecallStudyController(handlers) {
     els.recallSubmitBtn?.addEventListener("click", () => void submitAnswer());
     els.recallNextBtn?.addEventListener("click", () => nextQuestion());
     els.recallBackBtn?.addEventListener("click", () => handlers.onBack?.());
-    els.recallConceptPeekBtn?.addEventListener("click", () => {
-      if (els.recallConceptPeek) els.recallConceptPeek.hidden = !els.recallConceptPeek.hidden;
-    });
   }
 
   return { enterRecall, runGeneration, renderRecallScreen, wireHandlers, submitAnswer, nextQuestion };

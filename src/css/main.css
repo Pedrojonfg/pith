@@ -1075,12 +1075,12 @@ body.paced-reader-active {
 }
 
 .response-box {
-  margin-top: 12px;
-  padding: 12px 12px;
-  border-radius: var(--radius-lg);
+  margin-top: var(--space-md, 12px);
+  padding: var(--space-sm, 8px) var(--space-md, 12px);
+  border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--border-focus);
   background: var(--accent-subtle);
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--text-primary, rgba(255, 255, 255, 0.92));
   font-size: 14px;
   white-space: pre-wrap;
 }
@@ -1145,8 +1145,21 @@ body.paced-reader-active {
   line-height: 1.35;
 }
 
-.subtle {
-  color: var(--muted);
+.settings-section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.settings-onboarding-banner {
+  margin-bottom: 12px;
+}
+
+.screen-card {
+  max-width: none;
+  margin: 0;
+}
+
   font-size: 13px;
 }
 

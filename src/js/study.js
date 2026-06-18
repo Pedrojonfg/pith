@@ -23,6 +23,7 @@ import {
 import {
   assertLlmKeyPresent,
   getApiKeyForLlmModel,
+  getDefaultLlmModel,
   getLlmCallingLabel,
   getSessionLlmModel,
   llmChatCompletions,
@@ -303,6 +304,16 @@ import {
 import { isAutoDraftNotesEnabled, loadVaultSettings, saveVaultSettings } from "./vault/vault-settings.js";
 import { FACET_LABELS } from "./session-types.js";
 
+let blocksListJsonCache = "";
+
+function getBlocksListJsonCache() {
+  return blocksListJsonCache;
+}
+
+function setBlocksListJsonCache(v) {
+  blocksListJsonCache = String(v ?? "");
+}
+
 /**
  * Resolve or create DocumentSession for uploaded markdown; set active doc pointer.
  * @param {string} markdown
@@ -448,7 +459,7 @@ function hasValidModeRecommendation(recommendation) {
 
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} doc
- * @returns {'cta_upload'|'intro'|'progress'|'hidden'}
+ * @returns {'intro'|'progress'|'hidden'}
  */
 export function resolveFlowPanelViewState(doc) {
   const recommendation = doc?.shared?.modeRecommendation;
@@ -462,7 +473,7 @@ export function resolveFlowPanelViewState(doc) {
     if (completed.length > 0) return "progress";
     return "intro";
   }
-  return "cta_upload";
+  return "hidden";
 }
 
 /**
@@ -555,7 +566,7 @@ function closeModeSelectManualView() {
 }
 
 function clearFlowRecommendFeedback() {
-  if (els.flowRecommendStatus) els.flowRecommendStatus.textContent = "";
+  els.flowRecommendStatus?.textContent = "";
   if (els.flowRecommendError) {
     els.flowRecommendError.hidden = true;
     els.flowRecommendError.textContent = "";
@@ -563,15 +574,7 @@ function clearFlowRecommendFeedback() {
 }
 
 function setFlowRecommendLoading(isLoading) {
-  if (els.flowRecommendBtn) {
-    els.flowRecommendBtn.disabled = Boolean(isLoading);
-    els.flowRecommendBtn.textContent = isLoading
-      ? "Analyzing material…"
-      : "Recommend my study flow";
-  }
-  if (els.flowRecommendStatus) {
-    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
-  }
+  els.flowRecommendStatus?.textContent = isLoading ? "Computing your study flow…" : "";
 }
 
 function setFlowRecommendError(message) {
@@ -632,7 +635,7 @@ export async function recommendFlowFromUploadedFile(file) {
   state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
   state.materialBootstrapActive = false;
 
-  const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
+  const llmModel = getDefaultLlmModel();
   const hierarchyResult = await buildHierarchyForFlowRecommendation(cleanedText, llmModel);
 
   if (hierarchyResult) {
@@ -689,47 +692,18 @@ function wireFlowPanelHandlers() {
   });
 }
 
-export function wireFlowRecommendUpload() {
-  const btn = els.flowRecommendBtn;
-  const input = els.flowRecommendFileInput;
-  if (!btn || !input) return;
-
-  btn.addEventListener("click", () => {
-    clearFlowRecommendFeedback();
-    input.click();
-  });
-
-  input.addEventListener("change", async () => {
-    const file = input.files?.[0];
-    if (!file) return;
-    clearFlowRecommendFeedback();
-    setFlowRecommendLoading(true);
-    try {
-      await recommendFlowFromUploadedFile(file);
-      if (els.flowRecommendStatus) {
-        els.flowRecommendStatus.textContent = "Recommendation ready — see the suggested flow below.";
-      }
-    } catch (err) {
-      setFlowRecommendError(err?.message ? String(err.message) : String(err));
-    } finally {
-      setFlowRecommendLoading(false);
-      input.value = "";
-    }
-  });
-}
+/** @deprecated Mode-select upload CTA removed; flow recommend runs on createSessionStart. */
+export function wireFlowRecommendUpload() {}
 
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  */
 export function renderFlowPanel(doc = getActiveSession()) {
   const viewState = resolveFlowPanelViewState(doc);
-  const uploadWrap = els.flowRecommendUpload;
   const panel = els.recommendationPanel;
   const recommendation = doc?.shared?.modeRecommendation;
 
-  if (uploadWrap) uploadWrap.hidden = viewState !== "cta_upload";
-
-  if (viewState === "cta_upload" || viewState === "hidden") {
+  if (viewState === "hidden") {
     syncModeSelectView(doc);
     return;
   }
@@ -968,6 +942,12 @@ function resetModeSelectUi() {
   });
   modeSelectManualOpen = false;
   clearFlowRecommendFeedback();
+  for (const mode of ["rsvp", "slow", "cloze", "questions", "recall"]) {
+    if (loadSessionForMode(mode)) {
+      setStudyModeRadio(mode);
+      break;
+    }
+  }
 }
 
 function triggerVaultUpdateOnSessionExit() {
@@ -1122,7 +1102,7 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartStatus.textContent = "Uploaded. Analyzing structure in background…";
     }
     mountModeSelectBreadcrumb(doc);
-    const llmModel = normalizeLlmModel(els.llmModelSelect?.value || getSessionLlmModel());
+    const llmModel = getDefaultLlmModel();
     void buildHierarchyForFlowRecommendation(cleanedText, llmModel)
       .then((hierarchyResult) => {
         if (runId !== createSessionStartRunId) return;
@@ -1195,12 +1175,10 @@ export function enterCreateSessionStartScreen() {
 
 export function enterAppHome() {
   refreshVaultReviewBadge();
-  refreshVaultBranchReviewBadge();
   showScreen("appHome");
 }
 
 export function enterVaultBranch() {
-  refreshVaultBranchReviewBadge();
   showScreen("vaultBranch");
 }
 
@@ -1260,21 +1238,6 @@ async function handleIngestOnlyFileSelected() {
   }
 }
 
-function refreshVaultBranchReviewBadge() {
-  const badge = els.vaultBranchReviewBadge;
-  if (!badge) return;
-  const due = getVaultReviewDueCount();
-  if (due > 0) {
-    badge.textContent = String(due);
-    badge.setAttribute("aria-label", `${due} items due today`);
-    badge.classList.remove("hidden");
-  } else {
-    badge.textContent = "";
-    badge.setAttribute("aria-label", "Items due today");
-    badge.classList.add("hidden");
-  }
-}
-
 function syncSessionHubActions() {
   const doc = getActiveSession();
   const hasDoc = Boolean(doc?.docId);
@@ -1283,10 +1246,6 @@ function syncSessionHubActions() {
   }
   if (els.modeSelectHub) {
     els.modeSelectHub.hidden = true;
-  }
-  if (els.btnDownloadSessionMd) {
-    els.btnDownloadSessionMd.hidden = !hasDoc;
-    els.btnDownloadSessionMd.disabled = !hasDoc;
   }
   if (els.btnUploadToVault) {
     els.btnUploadToVault.hidden = true;
@@ -2041,7 +2000,6 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
       slice.docHierarchy = doc.shared.docHierarchy;
       storeActiveSession(slice);
     }
-    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
     showScreen("slowScope");
@@ -2050,7 +2008,6 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
   }
 
   if (mode === "cloze") {
-    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     setGenerateBlocksFormHidden(true);
     setMaterialBootstrapUi(true, doc);
     updateClozeSessionPanel(slice);
@@ -2058,7 +2015,6 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
     return;
   }
 
-  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   setGenerateBlocksFormHidden(false);
   setMaterialBootstrapUi(true, doc);
   showCreateScreen();
@@ -2252,7 +2208,6 @@ function resumeClozeSession(session) {
   state.studyMode = "cloze";
   storeActiveSession(session);
   setGenerateBlocksFormHidden(true);
-  if (els.modeResumePanel) els.modeResumePanel.hidden = true;
   updateClozeSessionPanel(session);
   showCreateScreen();
   if (session?.cloze?.pipelineStatus === "ready" && getValidItems(session.cloze.items || []).length > 0) {
@@ -2264,7 +2219,7 @@ let clozePipelineRunning = false;
 
 async function runClozeGeneration(session) {
   if (!session?.cloze || clozePipelineRunning) return;
-  const llmModel = normalizeLlmModel(session.llmModel || els.llmModelSelect?.value);
+  const llmModel = normalizeLlmModel(session.llmModel || getDefaultLlmModel());
   try {
     assertLlmKeyPresent(llmModel);
   } catch (err) {
@@ -2355,7 +2310,6 @@ async function importClozePacksFromInput() {
     state.studyMode = "cloze";
     storeActiveSession(sessionObj);
     setGenerateBlocksFormHidden(true);
-    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
     updateClozeSessionPanel(sessionObj);
     showCreateScreen();
     const warn =
@@ -3281,7 +3235,6 @@ function wireDocLibraryHandlers() {
   els.btnDownloadSessionMd?.addEventListener("click", () => handleExportSessionClick());
   els.btnUploadToVault?.addEventListener("click", () => enterUploadToVaultCandidates());
   els.uploadVaultBackBtn?.addEventListener("click", () => enterModeSelectScreen());
-  els.btnUploadVaultCancel?.addEventListener("click", () => enterModeSelectScreen());
   els.btnUploadVaultRetry?.addEventListener("click", () => void loadUploadVaultCandidates());
   els.btnUploadVaultCommit?.addEventListener("click", () => void commitUploadVaultSelections());
   els.uploadVaultAutoNotes?.addEventListener("change", (e) => {
@@ -3310,16 +3263,6 @@ function wireDocLibraryHandlers() {
     enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
-  els.modeSelectContinueBtn?.addEventListener("click", () => {
-    const doc = getActiveSession();
-    if (!doc) {
-      window.alert("No active document. Open Library to choose a document.");
-      return;
-    }
-    enterRetrievalHub({ entrySource: "mode_select" });
-  });
-  els.modeSelectLibraryBtn?.addEventListener("click", () => enterDocLibraryScreen());
-
   els.createSessionStartBackBtn?.addEventListener("click", () => enterDocLibraryScreen());
   els.createSessionStartFileInput?.addEventListener("change", () => {
     void handleCreateSessionStartFilePicked();
@@ -3331,7 +3274,6 @@ function wireDocLibraryHandlers() {
 
 function wireStudyModeSelector() {
   wireFlowPanelHandlers();
-  wireFlowRecommendUpload();
   wireDocLibraryHandlers();
 
   document.querySelectorAll('input[name="studyMode"]').forEach((radio) => {
@@ -3344,45 +3286,6 @@ function wireStudyModeSelector() {
 
   els.createBackToModesBtn?.addEventListener("click", () => {
     enterModeSelectScreen();
-  });
-
-  els.continueSessionBtn?.addEventListener("click", () => {
-    const mode = getSelectedStudyModeRadio() || state.studyMode;
-    if (!mode) return;
-    applyFlowRecommendationOnEnterMode(mode);
-    const session = loadSessionForMode(mode);
-    if (!session) return;
-    if (mode === "slow") resumeSlowSession(session);
-    else if (mode === "cloze") resumeClozeSession(session);
-    else if (mode === "questions") resumeQuestionsSession(session);
-    else resumeRsvpSession(session);
-  });
-
-  els.newSessionModeBtn?.addEventListener("click", () => {
-    const mode = getSelectedStudyModeRadio() || state.studyMode;
-    if (!mode) return;
-    const hadSlot = Boolean(loadSessionForMode(mode));
-    if (hadSlot) {
-      const ok = window.confirm(
-        "Starting a new session will replace your saved session for this mode. Continue?",
-      );
-      if (!ok) return;
-      const doc = getActiveSession();
-      if (doc?.modes) {
-        persistModeSliceToDocument(doc, mode, null);
-      }
-    }
-    clearMaterialBootstrapUi();
-    if (els.modeResumePanel) els.modeResumePanel.hidden = true;
-    setGenerateBlocksFormHidden(false);
-    if (els.clozeSessionPanel) els.clozeSessionPanel.hidden = true;
-    state.studyMode = mode;
-    state.activeSession = null;
-    updateCreateScreenModeVisibility(mode);
-    const doc = getActiveSession();
-    if (doc?.shared?.rawMarkdown) {
-      void enterModeWithContinuity(mode);
-    }
   });
 
   els.criticalModeToggleBtn?.addEventListener("click", () => {
@@ -3517,7 +3420,7 @@ function normalizeWhitespace(s) {
 }
 
 function syncHiddenBlocksJsonFromEditor() {
-  if (!els.blocksListEditor || !els.blocksListOutput) return;
+  if (!els.blocksListEditor) return;
   const items = Array.from(els.blocksListEditor.querySelectorAll("[data-block-id]"));
   const arr = [];
   for (const item of items) {
@@ -3530,7 +3433,7 @@ function syncHiddenBlocksJsonFromEditor() {
     );
     arr.push({ id, title, summary });
   }
-  els.blocksListOutput.value = JSON.stringify(arr, null, 2);
+  setBlocksListJsonCache(JSON.stringify(arr, null, 2));
 }
 
 function getBlockFilterQuery() {
@@ -3637,20 +3540,9 @@ function renderBlockIndexEditor(blocks, { readOnly = false } = {}) {
   if (first) setTimeout(() => first.focus(), 0);
 }
 
-function setQuestionPreviewLabel(nTest, nSocratic) {
-  if (!els.questionsPreviewLabel) return;
-  const t = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(nTest) || 0)));
-  const s = Math.max(0, Math.min(3, Math.round(Number(nSocratic) || 0)));
-  const total = t + s;
-  els.questionsPreviewLabel.textContent = total
-    ? `${total} questions per block (${t} test + ${s} socratic)`
-    : "0 questions per block (increase at least one)";
-}
-
 function renderQuestionConfigUi() {
   if (els.nTestValue) els.nTestValue.textContent = String(state.nTest);
   if (els.nSocraticValue) els.nSocraticValue.textContent = String(state.nSocratic);
-  setQuestionPreviewLabel(state.nTest, state.nSocratic);
 }
 
 function bumpQuestionCount(kind, delta) {
@@ -3807,14 +3699,14 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
 
   clearRecommendBlocksUi();
 
-  const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+  const llmModel = getDefaultLlmModel();
   try {
     assertLlmKeyPresent(llmModel);
   } catch (err) {
     if (els.recommendBlocksStatus) {
       els.recommendBlocksStatus.textContent = err?.message ? String(err.message) : String(err);
     }
-    if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+    if (String(err?.message || "").includes("DeepSeek")) showScreen("settings");
     return;
   }
 
@@ -3937,10 +3829,6 @@ function setOfflinePackError(message) {
 }
 
 function setOfflinePackLoading(isLoading) {
-  if (els.loadOfflinePackBtn) {
-    els.loadOfflinePackBtn.disabled = isLoading;
-    els.loadOfflinePackBtn.textContent = isLoading ? "Loading offline pack…" : "Load offline pack";
-  }
   if (els.offlinePackStatus) {
     els.offlinePackStatus.textContent = isLoading ? "Reading…" : "";
   }
@@ -4041,9 +3929,7 @@ async function loadOfflinePack(text, filename = "") {
       failedBlocks > 0 ? `Warning: ${failedBlocks} blocks have no content` : "";
   }
   renderBlockIndexEditor(state.lastBlockIndex, { readOnly: true });
-  if (els.blocksListOutput) {
-    els.blocksListOutput.value = formatBlockIndexForConfirmation(state.lastBlockIndex);
-  }
+  setBlocksListJsonCache(formatBlockIndexForConfirmation(state.lastBlockIndex));
   showScreen("blocks");
 }
 
@@ -4136,8 +4022,6 @@ async function handleOfflinePackClick() {
 
 function syncExportButtonsEnabled() {
   const exportable = Boolean(resolveSessionForExport());
-  if (els.saveSessionBtn) els.saveSessionBtn.disabled = !exportable;
-  if (els.saveSessionInlineBtn) els.saveSessionInlineBtn.disabled = !exportable;
   if (els.downloadOfflinePackBtn) els.downloadOfflinePackBtn.disabled = !exportable;
 }
 
@@ -4152,12 +4036,6 @@ function syncPersistenceHealthBanner() {
       textEl: document.getElementById("persistHealthBannerText"),
       dismissBtn: document.getElementById("persistHealthDismissBtn"),
       recoverBtn: document.getElementById("persistHealthRecoverBtn"),
-    },
-    {
-      el: document.getElementById("persistHealthBannerMode"),
-      textEl: document.getElementById("persistHealthBannerModeText"),
-      dismissBtn: document.getElementById("persistHealthDismissBtnMode"),
-      recoverBtn: document.getElementById("persistHealthRecoverBtnMode"),
     },
   ];
 
@@ -4206,11 +4084,6 @@ function syncPersistenceHealthBanner() {
       });
     }
   }
-}
-
-function setResumeLoading(isLoading) {
-  if (els.resumeSessionBtn) els.resumeSessionBtn.disabled = isLoading;
-  if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = isLoading ? "Restoring…" : "";
 }
 
 export function readFileAsText(file) {
@@ -6605,9 +6478,7 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   renderSplitMergeSummary(splitRunMeta);
   renderBlocksGraphActions(finalIndex, inventory);
   renderBlockIndexEditor(finalIndex, { readOnly: false });
-  if (els.blocksListOutput) {
-    els.blocksListOutput.value = formatBlockIndexForConfirmation(finalIndex);
-  }
+  setBlocksListJsonCache(formatBlockIndexForConfirmation(finalIndex));
   showScreen("blocks");
 }
 
@@ -7280,6 +7151,7 @@ export function wireStudyHandlers() {
   registerDictionaryChromeSyncHook(() => syncFloatingChrome());
   setSlowSessionGetter(() => state.activeSession);
   wireStudyModeSelector();
+  els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());
   wireSlowScopeHandlers();
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
@@ -7319,14 +7191,6 @@ export function wireStudyHandlers() {
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
   renderQuestionConfigUi();
 
-  // Connection questions are enabled by default (bloques 2..N).
-  if (els.connectionQuestionsToggleBtn) {
-    const next = state.includeConnectionQuestions !== false;
-    els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", String(next));
-    if (els.connectionQuestionsToggleSubtitle) {
-      els.connectionQuestionsToggleSubtitle.hidden = next;
-    }
-  }
   if (els.sourceFidelityStrictToggleBtn) {
     const strictOn = state.sourceFidelityStrict === true;
     els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(strictOn));
@@ -8029,11 +7893,6 @@ export function wireStudyHandlers() {
     renderQuestion();
   }
 
-  if (els.nTestMinusBtn) els.nTestMinusBtn.addEventListener("click", () => bumpQuestionCount("test", -1));
-  if (els.nTestPlusBtn) els.nTestPlusBtn.addEventListener("click", () => bumpQuestionCount("test", +1));
-  if (els.nSocraticMinusBtn) els.nSocraticMinusBtn.addEventListener("click", () => bumpQuestionCount("socratic", -1));
-  if (els.nSocraticPlusBtn) els.nSocraticPlusBtn.addEventListener("click", () => bumpQuestionCount("socratic", +1));
-
   loadRsvpDefaultsFromStorage();
 
   if (els.blocksFilterInput) {
@@ -8063,59 +7922,6 @@ export function wireStudyHandlers() {
         els.blocksListEditor?.querySelectorAll("[data-block-id]") || [],
       );
       for (const item of items) item.open = false;
-    });
-  }
-  if (els.importIndexFile) {
-    const setImportIndexLabel = (text) => {
-      if (els.importIndexLabel) els.importIndexLabel.textContent = text;
-      if (els.importIndexConfirmLabel) els.importIndexConfirmLabel.textContent = text;
-    };
-    const openImportIndexFile = () => {
-      clearConfirmError();
-      if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
-      setImportIndexLabel("");
-      els.importIndexFile.value = "";
-      els.importIndexFile.click();
-    };
-    if (els.importIndexBtn) {
-      els.importIndexBtn.addEventListener("click", openImportIndexFile);
-    }
-    if (els.importIndexConfirmBtn) {
-      els.importIndexConfirmBtn.addEventListener("click", openImportIndexFile);
-    }
-    els.importIndexFile.addEventListener("change", async () => {
-      const fileList = els.importIndexFile.files
-        ? Array.from(els.importIndexFile.files)
-        : [];
-      const file = fileList[0];
-      if (!file) return;
-      clearConfirmError();
-      if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "Importing…";
-      try {
-        const rawText = await file.text();
-        const mapped = parseImportedIndexText(rawText);
-        if (!Array.isArray(mapped) || !mapped.length) {
-          throw new Error("Could not parse file. Expected JSON array or text list.");
-        }
-        state.lastBlockIndex = mapped;
-        state.lastNBlocks = mapped.length;
-        window.blockIndex = mapped;
-        window.indexWasImported = true;
-        renderSplitMergeSummary(null);
-        renderBlocksGraphActions(mapped, []);
-        renderBlockIndexEditor(mapped, { readOnly: false });
-        if (els.blocksListOutput) {
-          els.blocksListOutput.value = formatBlockIndexForConfirmation(mapped);
-        }
-        setImportIndexLabel(`✓ ${mapped.length} blocks imported — skipping auto-split`);
-        if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
-        showScreen("blocks");
-      } catch (err) {
-        setConfirmError("Could not parse file. Expected JSON array or text list.");
-        setImportIndexLabel("");
-        window.indexWasImported = false;
-        if (els.confirmBlocksStatus) els.confirmBlocksStatus.textContent = "";
-      }
     });
   }
 
@@ -8200,7 +8006,7 @@ export function wireStudyHandlers() {
           setGenerateError("File appears to be empty.");
           return;
         }
-        const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+        const llmModel = getDefaultLlmModel();
         assertLlmKeyPresent(llmModel);
         const result = await importFromDocument(
           file,
@@ -8244,7 +8050,7 @@ export function wireStudyHandlers() {
         invalidateBlockSplitCacheAndRecommendUi();
       } catch (err) {
         setGenerateError(err?.message ? String(err.message) : String(err));
-        if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+        if (String(err?.message || "").includes("DeepSeek")) showScreen("settings");
       } finally {
         setGenerateLoading(false);
       }
@@ -8278,7 +8084,7 @@ export function wireStudyHandlers() {
       try {
         const { file, cleanedText, normalizedFormat, originalFormat } = resolvedCloze;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
-        const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+        const llmModel = getDefaultLlmModel();
         const doc = await ensureDocumentSessionForUpload(cleanedText);
         computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
@@ -8311,12 +8117,12 @@ export function wireStudyHandlers() {
       }
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
-      const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+      const llmModel = getDefaultLlmModel();
       try {
         assertLlmKeyPresent(llmModel);
       } catch (err) {
         setGenerateError(err?.message ? String(err.message) : String(err));
-        if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+        if (String(err?.message || "").includes("DeepSeek")) showScreen("settings");
         return;
       }
       setGenerateLoading(true);
@@ -8412,12 +8218,12 @@ export function wireStudyHandlers() {
     clearSessionConceptStorage();
     clearGuideChatStorage({ removeAllStored: true });
 
-    const llmModel = normalizeLlmModel(els.llmModelSelect?.value);
+    const llmModel = getDefaultLlmModel();
     try {
       assertLlmKeyPresent(llmModel);
     } catch (err) {
       setGenerateError(err?.message ? String(err.message) : String(err));
-      if (String(err?.message || "").includes("DeepSeek")) showScreen("setup");
+      if (String(err?.message || "").includes("DeepSeek")) showScreen("settings");
       return;
     }
     state.pendingLlmModel = llmModel;
@@ -8717,7 +8523,7 @@ export function wireStudyHandlers() {
       }
 
       syncHiddenBlocksJsonFromEditor();
-      const edited = safeParseJson(els.blocksListOutput.value || "");
+      const edited = safeParseJson(getBlocksListJsonCache() || "");
       if (!Array.isArray(edited)) {
         throw new Error(
           "Blocks list looks invalid. Please ensure each block has a title and a summary.",
@@ -8855,12 +8661,6 @@ export function wireStudyHandlers() {
 
   els.assessmentRunnerRetry?.addEventListener("click", () => {
     void retryPrePackingAssessmentGeneration();
-  });
-  els.assessmentRunnerSkip?.addEventListener("click", () => {
-    void handlePrePackingSkip();
-  });
-  els.assessmentRunnerSkipSocratic?.addEventListener("click", () => {
-    void handlePrePackingSkip();
   });
   els.prePackingAssessmentSkip?.addEventListener("click", () => {
     void handlePrePackingSkip();
@@ -9033,17 +8833,6 @@ export function wireStudyHandlers() {
     });
   }
 
-  if (els.connectionQuestionsToggleBtn) {
-    els.connectionQuestionsToggleBtn.addEventListener("click", () => {
-      const pressed = els.connectionQuestionsToggleBtn.getAttribute("aria-pressed") === "true";
-      const next = !pressed;
-      state.includeConnectionQuestions = next;
-      els.connectionQuestionsToggleBtn.setAttribute("aria-pressed", String(next));
-      if (els.connectionQuestionsToggleSubtitle) {
-        els.connectionQuestionsToggleSubtitle.hidden = next;
-      }
-    });
-  }
   if (els.sourceFidelityStrictToggleBtn) {
     els.sourceFidelityStrictToggleBtn.addEventListener("click", () => {
       const pressed = els.sourceFidelityStrictToggleBtn.getAttribute("aria-pressed") === "true";
@@ -9318,38 +9107,14 @@ export function wireStudyHandlers() {
     });
   });
 
-  if (els.dictionaryBtn) {
-    els.dictionaryBtn.addEventListener("click", () => {
-      const concepts = getSortedSessionConcepts();
-      renderConceptDictionaryInto({
-        listEl: els.dictionaryOverlayList,
-        defEl: els.dictionaryOverlayDef,
-        concepts,
-      });
-      setDictionaryOverlayOpen(true);
-    });
-  }
   els.dictionaryCloseBtn.addEventListener("click", () => {
     setDictionaryOverlayOpen(false);
   });
-  els.betweenBlocksDictionaryOpenBtn.addEventListener("click", () => {
-    const concepts = getSortedSessionConcepts();
-    renderConceptDictionaryInto({
-      listEl: els.dictionaryOverlayList,
-      defEl: els.dictionaryOverlayDef,
-      concepts,
-    });
-    setDictionaryOverlayOpen(true);
-  });
 
-  els.saveSessionBtn.addEventListener("click", handleExportSessionClick);
   if (els.downloadOfflinePackBtn) {
     els.downloadOfflinePackBtn.addEventListener("click", () => {
       void handleOfflinePackClick();
     });
-  }
-  if (els.saveSessionInlineBtn) {
-    els.saveSessionInlineBtn.addEventListener("click", handleExportSessionClick);
   }
 
   setOnPersistFailure((error) => {
@@ -9428,80 +9193,6 @@ export function wireStudyHandlers() {
   wireRsvpHandlers();
   wirePacedReaderHandlers({ onSwitchToRsvp: switchBlockReadingToRsvp });
   els.rsvpSwitchToPacedBtn?.addEventListener("click", switchBlockReadingToPaced);
-
-  if (els.resumeSessionBtn) {
-    els.resumeSessionBtn.addEventListener("click", async () => {
-      clearResumeError();
-      if (els.resumeSessionStatus) els.resumeSessionStatus.textContent = "";
-      if (!getStoredKey()) {
-        setResumeError('Missing DeepSeek API key. Click "Change API key" to set it.');
-        showScreen("setup");
-        return;
-      }
-      const origFile = els.resumeMaterialInput?.files?.[0];
-      const mdFile = els.resumeMdInput?.files?.[0];
-      if (!origFile) {
-        setResumeError("Please choose the original material file.");
-        return;
-      }
-      if (!mdFile) {
-        setResumeError("Please choose the exported session markdown (.md).");
-        return;
-      }
-      setResumeLoading(true);
-      try {
-        const mdText = await readFileAsText(mdFile);
-        const rawPayload = extractResumePayloadFromMarkdown(mdText);
-        const { cleanedText, wordCount } = await readAndCleanMaterialText(origFile);
-        if (!cleanedText.trim()) {
-          throw new Error("Original material file appears to be empty.");
-        }
-        const { sessionObj, pointer, session_concepts } =
-          buildSessionFromResumePayload(rawPayload);
-        const blockIdxArr = buildBlockIndexFromResumePayload(rawPayload, cleanedText);
-        localStorage.setItem(LS_BLOCK_INDEX_KEY, JSON.stringify(blockIdxArr));
-        restoreSessionConceptStorage({
-          sessionConcepts: session_concepts,
-          blocks: sessionObj.blocks,
-        });
-        if (!sessionObj._meta || typeof sessionObj._meta !== "object") sessionObj._meta = {};
-        sessionObj._meta.source_files = [{ name: String(origFile.name || "") }];
-        assertLlmKeyPresent(getSessionLlmModel(sessionObj));
-        clearGuideChatStorage();
-        storeActiveSession(sessionObj);
-        state.activeSession = sessionObj;
-        state.nTest = clampInt(sessionObj.n_test, 0, MAX_N_TEST, state.nTest);
-        state.nSocratic = clampInt(sessionObj.n_socratic, 0, 3, state.nSocratic);
-        state.originalMaterialText = cleanedText;
-        state.lastCleanedMaterialText = cleanedText;
-        state.lastCleanedMaterialWordCount = wordCount;
-        state.lastNBlocks = sessionObj.n_blocks;
-        state.lastUploadedFileNames = [String(origFile.name || "")];
-        state.lastBlockIndex = blockIdxArr;
-        if (pointer.session_complete) {
-          state.activeBlockIndex = Math.max(0, sessionObj.n_blocks - 1);
-          state.activeQuestionIndex = 0;
-          syncOfflinePackButtonVisibility();
-          updateSessionCompleteSummary(computeSessionCompleteSummary());
-          showScreen("complete");
-        } else {
-          state.activeBlockIndex = pointer.current_block_index;
-          state.activeQuestionIndex = pointer.active_question_index;
-          showScreen("ready");
-          setFullPackEntryCta(sessionObj.n_blocks);
-          els.sessionReadyMeta.textContent = `Session restored. Next: Block ${
-            pointer.current_block_index + 1
-          } of ${sessionObj.n_blocks}.`;
-        }
-        refreshGuideContext();
-        updateDictionaryButtonVisibility();
-      } catch (err) {
-        setResumeError(err?.message ? String(err.message) : String(err));
-      } finally {
-        setResumeLoading(false);
-      }
-    });
-  }
 
   setOnPrefetchReady(() => {
     refreshUiOnPrefetchReady();
