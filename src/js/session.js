@@ -1942,6 +1942,41 @@ function sharedConceptIds(blockA, blockB) {
   return shared;
 }
 
+/** Max block-count change allowed in one deterministic dedup pass (±10%, rounded up). */
+export const DEDUP_BLOCK_COUNT_TOLERANCE = 0.1;
+
+/**
+ * Budget for how many blocks dedup may absorb relative to the pre-dedup index length.
+ * @param {number} baselineBlockCount
+ * @returns {{ baseline: number, minFinalCount: number, maxMerges: number }}
+ */
+export function computeDedupMergeBudget(baselineBlockCount) {
+  const baseline = Math.max(1, Math.floor(Number(baselineBlockCount) || 1));
+  const minFinalCount = Math.ceil(baseline * (1 - DEDUP_BLOCK_COUNT_TOLERANCE));
+  const maxMerges = Math.max(0, baseline - minFinalCount);
+  return { baseline, minFinalCount, maxMerges };
+}
+
+/**
+ * Keep only the first merge plans that fit within maxMerges absorbed blocks.
+ * @param {import('./session.js').DedupMergeRecord[]} plans
+ * @param {number} maxMerges
+ */
+export function capDedupMergePlans(plans, maxMerges) {
+  const cap = Math.max(0, Math.floor(Number(maxMerges) || 0));
+  if (!cap || !Array.isArray(plans) || !plans.length) return [];
+  const capped = [];
+  let absorbed = 0;
+  for (const plan of plans) {
+    const absorbIds = Array.isArray(plan?.absorb_ids) ? plan.absorb_ids : [];
+    if (!absorbIds.length) continue;
+    if (absorbed + absorbIds.length > cap) break;
+    capped.push(plan);
+    absorbed += absorbIds.length;
+  }
+  return capped;
+}
+
 /** @returns {import('./session.js').DedupMergeRecord[]} */
 export function findDeterministicDuplicateMerges(blockIndex) {
   const safe = Array.isArray(blockIndex) ? blockIndex.slice() : [];
@@ -2001,12 +2036,21 @@ export function findDeterministicDuplicateMerges(blockIndex) {
 
 export async function applyDeterministicDedup(blockIndex, { llmModel, apiKey: _legacyApiKey } = {}) {
   const original = Array.isArray(blockIndex) ? blockIndex.slice() : [];
-  const plans = findDeterministicDuplicateMerges(original);
+  const mergeBudget = computeDedupMergeBudget(original.length);
+  const allPlans = findDeterministicDuplicateMerges(original);
+  const plans = capDedupMergePlans(allPlans, mergeBudget.maxMerges);
+  const skipped_merge_count = Math.max(
+    0,
+    allPlans.reduce((acc, p) => acc + (Array.isArray(p.absorb_ids) ? p.absorb_ids.length : 0), 0) -
+      plans.reduce((acc, p) => acc + (Array.isArray(p.absorb_ids) ? p.absorb_ids.length : 0), 0),
+  );
   if (!plans.length) {
     return {
       blockIndex: renumberBlockIndexSequential(original),
       dedup_merges: [],
       merged_count: 0,
+      dedup_merge_budget: mergeBudget,
+      dedup_merges_skipped: skipped_merge_count,
     };
   }
 
@@ -2075,6 +2119,8 @@ export async function applyDeterministicDedup(blockIndex, { llmModel, apiKey: _l
     blockIndex: renumberBlockIndexSequential(remaining),
     dedup_merges,
     merged_count,
+    dedup_merge_budget: mergeBudget,
+    dedup_merges_skipped: skipped_merge_count,
   };
 }
 
@@ -2704,6 +2750,8 @@ export async function packInventoryToBlocks(
     pack_meta,
     dedup_merges: dedupResult.dedup_merges,
     dedup_merged_count: dedupResult.merged_count,
+    dedup_merge_budget: dedupResult.dedup_merge_budget,
+    dedup_merges_skipped: dedupResult.dedup_merges_skipped,
   };
 
   const invariant = validatePackInvariants({

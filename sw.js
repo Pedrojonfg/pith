@@ -1,4 +1,4 @@
-const CACHE_NAME = "pith-v49";
+const CACHE_NAME = "pith-v50";
 
 const STATIC_ASSETS = [
   "/",
