@@ -8,6 +8,8 @@ import {
   generateAssessmentSynthesis,
   synthesizeAssessmentGaps,
   generatePrePackingAssessmentItems,
+  generateHolisticPrePackingAssessmentItems,
+  buildInventoryChunks,
   evaluatePrePackingAssessmentResponses,
   extractVaultCandidates,
   normalizeConceptsToVault,
@@ -17,9 +19,16 @@ import {
 import {
   ASSESSMENT_FLAGS,
   isAssessmentQuestionsUiEnabled,
+  isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
   isSourceFidelityStrictEnabled,
 } from "./config/flags.js";
+import {
+  buildAssessmentCoveragePlan,
+  computeHolisticAssessmentBudget,
+  deriveInventoryEdges,
+  hashCoveragePlan,
+} from "./assessment-coverage.js?v=20260618_1";
 import {
   assertLlmKeyPresent,
   getApiKeyForLlmModel,
@@ -48,6 +57,11 @@ import {
   isBlockSplitCacheValid,
   setBlockSplitCache,
 } from "./block-split-cache.js";
+import {
+  runDocumentPreparationPipeline,
+  PHASE_LABELS,
+} from "./document-preparation.js";
+import { normalizePreparationState } from "./session-types.js";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import {
   recordUserOverride,
@@ -346,6 +360,70 @@ export async function ensureDocumentSessionForUpload(markdown) {
   return doc;
 }
 
+let documentPreparationRunId = 0;
+
+/**
+ * Run DPP after upload; updates shared preparation state.
+ * @param {import("./session-store.js").DocumentSession} doc
+ * @param {{ onProgress?: (msg: object) => void, studyNotes?: string, stopAfterTier?: number }} [options]
+ */
+export async function startDocumentPreparation(doc, options = {}) {
+  if (!doc?.docId) return null;
+  const prep = normalizePreparationState(doc.shared?.preparation);
+  if (prep.status === "ready") return doc;
+  const runId = ++documentPreparationRunId;
+  const result = await runDocumentPreparationPipeline(doc, {
+    llmModel: getSessionLlmModel(),
+    language: getStudyLanguage(),
+    studyNotes: options.studyNotes ?? state.studyNotes ?? "",
+    stopAfterTier: options.stopAfterTier,
+    onProgress: (msg) => {
+      if (runId !== documentPreparationRunId) return;
+      options.onProgress?.(msg);
+    },
+  });
+  return result?.doc ?? doc;
+}
+
+function formatPreparationProgressMessage(msg) {
+  const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
+  const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
+  return `${label}${wave}…`;
+}
+
+function applySharedBlockRecommendationToUi(doc) {
+  const rec = doc?.shared?.blockRecommendation;
+  if (!rec?.nBlocks) return false;
+  if (els.blocksInput) els.blocksInput.value = String(rec.nBlocks);
+  const signals = rec.signals || rec;
+  if (els.recommendBlocksWhy) {
+    els.recommendBlocksWhy.textContent = rec.rationale || formatBlockCountReasoning(signals);
+    els.recommendBlocksWhy.hidden = false;
+  }
+  if (els.recommendBlocksStatus) {
+    els.recommendBlocksStatus.textContent = `Recommended ${rec.nBlocks} blocks`;
+  }
+  const text = String(doc?.shared?.rawMarkdown || state.lastCleanedMaterialText || "");
+  const fingerprint = buildBlockSplitFingerprint({
+    file: buildBootstrapFileStub(doc, text),
+    studyNotes: state.studyNotes,
+    wordCount: countWords(text),
+  });
+  if (Array.isArray(doc?.shared?.conceptInventory) && doc.shared.conceptInventory.length) {
+    setBlockSplitCache({
+      fingerprint,
+      conceptInventory: doc.shared.conceptInventory,
+      recommendation: signals,
+    });
+  }
+  return true;
+}
+
+function isDocumentPreparationReady(doc) {
+  const status = normalizePreparationState(doc?.shared?.preparation).status;
+  return status === "ready" || status === "partial";
+}
+
 /**
  * @param {Record<string, unknown> | null | undefined} recommendation
  * @returns {Record<string, unknown> | null}
@@ -566,7 +644,7 @@ function closeModeSelectManualView() {
 }
 
 function clearFlowRecommendFeedback() {
-  els.flowRecommendStatus?.textContent = "";
+  if (els.flowRecommendStatus) els.flowRecommendStatus.textContent = "";
   if (els.flowRecommendError) {
     els.flowRecommendError.hidden = true;
     els.flowRecommendError.textContent = "";
@@ -574,7 +652,9 @@ function clearFlowRecommendFeedback() {
 }
 
 function setFlowRecommendLoading(isLoading) {
-  els.flowRecommendStatus?.textContent = isLoading ? "Computing your study flow…" : "";
+  if (els.flowRecommendStatus) {
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
+  }
 }
 
 function setFlowRecommendError(message) {
@@ -635,16 +715,14 @@ export async function recommendFlowFromUploadedFile(file) {
   state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
   state.materialBootstrapActive = false;
 
-  const llmModel = getDefaultLlmModel();
-  const hierarchyResult = await buildHierarchyForFlowRecommendation(cleanedText, llmModel);
-
-  if (hierarchyResult) {
-    doc.shared.docHierarchy = hierarchyResult;
-    doc.shared.docTopics = Array.isArray(hierarchyResult.topics) ? hierarchyResult.topics : [];
-    saveDocumentSession(doc);
-  }
-
-  computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult, { force: true });
+  void startDocumentPreparation(doc, {
+    studyNotes: state.studyNotes,
+    onProgress: () => {
+      renderFlowPanel(getActiveSession());
+    },
+  }).then(() => {
+    renderFlowPanel(getActiveSession());
+  });
 
   const refreshed = getActiveSession();
   resetModeSelectUi();
@@ -1099,23 +1177,20 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartContinueBtn.disabled = false;
     }
     if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Uploaded. Analyzing structure in background…";
+      els.createSessionStartStatus.textContent = "Preparing document…";
     }
     mountModeSelectBreadcrumb(doc);
-    const llmModel = getDefaultLlmModel();
-    void buildHierarchyForFlowRecommendation(cleanedText, llmModel)
-      .then((hierarchyResult) => {
+    void startDocumentPreparation(doc, {
+      studyNotes: state.studyNotes,
+      onProgress: (msg) => {
         if (runId !== createSessionStartRunId) return;
-        const activeDoc = getActiveSession();
-        if (!activeDoc?.docId) return;
-        if (hierarchyResult) {
-          activeDoc.shared.docHierarchy = hierarchyResult;
-          activeDoc.shared.docTopics = Array.isArray(hierarchyResult.topics)
-            ? hierarchyResult.topics
-            : [];
-          saveDocumentSession(activeDoc);
+        if (els.createSessionStartStatus) {
+          els.createSessionStartStatus.textContent = formatPreparationProgressMessage(msg);
         }
-        computeAndPersistModeRecommendation(activeDoc, cleanedText, hierarchyResult, { force: true });
+      },
+    })
+      .then(() => {
+        if (runId !== createSessionStartRunId) return;
         if (els.createSessionStartStatus) {
           els.createSessionStartStatus.textContent = "Document ready. You can continue.";
         }
@@ -1124,7 +1199,7 @@ async function handleCreateSessionStartFilePicked() {
         if (runId !== createSessionStartRunId) return;
         if (els.createSessionStartStatus) {
           els.createSessionStartStatus.textContent =
-            "Document uploaded. Background analysis failed; you can continue anyway.";
+            "Document uploaded. Preparation incomplete; you can continue anyway.";
         }
       });
   } catch (err) {
@@ -1202,17 +1277,8 @@ export async function runIngestOnlyPipeline({
     originalFormat,
     uploadedAt: new Date().toISOString(),
   });
-  const invResult = await runConceptInventoryWithFallback(text, {
-    llmModel: getSessionLlmModel(),
-    language: getStudyLanguage(),
-    docHierarchy: doc?.shared?.docHierarchy,
-    wordCount: text.split(/\s+/).filter(Boolean).length,
-  });
-  if (invResult.kind === "fallback_mono") {
-    notifyInventoryRunStatus(invResult);
-    throw new Error("Concept inventory unavailable for ingest.");
-  }
-  promoteConceptInventoryToShared(invResult.inventory, "ingest");
+  setActiveSession(doc.docId);
+  await startDocumentPreparation(doc, { stopAfterTier: 1 });
   return getSession(doc.docId);
 }
 
@@ -3064,6 +3130,20 @@ async function runPhase0Generation(session) {
     return;
   }
 
+  const doc = getActiveSession();
+  const cachedOrientation = doc?.shared?.slowOrientation?.payload;
+  if (cachedOrientation && typeof cachedOrientation === "object") {
+    slow.phase0 = applyFillableMapMode(
+      ensurePhase0UserFields(cachedOrientation),
+      slow.fillableMapMode,
+    );
+    slow.phase0Status = "ready";
+    slow.phase0Error = null;
+    storeActiveSession(session);
+    renderSlowPhase0Screen(session);
+    return;
+  }
+
   const token = ++phase0GenerationToken;
   slow.phase0Status = "generating";
   slow.phase0Error = null;
@@ -3611,6 +3691,12 @@ async function maybeAutoRecommendBlockCount() {
   if (mode !== "rsvp") return;
   if (!els.generateBlocksForm || els.generateBlocksForm.hidden) return;
   if (!hasMaterialForBlockRecommend()) return;
+  const doc = getActiveSession();
+  if (doc && applySharedBlockRecommendationToUi(doc)) return;
+  if (doc && isDocumentPreparationReady(doc) && doc.shared?.blockRecommendation) {
+    applySharedBlockRecommendationToUi(doc);
+    return;
+  }
   const runId = ++recommendBlockCountRunId;
   await handleRecommendBlockCount(runId);
 }
@@ -3698,6 +3784,11 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
   }
 
   clearRecommendBlocksUi();
+
+  const docEarly = getActiveSession();
+  if (docEarly && applySharedBlockRecommendationToUi(docEarly)) {
+    return;
+  }
 
   const llmModel = getDefaultLlmModel();
   try {
@@ -6355,7 +6446,12 @@ function resolvePrePackingQuestionConfig() {
 }
 
 /** Stable key for prefetch invalidation (20260616-fix-pregen-assessment). */
-export function buildPrefetchConfigKey({ qCfg, conceptInventory, cleanedText }) {
+export function buildPrefetchConfigKey({
+  qCfg,
+  conceptInventory,
+  cleanedText,
+  holisticPlanHash,
+}) {
   const ids = (Array.isArray(conceptInventory) ? conceptInventory : [])
     .map((c) => String(c?.id || c?.concept_id || "").trim())
     .filter(Boolean)
@@ -6364,10 +6460,56 @@ export function buildPrefetchConfigKey({ qCfg, conceptInventory, cleanedText }) 
   const len = String(cleanedText ?? "").length;
   const nTest = Math.floor(Number(qCfg?.n_test) || 0);
   const nSocratic = Math.floor(Number(qCfg?.n_socratic) || 0);
-  return `${nTest}:${nSocratic}|${ids}|${len}`;
+  const holistic = holisticPlanHash ? `|${holisticPlanHash}` : "";
+  return `${nTest}:${nSocratic}|${ids}|${len}${holistic}`;
+}
+
+function resolveHolisticAssessmentContext(flow) {
+  const docId = state.activeDocId || state.activeSession?.docId;
+  const doc = docId ? getSession(docId) : null;
+  const conceptGraph = flow?.conceptGraph ?? doc?.shared?.conceptGraph ?? null;
+  const docHierarchy = flow?.docHierarchy ?? doc?.shared?.docHierarchy ?? null;
+  const inventory = flow?.conceptInventory || [];
+  const edges =
+    Array.isArray(flow?.edges) && flow.edges.length
+      ? flow.edges
+      : deriveInventoryEdges(inventory, conceptGraph);
+  const budget = computeHolisticAssessmentBudget(inventory, edges);
+  const chunks = buildInventoryChunks(docHierarchy, flow?.cleanedText || "");
+  const plan = buildAssessmentCoveragePlan({
+    inventory,
+    edges,
+    inventoryChunks: chunks,
+    rawMarkdown: flow?.cleanedText || "",
+    budget,
+  });
+  return { edges, docHierarchy, conceptGraph, budget, plan };
 }
 
 function createPrePackingItemsPromise(flow) {
+  if (isHolisticAssessmentEnabled()) {
+    const ctx = resolveHolisticAssessmentContext(flow);
+    flow.edges = ctx.edges;
+    flow.docHierarchy = ctx.docHierarchy;
+    flow.coveragePlan = ctx.plan;
+    flow.holisticBudget = ctx.budget;
+    return generateHolisticPrePackingAssessmentItems({
+      conceptInventory: flow.conceptInventory,
+      edges: ctx.edges,
+      materialText: flow.cleanedText,
+      docHierarchy: ctx.docHierarchy,
+      conceptGraph: ctx.conceptGraph,
+      plan: ctx.plan,
+      onProgress: (msg) => {
+        flow.assessmentGenerationStatus = msg;
+        if (els.testMeta) els.testMeta.textContent = String(msg || "");
+        if (els.generateBlocksStatus) els.generateBlocksStatus.textContent = String(msg || "");
+      },
+      llmModel: flow.splitOpts?.llmModel,
+      language: flow.splitOpts?.language || getStudyLanguage(),
+    });
+  }
+
   const qCfg = resolvePrePackingQuestionConfig();
   return generatePrePackingAssessmentItems({
     conceptInventory: flow.conceptInventory,
@@ -6381,6 +6523,15 @@ function createPrePackingItemsPromise(flow) {
 }
 
 function getCurrentPrefetchConfigKey(flow) {
+  if (isHolisticAssessmentEnabled()) {
+    const ctx = resolveHolisticAssessmentContext(flow);
+    return buildPrefetchConfigKey({
+      qCfg: ctx.budget,
+      conceptInventory: flow.conceptInventory,
+      cleanedText: flow.cleanedText,
+      holisticPlanHash: ctx.plan?.planHash || hashCoveragePlan(ctx.plan),
+    });
+  }
   const qCfg = resolvePrePackingQuestionConfig();
   return buildPrefetchConfigKey({
     qCfg,
@@ -6633,7 +6784,10 @@ async function retryPrePackingAssessmentGeneration() {
 
 async function enterPrePackingAssessmentRunner() {
   if (!prePackingFlow) return;
-  const qCfg = resolvePrePackingQuestionConfig();
+  const holistic = isHolisticAssessmentEnabled();
+  const qCfg = holistic
+    ? resolveHolisticAssessmentContext(prePackingFlow).budget
+    : resolvePrePackingQuestionConfig();
   prePackingFlow.runnerMode = "assessment";
   prePackingFlow.assessmentQuestionIndex = 0;
   prePackingFlow.assessmentResponses = [];
@@ -8385,30 +8539,50 @@ export function wireStudyHandlers() {
 
       promoteConceptInventoryToShared(conceptInventory, "rsvp");
 
-      const qCfg = resolvePrePackingQuestionConfig();
+      const docIdForPrep = state.activeDocId || state.activeSession?.docId;
+      const docForPrep = docIdForPrep ? getSession(docIdForPrep) : null;
+      const holistic = isHolisticAssessmentEnabled();
+      const prepEdges = deriveInventoryEdges(
+        conceptInventory,
+        docForPrep?.shared?.conceptGraph,
+      );
+      const holisticBudget = holistic
+        ? computeHolisticAssessmentBudget(conceptInventory, prepEdges)
+        : null;
+      const holisticPlan = holistic
+        ? buildAssessmentCoveragePlan({
+            inventory: conceptInventory,
+            edges: prepEdges,
+            inventoryChunks: buildInventoryChunks(
+              docForPrep?.shared?.docHierarchy,
+              cleanedText,
+            ),
+            rawMarkdown: cleanedText,
+            budget: holisticBudget,
+          })
+        : null;
+      const qCfg = holistic ? holisticBudget : resolvePrePackingQuestionConfig();
       const prefetchConfigKey = buildPrefetchConfigKey({
         qCfg,
         conceptInventory,
         cleanedText,
+        holisticPlanHash: holisticPlan?.planHash,
       });
       prePackingFlow = {
         phase: "assessment",
         conceptInventory,
+        edges: prepEdges,
+        docHierarchy: docForPrep?.shared?.docHierarchy ?? null,
+        conceptGraph: docForPrep?.shared?.conceptGraph ?? null,
         nBlocks,
         cleanedText,
         splitOpts,
         fingerprint,
         assessmentItems: [],
         prefetchConfigKey,
-        itemsPromise: generatePrePackingAssessmentItems({
-          conceptInventory,
-          edges: [],
-          materialText: cleanedText,
-          n_test: qCfg.n_test,
-          n_socratic: qCfg.n_socratic,
-          llmModel: splitOpts.llmModel,
-          language: splitOpts.language,
-        }),
+        coveragePlan: holisticPlan,
+        holisticBudget: holisticBudget,
+        itemsPromise: null,
         responses: [],
         knowledgeProfile: null,
         packingPromise: null,
@@ -8418,6 +8592,7 @@ export function wireStudyHandlers() {
         questionIndex: 0,
         draftMeta: { _meta: {} },
       };
+      prePackingFlow.itemsPromise = createPrePackingItemsPromise(prePackingFlow);
 
       setGenerateLoading(false);
       els.generateBlocksStatus.textContent = "";

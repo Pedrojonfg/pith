@@ -25,7 +25,7 @@ import {
   PROJECT_ERROR_DELETE_BLOCKED,
   renameProject,
 } from "./project-store.js";
-import { renderBreadcrumb, renderProjectPicker, els } from "./ui.js";
+import { getPreparationBadgeLabel } from "./document-preparation.js";
 
 /** @type {{ currentProjectId: string|null, fromLibraryDocId: string|null, uploadProjectId: string|null }} */
 export const projectLibraryState = {
@@ -172,10 +172,15 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
       const smDue = getSmItemsDueToday(doc.docId).length;
       const smDueHtml =
         smDue > 0 ? `<span class="doc-library-sm-due">${smDue} due today</span>` : "";
+      const prepLabel = getPreparationBadgeLabel(doc);
+      const prepHtml = prepLabel
+        ? `<span class="doc-library-prep-badge doc-library-prep-badge--${prepLabel.toLowerCase()}">${escapeHtml(prepLabel)}</span>`
+        : "";
       return `<div class="doc-library-row" role="listitem">
         <button type="button" class="doc-library-item" data-doc-id="${escapeHtml(doc.docId)}">
           <span class="doc-library-title">${escapeHtml(title)}</span>
           <span class="doc-library-meta">
+            ${prepHtml}
             <span class="doc-library-modes">${escapeHtml(formatDocLibraryModes(modes))}</span>
             ${smDueHtml}
             <span class="doc-library-date">${escapeHtml(formatDocLibraryDate(doc.updatedAt))}</span>

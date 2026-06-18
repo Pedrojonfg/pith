@@ -1,5 +1,7 @@
 import { hasGeneratedBlockContent, normalizeStudyMode } from "./session.js";
 import { createClozeSession, createSlowSession } from "./study.js";
+import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
+import { getValidItems } from "./cloze/pipeline.js";
 
 /**
  * @param {import('./session-types.js').DocumentSession | null | undefined} doc
@@ -11,6 +13,26 @@ function hasSharedMaterial(doc) {
   if (typeof sh.rawMarkdown === "string" && sh.rawMarkdown.trim().length > 0) return true;
   const ref = sh.rawMarkdownRef;
   return Boolean(ref && typeof ref === "object" && String(ref.storageKey || "").trim());
+}
+
+function preparationAllowsBootstrap(doc) {
+  const prep = normalizePreparationState(doc?.shared?.preparation);
+  if (prep.status === "ready" || prep.status === "partial") return isTier1PreparationComplete(doc);
+  if (prep.status === "legacy") return hasConceptInventory(doc);
+  return false;
+}
+
+/**
+ * @param {import('./session-types.js').DocumentSession | null | undefined} doc
+ * @returns {boolean}
+ */
+function hasPrepReadyCloze(doc) {
+  const cloze = doc?.modes?.cloze?.cloze;
+  if (!cloze) return false;
+  if (String(cloze.pipelineStatus || "") === "ready") {
+    return getValidItems(cloze.items || []).length > 0;
+  }
+  return false;
 }
 
 /**
@@ -105,18 +127,45 @@ export function resolveModeEntryState(doc, mode) {
   }
 
   if (slot === "recall") {
-    if (hasConceptInventory(doc)) {
+    const recallSlice = existingSlice && typeof existingSlice === "object" ? existingSlice : null;
+    if (recallSlice && String(recallSlice.status || "") === "ready" && recallSlice.questions?.length) {
+      return {
+        kind: "bootstrap",
+        mode: modeKey,
+        reason: "recall_prep_ready",
+        existingSlice: recallSlice,
+      };
+    }
+    if (hasConceptInventory(doc) || preparationAllowsBootstrap(doc)) {
       return {
         kind: "bootstrap",
         mode: modeKey,
         reason: existingSlice ? "inventory_ready_slice_exists" : "inventory_ready",
-        existingSlice: existingSlice && typeof existingSlice === "object" ? existingSlice : null,
+        existingSlice: recallSlice,
       };
     }
     return {
       kind: "generate_fresh",
       mode: modeKey,
       reason: "material_without_inventory",
+      existingSlice: recallSlice,
+    };
+  }
+
+  if (slot === "cloze" && hasPrepReadyCloze(doc)) {
+    return {
+      kind: "resume",
+      mode: modeKey,
+      reason: "cloze_prep_ready",
+      existingSlice,
+    };
+  }
+
+  if (preparationAllowsBootstrap(doc) || hasConceptInventory(doc)) {
+    return {
+      kind: "bootstrap",
+      mode: modeKey,
+      reason: existingSlice ? "prep_ready_slice_exists" : "prep_ready",
       existingSlice: existingSlice && typeof existingSlice === "object" ? existingSlice : null,
     };
   }
@@ -161,10 +210,18 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
   }
 
   if (slot === "cloze") {
-    return createClozeSession(common);
+    if (doc.modes?.cloze && hasPrepReadyCloze(doc)) {
+      return JSON.parse(JSON.stringify(doc.modes.cloze));
+    }
+    const slice = createClozeSession(common);
+    if (doc.shared?.conceptGraph?.nodes?.length) {
+      slice.cloze.epistemicGraph = doc.shared.conceptGraph;
+    }
+    return slice;
   }
 
   const studyMode = slot === "questions" ? "questions" : "rsvp";
+  const nBlocksDefault = doc.shared?.blockRecommendation?.nBlocks;
   return {
     studyMode,
     materialMeta: {
@@ -172,7 +229,7 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
       originalFormat: meta.originalFormat,
       uploadedAt: meta.uploadedAt,
     },
-    n_blocks: 0,
+    n_blocks: Number.isFinite(Number(nBlocksDefault)) ? Math.floor(Number(nBlocksDefault)) : 0,
     blocks: [],
   };
 }
