@@ -42,6 +42,8 @@
   --ease-reveal: cubic-bezier(0, 0, 0.2, 1);
   --content-max: 840px;
   --chrome-top-reserve: 60px;
+  /* Fixed #studyProgress rowline (progress bar hidden in DESIGN pass-2) */
+  --study-progress-reserve: 52px;
   --bg: var(--bg-base);
   --fg: var(--text-primary);
   --muted: var(--text-secondary);
@@ -212,10 +214,10 @@ body.paced-reader-active main > .container {
   padding-top: 0;
 }
 
-/* Study progress bar already offsets main — keep normal vertical rhythm */
+/* Offset main content below fixed #studyProgress (reserve in --study-progress-reserve). */
 body.study-active main > .container,
 body.recall-active main > .container {
-  padding-top: var(--space-6, 24px);
+  padding-top: calc(var(--study-progress-reserve, 52px) + var(--space-6, 24px));
 }
 
 .container {
@@ -1253,6 +1255,14 @@ body.paced-reader-active {
 .study-progress[aria-hidden="false"] {
   display: block;
 }
+/* Inner .container must not inherit page shell min-height (would cover the viewport). */
+.study-progress .container {
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  max-width: none;
+}
 .study-progress .rowline {
   display: flex;
   align-items: baseline;
@@ -1350,10 +1360,7 @@ body.paced-reader-active {
   margin: 0 auto;
 }
 
-/* Make room for fixed progress bar during study */
-body.study-active main {
-  padding-top: 64px;
-}
+/* #studyProgress is position:fixed; vertical offset lives on main > .container. */
 
 body.assessment-active main {
   display: none;
