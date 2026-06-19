@@ -249,6 +249,9 @@ export function validateDocumentSession(session) {
     if (sh.docTopics != null && !Array.isArray(sh.docTopics)) {
       errors.push("shared.docTopics must be array");
     }
+    if (sh.mnemonicDevices != null && !Array.isArray(sh.mnemonicDevices)) {
+      errors.push("shared.mnemonicDevices must be array");
+    }
   }
   if (!session.modes || typeof session.modes !== "object") {
     errors.push("modes must be an object");

@@ -245,11 +245,17 @@ import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pi
 import {
   applyAssessmentPrioritizedOrder,
   enterClozeStudyScreen,
+  getActiveClozeConceptIds,
   setClozeStudyCompleteExitHandler,
   wireClozeStudyHandlers,
 } from "./cloze/study.js?v=20260607_1";
 import { parseClozePackFiles } from "./cloze/export-import.js?v=20260607_1";
-import { startReviewFromSessionBlocks, runVaultSm2ReviewSession } from "./review.js?v=20260525_1";
+import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260525_1";
+import { getActiveRecallConceptIds } from "./recall-study.js";
+import {
+  initMnemonicChrome,
+  syncMnemonicButtonBadge,
+} from "./mnemonic.js?v=20260619_1";
 import {
   enterProjectLibrary,
   getUploadDefaultProjectId,
@@ -1828,6 +1834,30 @@ function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, s
   }
 }
 
+/** Active concept ids for mnemonic panel prefill (mode-specific). */
+export function resolveMnemonicActiveConceptIds() {
+  const screenId = getCurrentScreenId();
+  const doc = getActiveSession();
+  if (!doc) return [];
+
+  if (screenId === "test" || screenId === "socratic") {
+    const block = getBlock(state.activeBlockIndex);
+    if (Array.isArray(block?.concept_ids)) {
+      return block.concept_ids.map((id) => String(id).trim()).filter(Boolean);
+    }
+    if (Array.isArray(block?.concepts)) {
+      return block.concepts
+        .map((c) => String(c?.canonicalId || c?.id || c).trim())
+        .filter(Boolean);
+    }
+    return [];
+  }
+  if (screenId === "clozeStudy") return getActiveClozeConceptIds();
+  if (screenId === "recall") return getActiveRecallConceptIds(doc);
+  if (screenId === "review") return getCurrentSm2ReviewConceptIds();
+  return [];
+}
+
 function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
   const doc = getActiveSession();
   if (!doc?.docId || !Array.isArray(inventory) || !inventory.length) return;
@@ -3322,6 +3352,10 @@ function wireDocLibraryHandlers() {
 
   els.btnVaultReview?.addEventListener("click", () => {
     runVaultSm2ReviewSession();
+  });
+
+  document.getElementById("btnVaultReviewMnemonics")?.addEventListener("click", () => {
+    runVaultSm2ReviewSession(undefined, { mnemonicsOnly: true });
   });
 
   els.retrievalHubBackBtn?.addEventListener("click", () => {
@@ -5314,6 +5348,7 @@ function setTestMeta() {
   const indexEntry = getBlockIndexEntry(state.activeBlockIndex);
   syncBlockFidelityBanner(block, indexEntry);
   syncKeyTermsGlossaryUi();
+  syncMnemonicButtonBadge();
 }
 
 let testMcAnswered = false;
@@ -7239,6 +7274,19 @@ export function wireStudyHandlers() {
   );
   registerChromeHasConceptsResolver(() => getSortedSessionConcepts().length > 0);
   registerDictionaryChromeSyncHook(() => syncFloatingChrome());
+  initMnemonicChrome({
+    resolveActiveConceptIds: resolveMnemonicActiveConceptIds,
+    resolveStudyMode: () => {
+      const screenId = getCurrentScreenId();
+      if (screenId === "review") return "review";
+      if (screenId === "clozeStudy") return "cloze";
+      if (screenId === "recall") return "recall";
+      if (screenId === "slowReader") return "slow";
+      const mode = normalizeStudyMode(state.studyMode || state.activeSession?.studyMode || "rsvp");
+      return mode === "questions" ? "questions" : mode === "rsvp" ? "rsvp" : mode;
+    },
+    resolveScreenId: getCurrentScreenId,
+  });
   setSlowSessionGetter(() => state.activeSession);
   wireStudyModeSelector();
   els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());

@@ -186,6 +186,11 @@ function migrateSessionV3(session) {
   });
   if (changed) sh.assessmentSignals = nextSig;
 
+  if (!Array.isArray(sh.mnemonicDevices)) {
+    sh.mnemonicDevices = [];
+    changed = true;
+  }
+
   const version = Number(session.schemaVersion) || 2;
   if (version < 3) {
     changed = true;
@@ -285,6 +290,7 @@ export async function createSession(rawMarkdown, options = {}) {
       uploadMeta: null,
       assessmentSignals: [],
       docTopics: [],
+      mnemonicDevices: [],
       preparation: {
         status: "pending",
         fingerprint: "",

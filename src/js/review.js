@@ -36,6 +36,11 @@ import {
   buildGlobalReviewQueue,
   onGlobalReviewAnswer,
 } from "./concept-registry/global-review.js";
+import {
+  buildMnemonicHintHtml,
+  filterSmItemsByMnemonics,
+  resolveSmItemConceptIds,
+} from "./mnemonic.js?v=20260619_1";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */
@@ -87,7 +92,7 @@ function setSm2ReviewDomVisible(active) {
   if (els.reviewSm2View) els.reviewSm2View.hidden = !active;
 }
 
-function showSm2ReviewEmptyState() {
+function showSm2ReviewEmptyState(message) {
   setSm2ReviewDomVisible(true);
   if (els.reviewSm2Meta) els.reviewSm2Meta.textContent = "Spaced review";
   if (els.reviewSm2EarlyChip) els.reviewSm2EarlyChip.classList.add("hidden");
@@ -95,7 +100,15 @@ function showSm2ReviewEmptyState() {
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = "";
   if (els.reviewSm2Preview) els.reviewSm2Preview.textContent = "";
   if (els.reviewSm2QualityBtns) els.reviewSm2QualityBtns.hidden = true;
-  if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = false;
+  if (els.reviewMnemonicHintHost) {
+    els.reviewMnemonicHintHost.hidden = true;
+    els.reviewMnemonicHintHost.innerHTML = "";
+  }
+  if (els.reviewSm2Empty) {
+    els.reviewSm2Empty.hidden = false;
+    els.reviewSm2Empty.textContent =
+      message || "No items due for review right now.";
+  }
   showScreen("review");
 }
 
@@ -135,6 +148,23 @@ function renderSm2ReviewItem() {
       els.reviewSm2Preview.textContent = preview ? `${docTitle} · ${preview}` : docTitle;
     } else {
       els.reviewSm2Preview.textContent = preview;
+    }
+  }
+
+  const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
+  const originSession = originDocId ? getSession(originDocId) : null;
+  const conceptIds = resolveSmItemConceptIds(item, originSession);
+  const hintConceptId = conceptIds[0] || "";
+  if (els.reviewMnemonicHintHost) {
+    const hintHtml = hintConceptId
+      ? buildMnemonicHintHtml(originSession, hintConceptId)
+      : "";
+    if (hintHtml) {
+      els.reviewMnemonicHintHost.innerHTML = hintHtml;
+      els.reviewMnemonicHintHost.hidden = false;
+    } else {
+      els.reviewMnemonicHintHost.innerHTML = "";
+      els.reviewMnemonicHintHost.hidden = true;
     }
   }
 }
@@ -207,17 +237,25 @@ function handleSm2QualityClick(quality) {
 }
 
 /** Priority-queue spaced review for shared.smItems (single document). */
-export function runSm2ReviewSession(docId) {
+export function runSm2ReviewSession(docId, options = {}) {
   const id = String(docId || "").trim();
   const session = getSession(id);
   if (!session) return;
 
   sm2ReviewDocId = id;
-  sm2ReviewQueue = buildReviewQueue(session.shared?.smItems || []);
+  let queue = buildReviewQueue(session.shared?.smItems || []);
+  if (options.mnemonicsOnly) {
+    queue = filterSmItemsByMnemonics(queue, getSession);
+  }
+  sm2ReviewQueue = queue;
   sm2ReviewIndex = 0;
 
   if (!sm2ReviewQueue.length) {
-    showSm2ReviewEmptyState();
+    showSm2ReviewEmptyState(
+      options.mnemonicsOnly
+        ? "No mnemonic-linked concepts due for review yet."
+        : undefined,
+    );
     return;
   }
 
@@ -226,7 +264,7 @@ export function runSm2ReviewSession(docId) {
 }
 
 /** Cross-document vault review from aggregated due items. */
-export function runVaultSm2ReviewSession(scope) {
+export function runVaultSm2ReviewSession(scope, options = {}) {
   if (scope && typeof scope === "object") {
     setReviewScope(scope);
   }
@@ -248,10 +286,17 @@ export function runVaultSm2ReviewSession(scope) {
     }
   }
   sm2ReviewQueue = pool;
+  if (options.mnemonicsOnly) {
+    sm2ReviewQueue = filterSmItemsByMnemonics(sm2ReviewQueue, getSession);
+  }
   sm2ReviewIndex = 0;
 
   if (!sm2ReviewQueue.length) {
-    showSm2ReviewEmptyState();
+    showSm2ReviewEmptyState(
+      options.mnemonicsOnly
+        ? "No mnemonic-linked concepts due for review yet."
+        : undefined,
+    );
     return;
   }
 
@@ -1144,6 +1189,14 @@ async function startReviewGeneration() {
   renderReviewQuestion();
 }
 
+export function getCurrentSm2ReviewConceptIds() {
+  const item = sm2ReviewQueue[sm2ReviewIndex];
+  if (!item) return [];
+  const docId = String(sm2ReviewDocId || item.docId || "").trim();
+  const session = docId ? getSession(docId) : null;
+  return resolveSmItemConceptIds(item, session);
+}
+
 export function wireReviewHandlers() {
   if (els.reviewSessionBtn) {
     els.reviewSessionBtn.addEventListener("click", () => {
@@ -1212,6 +1265,18 @@ export function wireReviewHandlers() {
     } finally {
       els.reviewConfigStatus.textContent = "";
     }
+  });
+
+  const spacedStartBtn = document.getElementById("reviewSpacedStartBtn");
+  spacedStartBtn?.addEventListener("click", () => {
+    const docId = String(getActiveSession()?.docId || "").trim();
+    if (!docId) {
+      setReviewConfigError("No active document session for spaced review.");
+      return;
+    }
+    clearReviewConfigError();
+    const mnemonicsOnly = Boolean(document.getElementById("reviewMnemonicsOnly")?.checked);
+    runSm2ReviewSession(docId, { mnemonicsOnly });
   });
 
   els.reviewGeneratingCancelBtn.addEventListener("click", () => {

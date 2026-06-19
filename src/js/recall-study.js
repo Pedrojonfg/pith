@@ -53,6 +53,17 @@ export function resolveConceptDefinitions(inventory, conceptIds) {
     .filter((row) => row.term);
 }
 
+/** Concept ids for the current recall question (for mnemonic prefill). */
+export function getActiveRecallConceptIds(doc) {
+  const slice = doc?.modes?.recall;
+  if (!slice || typeof slice !== "object") return [];
+  const qi = Number(slice.currentIndex) || 0;
+  const q = Array.isArray(slice.questions) ? slice.questions[qi] : null;
+  return Array.isArray(q?.concept_ids)
+    ? q.concept_ids.map((id) => String(id).trim()).filter(Boolean)
+    : [];
+}
+
 /**
  * @param {object} els
  * @param {object} slice

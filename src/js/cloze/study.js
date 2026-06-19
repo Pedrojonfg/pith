@@ -316,3 +316,13 @@ export function wireClozeStudyHandlers() {
     showScreen("create");
   });
 }
+
+/** Concept ids for the current cloze study item (for mnemonic prefill). */
+export function getActiveClozeConceptIds() {
+  const session = activeStudySession;
+  if (!session || !activeOrder.length) return [];
+  const itemId = activeOrder[Math.min(activeIndex, activeOrder.length - 1)];
+  const item = itemById(session, itemId);
+  const cid = String(item?.concept_id || item?.conceptId || "").trim();
+  return cid ? [cid] : [];
+}

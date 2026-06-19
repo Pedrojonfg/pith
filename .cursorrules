@@ -30,3 +30,6 @@ Primary screens are always full-bleed: full viewport width and height, internal 
 Never wrap a primary screen's content in a centered card, panel, or container with a
 distinct background, border-radius, or shadow. "Cards are for items within a screen.
 Screens are never cards."
+
+- Mnemonic devices (shared.mnemonicDevices) are user-authored only. Never add an LLM call to the
+  create/edit/delete/search path for mnemonic devices without an explicit new spec authorizing it.
