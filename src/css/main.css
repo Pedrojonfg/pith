@@ -2418,6 +2418,16 @@ body.assessment-runner-active .assessment-runner-chrome {
   font-size: 14px;
 }
 
+.doc-library-download-btn {
+  align-self: flex-start;
+  min-width: 36px;
+  padding: 8px 10px;
+  line-height: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .project-move-overlay {
   position: fixed;
   inset: 0;

@@ -105,7 +105,6 @@ const CHROME_GUIDE_STUDY_SCREENS = new Set([
   "slowReader",
 ]);
 
-const EXPORT_SCREENS = new Set(["complete", "test", "socratic"]);
 const INSTALL_PWA_SCREENS = new Set(["appHome"]);
 
 export function openSettingsScreen(returnTo = null) {
@@ -339,9 +338,6 @@ function syncGlobalChromeVisibility() {
   const inSlowReader =
     screenId === "slowReader" || document.body.classList.contains("slow-reader-active");
 
-  if (els.btnDownloadSessionMd) {
-    els.btnDownloadSessionMd.hidden = !EXPORT_SCREENS.has(screenId);
-  }
   if (els.settingsBtn) {
     els.settingsBtn.hidden = inSlowReader;
   }
@@ -395,7 +391,6 @@ export const els = {
   btnCreateProjectSession: document.getElementById("btnCreateProjectSession"),
   modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
   sessionHubActions: document.getElementById("sessionHubActions"),
-  btnDownloadSessionMd: document.getElementById("btnDownloadSessionMd"),
   btnUploadToVault: document.getElementById("btnUploadToVault"),
   screenUploadToVaultCandidates: document.getElementById("screenUploadToVaultCandidates"),
   uploadVaultBackBtn: document.getElementById("uploadVaultBackBtn"),
