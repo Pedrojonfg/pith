@@ -291,31 +291,6 @@
     </button>
     <button
       type="button"
-      id="btnDownloadSessionMd"
-      class="corner-icon-btn"
-      aria-label="Export session as Markdown"
-      title="Export session as Markdown"
-      hidden
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-      >
-        <path
-          d="M12 4v11m0 0l4-4m-4 4l-4-4M4 20h16"
-          stroke="currentColor"
-          stroke-width="1.9"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
-    <button
-      type="button"
       id="installPwaBtn"
       class="corner-link"
       style="right: 150px; text-decoration: none"
@@ -1776,7 +1751,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_7";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_8";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1792,7 +1767,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260619_7");
+        await import("./src/js/main.js?v=20260619_8");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

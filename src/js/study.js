@@ -90,7 +90,6 @@ import {
   exportClozeItemsMarkdown,
   downloadTextFile,
   resolveSessionForExport,
-  buildMarkdown,
 } from "./export.js?v=20260525_1";
 import { computePersistenceHealth, tryRecoverBlocksFromV1Backup } from "./block-store.js";
 import {
@@ -3349,7 +3348,6 @@ function wireDocLibraryHandlers() {
   els.btnVaultBranchConceptGraph?.addEventListener("click", () => openConceptRegistryGraphScreen());
   els.btnVaultIngestOnly?.addEventListener("click", () => els.ingestOnlyFileInput?.click());
   els.ingestOnlyFileInput?.addEventListener("change", () => void handleIngestOnlyFileSelected());
-  els.btnDownloadSessionMd?.addEventListener("click", () => handleExportSessionClick());
   els.btnUploadToVault?.addEventListener("click", () => enterUploadToVaultCandidates());
   els.uploadVaultBackBtn?.addEventListener("click", () => enterModeSelectScreen());
   els.btnUploadVaultRetry?.addEventListener("click", () => void loadUploadVaultCandidates());
@@ -4109,30 +4107,6 @@ function showExportToast(message, { variant = "success", durationMs = 3000 } = {
     toast.remove();
     exportToastTimer = null;
   }, durationMs);
-}
-
-async function handleExportSessionClick() {
-  const result = await exportSessionMarkdown({ force: true, source: "button" });
-  if (result.ok) {
-    const blocks = result.blockCount != null ? ` (${result.blockCount} blocks)` : "";
-    showExportToast(`Session saved${blocks}`);
-    return;
-  }
-  if (result.error === "no_session") {
-    setResumeError("No session to export â€” generate block content first.");
-    showExportToast("No session to export", { variant: "error", durationMs: 5000 });
-    return;
-  }
-  if (result.error === "download_blocked") {
-    const session = await resolveSessionForExport();
-    if (session) void copyPlainTextToClipboard(await buildMarkdown(session));
-    showExportToast("Download blocked â€” content copied to clipboard", {
-      variant: "error",
-      durationMs: 5000,
-    });
-    return;
-  }
-  showExportToast("Could not save session", { variant: "error", durationMs: 5000 });
 }
 
 async function handleOfflinePackClick() {

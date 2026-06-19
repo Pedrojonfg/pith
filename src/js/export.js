@@ -13,7 +13,7 @@ import {
   state,
   ensureSessionResponseState,
 } from "./session.js?v=20260527_1";
-import { getActiveSession as getActiveDocumentSession } from "./session-store.js";
+import { getActiveSession as getActiveDocumentSession, getSession } from "./session-store.js";
 import { rehydrateBlocks } from "./block-store.js";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
@@ -58,17 +58,59 @@ function formatExportTimestamp(d) {
   return `${day}${month}${year}_${hours}${minutes}${seconds}`;
 }
 
-function getExportFilenameStem() {
-  const metaFiles = state.activeSession?._meta?.source_files;
+function resolveFilenameStemFromSlice(slice, doc = null) {
+  const metaFiles = slice?._meta?.source_files;
   if (Array.isArray(metaFiles) && metaFiles.length) {
     const first = metaFiles[0];
     const name = first && typeof first === "object" ? String(first.name || "") : "";
-    return sanitizeFilenameStem(stripExtension(name));
+    const stem = sanitizeFilenameStem(stripExtension(name));
+    if (stem !== "study-session") return stem;
   }
+  const uploadName = doc?.shared?.uploadMeta?.fileName;
+  if (uploadName) {
+    return sanitizeFilenameStem(stripExtension(uploadName));
+  }
+  const title = doc?.shared?.docMeta?.titleInferred;
+  if (title) {
+    return sanitizeFilenameStem(stripExtension(title));
+  }
+  return "study-session";
+}
+
+function getExportFilenameStem() {
+  const fromActive = resolveFilenameStemFromSlice(state.activeSession);
+  if (fromActive !== "study-session") return fromActive;
   if (Array.isArray(state.lastUploadedFileNames) && state.lastUploadedFileNames.length) {
     return sanitizeFilenameStem(stripExtension(state.lastUploadedFileNames[0]));
   }
   return "study-session";
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} doc
+ * @returns {Promise<object|null>}
+ */
+async function resolveDocumentSessionForExport(doc) {
+  if (!doc || typeof doc !== "object") return null;
+  const docId = String(doc.docId || "").trim();
+  if (!docId) return null;
+
+  const modeOrder = ["rsvp", "questions", "slow", "cloze"];
+  for (const mode of modeOrder) {
+    const raw = doc.modes?.[mode];
+    if (!raw || typeof raw !== "object") continue;
+    const slice = rehydrateBlocks(JSON.parse(JSON.stringify(raw)), docId);
+    slice.studyMode = slice.studyMode || mode;
+
+    if (mode === "slow" && slice.slow) return slice;
+    if (mode === "cloze" && slice.cloze) {
+      const items = slice.cloze?.items;
+      if (Array.isArray(items) && items.length > 0) return slice;
+    }
+    const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
+    if (blocks.some(hasGeneratedBlockContent)) return slice;
+  }
+  return null;
 }
 
 function getLastExportState() {
@@ -870,6 +912,39 @@ export function exportClozeItemsMarkdown(session = state.activeSession) {
     filename: `${stem}_cloze_${ts}.md`,
     text: md,
   });
+}
+
+/**
+ * @param {string} docId
+ * @param {{ force?: boolean }} [options]
+ */
+export async function exportDocumentSessionMarkdown(docId) {
+  const id = String(docId || "").trim();
+  if (!id) return { ok: false, error: "no_session" };
+
+  const doc = await getSession(id);
+  if (!doc) return { ok: false, error: "no_session" };
+
+  const session = await resolveDocumentSessionForExport(doc);
+  if (!session) return { ok: false, error: "no_session" };
+
+  if (session.studyMode === "cloze") {
+    exportClozeItemsMarkdown(session);
+    return { ok: true };
+  }
+
+  const md = await buildMarkdown(session);
+  const ts = formatExportTimestamp(new Date());
+  const stem = resolveFilenameStemFromSlice(session, doc);
+  const downloaded = downloadTextFile({
+    filename: `${stem}_${ts}.md`,
+    text: md,
+  });
+  return {
+    ok: downloaded,
+    error: downloaded ? undefined : "download_blocked",
+    charCount: md.length,
+  };
 }
 
 export async function exportSessionMarkdown({ force = false, source = "button" } = {}) {
