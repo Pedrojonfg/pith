@@ -1,0 +1,177 @@
+#mnemonicBtn {
+  position: fixed;
+  z-index: 3500;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1e2430;
+  color: #e2e8f0;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+#mnemonicBtn[hidden] {
+  display: none !important;
+}
+
+#mnemonicBtn.mnemonic-btn-dragging {
+  cursor: grabbing;
+}
+
+#mnemonicBtn.mnemonic-btn-has-device::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  border: 1px solid #0f172a;
+}
+
+#mnemonicPanel {
+  position: fixed;
+  inset: 0;
+  z-index: 3600;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+#mnemonicPanel[hidden] {
+  display: none !important;
+}
+
+.mnemonic-panel-card {
+  width: min(420px, 100%);
+  max-height: min(80vh, 560px);
+  overflow: auto;
+  background: #181c24;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mnemonic-panel-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.mnemonic-concept-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.mnemonic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  font-size: 0.85rem;
+}
+
+.mnemonic-chip-remove {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.mnemonic-search-wrap {
+  position: relative;
+}
+
+#mnemonicConceptDropdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow: auto;
+  z-index: 1;
+}
+
+.mnemonic-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mnemonic-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+#mnemonicTextInput {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.mnemonic-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.mnemonic-pick-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  cursor: pointer;
+}
+
+.mnemonic-hint-host {
+  margin: 8px 0 12px;
+}
+
+.mnemonic-hint-details summary {
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 0.9rem;
+}
+
+.mnemonic-hint-text {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.mnemonic-hint-also {
+  margin: 4px 0 0;
+}
+
+.review-mnemonics-only-row {
+  margin-top: 8px;
+}
