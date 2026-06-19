@@ -1,22 +1,13 @@
-import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260527_1";
+import { LS_ACTIVE_SESSION_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260527_1";
 import { getSourceFidelityStrictPreference } from "./config/flags.js";
 import { detectAndMigrateV1 } from "./session-migration.js?v=20260609_1";
 import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260619_5";
 import {
-  clearSessionConceptStorage,
-  updateDictionaryButtonVisibility,
-} from "./dictionary.js?v=20260526_1";
-import { exportSessionMarkdown } from "./export.js?v=20260525_1";
-import { cancelRsvpTimer, setRsvpOverlayActive } from "./rsvp.js?v=20260526_2";
-import { finishPacedRead } from "./paced-reader.js?v=20260610_1";
-import {
-  clearGuideChatStorage,
   initGuideChat,
   sendGuideMessage,
 } from "./guide-chat.js?v=20260526_1";
 import {
   getStoredKey,
-  loadActiveSession,
   migrateLegacyActiveSession,
   saveGeminiKey,
   getStoredGeminiKey,
@@ -36,87 +27,13 @@ import {
   toggleSidebar,
 } from "./ui.js?v=20260618_1";
 import { wireReviewHandlers } from "./review.js?v=20260525_1";
-import { clearActiveDocumentPointer } from "./session-store.js?v=20260609_1";
-import { enterCreateSessionStartScreen, enterModeSelectScreen, enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260618_1";
+import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260618_1";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
 import { dismissSplash } from "./splash.js?v=20260619_1";
-
-function clearActiveSessionStorage() {
-  try {
-    localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
-    localStorage.removeItem(LS_SESSIONS_BY_MODE_KEY);
-  } catch {
-    // ignore
-  }
-  clearActiveDocumentPointer();
-}
-
-function clearBlockIndexStorage() {
-  try {
-    localStorage.removeItem(LS_BLOCK_INDEX_KEY);
-  } catch {
-    // ignore
-  }
-}
-
-function resetToNewSession() {
-  cancelRsvpTimer();
-  setRsvpOverlayActive(false);
-  finishPacedRead({ skipCallback: true });
-  window.offlineMode = false;
-  window.offlinePack = null;
-
-  state.studyMode = null;
-  state.originalMaterialText = "";
-  state.lastNBlocks = 0;
-  state.lastBlockIndex = null;
-  state.activeSession = null;
-  state.activeBlockIndex = 0;
-  state.activeQuestionIndex = 0;
-  state.includeConnectionQuestions = true;
-
-  if (els.fileInput) els.fileInput.value = "";
-  if (els.blocksFilterInput) els.blocksFilterInput.value = "";
-  if (els.blocksListEditor) els.blocksListEditor.innerHTML = "";
-  if (els.generateBlocksError) {
-    els.generateBlocksError.hidden = true;
-    els.generateBlocksError.textContent = "";
-  }
-  if (els.confirmBlocksError) {
-    els.confirmBlocksError.hidden = true;
-    els.confirmBlocksError.textContent = "";
-  }
-
-  clearActiveSessionStorage();
-  clearBlockIndexStorage();
-  clearSessionConceptStorage();
-  clearGuideChatStorage({ removeAllStored: true });
-  if (getStoredKey()) enterAppHome();
-  else showScreen("settings");
-  updateDictionaryButtonVisibility();
-}
-
-function startNewSessionFlow() {
-  const stored = loadActiveSession();
-  if (stored && typeof stored === "object") {
-    state.activeSession = stored;
-  }
-  if (state.activeSession) {
-    try {
-      exportSessionMarkdown();
-    } catch {
-      // ignore export errors; still reset
-    }
-  }
-  resetToNewSession();
-  if (getStoredKey()) {
-    enterCreateSessionStartScreen();
-  }
-}
 
 async function bootstrap() {
   migrateStorageKeysFromMyLearning();
@@ -254,10 +171,6 @@ async function bootstrap() {
 
   els.settingsBackBtn?.addEventListener("click", () => {
     closeSettingsScreen();
-  });
-
-  els.newSessionBtn.addEventListener("click", () => {
-    startNewSessionFlow();
   });
 
   els.apiKeyForm.addEventListener("submit", (e) => {
