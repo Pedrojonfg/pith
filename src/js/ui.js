@@ -105,7 +105,6 @@ const CHROME_GUIDE_STUDY_SCREENS = new Set([
   "slowReader",
 ]);
 
-const NEW_SESSION_SCREENS = new Set(["appHome", "docLibrary", "modeSelect"]);
 const EXPORT_SCREENS = new Set(["complete", "test", "socratic"]);
 const INSTALL_PWA_SCREENS = new Set(["appHome"]);
 
@@ -340,9 +339,6 @@ function syncGlobalChromeVisibility() {
   const inSlowReader =
     screenId === "slowReader" || document.body.classList.contains("slow-reader-active");
 
-  if (els.newSessionBtn) {
-    els.newSessionBtn.hidden = !NEW_SESSION_SCREENS.has(screenId);
-  }
   if (els.btnDownloadSessionMd) {
     els.btnDownloadSessionMd.hidden = !EXPORT_SCREENS.has(screenId);
   }
@@ -364,7 +360,6 @@ export const els = {
   knowledgeVaultCloseBtn: document.getElementById("knowledgeVaultCloseBtn"),
   knowledgeVaultPanel: document.getElementById("knowledgeVaultPanel"),
   knowledgeVaultPanelBody: document.getElementById("knowledgeVaultPanelBody"),
-  newSessionBtn: document.getElementById("newSessionBtn"),
 
   screenSettings: document.getElementById("screenSettings"),
   screenAppHome: document.getElementById("screenAppHome"),
