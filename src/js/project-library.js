@@ -26,6 +26,7 @@ import {
   renameProject,
 } from "./project-store.js";
 import { getPreparationBadgeLabel } from "./document-preparation.js";
+import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260525_1";
 
 /** @type {{ currentProjectId: string|null, fromLibraryDocId: string|null, uploadProjectId: string|null }} */
 export const projectLibraryState = {

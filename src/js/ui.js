@@ -6,6 +6,11 @@ import {
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { MISC_PROJECT_ID } from "./session-types.js";
+import {
+  isMnemonicButtonVisiblePref,
+  setMnemonicButtonVisiblePref,
+  syncMnemonicButtonVisibility,
+} from "./mnemonic.js?v=20260619_1";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;
@@ -327,6 +332,7 @@ export function syncFloatingChrome() {
   }
 
   syncGlobalChromeVisibility();
+  syncMnemonicButtonVisibility(currentScreenId);
 }
 
 function syncGlobalChromeVisibility() {
@@ -420,6 +426,7 @@ export const els = {
   reviewSm2SourceBadge: document.getElementById("reviewSm2SourceBadge"),
   reviewSm2Title: document.getElementById("reviewSm2Title"),
   reviewSm2Preview: document.getElementById("reviewSm2Preview"),
+  reviewMnemonicHintHost: document.getElementById("reviewMnemonicHintHost"),
   reviewSm2QualityBtns: document.getElementById("reviewSm2QualityBtns"),
   reviewSm2Empty: document.getElementById("reviewSm2Empty"),
   recommendationPanel: document.getElementById("recommendationPanel"),
@@ -1137,6 +1144,17 @@ export function initSourceFidelityStrictUi() {
   if (!els.sourceFidelityStrictToggleBtn) return;
   const strictOn = getSourceFidelityStrictPreference();
   syncSourceFidelityStrictUi(strictOn);
+}
+
+export function initMnemonicSettingsUi() {
+  const toggle = document.getElementById("mnemonicBtnVisibleToggle");
+  if (!toggle || toggle.dataset.mnemonicSettingsWired === "1") return;
+  toggle.dataset.mnemonicSettingsWired = "1";
+  toggle.checked = isMnemonicButtonVisiblePref();
+  toggle.addEventListener("change", () => {
+    setMnemonicButtonVisiblePref(toggle.checked);
+    syncMnemonicButtonVisibility(currentScreenId);
+  });
 }
 
 export function syncSourceFidelityStrictUi(strictOn) {

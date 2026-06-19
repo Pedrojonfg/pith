@@ -27,6 +27,7 @@ import {
   closeBlockReadSidebar,
   initLanguageUi,
   initLlmModelUi,
+  initMnemonicSettingsUi,
   initSourceFidelityStrictUi,
   els,
   openSettingsScreen,
@@ -127,6 +128,7 @@ async function bootstrap() {
   initLlmModelUi();
   state.sourceFidelityStrict = getSourceFidelityStrictPreference();
   initSourceFidelityStrictUi();
+  initMnemonicSettingsUi();
   wireStudyHandlers();
   wireReviewHandlers();
   wireVaultDebugUi(
