@@ -4211,7 +4211,6 @@ export {
   normalizeRecallQuestions,
   normalizeRecallTutorFeedback,
   parseRecallQuestionsFromModel,
-  parseRecallTutorFeedbackFromModelResponse,
   recallTypesForGoal,
 } from "./recall-api.js";
 

@@ -157,11 +157,6 @@ export function mountMaterialGraphScreen(session, containerEl, options = {}) {
   return graph;
 }
 
-/** @deprecated */
-export function mountEnrichedGraphScreen(session, containerEl) {
-  return mountMaterialGraphScreen(session, containerEl, { mode: "slow_enriched" });
-}
-
 export function wireMaterialGraphScreen(containerEl, session, { onJumpToAnnotation, onNodeFocus } = {}) {
   if (!containerEl || !session) return;
   const anns = session.slow?.annotations || [];
@@ -180,13 +175,7 @@ export function wireMaterialGraphScreen(containerEl, session, { onJumpToAnnotati
   });
 }
 
-/** @deprecated */
-export function wireEnrichedGraphScreen(containerEl, session, handlers) {
-  return wireMaterialGraphScreen(containerEl, session, handlers);
-}
-
 export {
-  buildEnrichedGraph,
   buildSessionGraph,
   buildSlowEnrichedGraph,
   buildSlowPhase0Graph,

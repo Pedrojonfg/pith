@@ -3,7 +3,7 @@
 /** Max char distance between annotation midpoint and resolved map anchor. */
 export const CHAR_PROXIMITY_CHARS = 200;
 
-/** @deprecated Use CHAR_PROXIMITY_CHARS */
+/** @deprecated Use CHAR_PROXIMITY_CHARS — still imported by slow/phase3.js */
 export const PROXIMITY = CHAR_PROXIMITY_CHARS;
 
 /** Min Jaccard-style token overlap to accept a text-based match (0–1). */

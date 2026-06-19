@@ -3,7 +3,6 @@
 export const ASSESSMENT_FLAGS = Object.freeze({
   ASSESSMENT_BEFORE_PACKING: true,
   ASSESSMENT_USE_QUESTIONS_UI: true,
-  ASSESSMENT_LEGACY_MCQ_UI: false,
   /** Safety ceiling only; count driven by n_test + n_socratic. */
   ASSESSMENT_ITEMS_MAX: 7,
   ASSESSMENT_MASTERY_THRESHOLD: 0.85,
@@ -27,17 +26,28 @@ export function isPrePackingAssessmentEnabled() {
 }
 
 export function isAssessmentQuestionsUiEnabled() {
-  return (
-    ASSESSMENT_FLAGS.ASSESSMENT_USE_QUESTIONS_UI === true &&
-    !ASSESSMENT_FLAGS.ASSESSMENT_LEGACY_MCQ_UI
-  );
+  return ASSESSMENT_FLAGS.ASSESSMENT_USE_QUESTIONS_UI === true;
 }
 
 /** Source fidelity strict mode (20260613-source-fidelity Phase C). */
-export const SOURCE_FIDELITY_FLAGS = Object.freeze({
-  SOURCE_FIDELITY_STRICT: false,
-});
+import { LS_SOURCE_FIDELITY_STRICT_KEY } from "../config.js";
+
+export function getSourceFidelityStrictPreference() {
+  try {
+    return localStorage.getItem(LS_SOURCE_FIDELITY_STRICT_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function saveSourceFidelityStrictPreference(strict) {
+  try {
+    localStorage.setItem(LS_SOURCE_FIDELITY_STRICT_KEY, strict === true ? "true" : "false");
+  } catch {
+    // ignore
+  }
+}
 
 export function isSourceFidelityStrictEnabled() {
-  return SOURCE_FIDELITY_FLAGS.SOURCE_FIDELITY_STRICT === true;
+  return getSourceFidelityStrictPreference() === true;
 }

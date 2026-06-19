@@ -1,3 +1,10 @@
+/**
+ * V1 → DocumentSession migration (read + one-time upgrade).
+ *
+ * WRITES here are allowed only for upgrading legacy localStorage into DocumentSession
+ * (`saveActiveSession`, backup key, then remove legacy keys). Do not add new write paths
+ * to `active_session` or `sessions_by_mode` outside this migration flow.
+ */
 import {
   LS_ACTIVE_SESSION_KEY,
   LS_SESSIONS_BY_MODE_KEY,

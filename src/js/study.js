@@ -1,10 +1,9 @@
-import {
+﻿import {
   deepSeekAuditBlockOverlap,
   deepSeekGenerateBlockJson,
   deepSeekSocraticTutor,
   deepSeekSummarySoFar,
   GapSynthesisError,
-  generateAssessmentQuestions,
   generateAssessmentSynthesis,
   synthesizeAssessmentGaps,
   generatePrePackingAssessmentItems,
@@ -21,7 +20,7 @@ import {
   isAssessmentQuestionsUiEnabled,
   isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
-  isSourceFidelityStrictEnabled,
+  saveSourceFidelityStrictPreference,
 } from "./config/flags.js";
 import {
   buildAssessmentCoveragePlan,
@@ -173,7 +172,6 @@ import {
   isQuestionsStudyMode,
   normalizeBlockJson,
   ensureSessionResponseState,
-  applyAssessmentResults,
   gapLabelsForBlock,
   generateOfflinePack,
   mergeGapLists,
@@ -205,6 +203,7 @@ import {
   showScreen,
   showSidebar,
   showInventoryStatusBanner,
+  syncSourceFidelityStrictUi,
   syncStudyLanguage,
   typesetMath,
   updateFullPackProgressUi,
@@ -388,7 +387,7 @@ export async function startDocumentPreparation(doc, options = {}) {
 function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
-  return `${label}${wave}…`;
+  return `${label}${wave}â€¦`;
 }
 
 function applySharedBlockRecommendationToUi(doc) {
@@ -560,7 +559,7 @@ export function resolveFlowPanelViewState(doc) {
  */
 export function formatIntroFlowLine(steps) {
   if (!Array.isArray(steps) || !steps.length) return "";
-  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" → ");
+  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" â†’ ");
 }
 
 /**
@@ -593,7 +592,7 @@ function buildRecommendationSubtitle(recommendation, doc = getActiveSession()) {
   const parts = [];
   if (reasoning) parts.push(reasoning);
   if (whyText && whyText !== reasoning) parts.push(whyText);
-  return parts.join(" — ");
+  return parts.join(" â€” ");
 }
 
 /**
@@ -653,7 +652,7 @@ function clearFlowRecommendFeedback() {
 
 function setFlowRecommendLoading(isLoading) {
   if (els.flowRecommendStatus) {
-    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flowâ€¦" : "";
   }
 }
 
@@ -769,9 +768,6 @@ function wireFlowPanelHandlers() {
     closeModeSelectManualView();
   });
 }
-
-/** @deprecated Mode-select upload CTA removed; flow recommend runs on createSessionStart. */
-export function wireFlowRecommendUpload() {}
 
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
@@ -927,7 +923,7 @@ function getStudyModeLabel(mode) {
   return "RSVP";
 }
 
-/** QA stub — delegates to recall controller when document session exists. */
+/** QA stub â€” delegates to recall controller when document session exists. */
 export function showRecallStudyStub() {
   const doc = getActiveSession();
   if (doc) {
@@ -1140,7 +1136,7 @@ async function handleCreateSessionStartFilePicked() {
   if (!file) return;
   const runId = ++createSessionStartRunId;
   if (els.createSessionStartStatus) {
-    els.createSessionStartStatus.textContent = "Extracting text…";
+    els.createSessionStartStatus.textContent = "Extracting textâ€¦";
   }
   if (els.createSessionStartContinueBtn) {
     els.createSessionStartContinueBtn.disabled = true;
@@ -1177,7 +1173,7 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartContinueBtn.disabled = false;
     }
     if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Preparing document…";
+      els.createSessionStartStatus.textContent = "Preparing documentâ€¦";
     }
     mountModeSelectBreadcrumb(doc);
     void startDocumentPreparation(doc, {
@@ -1258,7 +1254,7 @@ export function enterVaultBranch() {
 }
 
 /**
- * Inventory-only ingest — creates DocumentSession with gray concepts, no mode slices.
+ * Inventory-only ingest â€” creates DocumentSession with gray concepts, no mode slices.
  * @param {object} params
  */
 export async function runIngestOnlyPipeline({
@@ -1458,7 +1454,7 @@ async function loadUploadVaultCandidates() {
     els.uploadVaultError.textContent = "";
   }
   if (els.btnUploadVaultRetry) els.btnUploadVaultRetry.hidden = true;
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestions…";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestionsâ€¦";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
 
   const studied = getStudiedConcepts(doc);
@@ -1624,7 +1620,7 @@ async function commitUploadVaultSelections() {
     );
     if (!proceed) return;
   }
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault upload…";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault uploadâ€¦";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
   try {
     const queueRows = selections.map((sel) => ({
@@ -1640,7 +1636,7 @@ async function commitUploadVaultSelections() {
     }));
     createUploadQueue(doc.docId, queueRows);
     if (els.uploadVaultStatus) {
-      els.uploadVaultStatus.textContent = "Uploading to vault in background…";
+      els.uploadVaultStatus.textContent = "Uploading to vault in backgroundâ€¦";
     }
     const sessionForQueue = doc;
     void processUploadQueue(sessionForQueue, ({ done, total, error }) => {
@@ -1875,7 +1871,7 @@ function notifyInventoryRunStatus(invResult) {
   }
   if (Array.isArray(invResult.failedChunks) && invResult.failedChunks.length) {
     showInventoryStatusBanner(
-      "Concept inventory partially recovered — some sections could not be processed. Results may be incomplete.",
+      "Concept inventory partially recovered â€” some sections could not be processed. Results may be incomplete.",
     );
   }
 }
@@ -1883,7 +1879,7 @@ function notifyInventoryRunStatus(invResult) {
 async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onProgress) {
   let docHierarchy = doc?.shared?.docHierarchy;
   if (docHierarchy?.tree?.length || wordCount <= 8000) return docHierarchy;
-  if (typeof onProgress === "function") onProgress("Building document structure…");
+  if (typeof onProgress === "function") onProgress("Building document structureâ€¦");
   docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
   if (doc?.shared && docHierarchy) {
     doc.shared.docHierarchy = docHierarchy;
@@ -1920,7 +1916,7 @@ function escapeDocLibraryHtml(value) {
 
 function formatDocLibraryDate(ts) {
   const n = Number(ts);
-  if (!Number.isFinite(n) || n <= 0) return "—";
+  if (!Number.isFinite(n) || n <= 0) return "â€”";
   return new Date(n).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -2193,12 +2189,12 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.generateBlocksBtn) {
     const bootstrapped = Boolean(state.materialBootstrapActive);
     if (bootstrapped && (isSlow || isCloze)) {
-      els.generateBlocksBtn.textContent = "Continue with loaded material →";
+      els.generateBlocksBtn.textContent = "Continue with loaded material â†’";
     } else if (isQuestions) {
       els.generateBlocksBtn.textContent = "Generate questions";
     } else {
       els.generateBlocksBtn.textContent =
-        isSlow || isCloze ? "Upload and continue →" : "Generate blocks";
+        isSlow || isCloze ? "Upload and continue â†’" : "Generate blocks";
     }
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
@@ -2228,7 +2224,7 @@ function updateClozeSessionPanel(session) {
   if (els.clozePipelineProgress) {
     if (generating && cloze.pipelinePhase != null) {
       const phaseNum = Number(cloze.pipelinePhase);
-      els.clozePipelineProgress.textContent = `Generating items — Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
+      els.clozePipelineProgress.textContent = `Generating items â€” Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
     } else if (ready) {
       els.clozePipelineProgress.textContent = "Items ready.";
     } else if (failed) {
@@ -2359,11 +2355,11 @@ async function importClozePacksFromInput() {
     return;
   }
   if (els.clozeImportBtn) els.clozeImportBtn.disabled = true;
-  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importing…";
+  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importingâ€¦";
   try {
     const result = await parseClozePackFiles(fileList, readFileAsText);
     if (!result.ok) {
-      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" · ") : "";
+      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" Â· ") : "";
       throw new Error(
         detail ||
           (result.reason === "no_valid_items"
@@ -2488,7 +2484,7 @@ function selectSlowScope(session, opt, listEl) {
     els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
     if (!els.slowScopeLongWarning.hidden) {
       els.slowScopeLongWarning.textContent =
-        "Scope ≥ 60k characters — Phase 0 will use map-reduce by section.";
+        "Scope â‰¥ 60k characters â€” Phase 0 will use map-reduce by section.";
     }
   }
   storeActiveSession(session);
@@ -2569,7 +2565,7 @@ function renderSlowScopeScreen(session) {
     els.slowScopeHierarchyLoading.hidden = !loading;
     if (loading) {
       els.slowScopeHierarchyLoading.textContent =
-        "Analyzing document structure…";
+        "Analyzing document structureâ€¦";
     }
   }
 
@@ -2696,7 +2692,7 @@ function renderSlowScopeScreen(session) {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "slow-scope-toggle";
-      toggle.textContent = collapsed ? "▶" : "▼";
+      toggle.textContent = collapsed ? "â–¶" : "â–¼";
       toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
       toggle.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -2816,7 +2812,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     input.type = "text";
     input.className = "slow-phase0-input";
     input.value = text;
-    input.placeholder = "Pregunta antes de leer…";
+    input.placeholder = "Pregunta antes de leerâ€¦";
     input.addEventListener("input", () => {
       phase0.prequestions[index] = input.value.trim();
       persistPhase0Edits(session);
@@ -2824,7 +2820,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "×";
+    del.textContent = "Ã—";
     del.title = "Eliminar pregunta";
     del.addEventListener("click", () => {
       phase0.prequestions.splice(index, 1);
@@ -2961,7 +2957,7 @@ function renderSlowPhase0Concepts(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "×";
+    del.textContent = "Ã—";
     del.addEventListener("click", () => {
       phase0.conceptsToFind.splice(i, 1);
       renderSlowPhase0Content(session);
@@ -2980,7 +2976,7 @@ function renderSlowPhase0Concepts(session, parent) {
   dictSelect.className = "slow-phase0-select";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Add from dictionary…";
+  placeholder.textContent = "Add from dictionaryâ€¦";
   dictSelect.appendChild(placeholder);
   const dictConcepts = getSortedSessionConcepts();
   for (const c of dictConcepts) {
@@ -3046,7 +3042,7 @@ function renderSlowPhase0Content(session) {
     renderPhase0ReadonlyBlock(
       host,
       "Examine critically",
-      phase0.criticalExaminePoints.map((p) => `· ${p}`).join("\n"),
+      phase0.criticalExaminePoints.map((p) => `Â· ${p}`).join("\n"),
     );
   }
 }
@@ -3078,7 +3074,7 @@ function renderSlowPhase0Screen(session) {
     if (els.slowPhase0Progress) {
       els.slowPhase0Progress.hidden = false;
       if (!els.slowPhase0Progress.textContent) {
-        els.slowPhase0Progress.textContent = "Generating orientation…";
+        els.slowPhase0Progress.textContent = "Generating orientationâ€¦";
       }
     }
     return;
@@ -3149,7 +3145,7 @@ async function runPhase0Generation(session) {
   slow.phase0Error = null;
   if (els.slowPhase0Progress) {
     els.slowPhase0Progress.hidden = false;
-    els.slowPhase0Progress.textContent = "Generating orientation…";
+    els.slowPhase0Progress.textContent = "Generating orientationâ€¦";
   }
   renderSlowPhase0Screen(session);
   storeActiveSession(session);
@@ -3163,9 +3159,9 @@ async function runPhase0Generation(session) {
         if (!els.slowPhase0Progress) return;
         els.slowPhase0Progress.hidden = false;
         if (phase === "chunk") {
-          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} — ${label}`;
+          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} â€” ${label}`;
         } else {
-          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientation…";
+          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientationâ€¦";
         }
       },
     });
@@ -3459,7 +3455,7 @@ function renderSplitMergeSummary(splitRunMeta) {
       const keepBefore = String(row?.keep_title_before || "").trim();
       const keepAfter = String(row?.keep_title_after || "").trim();
       const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
-      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ← absorb ${absorbIds
+      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} â† absorb ${absorbIds
         .map((x) => `#${x}`)
         .join(", ")}`;
       const sub = document.createElement("div");
@@ -3468,12 +3464,12 @@ function renderSplitMergeSummary(splitRunMeta) {
       sub.textContent =
         absorbTitles.length || keepBefore
           ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
-              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
+              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" Â· ")}` : ""
             }`
           : "";
       if (sub.textContent) card.appendChild(sub);
     } else {
-      top.textContent = `Keep #${keepId} ← absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
+      top.textContent = `Keep #${keepId} â† absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
     }
 
     const why = document.createElement("div");
@@ -3636,7 +3632,7 @@ function bumpQuestionCount(kind, delta) {
 
 function setGenerateLoading(isLoading) {
   els.generateBlocksBtn.disabled = isLoading;
-  els.generateBlocksBtn.textContent = isLoading ? "Generating…" : "Generate blocks";
+  els.generateBlocksBtn.textContent = isLoading ? "Generatingâ€¦" : "Generate blocks";
 }
 function setGenerateError(message) {
   els.generateBlocksError.hidden = false;
@@ -3921,7 +3917,7 @@ function setOfflinePackError(message) {
 
 function setOfflinePackLoading(isLoading) {
   if (els.offlinePackStatus) {
-    els.offlinePackStatus.textContent = isLoading ? "Reading…" : "";
+    els.offlinePackStatus.textContent = isLoading ? "Readingâ€¦" : "";
   }
 }
 
@@ -4008,11 +4004,11 @@ async function loadOfflinePack(text, filename = "") {
   setBlocksReadonlyMode({
     enabled: true,
     bannerText:
-      `${totalBlocks} blocks · Generated ${generatedAt}`
-      + (failedBlocks > 0 ? ` · ${failedBlocks} blocks have no content` : ""),
+      `${totalBlocks} blocks Â· Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` Â· ${failedBlocks} blocks have no content` : ""),
   });
   if (els.confirmBlocksStatus) {
-    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks · Generated ${generatedAt}`;
+    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks Â· Generated ${generatedAt}`;
   }
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
@@ -4026,7 +4022,7 @@ async function loadOfflinePack(text, filename = "") {
 
 function setConfirmLoading(isLoading) {
   els.confirmBlocksBtn.disabled = isLoading;
-  els.confirmBlocksBtn.textContent = isLoading ? "Saving…" : "Looks good, start session";
+  els.confirmBlocksBtn.textContent = isLoading ? "Savingâ€¦" : "Looks good, start session";
 }
 function setConfirmError(message) {
   els.confirmBlocksError.hidden = false;
@@ -4078,14 +4074,14 @@ function handleExportSessionClick() {
     return;
   }
   if (result.error === "no_session") {
-    setResumeError("No session to export — generate block content first.");
+    setResumeError("No session to export â€” generate block content first.");
     showExportToast("No session to export", { variant: "error", durationMs: 5000 });
     return;
   }
   if (result.error === "download_blocked") {
     const session = resolveSessionForExport();
     if (session) void copyPlainTextToClipboard(buildMarkdown(session));
-    showExportToast("Download blocked — content copied to clipboard", {
+    showExportToast("Download blocked â€” content copied to clipboard", {
       variant: "error",
       durationMs: 5000,
     });
@@ -4104,7 +4100,7 @@ async function handleOfflinePackClick() {
     no_session: "No session to export.",
     no_block_content: "Generate block content before downloading offline pack.",
     offline: "Offline pack is not available in offline mode.",
-    download_blocked: "Download blocked — try again or check browser settings.",
+    download_blocked: "Download blocked â€” try again or check browser settings.",
   };
   const msg = messages[result.error] || "Could not download offline pack.";
   setResumeError(msg);
@@ -4136,8 +4132,8 @@ function syncPersistenceHealthBanner() {
   const backupBlocks = showPartial ? tryRecoverBlocksFromV1Backup(doc?.modes?.rsvp) : null;
   const message =
     health.lastWriteError === "quota"
-      ? "Study progress may not be fully saved — browser storage is full."
-      : "Study progress may not be fully saved — block content is missing but dictionary or chat data exists.";
+      ? "Study progress may not be fully saved â€” browser storage is full."
+      : "Study progress may not be fully saved â€” block content is missing but dictionary or chat data exists.";
 
   for (const { el, textEl, dismissBtn, recoverBtn } of banners) {
     if (!el || !textEl) continue;
@@ -4169,7 +4165,7 @@ function syncPersistenceHealthBanner() {
         doc.modes.rsvp = slice;
         saveDocumentSession(doc);
         persistHealthDismissed = true;
-        showExportToast("Imported blocks from backup — review before continuing");
+        showExportToast("Imported blocks from backup â€” review before continuing");
         syncPersistenceHealthBanner();
         syncExportButtonsEnabled();
       });
@@ -4404,7 +4400,7 @@ function computeSessionCompleteSummary() {
   }
 
   const startedAt = Number(session?._meta?.study_started_at);
-  let timeLabel = "—";
+  let timeLabel = "â€”";
   if (Number.isFinite(startedAt) && startedAt > 0) {
     const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
     timeLabel = mins === 1 ? "1 min" : `${mins} min`;
@@ -4593,7 +4589,7 @@ function refreshUiOnPrefetchReady() {
 function sneakPeekLabelText(nextIndex) {
   const name = String(getBlockTitleSafe(nextIndex) || "").trim();
   if (!name) return "What's next";
-  return `What's next — ${name}`;
+  return `What's next â€” ${name}`;
 }
 
 function renderTransitionSneakPeek(o, finishedIdx) {
@@ -4629,7 +4625,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (!blockReady) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Preparing next block…";
+    o.sneakPeekText.textContent = "Preparing next blockâ€¦";
     return;
   }
 
@@ -4662,7 +4658,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (bridgeGenerating) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Writing transition preview…";
+    o.sneakPeekText.textContent = "Writing transition previewâ€¦";
     return;
   }
 
@@ -4723,7 +4719,7 @@ function getOrCreateTransitionOverlay() {
   sneakPeekText.className = "hint";
   sneakPeekText.style.lineHeight = "1.5";
   sneakPeekText.style.marginBottom = "10px";
-  sneakPeekText.textContent = "Preparing next block…";
+  sneakPeekText.textContent = "Preparing next blockâ€¦";
 
   sneakPeekWrap.appendChild(sneakPeekLabel);
   sneakPeekWrap.appendChild(sneakPeekText);
@@ -4752,7 +4748,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextTestMinus = document.createElement("button");
   nextTestMinus.type = "button";
-  nextTestMinus.textContent = "−";
+  nextTestMinus.textContent = "âˆ’";
   const nextTestValue = document.createElement("div");
   nextTestValue.style.minWidth = "22px";
   nextTestValue.style.textAlign = "center";
@@ -4777,7 +4773,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextSocMinus = document.createElement("button");
   nextSocMinus.type = "button";
-  nextSocMinus.textContent = "−";
+  nextSocMinus.textContent = "âˆ’";
   const nextSocValue = document.createElement("div");
   nextSocValue.style.minWidth = "22px";
   nextSocValue.style.textAlign = "center";
@@ -5122,7 +5118,7 @@ function setSocraticError(message) {
 }
 function setSocraticLoading(isLoading) {
   els.socraticSubmitBtn.disabled = isLoading;
-  els.socraticSubmitBtn.textContent = isLoading ? "Submitting…" : "Submit";
+  els.socraticSubmitBtn.textContent = isLoading ? "Submittingâ€¦" : "Submit";
   els.socraticNextQuestionBtn.disabled = isLoading;
   els.socraticNextBlockBtn.disabled = isLoading;
   els.socraticAnswer.disabled = isLoading;
@@ -5193,14 +5189,14 @@ function setQuestionProgressUi() {
   const ctx = getActiveQuestionContext();
   const n = Math.max(1, ctx.total);
   const label = isPrePackingAssessmentRunner()
-    ? `Knowledge check · Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
+    ? `Knowledge check Â· Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
     : `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
   if (els.testMeta) {
     if (isPrePackingAssessmentRunner()) {
       els.testMeta.textContent = label;
     } else {
       const totalBlocks = Math.max(1, getTotalBlocksSafe());
-      els.testMeta.textContent = `${label} · Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+      els.testMeta.textContent = `${label} Â· Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
     }
   }
   if (els.socraticQuestionTitle) {
@@ -5218,11 +5214,11 @@ export function syncBlockFidelityBanner(block, blockIndexEntry) {
 
   let message = "";
   if (anchor === "weak") {
-    message = "Anclaje débil al documento — contrasta con tu PDF.";
+    message = "Anclaje dÃ©bil al documento â€” contrasta con tu PDF.";
   } else if (anchor === "proportional_fallback") {
     message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
   } else if (fidelity === "warn") {
-    message = "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
+    message = "Fidelidad reducida: parte del contenido podrÃ­a no reflejar la fuente.";
   }
 
   if (!message) {
@@ -5241,8 +5237,7 @@ function resolveSourceFidelityStrictForSession(session = state.activeSession) {
   if (mode === "strict") return true;
   if (mode === "standard") return false;
   return (
-    state.sourceFidelityStrict === true ||
-    isSourceFidelityStrictEnabled()
+    state.sourceFidelityStrict === true
   );
 }
 
@@ -5295,7 +5290,7 @@ function checkPrerequisiteBlockWarning(blockIndex) {
           `Prerequisite block ${prereqBlockIdx + 1} not yet studied before block ${blockIndex + 1}.`,
         );
         if (els.testMeta) {
-          els.testMeta.textContent += " · Prerequisite block not studied yet";
+          els.testMeta.textContent += " Â· Prerequisite block not studied yet";
         }
         return;
       }
@@ -5456,7 +5451,7 @@ async function startTestBlock() {
   els.testQaView.hidden = true;
   els.testRsvpView.hidden = false;
   if (els.testRsvpWord) els.testRsvpWord.textContent = "";
-  els.testRsvpStatus.textContent = "Generating block…";
+  els.testRsvpStatus.textContent = "Generating blockâ€¦";
 
   try {
     els.testRsvpSkipBtn.disabled = true;
@@ -5499,7 +5494,7 @@ async function startSocraticBlock() {
 
   try {
     setSocraticLoading(true);
-    els.socraticStatus.textContent = "Generating block…";
+    els.socraticStatus.textContent = "Generating blockâ€¦";
     await ensureBlockGenerated(state.activeBlockIndex);
   } catch (err) {
     setSocraticError(err?.message ? String(err.message) : String(err));
@@ -5694,7 +5689,7 @@ function renderSocraticQuestion() {
 function startBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
 
-  // 1) triggerPrefetch(N+1) — fire and forget
+  // 1) triggerPrefetch(N+1) â€” fire and forget
   const total = Math.max(1, getTotalBlocksSafe());
   const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
   const nextIdx = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
@@ -5705,12 +5700,12 @@ function startBlock(blockIndex) {
     triggerPrefetch(nextIdx, cfg);
   }
 
-  // 2) triggerCommentReply() — fire and forget
+  // 2) triggerCommentReply() â€” fire and forget
   if (shouldTriggerCommentReply()) {
     triggerCommentReply();
   }
 
-  // 3) showRSVP(N) — uses already-generated block data (not prefetch)
+  // 3) showRSVP(N) â€” uses already-generated block data (not prefetch)
   state.activeBlockIndex = idx;
   state.activeQuestionIndex = 0;
   if (state.activeSession && typeof state.activeSession === "object") {
@@ -5866,14 +5861,14 @@ async function finishQuestions(blockIndex) {
   }
 
   const setStatusPreparing = () => {
-    o.statusBarText.textContent = "Preparing next block…";
+    o.statusBarText.textContent = "Preparing next blockâ€¦";
     o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
     o.statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
     o.statusBarFill.style.transform = "translateX(-120%)";
     o.statusBarFill.style.width = "40%";
   };
   const setStatusReady = () => {
-    o.statusBarText.textContent = "Ready ✓";
+    o.statusBarText.textContent = "Ready âœ“";
     o.statusBarText.style.color = "rgba(34, 197, 94, 0.95)";
     o.statusBarFill.style.animation = "none";
     o.statusBarFill.style.width = "100%";
@@ -5982,7 +5977,7 @@ async function finishQuestions(blockIndex) {
 
     setPrefetchIndicator("generating");
     setStatusPreparing();
-    o.statusBarText.textContent = "Regenerating next block…";
+    o.statusBarText.textContent = "Regenerating next blockâ€¦";
     triggerPrefetch(nextIndex, { ...nextCfg, force: true });
     syncPrefetchUi();
   };
@@ -6075,7 +6070,7 @@ async function finishQuestions(blockIndex) {
         if (mode === "consume_prefetch") {
           data = await getPrefetchedBlock(nextIndex, { configKey: keyOf(nextCfg) });
         } else if (mode === "questions_only") {
-          o.status.textContent = "Regenerating questions…";
+          o.status.textContent = "Regenerating questionsâ€¦";
           if (isQuestionsStudyMode(state.activeSession)) {
             data = await generateQuestionsBlockForIndex(nextIndex, nextCfg);
           } else {
@@ -6089,7 +6084,7 @@ async function finishQuestions(blockIndex) {
           setPrefetchIndicator("ready");
           setStatusReady();
         } else {
-          o.status.textContent = "Regenerating block…";
+          o.status.textContent = "Regenerating blockâ€¦";
           setPrefetchIndicator("generating");
           data = await generateBlockDirect(nextIndex, {
             timeoutMs: 30_000,
@@ -6115,7 +6110,7 @@ async function finishQuestions(blockIndex) {
   o.retryBtn.onclick = async () => {
     o.error.hidden = true;
     o.error.textContent = "";
-    o.status.textContent = "Retrying…";
+    o.status.textContent = "Retryingâ€¦";
     try {
       setPrefetchIndicator("generating");
       const cfg = o.view === "adjust" ? nextCfg : blockDefaults;
@@ -6188,65 +6183,6 @@ async function copyPlainTextToClipboard(text) {
   } finally {
     ta.remove();
   }
-}
-
-const ASSESSMENT_SECONDS_PER_QUESTION = 12;
-const ASSESSMENT_ADVANCE_AFTER_ANSWER_MS = 1500;
-
-let assessmentRunnerEls = null;
-let assessmentFlowBusy = false;
-
-function assessmentRunnerInnerHtml() {
-  return `
-    <div class="assessment-runner-inner">
-      <div id="assessmentRunnerHead" class="assessment-question-head" aria-live="polite">
-        Question 1 of 1
-      </div>
-      <div class="assessment-top">
-        <span id="assessmentRunnerMeta">12s to answer</span>
-        <span id="assessmentRunnerScore">Score: 0.00</span>
-      </div>
-      <div class="assessment-bar-label">Session progress</div>
-      <div class="assessment-bar-track" aria-hidden="true">
-        <div id="assessmentRunnerProgress" class="assessment-bar-fill"></div>
-      </div>
-      <div class="assessment-bar-label">Time for this question</div>
-      <div class="assessment-bar-track assessment-timer-track" aria-hidden="true">
-        <div id="assessmentRunnerTimer" class="assessment-bar-fill assessment-timer-fill"></div>
-      </div>
-      <div id="assessmentRunnerQuestion" class="assessment-question"></div>
-      <div id="assessmentRunnerOptions" class="assessment-options"></div>
-      <div id="assessmentRunnerPenalty" class="assessment-penalty"></div>
-    </div>
-  `;
-}
-
-function bindAssessmentRunnerEls(root) {
-  return {
-    root,
-    head: root.querySelector("#assessmentRunnerHead"),
-    meta: root.querySelector("#assessmentRunnerMeta"),
-    score: root.querySelector("#assessmentRunnerScore"),
-    progress: root.querySelector("#assessmentRunnerProgress"),
-    timer: root.querySelector("#assessmentRunnerTimer"),
-    question: root.querySelector("#assessmentRunnerQuestion"),
-    options: root.querySelector("#assessmentRunnerOptions"),
-    penalty: root.querySelector("#assessmentRunnerPenalty"),
-  };
-}
-
-function ensureAssessmentRunnerEls() {
-  let root = document.getElementById("assessmentRunner");
-  if (!root) {
-    root = document.createElement("section");
-    root.id = "assessmentRunner";
-    root.className = "assessment-runner";
-    root.hidden = true;
-    root.innerHTML = assessmentRunnerInnerHtml();
-    document.body.appendChild(root);
-  }
-  assessmentRunnerEls = bindAssessmentRunnerEls(root);
-  return assessmentRunnerEls;
 }
 
 let materialGraphBackScreen = "blocks";
@@ -6654,7 +6590,7 @@ function renderPrePackingAssessmentGraph(inventory) {
     blockIndex: [],
     conceptInventory: Array.isArray(inventory) ? inventory : [],
   };
-  host.textContent = `${graph.nodes.length} concepts · ${graph.edges.length} relations`;
+  host.textContent = `${graph.nodes.length} concepts Â· ${graph.edges.length} relations`;
 }
 
 function recordAssessmentResponse(row) {
@@ -6847,7 +6783,7 @@ function renderPrePackingAssessmentQuestion() {
     if (presumed) {
       const badge = document.createElement("span");
       badge.className = "pre-packing-presumed-badge";
-      badge.textContent = "✓ Presumed known (override below)";
+      badge.textContent = "âœ“ Presumed known (override below)";
       els.prePackingAssessmentQuestion.appendChild(badge);
     }
   }
@@ -6896,7 +6832,7 @@ async function enterPrePackingAssessmentScreen() {
     els.prePackingAssessmentError.textContent = "";
   }
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Loading questions…";
+    els.prePackingAssessmentStatus.textContent = "Loading questionsâ€¦";
   }
   showScreen("prePackingAssessment");
 
@@ -6998,7 +6934,7 @@ async function finishPrePackingAssessment() {
   if (!prePackingFlow) return;
   clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Evaluating responses…";
+    els.prePackingAssessmentStatus.textContent = "Evaluating responsesâ€¦";
   }
   if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = true;
 
@@ -7066,13 +7002,13 @@ function renderPrePackingResultsScreen(counts) {
   if (!prePackingFlow) return;
   const { full, partial, none } = counts;
   if (els.prePackingResultsSummary) {
-    els.prePackingResultsSummary.textContent = `Mastered: ${full} · Partial: ${partial} · New: ${none}`;
+    els.prePackingResultsSummary.textContent = `Mastered: ${full} Â· Partial: ${partial} Â· New: ${none}`;
   }
   if (els.prePackingResultsDiff) {
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
       const n = prePackingFlow.nBlocks;
       els.prePackingResultsDiff.hidden = false;
-      els.prePackingResultsDiff.textContent = `Hasta ${n} → packing with profile (may be fewer blocks)`;
+      els.prePackingResultsDiff.textContent = `Hasta ${n} â†’ packing with profile (may be fewer blocks)`;
     } else {
       els.prePackingResultsDiff.hidden = true;
     }
@@ -7092,7 +7028,7 @@ async function handlePrePackingAccept() {
   if (!prePackingFlow) return;
   if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Preparing blocks…";
+    els.prePackingResultsStatus.textContent = "Preparing blocksâ€¦";
   }
   try {
     let packed = prePackingFlow.packedResult;
@@ -7107,7 +7043,7 @@ async function handlePrePackingAccept() {
     if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF && els.prePackingResultsDiff) {
-      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} → ${packed.blockIndex.length}`;
+      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} â†’ ${packed.blockIndex.length}`;
     }
     stashPrePackingDraftMeta();
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
@@ -7125,7 +7061,7 @@ async function handlePrePackingIgnore() {
   if (!prePackingFlow) return;
   prePackingFlow.packingIgnoredProfile = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Re-packing without profile…";
+    els.prePackingResultsStatus.textContent = "Re-packing without profileâ€¦";
   }
   try {
     prePackingFlow.packingPromise = null;
@@ -7161,7 +7097,7 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "blocksMaterialGraphBtn" })}
-    <span class="hint">${es ? `${graph.nodes.length} nodos · ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes · ${graph.edges.length} edges`}</span>`;
+    <span class="hint">${es ? `${graph.nodes.length} nodos Â· ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes Â· ${graph.edges.length} edges`}</span>`;
 }
 
 function renderSlowPhase0GraphActions(session) {
@@ -7179,7 +7115,7 @@ function renderSlowPhase0GraphActions(session) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "slowPhase0GraphBtn" })}
-    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} · ${graph.nodes.length} nodes</span>`;
+    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} Â· ${graph.nodes.length} nodes</span>`;
 }
 
 function wireMaterialGraphHandlers() {
@@ -7346,30 +7282,11 @@ export function wireStudyHandlers() {
   renderQuestionConfigUi();
 
   if (els.sourceFidelityStrictToggleBtn) {
-    const strictOn = state.sourceFidelityStrict === true;
-    els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(strictOn));
-    if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !strictOn;
+    syncSourceFidelityStrictUi(state.sourceFidelityStrict === true);
   }
 
   function goAfterBlocksConfirmed(nBlocks) {
-    if (isPrePackingAssessmentEnabled()) {
-      goToSessionReady(nBlocks);
-      return;
-    }
-    goToInitialAssessment();
-  }
-
-  function setAssessmentUiDefaults() {
-    const hideLegacy = isPrePackingAssessmentEnabled();
-    if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = hideLegacy;
-    if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = true;
-    if (els.assessmentMaxQuestions) els.assessmentMaxQuestions.value = "20";
-    if (els.assessmentPenaliseBtn) els.assessmentPenaliseBtn.setAttribute("aria-pressed", "true");
-    if (els.assessmentPenaliseSubtitle) els.assessmentPenaliseSubtitle.hidden = false;
-    if (els.assessmentMaxQuestionsLabel) {
-      const n = 20;
-      els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
-    }
+    goToSessionReady(nBlocks);
   }
 
   function goToSessionReady(nBlocks) {
@@ -7379,12 +7296,6 @@ export function wireStudyHandlers() {
       els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
     }
     showScreen("ready");
-  }
-
-  function goToInitialAssessment() {
-    delete window.assessmentConfig;
-    setAssessmentUiDefaults();
-    showScreen("assessment");
   }
 
   async function startStudyingNow() {
@@ -7431,621 +7342,6 @@ export function wireStudyHandlers() {
     startBlock(state.activeBlockIndex);
   }
 
-  function showAssessmentResults(responses, questions) {
-    const resp = Array.isArray(responses) ? responses : [];
-    const qs = Array.isArray(questions) ? questions : [];
-    const blockIndex = Array.isArray(state.lastBlockIndex)
-      ? state.lastBlockIndex
-      : safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
-    const byBlock = new Map();
-
-    function ensureBlockBucket(blockId) {
-      const id = Number(blockId);
-      if (!Number.isFinite(id) || id <= 0) return null;
-      if (!byBlock.has(id)) {
-        byBlock.set(id, {
-          total: 0,
-          correct: 0,
-          wrong: 0,
-          skipped: 0,
-          title:
-            String(
-              (Array.isArray(blockIndex) ? blockIndex.find((b) => Number(b?.id) === id)?.title : "") ||
-                `Block ${id}`,
-            ).trim() || `Block ${id}`,
-        });
-      }
-      return byBlock.get(id);
-    }
-
-    for (let i = 0; i < qs.length; i += 1) {
-      const q = qs[i] || {};
-      const r = resp[i] || {};
-      const blockId = Number(r.block_id ?? q.block_id);
-      const b = ensureBlockBucket(blockId);
-      if (!b) continue;
-      b.total += 1;
-      if (r.skipped) {
-        b.skipped += 1;
-      } else if (r.correct === true) {
-        b.correct += 1;
-      } else if (r.correct === false) {
-        b.wrong += 1;
-      }
-    }
-
-    const perBlock = {};
-    let strongCount = 0;
-    let weakCount = 0;
-    let rawTotal = 0;
-    let penalisedTotal = 0;
-
-    const blockRows = Array.from(byBlock.entries())
-      .map(([id, b]) => ({ id, ...b }))
-      .sort((a, b) => a.id - b.id);
-
-    for (const row of blockRows) {
-      const total = Math.max(1, Number(row.total) || 0);
-      const raw = Number(row.correct) / total;
-      const penalised = (Number(row.correct) - 0.33 * Number(row.wrong)) / total;
-      let classification = "ok";
-      if (penalised > 0.75) classification = "strong";
-      else if (penalised < 0.45) classification = "weak";
-      if (classification === "strong") strongCount += 1;
-      if (classification === "weak") weakCount += 1;
-      rawTotal += Number(row.correct);
-      penalisedTotal += Number(row.correct) - 0.33 * Number(row.wrong);
-      perBlock[String(row.id)] = {
-        score: penalised,
-        classification,
-      };
-      row.raw = raw;
-      row.penalised = penalised;
-      row.classification = classification;
-    }
-
-    const maxQuestions = Math.max(1, qs.length);
-    const pct = (penalisedTotal / maxQuestions) * 100;
-    window.assessmentResults = {
-      perBlock,
-      penalisedTotal,
-      rawTotal,
-      maxQuestions,
-      pct,
-      skipped: false,
-    };
-    document.body.classList.add("assessment-active");
-    hideSidebar();
-
-    const o = ensureAssessmentRunnerEls();
-    o.root.hidden = false;
-    o.root.innerHTML = "";
-
-    const wrap = document.createElement("div");
-    wrap.className = "assessment-runner-inner";
-
-    const h = document.createElement("h1");
-    h.style.margin = "0";
-    h.style.fontSize = "24px";
-    h.textContent = `Assessment complete — ${penalisedTotal.toFixed(2)}/${maxQuestions} (${Math.round(
-      pct,
-    )}%) · ${strongCount} strong · ${weakCount} weak blocks`;
-    wrap.appendChild(h);
-
-    const gapStatusEl = document.createElement("div");
-    gapStatusEl.className = "hint gap-synthesis-status";
-    gapStatusEl.textContent = "Analysing gaps…";
-    wrap.appendChild(gapStatusEl);
-
-    const heatmap = document.createElement("div");
-    heatmap.style.display = "grid";
-    heatmap.style.gridTemplateColumns = "repeat(auto-fill, minmax(180px, 1fr))";
-    heatmap.style.gap = "10px";
-
-    const palette = {
-      strong: "rgba(34, 197, 94, 0.24)",
-      ok: "rgba(250, 204, 21, 0.2)",
-      weak: "rgba(248, 113, 113, 0.24)",
-    };
-    for (const row of blockRows) {
-      const pill = document.createElement("button");
-      pill.type = "button";
-      pill.style.textAlign = "left";
-      pill.style.background = palette[row.classification] || palette.ok;
-      pill.style.minHeight = "54px";
-      pill.style.borderRadius = "999px";
-      pill.style.padding = "10px 14px";
-      const words = String(row.title || "")
-        .trim()
-        .split(/\s+/)
-        .slice(0, 4)
-        .join(" ");
-      pill.textContent = words || `Block ${row.id}`;
-      pill.title = `Score: ${row.correct}/${row.total} questions`;
-      heatmap.appendChild(pill);
-    }
-    wrap.appendChild(heatmap);
-
-    const coachPlaceholder = document.createElement("div");
-    coachPlaceholder.className = "hint";
-    coachPlaceholder.textContent = "Analysing your results...";
-    coachPlaceholder.style.marginTop = "4px";
-    wrap.appendChild(coachPlaceholder);
-
-    void generateAssessmentSynthesis(window.assessmentResults, blockIndex, getStudyLanguage()).then(
-      (text) => {
-        if (!coachPlaceholder.isConnected) return;
-        if (!text) {
-          coachPlaceholder.remove();
-          return;
-        }
-        const card = document.createElement("div");
-        card.className = "assessment-coach-card";
-        void renderMarkdown(card, String(text));
-        coachPlaceholder.replaceWith(card);
-      },
-    );
-
-    const summary = document.createElement("div");
-    summary.className = "response-box";
-    summary.style.marginTop = "6px";
-    if (weakCount === 0 && strongCount === 0) {
-      summary.textContent = "No changes — all blocks in normal range";
-    } else {
-      const weakLine =
-        weakCount > 0
-          ? `${weakCount} weak → thorough explanation + ≥1 question per flagged gap`
-          : "";
-      const strongLine =
-        strongCount > 0 ? `${strongCount} strong → brief recap (~150–220 words), fewer questions` : "";
-      summary.innerHTML = [weakLine, strongLine].filter(Boolean).join("<br>");
-    }
-    wrap.appendChild(summary);
-
-    const actions = document.createElement("div");
-    actions.className = "row assessment-results-actions";
-    const acceptBtn = document.createElement("button");
-    acceptBtn.type = "button";
-    acceptBtn.textContent = "Accept suggestions";
-    actions.appendChild(acceptBtn);
-    wrap.appendChild(actions);
-
-    const gapDetails = document.createElement("details");
-    gapDetails.className = "gap-review-details";
-    const gapDetailsSummary = document.createElement("summary");
-    gapDetailsSummary.textContent = "Review gaps (optional)";
-    gapDetails.appendChild(gapDetailsSummary);
-    const gapEditorRoot = document.createElement("div");
-    gapEditorRoot.className = "gap-editor-grid";
-    gapDetails.appendChild(gapEditorRoot);
-    wrap.appendChild(gapDetails);
-
-    const userEdits = {};
-    const userTouchedBlocks = new Set();
-    let synthesisDraft = {};
-    let synthesisStatus = "pending";
-
-    const gapEditors = new Map();
-
-    function syncUserEdits(blockId, labels) {
-      const key = String(blockId);
-      const normalized = labels
-        .map((l) => String(l || "").trim())
-        .filter((l) => l.length >= 3 && l.length <= 80);
-      if (!normalized.length) {
-        userEdits[key] = [];
-      } else {
-        userEdits[key] = normalized.map((label) => ({ label, source: "user" }));
-      }
-      userTouchedBlocks.add(key);
-    }
-
-    function mountGapBlockEditor(blockId, title, initialLabels) {
-      const section = document.createElement("div");
-      section.className = "gap-block-editor";
-      const heading = document.createElement("div");
-      heading.className = "gap-block-title";
-      heading.textContent = `#${blockId} ${title}`;
-      const chipsRow = document.createElement("div");
-      chipsRow.className = "gap-chips";
-      const addRow = document.createElement("div");
-      addRow.className = "gap-add-row";
-      const addInput = document.createElement("input");
-      addInput.type = "text";
-      addInput.placeholder = "Add gap label…";
-      addInput.maxLength = 80;
-      const addBtn = document.createElement("button");
-      addBtn.type = "button";
-      addBtn.textContent = "Add";
-      addRow.append(addInput, addBtn);
-      section.append(heading, chipsRow, addRow);
-      gapEditorRoot.appendChild(section);
-
-      let labels = initialLabels.slice();
-
-      function renderChips() {
-        chipsRow.replaceChildren();
-        labels.forEach((label, idx) => {
-          const chip = document.createElement("span");
-          chip.className = "gap-chip";
-          const text = document.createElement("input");
-          text.type = "text";
-          text.value = label;
-          text.maxLength = 80;
-          text.addEventListener("change", () => {
-            labels[idx] = String(text.value || "").trim();
-            syncUserEdits(blockId, labels);
-          });
-          const rm = document.createElement("button");
-          rm.type = "button";
-          rm.className = "gap-chip-remove";
-          rm.setAttribute("aria-label", "Remove gap");
-          rm.textContent = "×";
-          rm.addEventListener("click", () => {
-            labels.splice(idx, 1);
-            syncUserEdits(blockId, labels);
-            renderChips();
-          });
-          chip.append(text, rm);
-          chipsRow.appendChild(chip);
-        });
-      }
-
-      function addLabel(raw) {
-        const label = String(raw || "").trim();
-        if (label.length < 3 || labels.length >= 8) return;
-        if (labels.includes(label)) return;
-        labels.push(label);
-        addInput.value = "";
-        syncUserEdits(blockId, labels);
-        renderChips();
-      }
-
-      addBtn.addEventListener("click", () => addLabel(addInput.value));
-      addInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          addLabel(addInput.value);
-        }
-      });
-
-      renderChips();
-      return {
-        setLabels(newLabels) {
-          labels = newLabels.slice();
-          renderChips();
-        },
-        getLabels: () => labels.slice(),
-      };
-    }
-
-    for (const row of blockRows) {
-      gapEditors.set(
-        row.id,
-        mountGapBlockEditor(row.id, row.title || `Block ${row.id}`, []),
-      );
-    }
-
-    function applySynthesisToEditors() {
-      for (const row of blockRows) {
-        const key = String(row.id);
-        if (userTouchedBlocks.has(key)) continue;
-        const editor = gapEditors.get(row.id);
-        if (!editor) continue;
-        editor.setLabels(gapLabelsForBlock(synthesisDraft, row.id));
-      }
-    }
-
-    function setGapStatusMessage(status) {
-      if (status === "ok") {
-        gapStatusEl.textContent = "Gaps ready";
-        return;
-      }
-      if (status === "timeout") {
-        gapStatusEl.textContent = "Gap analysis timed out — using block scores only";
-        return;
-      }
-      if (status === "error") {
-        gapStatusEl.textContent = "Gap analysis failed — using block scores only";
-        return;
-      }
-      if (status === "skipped") {
-        gapStatusEl.textContent = "Gap analysis skipped (no API key)";
-        return;
-      }
-      gapStatusEl.textContent = "Analysing gaps…";
-    }
-
-    const synthesisPromise = synthesizeAssessmentGaps({
-      assessmentResults: window.assessmentResults,
-      questions: qs,
-      responses: resp,
-      blockIndex,
-      language: getStudyLanguage(),
-    })
-      .then((result) => {
-        synthesisStatus = "ok";
-        synthesisDraft = result?.gaps_by_block && typeof result.gaps_by_block === "object" ? result.gaps_by_block : {};
-        setGapStatusMessage("ok");
-        applySynthesisToEditors();
-        return result;
-      })
-      .catch((err) => {
-        if (err instanceof GapSynthesisError) {
-          if (err.code === "missing_api_key") synthesisStatus = "skipped";
-          else if (err.code === "timeout") synthesisStatus = "timeout";
-          else synthesisStatus = "error";
-        } else {
-          synthesisStatus = "error";
-        }
-        synthesisDraft = {};
-        setGapStatusMessage(synthesisStatus);
-        if (synthesisStatus === "error") console.warn("[gap-synthesis]", err);
-        return { gaps_by_block: {} };
-      });
-
-    function resolveGapsSource(merged) {
-      const hasGaps = merged && typeof merged === "object" && Object.keys(merged).length > 0;
-      if (!hasGaps) return "none";
-      const hadSynthesis =
-        synthesisStatus === "ok" &&
-        synthesisDraft &&
-        typeof synthesisDraft === "object" &&
-        Object.keys(synthesisDraft).length > 0;
-      if (userTouchedBlocks.size > 0 && hadSynthesis) return "merged";
-      if (userTouchedBlocks.size > 0) return "user";
-      return "synthesis";
-    }
-
-    function cleanupResultsUi() {
-      o.root.hidden = true;
-      o.root.innerHTML = assessmentRunnerInnerHtml();
-      assessmentRunnerEls = bindAssessmentRunnerEls(o.root);
-      document.body.classList.remove("assessment-active");
-      showSidebar();
-    }
-
-    acceptBtn.addEventListener("click", async () => {
-      acceptBtn.disabled = true;
-      const prevLabel = acceptBtn.textContent;
-      acceptBtn.textContent = "Applying…";
-      try {
-        await synthesisPromise;
-        const merged = mergeGapLists({ gaps_by_block: synthesisDraft }, userEdits);
-        const gapsSource = resolveGapsSource(merged);
-        const applyResult = applyAssessmentResults({
-          ...(window.assessmentResults || {}),
-          gapsByBlock: merged,
-          gaps_by_block: merged,
-          gapsSource,
-          gaps_source: gapsSource,
-          synthesisStatus,
-          synthesis_status: synthesisStatus,
-        });
-
-        wrap.innerHTML = "";
-        const okTitle = document.createElement("h1");
-        okTitle.style.margin = "0";
-        okTitle.style.fontSize = "24px";
-        okTitle.textContent = "Session personalised. Ready to generate blocks.";
-        const okMeta = document.createElement("p");
-        okMeta.className = "subtle";
-        okMeta.style.margin = "8px 0 0";
-        okMeta.textContent = `Strong: ${applyResult.strongBlocks.length} · Weak: ${applyResult.weakBlocks.length}`;
-        const goBtn = document.createElement("button");
-        goBtn.type = "button";
-        goBtn.textContent = "Start generating →";
-        goBtn.style.marginTop = "12px";
-        wrap.appendChild(okTitle);
-        wrap.appendChild(okMeta);
-        wrap.appendChild(goBtn);
-        goBtn.addEventListener("click", async () => {
-          cleanupResultsUi();
-          await startStudyingNow();
-        });
-      } finally {
-        if (acceptBtn.isConnected) {
-          acceptBtn.disabled = false;
-          acceptBtn.textContent = prevLabel;
-        }
-      }
-    });
-
-    o.root.appendChild(wrap);
-  }
-
-  async function runAssessment(questions, penalise, maxQuestions) {
-    const o = ensureAssessmentRunnerEls();
-    const cap = Math.max(1, Math.floor(Number(maxQuestions) || 0));
-    const list = (Array.isArray(questions) ? questions : []).slice(0, cap);
-    const penaltyOn = Boolean(penalise);
-    if (!list.length) {
-      showAssessmentResults([], []);
-      return;
-    }
-
-    let currentQ = 0;
-    const responses = [];
-    let score = 0;
-    let settled = false;
-    let timerId = null;
-    let advanceTimerId = null;
-    let rafId = null;
-    let startedAt = 0;
-    const timerMs = ASSESSMENT_SECONDS_PER_QUESTION * 1000;
-
-    function cleanup() {
-      if (timerId) {
-        clearTimeout(timerId);
-        timerId = null;
-      }
-      if (advanceTimerId) {
-        clearTimeout(advanceTimerId);
-        advanceTimerId = null;
-      }
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-      document.removeEventListener("keydown", onKeyDown);
-      o.root.hidden = true;
-      document.body.classList.remove("assessment-active");
-      showSidebar();
-    }
-
-    function formatScore(n) {
-      return `${n >= 0 ? "" : "-"}${Math.abs(n).toFixed(2)}`;
-    }
-
-    function renderHeader() {
-      if (o.head) {
-        o.head.textContent = `Question ${currentQ + 1} of ${list.length}`;
-      }
-      o.score.textContent = `Score: ${formatScore(score)}`;
-      const p = ((currentQ + 1) / list.length) * 100;
-      o.progress.style.width = `${Math.max(0, Math.min(100, p))}%`;
-    }
-
-    function updateTimeMeta(elapsedMs) {
-      const secsLeft = Math.max(0, Math.ceil((timerMs - elapsedMs) / 1000));
-      o.meta.textContent = `${secsLeft}s to answer`;
-    }
-
-    function stopTimer() {
-      if (timerId) {
-        clearTimeout(timerId);
-        timerId = null;
-      }
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-    }
-
-    function tickTimer() {
-      const elapsed = Date.now() - startedAt;
-      const ratio = Math.max(0, Math.min(1, elapsed / timerMs));
-      const remaining = 1 - ratio;
-      o.timer.style.width = `${remaining * 100}%`;
-      const hue = 120 * remaining; // green -> red
-      o.timer.style.background = `hsl(${hue} 90% 55%)`;
-      updateTimeMeta(elapsed);
-      if (ratio < 1 && !settled) rafId = requestAnimationFrame(tickTimer);
-    }
-
-    function advanceToNextQuestion() {
-      if (advanceTimerId) {
-        clearTimeout(advanceTimerId);
-        advanceTimerId = null;
-      }
-      currentQ += 1;
-      if (currentQ >= list.length) {
-        cleanup();
-        showAssessmentResults(responses, list);
-        return;
-      }
-      renderQuestion();
-    }
-
-    function renderQuestion() {
-      settled = false;
-      stopTimer();
-      renderHeader();
-
-      const q = normalizeTestQuestion(list[currentQ] || {});
-      const qText = String(q.question || "").trim();
-      o.question.textContent = qText || "Untitled question";
-      o.options.innerHTML = "";
-
-      const options = q.options && typeof q.options === "object" ? q.options : {};
-      for (const key of ["A", "B", "C", "D"]) {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "assessment-option-btn";
-        btn.setAttribute("data-option", key);
-        btn.innerHTML = `<span class="assessment-option-key">${key}</span><span>${String(
-          options[key] || "",
-        )}</span>`;
-        btn.addEventListener("click", () => settleAnswer(key));
-        o.options.appendChild(btn);
-      }
-
-      o.penalty.textContent = penaltyOn ? "Wrong answers: -0.33 pts" : "";
-      startedAt = Date.now();
-      updateTimeMeta(0);
-      o.timer.style.width = "100%";
-      o.timer.style.background = "hsl(120 90% 55%)";
-      rafId = requestAnimationFrame(tickTimer);
-      timerId = setTimeout(() => settleAnswer(""), timerMs);
-    }
-
-    function markCorrectAnswer(correctLetter) {
-      if (!correctLetter) return;
-      const correctBtn = o.options.querySelector(`[data-option="${correctLetter}"]`);
-      if (correctBtn) correctBtn.classList.add("is-correct");
-    }
-
-    function disableOptions() {
-      const all = o.options.querySelectorAll("button");
-      for (const b of all) b.disabled = true;
-    }
-
-    function settleAnswer(letter) {
-      if (settled) return;
-      settled = true;
-      stopTimer();
-      disableOptions();
-
-      const q = list[currentQ] || {};
-      const correctAnswer = String(q.answer || "").trim().toUpperCase();
-      const blockId = Number(q.block_id);
-
-      if (!letter) {
-        responses.push({ block_id: blockId, correct: null, skipped: true });
-      } else if (letter === correctAnswer) {
-        score += 1;
-        window.assessmentScore = score;
-        responses.push({ block_id: blockId, correct: true, skipped: false });
-        const selected = o.options.querySelector(`[data-option="${letter}"]`);
-        if (selected) selected.classList.add("is-correct");
-      } else {
-        if (penaltyOn) score -= 0.33;
-        window.assessmentScore = score;
-        responses.push({ block_id: blockId, correct: false, skipped: false });
-        const selected = o.options.querySelector(`[data-option="${letter}"]`);
-        if (selected) selected.classList.add("is-wrong");
-        markCorrectAnswer(correctAnswer);
-      }
-
-      renderHeader();
-      o.meta.textContent = "Press Enter for next question…";
-      advanceTimerId = window.setTimeout(() => {
-        advanceTimerId = null;
-        advanceToNextQuestion();
-      }, ASSESSMENT_ADVANCE_AFTER_ANSWER_MS);
-    }
-
-    function onKeyDown(e) {
-      if (e.repeat || isMcTypingTarget(e.target)) return;
-      if (settled) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          advanceToNextQuestion();
-        }
-        return;
-      }
-      const letter = letterFromMcKey(e.key);
-      if (!letter) return;
-      e.preventDefault();
-      settleAnswer(letter);
-    }
-
-    document.body.classList.add("assessment-active");
-    hideSidebar();
-    o.root.hidden = false;
-    document.addEventListener("keydown", onKeyDown);
-    renderQuestion();
-  }
 
   loadRsvpDefaultsFromStorage();
 
@@ -8118,7 +7414,7 @@ export function wireStudyHandlers() {
       els.fileExtractHint.textContent = `Selected: ${String(file.name || "file")} (${formatFileSize(file.size)})`;
       const markerProbe = await file.slice(0, 64 * 1024).text();
       if (String(markerProbe || "").includes("OFFLINE_PACK_V1")) {
-        els.fileExtractHint.textContent = "Loading offline pack…";
+        els.fileExtractHint.textContent = "Loading offline packâ€¦";
         const rawMaterialText = await readFileAsText(file);
         await loadOfflinePack(rawMaterialText, String(file.name || ""));
         return;
@@ -8226,7 +7522,7 @@ export function wireStudyHandlers() {
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading material…";
+      els.generateBlocksStatus.textContent = "Reading materialâ€¦";
       const resolvedCloze = await resolveMaterialForGenerate();
       if (!resolvedCloze) {
         setGenerateLoading(false);
@@ -8280,7 +7576,7 @@ export function wireStudyHandlers() {
         return;
       }
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading material…";
+      els.generateBlocksStatus.textContent = "Reading materialâ€¦";
       const resolvedSlow = await resolveMaterialForGenerate();
       if (!resolvedSlow) {
         setGenerateLoading(false);
@@ -8401,7 +7697,7 @@ export function wireStudyHandlers() {
     }
 
     setGenerateLoading(true);
-    els.generateBlocksStatus.textContent = "Reading material…";
+    els.generateBlocksStatus.textContent = "Reading materialâ€¦";
 
     const resolvedRsvp = await resolveMaterialForGenerate();
     if (!resolvedRsvp) {
@@ -8612,7 +7908,7 @@ export function wireStudyHandlers() {
 
     if (window.offlineMode === true) {
       setConfirmLoading(true);
-      els.confirmBlocksStatus.textContent = "Loading offline session…";
+      els.confirmBlocksStatus.textContent = "Loading offline sessionâ€¦";
       try {
         const pack = window.offlinePack && typeof window.offlinePack === "object" ? window.offlinePack : null;
         const offlineBlocks = normalizeOfflineBlocks(pack?.blocks);
@@ -8690,7 +7986,7 @@ export function wireStudyHandlers() {
     }
 
     setConfirmLoading(true);
-    els.confirmBlocksStatus.textContent = "Saving blocks list…";
+    els.confirmBlocksStatus.textContent = "Saving blocks listâ€¦";
 
     try {
       if (!state.lastBlockIndex || !Array.isArray(state.lastBlockIndex)) {
@@ -8952,11 +8248,11 @@ export function wireStudyHandlers() {
         if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
         if (els.fullPackStudyNowBtn) {
           els.fullPackStudyNowBtn.hidden = false;
-          els.fullPackStudyNowBtn.textContent = "Study now →";
+          els.fullPackStudyNowBtn.textContent = "Study now â†’";
         }
         if (els.fullPackExitBtn) {
           els.fullPackExitBtn.hidden = false;
-          els.fullPackExitBtn.textContent = "Done — study later";
+          els.fullPackExitBtn.textContent = "Done â€” study later";
         }
       } catch (err) {
         const msg = err?.message ? String(err.message) : String(err);
@@ -8991,107 +8287,13 @@ export function wireStudyHandlers() {
     });
   }
 
-  if (els.assessmentMaxQuestions) {
-    els.assessmentMaxQuestions.addEventListener("input", () => {
-      const n = clampInt(els.assessmentMaxQuestions.value, 10, 60, 20);
-      if (els.assessmentMaxQuestionsLabel) {
-        els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
-      }
-    });
-  }
-  if (els.assessmentPenaliseBtn) {
-    els.assessmentPenaliseBtn.addEventListener("click", () => {
-      const pressed = els.assessmentPenaliseBtn.getAttribute("aria-pressed") === "true";
-      const next = !pressed;
-      els.assessmentPenaliseBtn.setAttribute("aria-pressed", String(next));
-      if (els.assessmentPenaliseSubtitle) els.assessmentPenaliseSubtitle.hidden = !next;
-    });
-  }
-
   if (els.sourceFidelityStrictToggleBtn) {
     els.sourceFidelityStrictToggleBtn.addEventListener("click", () => {
       const pressed = els.sourceFidelityStrictToggleBtn.getAttribute("aria-pressed") === "true";
       const next = !pressed;
       state.sourceFidelityStrict = next;
-      els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(next));
-      if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !next;
-    });
-  }
-  if (els.assessmentTakeBtn) {
-    els.assessmentTakeBtn.addEventListener("click", () => {
-      if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = true;
-      if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = false;
-      // Ensure labels are consistent even if user never touched slider yet.
-      const n = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
-      if (els.assessmentMaxQuestionsLabel) {
-        els.assessmentMaxQuestionsLabel.textContent = `${n} questions · ~${n * 12} seconds`;
-      }
-    });
-  }
-  if (els.assessmentSkipBtn) {
-    els.assessmentSkipBtn.addEventListener("click", async () => {
-      if (isOfflineMode()) {
-        await startStudyingNow();
-        return;
-      }
-      window.assessmentConfig = { skipped: true };
-      const n =
-        Number(state.activeSession?.n_blocks) ||
-        Number(state.lastNBlocks) ||
-        safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]")?.length ||
-        1;
-      goToSessionReady(n);
-    });
-  }
-  if (els.assessmentStartBtn) {
-    els.assessmentStartBtn.addEventListener("click", async () => {
-      if (assessmentFlowBusy) return;
-      if (isOfflineMode()) {
-        await startStudyingNow();
-        return;
-      }
-      const maxQuestions = clampInt(els.assessmentMaxQuestions?.value, 10, 60, 20);
-      const penalise = els.assessmentPenaliseBtn?.getAttribute("aria-pressed") === "true";
-      window.assessmentConfig = { maxQuestions, penalise, skipped: false };
-      const n =
-        Number(state.activeSession?.n_blocks) ||
-        Number(state.lastNBlocks) ||
-        safeParseJson(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]")?.length ||
-        1;
-
-      assessmentFlowBusy = true;
-      const prevBtnLabel = els.assessmentStartBtn.textContent;
-      els.assessmentStartBtn.disabled = true;
-      els.assessmentStartBtn.textContent = "Generating…";
-      if (els.assessmentGeneratingError) {
-        els.assessmentGeneratingError.hidden = true;
-        els.assessmentGeneratingError.textContent = "";
-      }
-      if (els.assessmentGeneratingLabel) {
-        els.assessmentGeneratingLabel.textContent =
-          "Building your personalised questions. This may take a moment.";
-      }
-      showScreen("assessmentGenerating");
-
-      try {
-        const rawBlockIndex = JSON.parse(localStorage.getItem(LS_BLOCK_INDEX_KEY) || "[]");
-        const questions = await generateAssessmentQuestions(rawBlockIndex, maxQuestions);
-        await runAssessment(questions, penalise, maxQuestions);
-      } catch (err) {
-        if (els.assessmentGeneratingError) {
-          els.assessmentGeneratingError.hidden = false;
-          els.assessmentGeneratingError.textContent = err?.message
-            ? String(err.message)
-            : "Could not generate the assessment. Please try again.";
-        }
-        showScreen("assessment");
-        if (els.assessmentChoiceWrap) els.assessmentChoiceWrap.hidden = true;
-        if (els.assessmentConfigWrap) els.assessmentConfigWrap.hidden = false;
-      } finally {
-        assessmentFlowBusy = false;
-        els.assessmentStartBtn.disabled = false;
-        els.assessmentStartBtn.textContent = prevBtnLabel;
-      }
+      saveSourceFidelityStrictPreference(next);
+      syncSourceFidelityStrictUi(next);
     });
   }
 
@@ -9295,7 +8497,7 @@ export function wireStudyHandlers() {
   setOnPersistFailure((error) => {
     const msg =
       error === "quota"
-        ? "Could not save blocks — browser storage is full."
+        ? "Could not save blocks â€” browser storage is full."
         : "Could not save study progress.";
     showExportToast(msg, { variant: "error", durationMs: 5000 });
     syncPersistenceHealthBanner();
@@ -9330,13 +8532,13 @@ export function wireStudyHandlers() {
 
       const prevText = els.summarySoFarBtn.textContent;
       els.summarySoFarBtn.disabled = true;
-      els.summarySoFarBtn.textContent = "Summarising…";
+      els.summarySoFarBtn.textContent = "Summarisingâ€¦";
 
       if (els.summaryOverlayTitle) {
-        els.summaryOverlayTitle.textContent = `Summary so far (blocks 1–${n})`;
+        els.summaryOverlayTitle.textContent = `Summary so far (blocks 1â€“${n})`;
       }
       if (els.summaryOverlayBody) {
-        els.summaryOverlayBody.textContent = "Summarising…";
+        els.summaryOverlayBody.textContent = "Summarisingâ€¦";
         els.summaryOverlayBody.classList.remove("md-content");
       }
       setSummaryOverlayError("");
