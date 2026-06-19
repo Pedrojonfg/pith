@@ -424,17 +424,17 @@ export function storeSessionsByMode(data) {
   return safe;
 }
 
-export function loadSessionForMode(mode) {
+export async function loadSessionForMode(mode) {
   const slot = normalizeStudyMode(mode);
-  const doc = getActiveDocumentSession();
+  const doc = await getActiveDocumentSession();
   if (doc?.modes) return doc.modes[slot] || null;
   const all = loadSessionsByMode();
   return all[slot] || null;
 }
 
-export function storeSessionForMode(mode, session) {
+export async function storeSessionForMode(mode, session) {
   const slot = normalizeStudyMode(mode);
-  const doc = getActiveDocumentSession();
+  const doc = await getActiveDocumentSession();
   if (doc?.modes) {
     if (session && typeof session === "object") {
       migrateLegacyHtmlMinSession(session);
@@ -442,7 +442,7 @@ export function storeSessionForMode(mode, session) {
     } else {
       doc.modes[slot] = null;
     }
-    saveDocumentSession(doc);
+    await saveDocumentSession(doc);
     return;
   }
   const all = loadSessionsByMode();
@@ -455,7 +455,7 @@ export function storeSessionForMode(mode, session) {
   storeSessionsByMode(all);
 }
 
-export function storeActiveSession(sessionObj, { bumpRev } = {}) {
+export async function storeActiveSession(sessionObj, { bumpRev } = {}) {
   if (sessionObj && typeof sessionObj === "object") {
     if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
       sessionObj._meta = {};
@@ -474,13 +474,13 @@ export function storeActiveSession(sessionObj, { bumpRev } = {}) {
     sessionObj && typeof sessionObj === "object"
       ? normalizeStudyMode(sessionObj.studyMode)
       : normalizeStudyMode(state.studyMode);
-  storeSessionForMode(mode, sessionObj);
+  await storeSessionForMode(mode, sessionObj);
 }
 
-export function loadActiveSession() {
+export async function loadActiveSession() {
   migrateLegacyActiveSession();
   const mode = state.studyMode != null ? normalizeStudyMode(state.studyMode) : "rsvp";
-  return loadSessionForMode(mode);
+  return await loadSessionForMode(mode);
 }
 
 export function getBlocksSafe() {
@@ -3048,7 +3048,7 @@ export function initActiveSessionFromBlocksList({
   };
 }
 
-export function applyAssessmentResults(assessmentResults) {
+export async function applyAssessmentResults(assessmentResults) {
   const skipped = Boolean(
     assessmentResults?.skipped === true || (window?.assessmentConfig && window.assessmentConfig.skipped),
   );
@@ -3056,7 +3056,7 @@ export function applyAssessmentResults(assessmentResults) {
     return { skipped: true, adjusted: false, strongBlocks: [], weakBlocks: [] };
   }
 
-  const sessionObj = loadActiveSession();
+  const sessionObj = await loadActiveSession();
   if (!sessionObj || typeof sessionObj !== "object") throw new Error("No active session found.");
 
   const blocks = Array.isArray(sessionObj.blocks) ? sessionObj.blocks : [];
@@ -3157,7 +3157,7 @@ export function applyAssessmentResults(assessmentResults) {
   };
 
   sessionObj.blocks = blocks;
-  storeActiveSession(sessionObj, { bumpRev: true });
+  await storeActiveSession(sessionObj, { bumpRev: true });
   state.activeSession = sessionObj;
   invalidatePrefetch();
 
@@ -3229,7 +3229,7 @@ export function notifyPersistFailure(error) {
   }
 }
 
-function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
+async function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
   if (!slice || typeof slice !== "object") return { ok: false, error: "invalid" };
   if (!slice._meta || typeof slice._meta !== "object") slice._meta = {};
   if (!slice._meta.session_id) slice._meta.session_id = newSessionId();
@@ -3240,14 +3240,14 @@ function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
   const mode = normalizeStudyMode(slice.studyMode || state.studyMode);
   if (!slice.studyMode) slice.studyMode = mode;
 
-  const doc = getActiveDocumentSession();
+  const doc = await getActiveDocumentSession();
   if (doc?.docId && (mode === "rsvp" || mode === "questions")) {
-    const result = writeThroughModeSlice(doc, mode, slice);
+    const result = await writeThroughModeSlice(doc, mode, slice);
     if (!result.ok) notifyPersistFailure(result.error);
     return result;
   }
 
-  storeSessionForMode(mode, slice);
+  await storeSessionForMode(mode, slice);
   return { ok: true };
 }
 

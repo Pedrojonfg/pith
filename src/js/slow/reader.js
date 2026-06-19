@@ -517,7 +517,7 @@ function hideAnnotationEditMenu() {
   menu.querySelector(".slow-annotation-edit-text")?.setAttribute("hidden", "");
 }
 
-function showAnnotationEditMenu(session, annotation, anchorRect) {
+async function showAnnotationEditMenu(session, annotation, anchorRect) {
   if (!session?.slow || !annotation) return;
   hideAnnotationMenu();
   hideConceptPicker();
@@ -530,9 +530,9 @@ function showAnnotationEditMenu(session, annotation, anchorRect) {
   typesPanel?.setAttribute("hidden", "");
   textPanel?.setAttribute("hidden", "");
 
-  const onDelete = () => {
+  const onDelete = async () => {
     deleteAnnotation(session, annotation.id);
-    storeActiveSession(session);
+    await storeActiveSession(session);
     hideAnnotationEditMenu();
     renderSlowReaderPage(session);
   };
@@ -547,9 +547,9 @@ function showAnnotationEditMenu(session, annotation, anchorRect) {
       btn.type = "button";
       btn.className = "slow-annotation-type-btn";
       btn.textContent = `${t.symbol} ${t.label}`;
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         updateAnnotation(session, annotation.id, { type: t.symbol });
-        storeActiveSession(session);
+        await storeActiveSession(session);
         hideAnnotationEditMenu();
         renderSlowReaderPage(session);
       });
@@ -581,13 +581,13 @@ function showAnnotationEditMenu(session, annotation, anchorRect) {
   const textInput = menu.querySelector(".slow-annotation-edit-text-input");
   if (textInput && !textInput.dataset.wired) {
     textInput.dataset.wired = "1";
-    textInput.addEventListener("keydown", (e) => {
+    textInput.addEventListener("keydown", async (e) => {
       if (e.key !== "Enter") return;
       e.preventDefault();
       const draft = readerState.editDraft;
       if (!draft?.annId) return;
       updateAnnotation(session, draft.annId, { userText: textInput.value.trim() });
-      storeActiveSession(session);
+      await storeActiveSession(session);
       hideAnnotationEditMenu();
       renderSlowReaderPage(session);
     });
@@ -845,7 +845,7 @@ export function hideSteelManNudgeModal() {
   readerState.steelManNudgeOpen = false;
 }
 
-export function showSteelManNudgeModal(session, ann, { onSteelMan, onContinue } = {}) {
+export async function showSteelManNudgeModal(session, ann, { onSteelMan, onContinue } = {}) {
   const modal = ensureSteelManNudgeModal();
   modal.hidden = false;
   readerState.steelManNudgeOpen = true;
@@ -855,10 +855,10 @@ export function showSteelManNudgeModal(session, ann, { onSteelMan, onContinue } 
     hideSteelManNudgeModal();
     onSteelMan?.();
   };
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (session?.slow && ann?.id) {
       updateAnnotation(session, ann.id, { skippedSteelMan: true });
-      storeActiveSession(session);
+      await storeActiveSession(session);
     }
     hideSteelManNudgeModal();
     onContinue?.();
@@ -881,7 +881,7 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "⇑"
       annotationType: typeSymbol,
     });
     ann.aiReply = reply;
-    storeActiveSession(session);
+    await storeActiveSession(session);
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
       breakpoints: readerState.breakpoints,
@@ -899,13 +899,13 @@ async function requestSteelManForRange(session, offsets, userText = "") {
   if (!session?.slow || !offsets) return null;
   const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "⇑");
   if (!steelType) return null;
-  const ann = addAnnotation(session, {
+  const ann = await addAnnotation(session, {
     type: steelType.symbol,
     charStart: offsets.charStart,
     charEnd: offsets.charEnd,
     userText,
   });
-  storeActiveSession(session);
+  await storeActiveSession(session);
   renderSlowReaderPage(session);
   if (ann) await runSteelManIAFlow(session, ann, userText);
   return ann;
@@ -931,13 +931,13 @@ async function handleSidebarIAQuery(session, queryText) {
   showSlowIAOverlay({ query: queryText, loading: true });
   try {
     const reply = await askSlowReaderIA(session, queryText);
-    addIAQueryAnnotation(session, {
+    await addIAQueryAnnotation(session, {
       userText: queryText,
       charStart: anchor.charStart,
       charEnd: anchor.charEnd,
       aiReply: reply,
     });
-    storeActiveSession(session);
+    await storeActiveSession(session);
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
       breakpoints: readerState.breakpoints,
@@ -1033,7 +1033,7 @@ function renderFillableMapPanel(session) {
   panel.appendChild(list);
 }
 
-export function renderSlowReaderPage(session, opts = {}) {
+export async function renderSlowReaderPage(session, opts = {}) {
   if (!session?.slow) return;
   applyTypographyToPage(session);
   recomputeBreakpoints(session);
@@ -1061,7 +1061,7 @@ export function renderSlowReaderPage(session, opts = {}) {
   renderFillableMapPanel(session);
   renderSlowSidebar(session, { breakpoints: readerState.breakpoints, scopeText });
   maybeScheduleCheckpoint(session, readerState.breakpoints, idx, () => renderSlowReaderPage(session));
-  storeActiveSession(session);
+  await storeActiveSession(session);
 
   if (!opts.skipLayoutRetry && isSlowReaderActive()) {
     requestAnimationFrame(() => {
@@ -1262,7 +1262,7 @@ function beginAnnotationNote(session, typeDef) {
 async function commitAnnotation(session, typeDef, offsets, userText) {
   if (!session?.slow || !typeDef || !offsets) return;
   const anchorRect = readerState.pendingSelection?.rect;
-  const ann = addAnnotation(session, {
+  const ann = await addAnnotation(session, {
     type: typeDef.symbol,
     charStart: offsets.charStart,
     charEnd: offsets.charEnd,
@@ -1279,7 +1279,7 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
     }
     if (typeDef.symbol === "🔗" && userText) {
       addLiteratureGraphLink(session, ann.id, userText);
-      storeActiveSession(session);
+      await storeActiveSession(session);
     }
   }
   renderSlowReaderPage(session);
@@ -1288,7 +1288,7 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
     const picked = await showConceptPicker(session, { anchorRect });
     if (picked) {
       addGraphLink(session, ann.id, { termId: picked.termId, relation: userText });
-      storeActiveSession(session);
+      await storeActiveSession(session);
       renderSlowReaderPage(session);
     }
   }
@@ -1409,7 +1409,7 @@ function onSlowReaderSelectionChange() {
 
 let wired = false;
 
-export function initSlowReader(session) {
+export async function initSlowReader(session) {
   if (!session?.slow) return;
   session.slow.phase = session.slow.phase === "phase2" ? session.slow.phase : "phase1";
   if (!session.slow.typography) {
@@ -1433,12 +1433,12 @@ export function initSlowReader(session) {
     goToReaderPage(stateSession(), (stateSession()?.slow?.currentPageIndex || 0) + 1);
   });
 
-  els.slowReaderCompleteBtn?.addEventListener("click", () => {
+  els.slowReaderCompleteBtn?.addEventListener("click", async () => {
     const s = stateSession();
     if (!s?.slow) return;
     hideCheckpointChip();
     s.slow.phase = "phase3";
-    storeActiveSession(s);
+    await storeActiveSession(s);
     showScreen("slowPhase3");
     void initPhase3Screen(
       s,

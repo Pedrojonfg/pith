@@ -86,11 +86,11 @@ function isVaultDecaySmItem(item) {
  * Preserves non-vault smItems (e.g. cloze-generated cards).
  * @param {object} session
  */
-export function syncVaultToReviewPool(session) {
+export async function syncVaultToReviewPool(session) {
   const docId = String(session?.docId || "").trim();
   if (!docId) return;
 
-  const current = getSession(docId) || session;
+  const current = await getSession(docId) || session;
   if (!current?.shared) return;
 
   const docTopics = Array.isArray(current.shared.docTopics) ? current.shared.docTopics : [];
@@ -112,7 +112,7 @@ export function syncVaultToReviewPool(session) {
     (a, b) => (Number(a.scheduledDue) || 0) - (Number(b.scheduledDue) || 0),
   );
 
-  saveActiveSession({
+  await saveActiveSession({
     ...current,
     shared: {
       ...current.shared,
@@ -127,7 +127,7 @@ export function syncVaultToReviewPool(session) {
  * @param {string} vaultEntryId
  * @param {{ type?: string, correct?: boolean, timestamp?: number }} [observation]
  */
-export function applyVaultReviewObservation(session, vaultEntryId, observation = {}) {
+export async function applyVaultReviewObservation(session, vaultEntryId, observation = {}) {
   const docId = String(session?.docId || "").trim();
   const entryId = String(vaultEntryId || "").trim();
   if (!docId || !entryId) return;
@@ -146,6 +146,6 @@ export function applyVaultReviewObservation(session, vaultEntryId, observation =
   vault.lastUpdated = Date.now();
   saveVault(vault);
 
-  const fresh = getSession(docId) || session;
+  const fresh = await getSession(docId) || session;
   syncVaultToReviewPool(fresh);
 }

@@ -177,23 +177,25 @@ export function resolveSmItemConceptIds(item, session) {
  * @param {object[]} items
  * @param {(docId: string) => object | null} getSessionFn
  */
-export function filterSmItemsByMnemonics(items, getSessionFn) {
+export async function filterSmItemsByMnemonics(items, getSessionFn) {
   const list = Array.isArray(items) ? items : [];
-  return list.filter((item) => {
+  const out = [];
+  for (const item of list) {
     const docId = String(item?.docId || "").trim();
-    if (!docId) return false;
-    const session = getSessionFn(docId);
-    if (!session) return false;
+    if (!docId) continue;
+    const session = await Promise.resolve(getSessionFn(docId));
+    if (!session) continue;
     const conceptIds = resolveSmItemConceptIds(item, session);
-    return conceptIds.some((cid) => conceptHasMnemonic(session, cid));
-  });
+    if (conceptIds.some((cid) => conceptHasMnemonic(session, cid))) out.push(item);
+  }
+  return out;
 }
 
 /**
  * @param {object} session
  * @param {object} partial
  */
-export function upsertMnemonicDevice(session, partial) {
+export async function upsertMnemonicDevice(session, partial) {
   if (!session?.shared) throw new Error("session.shared required");
   const inventoryIds = new Set(
     (session.shared.conceptInventory || [])
@@ -220,7 +222,7 @@ export function upsertMnemonicDevice(session, partial) {
     devices.push(device);
   }
   session.shared.mnemonicDevices = devices;
-  saveActiveSession(session);
+  await saveActiveSession(session);
   return device;
 }
 
@@ -228,13 +230,13 @@ export function upsertMnemonicDevice(session, partial) {
  * @param {object} session
  * @param {string} id
  */
-export function deleteMnemonicDevice(session, id) {
+export async function deleteMnemonicDevice(session, id) {
   const deviceId = String(id || "").trim();
   if (!session?.shared || !deviceId) return false;
   const next = getMnemonicDevices(session).filter((d) => d.id !== deviceId);
   if (next.length === getMnemonicDevices(session).length) return false;
   session.shared.mnemonicDevices = next;
-  saveActiveSession(session);
+  await saveActiveSession(session);
   return true;
 }
 
@@ -513,8 +515,8 @@ export function closeMnemonicPanel() {
 /**
  * @param {{ prefilledConceptIds?: string[], editDeviceId?: string, contextConceptId?: string }} [opts]
  */
-export function openMnemonicPanel(opts = {}) {
-  const session = getActiveSession();
+export async function openMnemonicPanel(opts = {}) {
+  const session = await getActiveSession();
   if (!session) return;
   const { root, title, text, search } = getPanelEls();
   if (!root) return;
@@ -563,14 +565,14 @@ export function openMnemonicPanel(opts = {}) {
   setTimeout(() => search?.focus?.(), 0);
 }
 
-function handleMnemonicSave() {
-  const session = getActiveSession();
+async function handleMnemonicSave() {
+  const session = await getActiveSession();
   if (!session) return;
   const { text } = getPanelEls();
   const mode = resolveStudyMode?.() || "rsvp";
   const createdInMode = VALID_CREATED_MODES.has(mode) ? mode : "rsvp";
   try {
-    upsertMnemonicDevice(session, {
+    await upsertMnemonicDevice(session, {
       id: panelEditId || crypto.randomUUID(),
       text: String(text?.value || "").trim(),
       conceptIds: panelConceptIds,
@@ -579,21 +581,21 @@ function handleMnemonicSave() {
         : createdInMode,
     });
     closeMnemonicPanel();
-    syncMnemonicButtonBadge();
+    await syncMnemonicButtonBadge();
   } catch (err) {
     console.warn("[mnemonic] save failed", err);
   }
 }
 
-function handleMnemonicDelete() {
-  const session = getActiveSession();
+async function handleMnemonicDelete() {
+  const session = await getActiveSession();
   if (!session || !panelEditId) return;
-  deleteMnemonicDevice(session, panelEditId);
+  await deleteMnemonicDevice(session, panelEditId);
   closeMnemonicPanel();
   syncMnemonicButtonBadge();
 }
 
-function wirePanelHandlers() {
+async function wirePanelHandlers() {
   const { saveBtn, cancelBtn, deleteBtn, newBtn, search, text, root } = getPanelEls();
   if (saveBtn && saveBtn.dataset.mnemonicWired !== "1") {
     saveBtn.dataset.mnemonicWired = "1";
@@ -609,11 +611,11 @@ function wirePanelHandlers() {
   }
   if (newBtn && newBtn.dataset.mnemonicWired !== "1") {
     newBtn.dataset.mnemonicWired = "1";
-    newBtn.addEventListener("click", () => {
+    newBtn.addEventListener("click", async () => {
       panelEditId = null;
       const { text: ta } = getPanelEls();
       if (ta) ta.value = "";
-      const session = getActiveSession();
+      const session = await getActiveSession();
       const { title } = getPanelEls();
       if (title) title.textContent = "New mnemonic";
       showPanelView("form");
@@ -623,8 +625,8 @@ function wirePanelHandlers() {
   }
   if (search && search.dataset.mnemonicWired !== "1") {
     search.dataset.mnemonicWired = "1";
-    search.addEventListener("input", () => {
-      renderSearchDropdown(getActiveSession());
+    search.addEventListener("input", async () => {
+      renderSearchDropdown(await getActiveSession());
     });
   }
   if (text && text.dataset.mnemonicWired !== "1") {
@@ -642,28 +644,28 @@ function wirePanelHandlers() {
 /**
  * @param {string} screenId
  */
-export function shouldShowMnemonicButton(screenId) {
+export async function shouldShowMnemonicButton(screenId) {
   const id = String(screenId || "").trim();
   if (MNEMONIC_HIDDEN_SCREENS.has(id)) return false;
   if (!isMnemonicButtonVisiblePref()) return false;
-  return Boolean(getActiveSession()?.docId);
+  return Boolean(await getActiveSession()?.docId);
 }
 
-export function syncMnemonicButtonVisibility(screenId) {
+export async function syncMnemonicButtonVisibility(screenId) {
   const btn = document.getElementById("mnemonicBtn");
   if (!btn) return;
-  const show = shouldShowMnemonicButton(screenId ?? resolveScreenId?.() ?? "");
+  const show = await shouldShowMnemonicButton(screenId ?? resolveScreenId?.() ?? "");
   btn.hidden = !show;
   if (show) {
     applyButtonPos(btn);
-    syncMnemonicButtonBadge();
+    await syncMnemonicButtonBadge();
   }
 }
 
-export function syncMnemonicButtonBadge() {
+export async function syncMnemonicButtonBadge() {
   const btn = document.getElementById("mnemonicBtn");
   if (!btn || btn.hidden) return;
-  const session = getActiveSession();
+  const session = await getActiveSession();
   const conceptIds = resolveActiveConceptIds?.() || [];
   const hasDevice = conceptIds.some((id) => conceptHasMnemonic(session, id));
   btn.classList.toggle("mnemonic-btn-has-device", hasDevice);

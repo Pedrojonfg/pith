@@ -31,10 +31,11 @@ export function getProjectScopeDepth(entry, ancestorIds, docIdToProjectId) {
   return minDepth;
 }
 
-function buildDocIdToProjectIdMap() {
+async function buildDocIdToProjectIdMap() {
   /** @type {Map<string, string>} */
   const map = new Map();
-  for (const session of getAllSessions()) {
+  const sessions = await getAllSessions();
+  for (const session of sessions) {
     if (!session?.docId) continue;
     map.set(session.docId, String(session.projectId || MISC_PROJECT_ID));
   }

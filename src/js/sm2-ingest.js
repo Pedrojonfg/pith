@@ -39,8 +39,8 @@ export const RECALL_QUALITY_TO_SM2 = {
  * @param {object} params
  * @returns {object}
  */
-export function registerOrUpdateSmItem(docId, params) {
-  const session = getSession(docId);
+export async function registerOrUpdateSmItem(docId, params) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
 
   const sourceType = params.sourceType;
@@ -73,14 +73,14 @@ export function registerOrUpdateSmItem(docId, params) {
     item = updateSmItem(item, params.quality);
   }
 
-  upsertSmItem(docId, item);
+  await upsertSmItem(docId, item);
   return item;
 }
 
 /**
  * @param {{ docId: string, question: object }} params
  */
-export function ingestSm2FromRecallAnswer({ docId, question }) {
+export async function ingestSm2FromRecallAnswer({ docId, question }) {
   const q = question && typeof question === "object" ? question : null;
   const qualityKey = String(q?.tutor_feedback?.quality || "").trim();
   const quality = RECALL_QUALITY_TO_SM2[qualityKey];
@@ -91,7 +91,7 @@ export function ingestSm2FromRecallAnswer({ docId, question }) {
   for (const conceptId of Array.isArray(q.concept_ids) ? q.concept_ids : []) {
     const id = String(conceptId || "").trim();
     if (!id) continue;
-    registerOrUpdateSmItem(docId, {
+    await registerOrUpdateSmItem(docId, {
       sourceType: "recall_question",
       sourceId: `${String(q.id || "").trim()}:${id}`,
       title: title.slice(0, 80),

@@ -109,11 +109,11 @@ export function applySidebarOpenState(session) {
   if (tab) tab.hidden = open;
 }
 
-function setSidebarOpen(session, open) {
+async function setSidebarOpen(session, open) {
   if (!session?.slow) return;
   session.slow.sidebarOpen = Boolean(open);
   applySidebarOpenState(session);
-  storeActiveSession(session);
+  await storeActiveSession(session);
 }
 
 export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } = {}) {

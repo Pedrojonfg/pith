@@ -91,8 +91,8 @@ function getMarkdown(doc) {
   return String(doc?.shared?.rawMarkdown || "").trim();
 }
 
-function persistDoc(doc) {
-  saveActiveSession(doc);
+async function persistDoc(doc) {
+  await saveActiveSession(doc);
   return doc;
 }
 
@@ -184,7 +184,7 @@ async function runPhaseT12(doc, ctx) {
   const inventory = invResult.inventory || [];
   doc.shared.conceptInventory = inventory;
   if (inventory.length) {
-    addConceptsToShared(
+    await addConceptsToShared(
       doc.docId,
       inventory.map((c) => ({
         label: c.label || c.term,
@@ -241,7 +241,7 @@ async function runPhaseT15(doc, ctx) {
   const method = hierarchy?.method === "llm" ? "llm_meta" : "deterministic";
   const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, { method });
   doc.shared.modeRecommendation = recommendation;
-  updateRecommendation(doc.docId, recommendation);
+  await updateRecommendation(doc.docId, recommendation);
   return hashPayload(recommendation.primaryFlow);
 }
 
@@ -505,7 +505,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
  * @param {object} [options]
  */
 export async function runDocumentPreparationForDocId(docId, options = {}) {
-  const doc = getSession(docId);
+  const doc = await getSession(docId);
   if (!doc) throw new Error("session not found");
   return runDocumentPreparationPipeline(doc, options);
 }

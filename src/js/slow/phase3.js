@@ -603,7 +603,7 @@ export function renderPhase3FlashcardPanel(session, lang, sessionId) {
   </section>`;
 }
 
-export function wirePhase3FlashcardConvert(hostEl, session) {
+export async function wirePhase3FlashcardConvert(hostEl, session) {
   if (!hostEl || !session?.slow) return;
   const panel = hostEl.querySelector(".slow-flashcard-panel");
   if (!panel) return;
@@ -620,7 +620,7 @@ export function wirePhase3FlashcardConvert(hostEl, session) {
 
   panel.querySelectorAll("[data-convert-flashcard]").forEach((btn) => {
     if (btn.disabled) return;
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const annId = String(btn.dataset.annotationId || "").trim();
       const ann = (session.slow.annotations || []).find((a) => a.id === annId);
       const payload = annotationsToFlashcardPayload(ann);
@@ -636,9 +636,9 @@ export function wirePhase3FlashcardConvert(hostEl, session) {
       const { added, total } = addSlowFlashcardFromPayload(sessionId, payload);
       if (added) {
         try {
-          const doc = getActiveSession();
+          const doc = await getActiveSession();
           if (doc?.docId) {
-            registerOrUpdateSmItem(doc.docId, {
+            await registerOrUpdateSmItem(doc.docId, {
               sourceType: "slow_flashcard",
               sourceId: annId,
               title: String(payload.front || "").trim(),

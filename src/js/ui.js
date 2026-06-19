@@ -362,6 +362,10 @@ export const els = {
   knowledgeVaultPanelBody: document.getElementById("knowledgeVaultPanelBody"),
 
   screenSettings: document.getElementById("screenSettings"),
+  screenAuth: document.getElementById("screenAuth"),
+  btnSignInGoogle: document.getElementById("btnSignInGoogle"),
+  authStatus: document.getElementById("authStatus"),
+  btnSignOut: document.getElementById("btnSignOut"),
   screenAppHome: document.getElementById("screenAppHome"),
   screenVaultBranch: document.getElementById("screenVaultBranch"),
   btnAppHomeVault: document.getElementById("btnAppHomeVault"),
@@ -1186,6 +1190,7 @@ export function showScreen(which) {
   if (which === "setup") which = "settings";
   currentScreenId = which;
   const showSettings = which === "settings";
+  const showAuth = which === "auth";
   const showAppHome = which === "appHome";
   const showVaultBranch = which === "vaultBranch";
   const showUploadToVault = which === "uploadToVaultCandidates";
@@ -1218,6 +1223,7 @@ export function showScreen(which) {
   const showStudyProgress = showSocratic || showTest;
 
   els.screenSettings?.setAttribute("aria-hidden", String(!showSettings));
+  els.screenAuth?.setAttribute("aria-hidden", String(!showAuth));
   els.screenAppHome?.setAttribute("aria-hidden", String(!showAppHome));
   els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
   els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));

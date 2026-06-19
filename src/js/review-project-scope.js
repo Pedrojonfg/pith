@@ -15,9 +15,9 @@ import { normalizeSmItem } from "./sm2.js";
  * @param {{ includeDescendants?: boolean }} [opts]
  * @returns {object[]}
  */
-export function getReviewableItemsForProject(projectId, opts = {}) {
+export async function getReviewableItemsForProject(projectId, opts = {}) {
   const includeDescendants = opts.includeDescendants !== false;
-  const sessions = getAllSessions();
+  const sessions = await getAllSessions();
   const vault = loadVault();
 
   if (projectId === "all") {
@@ -49,14 +49,14 @@ export function getReviewableItemsForProject(projectId, opts = {}) {
       })),
     );
 
-  const vaultPoolItems = (vault.reviewItems || [])
-    .filter((item) => {
-      const origin = getSession(item?.sourceDocId);
-      if (!origin) return false;
-      return scopeIds.has(String(origin?.projectId || MISC_PROJECT_ID));
-    })
-    .map((item) => normalizeVaultReviewItemForQueue(item))
-    .filter(Boolean);
+  const vaultPoolItems = [];
+  for (const item of vault.reviewItems || []) {
+    const origin = await getSession(item?.sourceDocId);
+    if (!origin) continue;
+    if (!scopeIds.has(String(origin?.projectId || MISC_PROJECT_ID))) continue;
+    const normalized = normalizeVaultReviewItemForQueue(item);
+    if (normalized) vaultPoolItems.push(normalized);
+  }
 
   return [...smPoolItems.filter((i) => i?.id), ...vaultPoolItems];
 }

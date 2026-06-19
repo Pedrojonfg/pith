@@ -26,8 +26,8 @@ function mapSharedAnnotations(shared) {
   }));
 }
 
-export function resolveEnrichedGraphInputs(session, overrides = {}) {
-  const doc = overrides.shared ? null : getActiveSession();
+export async function resolveEnrichedGraphInputs(session, overrides = {}) {
+  const doc = overrides.shared ? null : await getActiveSession();
   const shared = overrides.shared ?? doc?.shared ?? session?.shared ?? null;
   const phase0 = overrides.phase0 ?? session?.slow?.phase0 ?? null;
   const sessionConcepts =
@@ -68,8 +68,8 @@ export function resolveEnrichedGraphInputs(session, overrides = {}) {
   };
 }
 
-export function buildSlowEnrichedGraph(session, options = {}) {
-  return buildSlowEnrichedGraphFromInputs(resolveEnrichedGraphInputs(session, options));
+export async function buildSlowEnrichedGraph(session, options = {}) {
+  return buildSlowEnrichedGraphFromInputs(await resolveEnrichedGraphInputs(session, options));
 }
 
 export function buildSlowPhase0Graph(session, options = {}) {
@@ -82,14 +82,14 @@ export function buildSlowPhase0Graph(session, options = {}) {
  * @param {object} session
  * @param {{ conceptInventory?: object[], blockIndex?: object[], mode?: string, enrichedInputs?: object, phase0?: object }} [options]
  */
-export function buildSessionGraph(session, options = {}) {
+export async function buildSessionGraph(session, options = {}) {
   const mode = String(options.mode || "auto").trim();
   const blockIndex = options.blockIndex ?? session?._meta?.material_graph?.blockIndex ?? null;
   const conceptInventory =
     options.conceptInventory ?? session?._meta?.material_graph?.conceptInventory ?? null;
 
   if (mode === "cloze") {
-    const shared = options.shared ?? getActiveSession()?.shared ?? session?.shared ?? null;
+    const shared = options.shared ?? await getActiveSession()?.shared ?? session?.shared ?? null;
     return buildClozeEpistemicGraph(session, { shared });
   }
 
@@ -101,7 +101,7 @@ export function buildSessionGraph(session, options = {}) {
     if (options.enrichedInputs) {
       return buildSlowEnrichedGraphFromInputs(options.enrichedInputs);
     }
-    return buildSlowEnrichedGraph(session, options);
+    return await buildSlowEnrichedGraph(session, options);
   }
 
   if (
@@ -117,7 +117,7 @@ export function buildSessionGraph(session, options = {}) {
   }
 
   if (mode === "auto" && session?.slow?.graphEnrichedUnlocked) {
-    const enriched = buildSlowEnrichedGraph(session, options);
+    const enriched = await buildSlowEnrichedGraph(session, options);
     if (enriched.nodes.length) return enriched;
   }
 

@@ -328,13 +328,13 @@ function shouldSkipClozePhase0(session, doc) {
   return { skip: fromSlow, fromShared: fromSlow };
 }
 
-function persistClozeItemsToShared(docId, items) {
+async function persistClozeItemsToShared(docId, items) {
   if (!docId || !Array.isArray(items)) return;
   const valid = getValidItems(items);
   for (const item of valid) {
     if (!item?.id) continue;
     try {
-      upsertSmItem(
+      await upsertSmItem(
         docId,
         createSmItem({
           id: `cloze:${item.id}`,
@@ -355,7 +355,7 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
   const llmModel = session?.llmModel;
   const onPhase = typeof handlers.onPhase === "function" ? handlers.onPhase : () => {};
   const signal = handlers.signal;
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   let epistemicGraph = session?.cloze?.epistemicGraph || null;
   let analysis = session?.cloze?.analysis || null;
   let items = [];

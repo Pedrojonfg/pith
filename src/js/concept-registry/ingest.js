@@ -18,7 +18,7 @@ export async function promoteFromMcqBlock({
   skipped,
   source = "rsvp",
 }) {
-  const session = getSession(docId);
+  const session = await getSession(docId);
   if (!session) return;
   const quality = mapMcqOutcomeToQuality({ correct, firstTry, usedHint, skipped });
   const ids = Array.isArray(conceptIds) ? conceptIds : [];
@@ -43,7 +43,7 @@ export async function promoteFromMcqBlock({
  * @param {object} params
  */
 export async function promoteFromRecall({ docId, question }) {
-  const session = getSession(docId);
+  const session = await getSession(docId);
   if (!session) return;
   const q = question && typeof question === "object" ? question : null;
   if (!q) return;
@@ -77,7 +77,7 @@ export async function promoteFromRecall({ docId, question }) {
  * @param {object} params
  */
 export async function promoteFromCloze({ docId, conceptId, quality }) {
-  const session = getSession(docId);
+  const session = await getSession(docId);
   if (!session) return;
   const id = String(conceptId || "").trim();
   if (!id) return;

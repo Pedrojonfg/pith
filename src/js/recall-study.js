@@ -161,7 +161,7 @@ export async function generateRecallSliceForDoc(doc, options = {}) {
   if (!inventory.length) throw new Error("Concept inventory required before recall generation.");
   const meta = doc?.shared?.docHierarchy?.pedagogical_meta || buildDeterministicPedagogicalMetaFallback(doc);
   const config = buildDefaultRecallConfig(doc, meta);
-  const signals = getAssessmentSignals(doc.docId) || doc?.shared?.assessmentSignals || [];
+  const signals = await getAssessmentSignals(doc.docId) || doc?.shared?.assessmentSignals || [];
   const questions = await generateRecallQuestions({
     rawMarkdown: doc.shared.rawMarkdown,
     conceptInventory: inventory,
@@ -193,7 +193,7 @@ function buildDeterministicPedagogicalMetaFallback(doc) {
 /**
  * @param {object} handlers
  */
-export function createRecallStudyController(handlers) {
+export async function createRecallStudyController(handlers) {
   const {
     els,
     getDoc,
@@ -210,8 +210,8 @@ export function createRecallStudyController(handlers) {
 
   let generating = false;
 
-  function currentDoc() {
-    return getDoc();
+  async function currentDoc() {
+    return await getDoc();
   }
 
   function getSlice(doc) {
@@ -264,7 +264,7 @@ export function createRecallStudyController(handlers) {
   }
 
   async function enterRecall(entry) {
-    const doc = currentDoc();
+    const doc = await currentDoc();
     if (!doc) return;
     setStudyMode("recall");
 
@@ -302,7 +302,7 @@ export function createRecallStudyController(handlers) {
   }
 
   async function submitAnswer() {
-    const doc = currentDoc();
+    const doc = await currentDoc();
     if (!doc) return;
     const slice = getSlice(doc);
     const qi = slice.currentIndex;
@@ -339,9 +339,9 @@ export function createRecallStudyController(handlers) {
       questions[qi] = updated;
       const nextSlice = saveSlice(doc, { ...slice, questions, status: "in_progress" });
 
-      ingestSm2FromRecallAnswer({ docId: doc.docId, question: updated });
+      await ingestSm2FromRecallAnswer({ docId: doc.docId, question: updated });
       void promoteFromRecall({ docId: doc.docId, question: updated });
-      syncAssessmentSignalsFromRecall(doc.docId, updated);
+      await syncAssessmentSignalsFromRecall(doc.docId, updated);
 
       renderRecallScreen(els, nextSlice, qi, doc);
     } catch (err) {
@@ -356,7 +356,8 @@ export function createRecallStudyController(handlers) {
   }
 
   function nextQuestion() {
-    const doc = currentDoc();
+    void (async () => {
+    const doc = await currentDoc();
     if (!doc) return;
     const slice = getSlice(doc);
     const qi = slice.currentIndex;
@@ -372,6 +373,7 @@ export function createRecallStudyController(handlers) {
 
     const nextSlice = saveSlice(doc, { ...slice, currentIndex: qi + 1 });
     renderRecallScreen(els, nextSlice, nextSlice.currentIndex, doc);
+    })();
   }
 
   function wireHandlers() {

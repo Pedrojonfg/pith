@@ -10,9 +10,9 @@ import { buildVaultGraph, getConceptPageData } from "./vault-graph-adapter.js";
  * @param {HTMLElement|null} detailHost
  * @param {object} [options]
  */
-export function mountConceptRegistryGraph(containerEl, detailHost, options = {}) {
+export async function mountConceptRegistryGraph(containerEl, detailHost, options = {}) {
   if (!containerEl) return null;
-  const { nodes, edges } = buildVaultGraph({
+  const { nodes, edges } = await buildVaultGraph({
     focusedDocId: options.focusedDocId ?? null,
     projectId: options.projectId ?? null,
   });
