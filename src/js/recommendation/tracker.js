@@ -117,11 +117,11 @@ function isClozeModeComplete(slice) {
  * @param {StudyMode} mode
  * @returns {boolean}
  */
-function isModeStepComplete(session, mode) {
+async function isModeStepComplete(session, mode) {
   if (mode === "review") {
     const docId = session?.docId;
-    if (!docId || !getSession(docId)) return false;
-    return getSmItemsDueToday(docId).length === 0;
+    if (!docId || !(await getSession(docId))) return false;
+    return (await getSmItemsDueToday(docId)).length === 0;
   }
 
   const slice = getModeSlice(session, mode);
@@ -188,7 +188,7 @@ function applyStepCompleted(recommendation, stepId, completedAt = Date.now()) {
  * @param {Record<string, unknown>} session
  * @returns {Record<string, unknown>}
  */
-export function updateFlowProgress(recommendation, session) {
+export async function updateFlowProgress(recommendation, session) {
   if (!recommendation || typeof recommendation !== "object") return recommendation;
 
   const primaryFlow = Array.isArray(recommendation.primaryFlow) ? recommendation.primaryFlow : [];
@@ -200,7 +200,7 @@ export function updateFlowProgress(recommendation, session) {
 
   for (const step of primaryFlow) {
     if (!step?.id || completed.has(step.id)) continue;
-    if (!isModeStepComplete(session, step.mode)) continue;
+    if (!(await isModeStepComplete(session, step.mode))) continue;
     next = applyStepCompleted(next, step.id);
     completed.add(step.id);
   }

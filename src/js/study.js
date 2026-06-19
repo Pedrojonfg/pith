@@ -338,19 +338,19 @@ function setBlocksListJsonCache(v) {
  * @param {string} markdown
  */
 /** Mirror slow slice docHierarchy onto active DocumentSession.shared. */
-export function syncSlowDocHierarchyToShared(slowSession) {
-  const doc = getActiveSession();
+export async function syncSlowDocHierarchyToShared(slowSession) {
+  const doc = await getActiveSession();
   if (!doc) return;
   doc.shared.docHierarchy = slowSession?.docHierarchy ?? null;
   const hierarchy = slowSession?.docHierarchy;
   doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
-  saveDocumentSession(doc);
+  await saveDocumentSession(doc);
 }
 
 export async function ensureDocumentSessionForUpload(markdown) {
   const text = String(markdown || "");
   const docId = await computeDocId(text);
-  let doc = getSession(docId);
+  let doc = await getSession(docId);
   if (!doc) {
     doc = await createSession(text, { docId, projectId: getUploadDefaultProjectId() });
   } else if (doc.shared.rawMarkdown !== text) {
@@ -359,9 +359,9 @@ export async function ensureDocumentSessionForUpload(markdown) {
       ...doc.shared.docMeta,
       charCount: text.length,
     };
-    saveDocumentSession(doc);
+    await saveDocumentSession(doc);
   }
-  setActiveSession(docId);
+  await setActiveSession(docId);
   return doc;
 }
 
@@ -447,7 +447,7 @@ export function getRecommendedStep(recommendation) {
  * @param {string} cleanedText
  * @param {{ pedagogicalMeta?: unknown, method?: string } | null} [hierarchyResult]
  */
-export function computeAndPersistModeRecommendation(
+export async function computeAndPersistModeRecommendation(
   doc,
   cleanedText,
   hierarchyResult = null,
@@ -462,7 +462,7 @@ export function computeAndPersistModeRecommendation(
     const method = hierarchyResult?.method === "llm" ? "llm_meta" : "deterministic";
     const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, { method });
     doc.shared.modeRecommendation = recommendation;
-    updateRecommendation(doc.docId, recommendation);
+    await updateRecommendation(doc.docId, recommendation);
   } catch (err) {
     console.warn("mode recommendation compute failed", err);
   }
@@ -471,12 +471,13 @@ export function computeAndPersistModeRecommendation(
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  */
-export function persistFlowRecommendationProgress(doc = getActiveSession()) {
+export async function persistFlowRecommendationProgress(doc = null) {
+  if (doc == null) doc = await getActiveSession();
   if (!doc?.shared?.modeRecommendation) return;
   try {
-    const updated = updateFlowProgress(doc.shared.modeRecommendation, doc);
+    const updated = await updateFlowProgress(doc.shared.modeRecommendation, doc);
     doc.shared.modeRecommendation = updated;
-    updateRecommendation(doc.docId, updated);
+    await updateRecommendation(doc.docId, updated);
   } catch (err) {
     console.warn("flow recommendation progress sync failed", err);
   }
@@ -486,7 +487,8 @@ export function persistFlowRecommendationProgress(doc = getActiveSession()) {
  * @param {string} chosenMode
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  */
-export function applyFlowRecommendationOnEnterMode(chosenMode, doc = getActiveSession()) {
+export async function applyFlowRecommendationOnEnterMode(chosenMode, doc = null) {
+  if (doc == null) doc = await getActiveSession();
   if (!doc?.shared?.modeRecommendation) return;
   try {
     const slot = normalizeStudyMode(chosenMode);
@@ -494,7 +496,7 @@ export function applyFlowRecommendationOnEnterMode(chosenMode, doc = getActiveSe
     if (recommendedStep && slot !== normalizeStudyMode(recommendedStep.mode)) {
       const updated = recordUserOverride(doc.shared.modeRecommendation, slot);
       doc.shared.modeRecommendation = updated;
-      updateRecommendation(doc.docId, updated);
+      await updateRecommendation(doc.docId, updated);
     }
   } catch (err) {
     console.warn("flow recommendation enter mode failed", err);
@@ -573,7 +575,8 @@ export function formatIntroFlowLine(steps) {
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  * @returns {string}
  */
-function resolveFlowWhyText(recommendation, doc = getActiveSession()) {
+async function resolveFlowWhyText(recommendation, doc = null) {
+  if (doc == null) doc = await getActiveSession();
   const hierarchy = doc?.shared?.docHierarchy;
   const pedagogical =
     hierarchy && typeof hierarchy === "object" && hierarchy.pedagogicalMeta
@@ -592,9 +595,10 @@ function resolveFlowWhyText(recommendation, doc = getActiveSession()) {
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  * @returns {string}
  */
-function buildRecommendationSubtitle(recommendation, doc = getActiveSession()) {
+async function buildRecommendationSubtitle(recommendation, doc = null) {
+  if (doc == null) doc = await getActiveSession();
   const reasoning = String(recommendation?.reasoning || "").trim();
-  const whyText = resolveFlowWhyText(recommendation, doc);
+  const whyText = await resolveFlowWhyText(recommendation, doc);
   const parts = [];
   if (reasoning) parts.push(reasoning);
   if (whyText && whyText !== reasoning) parts.push(whyText);
@@ -618,7 +622,8 @@ let modeSelectManualOpen = false;
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  */
-function syncModeSelectView(doc = getActiveSession()) {
+async function syncModeSelectView(doc = null) {
+  if (doc == null) doc = await getActiveSession();
   const showRecommended = hasModeSelectRecommendation(doc) && !modeSelectManualOpen;
   const showManual = modeSelectManualOpen || !hasModeSelectRecommendation(doc);
   const canReturnToRecommended = hasModeSelectRecommendation(doc) && modeSelectManualOpen;
@@ -638,14 +643,14 @@ function syncModeSelectView(doc = getActiveSession()) {
   els.modeSelectContinuity?.classList.toggle("mode-select-continuity--separated", showRecommended);
 }
 
-function openModeSelectManualView() {
+async function openModeSelectManualView() {
   modeSelectManualOpen = true;
-  syncModeSelectView(getActiveSession());
+  await syncModeSelectView(await getActiveSession());
 }
 
-function closeModeSelectManualView() {
+async function closeModeSelectManualView() {
   modeSelectManualOpen = false;
-  syncModeSelectView(getActiveSession());
+  await syncModeSelectView(await getActiveSession());
 }
 
 function clearFlowRecommendFeedback() {
@@ -710,7 +715,7 @@ export async function recommendFlowFromUploadedFile(file) {
     throw new Error("The file appears to be empty.");
   }
   const doc = await ensureDocumentSessionForUpload(cleanedText);
-  setUploadMeta(doc.docId, {
+  await setUploadMeta(doc.docId, {
     fileName: String(file.name || ""),
     originalFormat: String(originalFormat || ""),
     uploadedAt: new Date().toISOString(),
@@ -722,14 +727,14 @@ export async function recommendFlowFromUploadedFile(file) {
 
   void startDocumentPreparation(doc, {
     studyNotes: state.studyNotes,
-    onProgress: () => {
-      renderFlowPanel(getActiveSession());
+    onProgress: async () => {
+      renderFlowPanel(await getActiveSession());
     },
-  }).then(() => {
-    renderFlowPanel(getActiveSession());
+  }).then(async () => {
+    renderFlowPanel(await getActiveSession());
   });
 
-  const refreshed = getActiveSession();
+  const refreshed = await getActiveSession();
   resetModeSelectUi();
   renderFlowPanel(refreshed);
   showScreen("modeSelect");
@@ -749,12 +754,12 @@ function startModeFromRecommendation(mode) {
 
 let flowPanelWired = false;
 
-function wireFlowPanelHandlers() {
+async function wireFlowPanelHandlers() {
   if (flowPanelWired) return;
   flowPanelWired = true;
 
-  els.recommendationStartBtn?.addEventListener("click", () => {
-    const doc = getActiveSession();
+  els.recommendationStartBtn?.addEventListener("click", async () => {
+    const doc = await getActiveSession();
     const recommendation = doc?.shared?.modeRecommendation;
     const viewState = resolveFlowPanelViewState(doc);
     const step =
@@ -778,7 +783,8 @@ function wireFlowPanelHandlers() {
 /**
  * @param {import("./session-store.js").DocumentSession | null | undefined} [doc]
  */
-export function renderFlowPanel(doc = getActiveSession()) {
+export async function renderFlowPanel(doc = null) {
+  if (doc == null) doc = await getActiveSession();
   const viewState = resolveFlowPanelViewState(doc);
   const panel = els.recommendationPanel;
   const recommendation = doc?.shared?.modeRecommendation;
@@ -820,11 +826,11 @@ export function renderFlowPanel(doc = getActiveSession()) {
   syncModeSelectView(doc);
 }
 
-export function persistModeSliceToDocument(doc, mode, slice) {
+export async function persistModeSliceToDocument(doc, mode, slice) {
   if (!doc?.modes) return;
   const slot = normalizeStudyMode(mode);
   doc.modes[slot] = slice;
-  saveDocumentSession(doc);
+  await saveDocumentSession(doc);
 }
 
 export function createClozeSession({
@@ -930,8 +936,8 @@ function getStudyModeLabel(mode) {
 }
 
 /** QA stub â€” delegates to recall controller when document session exists. */
-export function showRecallStudyStub() {
-  const doc = getActiveSession();
+export async function showRecallStudyStub() {
+  const doc = await getActiveSession();
   if (doc) {
     void getRecallController().enterRecall({
       action: "recall_bootstrap",
@@ -964,18 +970,18 @@ export function showRecallStudyStub() {
 
 let recallStudyController = null;
 
-function getRecallController() {
+async function getRecallController() {
   if (!recallStudyController) {
     recallStudyController = createRecallStudyController({
       els,
-      getDoc: () => getActiveSession(),
+      getDoc: async () => await getActiveSession(),
       persistSlice: persistModeSliceToDocument,
       showScreen,
       setStudyMode: (mode) => {
         state.studyMode = mode;
       },
       runConceptInventoryForDoc: async () => {
-        const doc = getActiveSession();
+        const doc = await getActiveSession();
         const text = String(doc?.shared?.rawMarkdown || "").trim();
         if (!text) throw new Error("No document text for concept inventory.");
         const wc = text.split(/\s+/).filter(Boolean).length;
@@ -995,10 +1001,10 @@ function getRecallController() {
       },
       getLanguage: getStudyLanguage,
       getLlmModel: getSessionLlmModel,
-      updateFlowProgress: (doc) => {
+      updateFlowProgress: async (doc) => {
         if (!doc?.shared?.modeRecommendation) return;
-        const updated = updateFlowProgress(doc.shared.modeRecommendation, doc);
-        updateRecommendation(doc.docId, updated);
+        const updated = await updateFlowProgress(doc.shared.modeRecommendation, doc);
+        await updateRecommendation(doc.docId, updated);
         renderFlowPanel(doc);
       },
       onComplete: () => enterModeSelectScreen(),
@@ -1016,38 +1022,38 @@ function setStudyModeRadio(mode) {
   });
 }
 
-function resetModeSelectUi() {
+async function resetModeSelectUi() {
   document.querySelectorAll('input[name="studyMode"]').forEach((r) => {
     r.checked = false;
   });
   modeSelectManualOpen = false;
   clearFlowRecommendFeedback();
   for (const mode of ["rsvp", "slow", "cloze", "questions", "recall"]) {
-    if (loadSessionForMode(mode)) {
+    if (await loadSessionForMode(mode)) {
       setStudyModeRadio(mode);
       break;
     }
   }
 }
 
-function triggerVaultUpdateOnSessionExit() {
-  const doc = getActiveSession();
+async function triggerVaultUpdateOnSessionExit() {
+  const doc = await getActiveSession();
   if (!doc?.docId) return;
   const mode = String(state.studyMode || "rsvp").trim() || "rsvp";
   const sessionForVault = {
     ...doc,
     modes: {
-      rsvp: loadSessionForMode("rsvp"),
-      slow: loadSessionForMode("slow"),
-      cloze: loadSessionForMode("cloze"),
-      questions: loadSessionForMode("questions"),
+      rsvp: await loadSessionForMode("rsvp"),
+      slow: await loadSessionForMode("slow"),
+      cloze: await loadSessionForMode("cloze"),
+      questions: await loadSessionForMode("questions"),
     },
   };
   void import("./vault/session-close.js")
     .then(async (m) => {
       await m.updateVaultFromSession(sessionForVault, mode);
       const { syncVaultToReviewPool } = await import("./vault/spaced-review.js");
-      const fresh = getActiveSession();
+      const fresh = await getActiveSession();
       if (fresh) syncVaultToReviewPool(fresh);
     })
     .catch((err) => {
@@ -1075,8 +1081,8 @@ function buildVaultPresumedKnownMap(conceptInventory, docOrTopics) {
   return map;
 }
 
-function recordVaultAssessmentContradictions(items, responses, presumedMap) {
-  const doc = getActiveSession();
+async function recordVaultAssessmentContradictions(items, responses, presumedMap) {
+  const doc = await getActiveSession();
   if (!doc?.shared) return;
   const list = Array.isArray(items) ? items : [];
   const rows = Array.isArray(responses) ? responses : [];
@@ -1101,17 +1107,17 @@ function recordVaultAssessmentContradictions(items, responses, presumedMap) {
     doc.shared._vaultPendingObservations = [];
   }
   doc.shared._vaultPendingObservations.push(...pending);
-  saveDocumentSession(doc);
+  await saveDocumentSession(doc);
 }
 
-export function enterModeSelectScreen() {
+export async function enterModeSelectScreen() {
   triggerVaultUpdateOnSessionExit();
   syncFlowExitState();
   persistFlowRecommendationProgress();
   resetModeSelectUi();
   resetCreateScreenModeUi();
-  renderFlowPanel(getActiveSession());
-  mountModeSelectBreadcrumb(getActiveSession());
+  renderFlowPanel(await getActiveSession());
+  mountModeSelectBreadcrumb(await getActiveSession());
   syncSessionHubActions();
   showScreen("modeSelect");
   syncExportButtonsEnabled();
@@ -1126,15 +1132,15 @@ function guessSessionNameFromFileName(fileName) {
   return raw.replace(/\.[^/.]+$/, "").trim() || "Untitled session";
 }
 
-function applySessionTitleToActiveDoc(title) {
-  const doc = getActiveSession();
+async function applySessionTitleToActiveDoc(title) {
+  const doc = await getActiveSession();
   const safeTitle = String(title || "").trim();
   if (!doc || !safeTitle) return;
   doc.shared.docMeta = {
     ...(doc.shared.docMeta || {}),
     titleInferred: safeTitle,
   };
-  saveDocumentSession(doc);
+  await saveDocumentSession(doc);
 }
 
 async function handleCreateSessionStartFilePicked() {
@@ -1158,7 +1164,7 @@ async function handleCreateSessionStartFilePicked() {
     if (runId !== createSessionStartRunId) return;
     const doc = await ensureDocumentSessionForUpload(cleanedText);
     const suggestedTitle = guessSessionNameFromFileName(file.name);
-    setUploadMeta(doc.docId, {
+    await setUploadMeta(doc.docId, {
       fileName: String(file.name || ""),
       originalFormat: String(originalFormat || ""),
       uploadedAt: new Date().toISOString(),
@@ -1167,7 +1173,7 @@ async function handleCreateSessionStartFilePicked() {
       ...(doc.shared.docMeta || {}),
       titleInferred: suggestedTitle,
     };
-    saveDocumentSession(doc);
+    await saveDocumentSession(doc);
     state.lastCleanedMaterialText = cleanedText;
     state.lastCleanedMaterialWordCount = countWords(cleanedText);
     state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
@@ -1214,8 +1220,8 @@ async function handleCreateSessionStartFilePicked() {
   }
 }
 
-function handleCreateSessionStartContinue() {
-  const doc = getActiveSession();
+async function handleCreateSessionStartContinue() {
+  const doc = await getActiveSession();
   if (!doc?.docId) {
     if (els.createSessionStartStatus) {
       els.createSessionStartStatus.textContent = "Upload a file before continuing.";
@@ -1227,12 +1233,12 @@ function handleCreateSessionStartContinue() {
   enterModeSelectScreen();
 }
 
-export function enterCreateSessionStartScreen() {
+export async function enterCreateSessionStartScreen() {
   createSessionStartRunId += 1;
   if (els.createSessionStartFileInput) {
     els.createSessionStartFileInput.value = "";
   }
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const defaultName = doc?.shared?.docMeta?.titleInferred || "";
   if (els.createSessionStartNameInput) {
     els.createSessionStartNameInput.value = defaultName;
@@ -1274,14 +1280,14 @@ export async function runIngestOnlyPipeline({
   const doc = await createSession(text, {
     projectId: projectId || getUploadDefaultProjectId(),
   });
-  setUploadMeta(doc.docId, {
+  await setUploadMeta(doc.docId, {
     fileName,
     originalFormat,
     uploadedAt: new Date().toISOString(),
   });
-  setActiveSession(doc.docId);
+  await setActiveSession(doc.docId);
   await startDocumentPreparation(doc, { stopAfterTier: 1 });
-  return getSession(doc.docId);
+  return await getSession(doc.docId);
 }
 
 async function handleIngestOnlyFileSelected() {
@@ -1306,8 +1312,8 @@ async function handleIngestOnlyFileSelected() {
   }
 }
 
-function syncSessionHubActions() {
-  const doc = getActiveSession();
+async function syncSessionHubActions() {
+  const doc = await getActiveSession();
   const hasDoc = Boolean(doc?.docId);
   if (els.sessionHubActions) {
     els.sessionHubActions.hidden = !hasDoc;
@@ -1332,10 +1338,10 @@ function escapeUploadVaultHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function renderUploadVaultCandidates() {
+async function renderUploadVaultCandidates() {
   const list = els.uploadVaultCandidateList;
   if (!list) return;
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   if (!uploadVaultCandidateState.length) {
     list.innerHTML = '<p class="hint">No studied concepts to upload yet.</p>';
     if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
@@ -1450,7 +1456,7 @@ function buildRelatedCandidatesForRow(conceptId, batchContext, dedupRow, vault) 
 }
 
 async function loadUploadVaultCandidates() {
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   if (!doc?.docId) {
     enterModeSelectScreen();
     return;
@@ -1607,7 +1613,7 @@ function collectUploadVaultSelectionsFromDom() {
 }
 
 async function commitUploadVaultSelections() {
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   if (!doc?.docId) return;
   const selections = collectUploadVaultSelectionsFromDom().filter(
     (sel) =>
@@ -1688,18 +1694,18 @@ export async function resumeVaultUploadQueue() {
   if (!queue || !getPendingQueueCount(queue)) return;
   const docId = String(queue.docId || "").trim();
   if (!docId) return;
-  let session = getActiveSession() || getSession(docId);
+  let session = (await getActiveSession()) || (await getSession(docId));
   if (!session || session.docId !== docId) {
-    session = getSession(docId) || { docId, shared: { conceptInventory: [], docTopics: [] } };
+    session = await getSession(docId) || { docId, shared: { conceptInventory: [], docTopics: [] } };
   }
   await processUploadQueue(session, () => syncVaultUploadResumeBanner());
   syncVaultUploadResumeBanner();
 }
 
-function refreshVaultReviewBadge() {
+async function refreshVaultReviewBadge() {
   const badge = els.vaultReviewBadge;
   if (!badge) return;
-  const due = getVaultReviewDueCount();
+  const due = await getVaultReviewDueCount();
   if (due > 0) {
     badge.textContent = String(due);
     badge.setAttribute("aria-label", `${due} items due today across all documents`);
@@ -1748,15 +1754,15 @@ function renderRetrievalHubOptions() {
 /**
  * @param {{ docId?: string, entrySource?: string, returnScreen?: string }} [options]
  */
-export function enterRetrievalHub(options = {}) {
-  const docId = String(options.docId || getActiveSession()?.docId || "").trim();
-  const doc = docId ? getSession(docId) : null;
+export async function enterRetrievalHub(options = {}) {
+  const docId = String(options.docId || await getActiveSession()?.docId || "").trim();
+  const doc = docId ? await getSession(docId) : null;
   if (!doc) {
     enterDocLibraryScreen();
     return;
   }
-  if (docId !== getActiveSession()?.docId) {
-    setActiveSession(docId);
+  if (docId !== (await getActiveSession())?.docId) {
+    await setActiveSession(docId);
     hydrateMaterialStateFromDoc(doc);
   }
   const material = String(doc.shared?.rawMarkdown || "").trim();
@@ -1801,9 +1807,9 @@ function onRetrievalHubPick(modeKey) {
   void enterModeWithContinuity(mode);
 }
 
-function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, skipped = false }) {
+async function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, skipped = false }) {
   try {
-    const doc = getActiveSession();
+    const doc = await getActiveSession();
     if (!doc?.docId) return;
     const blocks = getBlocksSafe();
     const block = blocks[state.activeBlockIndex];
@@ -1813,7 +1819,7 @@ function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, s
       : Array.isArray(block?.concepts)
         ? block.concepts.map((c) => c?.canonicalId || c?.label || c).filter(Boolean)
         : [];
-    registerOrUpdateSmItem(doc.docId, {
+    await registerOrUpdateSmItem(doc.docId, {
       sourceType: "rsvp_block",
       sourceId: blockId,
       title: getBlockTitleSafe(state.activeBlockIndex),
@@ -1835,9 +1841,9 @@ function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, s
 }
 
 /** Active concept ids for mnemonic panel prefill (mode-specific). */
-export function resolveMnemonicActiveConceptIds() {
+export async function resolveMnemonicActiveConceptIds() {
   const screenId = getCurrentScreenId();
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   if (!doc) return [];
 
   if (screenId === "test" || screenId === "socratic") {
@@ -1858,8 +1864,8 @@ export function resolveMnemonicActiveConceptIds() {
   return [];
 }
 
-function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
-  const doc = getActiveSession();
+async function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
+  const doc = await getActiveSession();
   if (!doc?.docId || !Array.isArray(inventory) || !inventory.length) return;
   const concepts = inventory
     .map((raw) => {
@@ -1874,10 +1880,10 @@ function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
       };
     })
     .filter(Boolean);
-  if (concepts.length) addConceptsToShared(doc.docId, concepts);
+  if (concepts.length) await addConceptsToShared(doc.docId, concepts);
 }
 
-function persistInventoryRunMeta(doc, invResult) {
+async function persistInventoryRunMeta(doc, invResult) {
   if (!doc?.docId || invResult?.kind !== "inventory") return;
   if (!doc.modes) doc.modes = {};
   if (!doc.modes.rsvp) doc.modes.rsvp = {};
@@ -1888,7 +1894,7 @@ function persistInventoryRunMeta(doc, invResult) {
   if (Array.isArray(invResult.failedChunks) && invResult.failedChunks.length) {
     meta.inventoryFailedChunks = invResult.failedChunks;
   }
-  saveDocumentSession(doc);
+  await saveDocumentSession(doc);
 }
 
 function notifyInventoryRunStatus(invResult) {
@@ -1913,19 +1919,19 @@ async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onPro
   docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
   if (doc?.shared && docHierarchy) {
     doc.shared.docHierarchy = docHierarchy;
-    saveDocumentSession(doc);
+    await saveDocumentSession(doc);
   }
   return docHierarchy;
 }
 
-function syncActiveSessionAssessmentSignals() {
-  const doc = getActiveSession();
+async function syncActiveSessionAssessmentSignals() {
+  const doc = await getActiveSession();
   const session = state.activeSession;
   if (!doc?.docId || !session?._responses) return;
   const mode = normalizeStudyMode(session.studyMode || state.studyMode);
   if (mode !== "rsvp" && mode !== "questions") return;
   try {
-    syncAssessmentSignalsToShared(doc.docId, session, mode);
+    await syncAssessmentSignalsToShared(doc.docId, session, mode);
   } catch (err) {
     console.warn("[study] assessment signal sync failed", err);
   }
@@ -1959,24 +1965,29 @@ function formatDocLibraryModes(modes) {
   return modes.map((mode) => getStudyModeLabel(mode)).join(", ");
 }
 
-/** @returns {{ docId: string, title: string, modes: string[], smDue: number, updatedAt: number }[]} */
-export function buildDocLibraryRows() {
-  return getAllSessions().map((doc) => ({
-    docId: doc.docId,
-    title: doc.shared?.docMeta?.titleInferred || "Untitled document",
-    modes: Object.entries(doc.modes || {})
-      .filter(([, value]) => value != null)
-      .map(([key]) => key),
-    smDue: getSmItemsDueToday(doc.docId).length,
-    updatedAt: doc.updatedAt || 0,
-  }));
+/** @returns {Promise<{ docId: string, title: string, modes: string[], smDue: number, updatedAt: number }[]>} */
+export async function buildDocLibraryRows() {
+  const sessions = await getAllSessions();
+  const rows = [];
+  for (const doc of sessions) {
+    rows.push({
+      docId: doc.docId,
+      title: doc.shared?.docMeta?.titleInferred || "Untitled document",
+      modes: Object.entries(doc.modes || {})
+        .filter(([, value]) => value != null)
+        .map(([key]) => key),
+      smDue: (await getSmItemsDueToday(doc.docId)).length,
+      updatedAt: doc.updatedAt || 0,
+    });
+  }
+  return rows;
 }
 
-export function renderDocLibrary() {
+export async function renderDocLibrary() {
   const container = els.docLibraryList;
   if (!container) return;
 
-  const rows = buildDocLibraryRows();
+  const rows = await buildDocLibraryRows();
   if (!rows.length) {
     container.innerHTML = '<p class="doc-library-empty hint">No documents studied yet.</p>';
     return;
@@ -2006,10 +2017,10 @@ export function enterDocLibraryScreen() {
   showScreen("docLibrary");
 }
 
-function reopenDocumentFromLibrary(docId) {
+async function reopenDocumentFromLibrary(docId) {
   const id = String(docId || "").trim();
-  if (!id || !getSession(id)) return;
-  setActiveSession(id);
+  if (!id || !(await getSession(id))) return;
+  await setActiveSession(id);
   enterModeSelectScreen();
 }
 
@@ -2076,11 +2087,11 @@ export function applyModeEntry(doc, mode, options = {}) {
   return { action: "upload_required", mode: normalized, slice: null };
 }
 
-function showBootstrappedCreateScreen(mode, slice, doc) {
+async function showBootstrappedCreateScreen(mode, slice, doc) {
   hydrateMaterialStateFromDoc(doc);
   state.studyMode = mode;
   state.activeSession = slice;
-  storeActiveSession(slice);
+  await storeActiveSession(slice);
   setStudyModeRadio(mode);
   if (els.createModeLabel) {
     els.createModeLabel.textContent = getStudyModeLabel(mode);
@@ -2090,7 +2101,7 @@ function showBootstrappedCreateScreen(mode, slice, doc) {
   if (mode === "slow") {
     if (doc.shared?.docHierarchy) {
       slice.docHierarchy = doc.shared.docHierarchy;
-      storeActiveSession(slice);
+      await storeActiveSession(slice);
     }
     setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
@@ -2124,7 +2135,7 @@ export async function enterModeWithContinuity(mode) {
   const normalized = normalizeStudyMode(raw);
 
   applyFlowRecommendationOnEnterMode(normalized);
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const entry = applyModeEntry(doc, normalized, {
     llmModel: getSessionLlmModel(),
     language: getStudyLanguage(),
@@ -2294,11 +2305,11 @@ function updateClozeSessionPanel(session) {
   }
 }
 
-function resumeClozeSession(session) {
+async function resumeClozeSession(session) {
   if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;
   state.studyMode = "cloze";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   setGenerateBlocksFormHidden(true);
   updateClozeSessionPanel(session);
   showCreateScreen();
@@ -2328,18 +2339,18 @@ async function runClozeGeneration(session) {
   session.cloze.pipelineError = null;
   session.cloze.pipelinePhase = 0;
   updateClozeSessionPanel(session);
-  storeActiveSession(session);
+  await storeActiveSession(session);
 
   try {
     const result = await runClozePipelinePhases(session.cloze.normalizedText, session, {
-      onPhase(phaseIndex, statusKey, partial = {}) {
+      async onPhase(phaseIndex, statusKey, partial = {}) {
         session.cloze.pipelinePhase = phaseIndex;
         session.cloze.pipelineStatus = statusKey;
         if (partial.epistemicGraph) session.cloze.epistemicGraph = partial.epistemicGraph;
         if (partial.analysis) session.cloze.analysis = partial.analysis;
         if (partial.items) session.cloze.items = partial.items;
         updateClozeSessionPanel(session);
-        storeActiveSession(session);
+        await storeActiveSession(session);
       },
     });
 
@@ -2356,14 +2367,14 @@ async function runClozeGeneration(session) {
         valid: result.validItems.length,
       },
     };
-    applyAssessmentPrioritizedOrder(session, getActiveSession());
+    applyAssessmentPrioritizedOrder(session, await getActiveSession());
     updateClozeSessionPanel(session);
-    storeActiveSession(session);
+    await storeActiveSession(session);
   } catch (err) {
     session.cloze.pipelineStatus = "failed";
     session.cloze.pipelineError = err?.message ? String(err.message) : String(err);
     updateClozeSessionPanel(session);
-    storeActiveSession(session);
+    await storeActiveSession(session);
   } finally {
     clozePipelineRunning = false;
   }
@@ -2400,7 +2411,7 @@ async function importClozePacksFromInput() {
     const sessionObj = result.session;
     state.activeSession = sessionObj;
     state.studyMode = "cloze";
-    storeActiveSession(sessionObj);
+    await storeActiveSession(sessionObj);
     setGenerateBlocksFormHidden(true);
     updateClozeSessionPanel(sessionObj);
     showCreateScreen();
@@ -2450,11 +2461,11 @@ function showModeResumeOrUpload(mode) {
   setGenerateBlocksFormHidden(false);
 }
 
-function resumeSlowSession(session) {
+async function resumeSlowSession(session) {
   if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;
   state.studyMode = "slow";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   if (String(session?.slow?.phase || "") === "scope") {
     renderSlowScopeScreen(session);
   }
@@ -2468,10 +2479,10 @@ function resumeSlowSession(session) {
   }
 }
 
-function resumeRsvpSession(session) {
+async function resumeRsvpSession(session) {
   state.activeSession = session;
   state.studyMode = "rsvp";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   const n = Math.max(1, Number(session?.n_blocks) || 1);
   if (els.sessionReadyMeta) {
     els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
@@ -2480,10 +2491,10 @@ function resumeRsvpSession(session) {
   showScreen("ready");
 }
 
-function resumeQuestionsSession(session) {
+async function resumeQuestionsSession(session) {
   state.activeSession = session;
   state.studyMode = "questions";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   const n = Math.max(1, Number(session?.n_blocks) || 1);
   if (els.sessionReadyMeta) {
     els.sessionReadyMeta.textContent = "Questions session ready.";
@@ -2492,7 +2503,7 @@ function resumeQuestionsSession(session) {
   showScreen("ready");
 }
 
-function selectSlowScope(session, opt, listEl) {
+async function selectSlowScope(session, opt, listEl) {
   const slow = session?.slow;
   if (!slow || !opt) return;
   listEl?.querySelectorAll("button[data-scope-id]").forEach((b) => {
@@ -2517,7 +2528,7 @@ function selectSlowScope(session, opt, listEl) {
         "Scope â‰¥ 60k characters â€” Phase 0 will use map-reduce by section.";
     }
   }
-  storeActiveSession(session);
+  await storeActiveSession(session);
 }
 
 function groupScopeOptionsHierarchical(options) {
@@ -2559,8 +2570,8 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
   if (needsLlm && !llmFn) {
     session.docHierarchy = null;
     syncSlowDocHierarchyToShared(session);
-    const doc = getActiveSession();
-    if (doc) computeAndPersistModeRecommendation(doc, text, null);
+    const doc = await getActiveSession();
+    if (doc) await computeAndPersistModeRecommendation(doc, text, null);
     return;
   }
 
@@ -2575,18 +2586,18 @@ async function populateDocumentHierarchy(session, markdownText, llmModel) {
     const hierarchyResult = await buildDocumentHierarchy(text, llmFn, { useCache: true });
     session.docHierarchy = hierarchyResult;
     syncSlowDocHierarchyToShared(session);
-    const doc = getActiveSession();
-    if (doc) computeAndPersistModeRecommendation(doc, text, hierarchyResult);
+    const doc = await getActiveSession();
+    if (doc) await computeAndPersistModeRecommendation(doc, text, hierarchyResult);
   } finally {
     session._docHierarchyLoading = false;
-    storeActiveSession(session);
+    await storeActiveSession(session);
     if (state.activeSession === session) {
       renderSlowScopeScreen(session);
     }
   }
 }
 
-function renderSlowScopeScreen(session) {
+async function renderSlowScopeScreen(session) {
   const slow = session?.slow;
   if (!slow) return;
 
@@ -2621,11 +2632,11 @@ function renderSlowScopeScreen(session) {
     els.slowScopeEditBtn.textContent = slow.scopeEditMode ? "Done" : "Edit sections";
     if (!els.slowScopeEditBtn._wired) {
       els.slowScopeEditBtn._wired = true;
-      els.slowScopeEditBtn.addEventListener("click", () => {
+      els.slowScopeEditBtn.addEventListener("click", async () => {
         const s = state.activeSession;
         if (!s?.slow) return;
         s.slow.scopeEditMode = !s.slow.scopeEditMode;
-        storeActiveSession(s);
+        await storeActiveSession(s);
         renderSlowScopeScreen(s);
       });
     }
@@ -2638,14 +2649,14 @@ function renderSlowScopeScreen(session) {
     els.slowScopeAutoSplitBtn.hidden = !showAuto;
     if (!els.slowScopeAutoSplitBtn._wired) {
       els.slowScopeAutoSplitBtn._wired = true;
-      els.slowScopeAutoSplitBtn.addEventListener("click", () => {
+      els.slowScopeAutoSplitBtn.addEventListener("click", async () => {
         const s = state.activeSession;
         if (!s?.slow) return;
         s.slow.fallbackSections = buildEqualLengthSections(s.slow.normalizedTextFull, {
           targetChunkSize: 5000,
           labelPrefix: "Section",
         });
-        storeActiveSession(s);
+        await storeActiveSession(s);
         renderSlowScopeScreen(s);
       });
     }
@@ -2678,7 +2689,7 @@ function renderSlowScopeScreen(session) {
       renameBtn.type = "button";
       renameBtn.textContent = "Renombrar";
       renameBtn.className = "btn-link";
-      renameBtn.addEventListener("click", (e) => {
+      renameBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const newLabel = window.prompt("New section name:", opt.label);
         if (!newLabel?.trim()) return;
@@ -2688,18 +2699,18 @@ function renderSlowScopeScreen(session) {
           headingId: opt.id,
           newLabel: newLabel.trim(),
         });
-        storeActiveSession(session);
+        await storeActiveSession(session);
         renderSlowScopeScreen(session);
       });
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.textContent = "Eliminar";
       removeBtn.className = "btn-link";
-      removeBtn.addEventListener("click", (e) => {
+      removeBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         slow.headingOverrides = slow.headingOverrides || [];
         slow.headingOverrides.push({ type: "remove", headingId: opt.id });
-        storeActiveSession(session);
+        await storeActiveSession(session);
         renderSlowScopeScreen(session);
       });
       actions.append(renameBtn, removeBtn);
@@ -2724,11 +2735,11 @@ function renderSlowScopeScreen(session) {
       toggle.className = "slow-scope-toggle";
       toggle.textContent = collapsed ? "â–¶" : "â–¼";
       toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
-      toggle.addEventListener("click", (e) => {
+      toggle.addEventListener("click", async (e) => {
         e.stopPropagation();
         slow.scopeCollapsedParents = slow.scopeCollapsedParents || {};
         slow.scopeCollapsedParents[parent.id] = !collapsed;
-        storeActiveSession(session);
+        await storeActiveSession(session);
         renderSlowScopeScreen(session);
       });
       li.appendChild(toggle);
@@ -2774,11 +2785,11 @@ function renderSlowScopeScreen(session) {
     els.slowScopeFillableMap.checked = Boolean(slow.fillableMapMode);
     if (!els.slowScopeFillableMap._wired) {
       els.slowScopeFillableMap._wired = true;
-      els.slowScopeFillableMap.addEventListener("change", () => {
+      els.slowScopeFillableMap.addEventListener("change", async () => {
         const s = state.activeSession;
         if (!s?.slow) return;
         s.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
-        storeActiveSession(s);
+        await storeActiveSession(s);
       });
     }
   }
@@ -2786,11 +2797,11 @@ function renderSlowScopeScreen(session) {
     els.slowScopeCheckpoints.checked = slow.checkpointsEnabled !== false;
     if (!els.slowScopeCheckpoints._wired) {
       els.slowScopeCheckpoints._wired = true;
-      els.slowScopeCheckpoints.addEventListener("change", () => {
+      els.slowScopeCheckpoints.addEventListener("change", async () => {
         const s = state.activeSession;
         if (!s?.slow) return;
         s.slow.checkpointsEnabled = Boolean(els.slowScopeCheckpoints.checked);
-        storeActiveSession(s);
+        await storeActiveSession(s);
       });
     }
   }
@@ -2804,9 +2815,9 @@ function setSlowPhase0Controls({ showRetry = false, showSkip = false, showContin
 
 const PHASE0_MAX_CONCEPTS = 5;
 
-function persistPhase0Edits(session) {
+async function persistPhase0Edits(session) {
   if (!session?.slow?.phase0) return;
-  storeActiveSession(session);
+  await storeActiveSession(session);
 }
 
 function renderPhase0ReadonlyBlock(parent, title, body) {
@@ -3156,7 +3167,7 @@ async function runPhase0Generation(session) {
     return;
   }
 
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const cachedOrientation = doc?.shared?.slowOrientation?.payload;
   if (cachedOrientation && typeof cachedOrientation === "object") {
     slow.phase0 = applyFillableMapMode(
@@ -3165,7 +3176,7 @@ async function runPhase0Generation(session) {
     );
     slow.phase0Status = "ready";
     slow.phase0Error = null;
-    storeActiveSession(session);
+    await storeActiveSession(session);
     renderSlowPhase0Screen(session);
     return;
   }
@@ -3178,7 +3189,7 @@ async function runPhase0Generation(session) {
     els.slowPhase0Progress.textContent = "Generating orientationâ€¦";
   }
   renderSlowPhase0Screen(session);
-  storeActiveSession(session);
+  await storeActiveSession(session);
 
   const scopeText = getScopeText(session);
   try {
@@ -3199,30 +3210,30 @@ async function runPhase0Generation(session) {
     slow.phase0 = applyFillableMapMode(ensurePhase0UserFields(orientation), slow.fillableMapMode);
     slow.phase0Status = "ready";
     slow.phase0Error = null;
-    storeActiveSession(session);
+    await storeActiveSession(session);
     renderSlowPhase0Screen(session);
   } catch (err) {
     if (token !== phase0GenerationToken) return;
     slow.phase0Status = "failed";
     slow.phase0Error = err?.message ? String(err.message) : "Phase 0 generation failed.";
-    storeActiveSession(session);
+    await storeActiveSession(session);
     renderSlowPhase0Screen(session);
   }
 }
 
-function skipSlowPhase0(session) {
+async function skipSlowPhase0(session) {
   if (!session?.slow) return;
   if (!session.slow.phase0SeenReread) return;
   session.slow.phase0Status = "skipped";
   session.slow.phase0 = null;
   session.slow.phase0Error = null;
   session.slow.phase = "phase1";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   navigateSlowByPhase(session);
   initSlowReader(session);
 }
 
-function continueSlowPhase0(session) {
+async function continueSlowPhase0(session) {
   if (!session?.slow) return;
   const seenKey = session.slow.phase0SeenKey || getPhase0SeenKeyForSession(session);
   if (seenKey) {
@@ -3233,7 +3244,7 @@ function continueSlowPhase0(session) {
     markPhase0Seen(seenKey);
   }
   session.slow.phase = "phase1";
-  storeActiveSession(session);
+  await storeActiveSession(session);
   navigateSlowByPhase(session);
   initSlowReader(session);
 }
@@ -3246,13 +3257,13 @@ function enterSlowPhase0(session) {
   }
 }
 
-function wireSlowPhase0Handlers() {
-  els.slowPhase0RetryBtn?.addEventListener("click", () => {
+async function wireSlowPhase0Handlers() {
+  els.slowPhase0RetryBtn?.addEventListener("click", async () => {
     const session = state.activeSession;
     if (!session?.slow) return;
     session.slow.phase0Status = "idle";
     session.slow.phase0Error = null;
-    storeActiveSession(session);
+    await storeActiveSession(session);
     void runPhase0Generation(session);
   });
 
@@ -3265,13 +3276,13 @@ function wireSlowPhase0Handlers() {
     continueSlowPhase0(state.activeSession);
   });
 
-  els.slowPhase0CollapseBtn?.addEventListener("click", () => {
+  els.slowPhase0CollapseBtn?.addEventListener("click", async () => {
     const session = state.activeSession;
     if (!session?.slow) return;
     session.slow.phase0Collapsed = !session.slow.phase0Collapsed;
     renderSlowPhase0Content(session);
     updatePhase0CollapseUi(session);
-    storeActiveSession(session);
+    await storeActiveSession(session);
   });
 }
 
@@ -3295,8 +3306,8 @@ function prepareSlowPhase0Entry(session) {
   }
 }
 
-function wireSlowScopeHandlers() {
-  els.slowScopeConfirmBtn?.addEventListener("click", () => {
+async function wireSlowScopeHandlers() {
+  els.slowScopeConfirmBtn?.addEventListener("click", async () => {
     const session = state.activeSession;
     if (!session?.slow?.readingScope) return;
     applyFlowRecommendationOnEnterMode("slow");
@@ -3308,7 +3319,7 @@ function wireSlowScopeHandlers() {
     }
     session.slow.phase = "phase0";
     prepareSlowPhase0Entry(session);
-    storeActiveSession(session);
+    await storeActiveSession(session);
     enterSlowPhase0(session);
   });
 
@@ -3708,9 +3719,9 @@ function setRecommendLoading(isLoading) {
   if (els.blocksInput) els.blocksInput.disabled = isLoading;
 }
 
-function hasMaterialForBlockRecommend() {
+async function hasMaterialForBlockRecommend() {
   const hasFile = Boolean(els.fileInput?.files?.length);
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const hasBootstrap =
     Boolean(state.materialBootstrapActive) && Boolean(String(doc?.shared?.rawMarkdown || "").trim());
   return hasFile || hasBootstrap;
@@ -3721,7 +3732,7 @@ async function maybeAutoRecommendBlockCount() {
   if (mode !== "rsvp") return;
   if (!els.generateBlocksForm || els.generateBlocksForm.hidden) return;
   if (!hasMaterialForBlockRecommend()) return;
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   if (doc && applySharedBlockRecommendationToUi(doc)) return;
   if (doc && isDocumentPreparationReady(doc) && doc.shared?.blockRecommendation) {
     applySharedBlockRecommendationToUi(doc);
@@ -3776,7 +3787,7 @@ function buildBootstrapFileStub(doc, cleanedText) {
  * } | null>}
  */
 async function resolveMaterialForGenerate() {
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const fileList = els.fileInput?.files ? Array.from(els.fileInput.files) : [];
   let file = fileList[0];
 
@@ -3815,7 +3826,7 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
 
   clearRecommendBlocksUi();
 
-  const docEarly = getActiveSession();
+  const docEarly = await getActiveSession();
   if (docEarly && applySharedBlockRecommendationToUi(docEarly)) {
     return;
   }
@@ -3868,7 +3879,7 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
     if (isBlockSplitCacheValid(cache, fingerprint)) {
       inventory = cache.conceptInventory;
     } else {
-      const doc = getActiveSession();
+      const doc = await getActiveSession();
       const docHierarchy = await ensureDocHierarchyForInventory(
         doc,
         cleanedText,
@@ -4100,8 +4111,8 @@ function showExportToast(message, { variant = "success", durationMs = 3000 } = {
   }, durationMs);
 }
 
-function handleExportSessionClick() {
-  const result = exportSessionMarkdown({ force: true, source: "button" });
+async function handleExportSessionClick() {
+  const result = await exportSessionMarkdown({ force: true, source: "button" });
   if (result.ok) {
     const blocks = result.blockCount != null ? ` (${result.blockCount} blocks)` : "";
     showExportToast(`Session saved${blocks}`);
@@ -4113,8 +4124,8 @@ function handleExportSessionClick() {
     return;
   }
   if (result.error === "download_blocked") {
-    const session = resolveSessionForExport();
-    if (session) void copyPlainTextToClipboard(buildMarkdown(session));
+    const session = await resolveSessionForExport();
+    if (session) void copyPlainTextToClipboard(await buildMarkdown(session));
     showExportToast("Download blocked â€” content copied to clipboard", {
       variant: "error",
       durationMs: 5000,
@@ -4148,8 +4159,8 @@ function syncExportButtonsEnabled() {
 
 let persistHealthDismissed = false;
 
-function syncPersistenceHealthBanner() {
-  const doc = getActiveSession();
+async function syncPersistenceHealthBanner() {
+  const doc = await getActiveSession();
   const health = computePersistenceHealth(doc);
   const banners = [
     {
@@ -4189,7 +4200,7 @@ function syncPersistenceHealthBanner() {
     }
     if (recoverBtn && !recoverBtn.dataset.wired) {
       recoverBtn.dataset.wired = "1";
-      recoverBtn.addEventListener("click", () => {
+      recoverBtn.addEventListener("click", async () => {
         const recovered = tryRecoverBlocksFromV1Backup(doc?.modes?.rsvp);
         if (!recovered || !doc) return;
         if (!doc.modes) doc.modes = {};
@@ -4197,7 +4208,7 @@ function syncPersistenceHealthBanner() {
         slice.blocks = recovered;
         slice.n_blocks = Math.max(Number(slice.n_blocks) || 0, recovered.length);
         doc.modes.rsvp = slice;
-        saveDocumentSession(doc);
+        await saveDocumentSession(doc);
         persistHealthDismissed = true;
         showExportToast("Imported blocks from backup â€” review before continuing");
         syncPersistenceHealthBanner();
@@ -5117,7 +5128,7 @@ async function ensureBlockGenerated(blockIndex) {
     }
 
     updateCoverageManifestAfterBlock(blockIndex, obj?.questions);
-    storeActiveSession(state.activeSession, { bumpRev: true });
+    await storeActiveSession(state.activeSession, { bumpRev: true });
 
     warnBlockGenerationProfileMismatch(obj, cfg);
     cleaned = normalizeBlockJson(obj, cfg, blockIndex);
@@ -5138,7 +5149,7 @@ async function ensureBlockGenerated(blockIndex) {
   if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
   state.activeSession.blocks[blockIndex] = cleaned;
   state.activeSession.current_block_index = blockIndex;
-  storeActiveSession(state.activeSession, { bumpRev: true });
+  await storeActiveSession(state.activeSession, { bumpRev: true });
   return cleaned;
 }
 
@@ -5187,7 +5198,7 @@ function getBlockOrderedQuestions(block) {
   return { testQs, socQs, allQs: [...testQs, ...socQs] };
 }
 
-function ensureTestQuestionShuffled(block, q) {
+async function ensureTestQuestionShuffled(block, q) {
   if (!q || !block || String(q.type || "").trim().toLowerCase() !== "test") return q;
   if (q._optionsShuffled) return q;
   const shuffled = shuffleTestQuestionOptions(q);
@@ -5196,7 +5207,7 @@ function ensureTestQuestionShuffled(block, q) {
     const i = qs.indexOf(q);
     if (i >= 0) {
       qs[i] = shuffled;
-      if (state.activeSession) storeActiveSession(state.activeSession, { bumpRev: false });
+      if (state.activeSession) await storeActiveSession(state.activeSession, { bumpRev: false });
     }
   }
   return shuffled;
@@ -5608,7 +5619,7 @@ function renderTestQuestion() {
   attachTestMcKeydown();
 }
 
-function handleTestAnswer({ chosen, correct, feedback }) {
+async function handleTestAnswer({ chosen, correct, feedback }) {
   testMcAnswered = true;
   if (isPrePackingAssessmentRunner()) {
     handleAssessmentTestAnswer({ chosen, correct, feedback });
@@ -5656,12 +5667,12 @@ function handleTestAnswer({ chosen, correct, feedback }) {
   els.testNextBtn.hidden = false;
   els.testNextBtn.textContent = isLastGlobal ? (isLastBlock ? "Finish" : "Next block") : "Next";
 
-  els.testNextBtn.onclick = () => {
+  els.testNextBtn.onclick = async () => {
     if (!isLastGlobal) {
       state.activeQuestionIndex += 1;
       if (state.activeSession && typeof state.activeSession === "object") {
         state.activeSession.active_question_index = state.activeQuestionIndex;
-        storeActiveSession(state.activeSession);
+        await storeActiveSession(state.activeSession);
       }
       const nextCtx = getActiveQuestionContext();
       if (nextCtx.type === "socratic") {
@@ -5721,7 +5732,7 @@ function renderSocraticQuestion() {
   setTimeout(() => els.socraticAnswer.focus(), 0);
 }
 
-function startBlock(blockIndex) {
+async function startBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
 
   // 1) triggerPrefetch(N+1) â€” fire and forget
@@ -5746,7 +5757,7 @@ function startBlock(blockIndex) {
   if (state.activeSession && typeof state.activeSession === "object") {
     state.activeSession.current_block_index = idx;
     state.activeSession.active_question_index = 0;
-    storeActiveSession(state.activeSession, { bumpRev: true });
+    await storeActiveSession(state.activeSession, { bumpRev: true });
   }
 
   updateStudyProgressUi();
@@ -5784,7 +5795,7 @@ async function generateBlockDirect(blockIndex, { timeoutMs, n_test, n_socratic }
   if (state.activeSession && typeof state.activeSession === "object") {
     if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
     state.activeSession.blocks[idx] = data;
-    storeActiveSession(state.activeSession, { bumpRev: true });
+    await storeActiveSession(state.activeSession, { bumpRev: true });
   }
   return data;
 }
@@ -5793,14 +5804,14 @@ function finishRSVP(blockIndex) {
   showQuestions(blockIndex);
 }
 
-function showQuestions(blockIndex) {
+async function showQuestions(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   state.activeBlockIndex = idx;
   state.activeQuestionIndex = 0;
   if (state.activeSession && typeof state.activeSession === "object") {
     state.activeSession.current_block_index = idx;
     state.activeSession.active_question_index = 0;
-    storeActiveSession(state.activeSession);
+    await storeActiveSession(state.activeSession);
   }
 
   updateStudyProgressUi();
@@ -5973,7 +5984,7 @@ async function finishQuestions(blockIndex) {
     }
   };
 
-  const persistNextBlock = (data, cfg) => {
+  const persistNextBlock = async (data, cfg) => {
     if (!state.activeSession || typeof state.activeSession !== "object") return;
     if (!Array.isArray(state.activeSession.blocks)) state.activeSession.blocks = [];
     const cleaned = normalizeBlockJson(data, cfg, nextIndex);
@@ -5981,7 +5992,7 @@ async function finishQuestions(blockIndex) {
       cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
     }
     state.activeSession.blocks[nextIndex] = cleaned;
-    storeActiveSession(state.activeSession, { bumpRev: true });
+    await storeActiveSession(state.activeSession, { bumpRev: true });
     try {
       syncConceptsFromBlock(
         nextIndex,
@@ -6245,7 +6256,7 @@ function updateMaterialGraphScreenCopy({ title, hint } = {}) {
   if (hintEl && hint) hintEl.textContent = hint;
 }
 
-function openMaterialGraphScreen({
+async function openMaterialGraphScreen({
   backScreen = "blocks",
   session = state.activeSession,
   blockIndex = state.materialGraphContext?.blockIndex,
@@ -6269,11 +6280,11 @@ function openMaterialGraphScreen({
     blockIndex,
     conceptInventory,
     mode,
-    onNodeClick: (node) => {
+    onNodeClick: async (node) => {
       if (!node?.sourceAnnotationId || !session?.slow) return;
       const ann = (session.slow.annotations || []).find((a) => a.id === node.sourceAnnotationId);
       if (ann) {
-        storeActiveSession(session);
+        await storeActiveSession(session);
         initSlowReader(session);
         showScreen("slowReader");
         jumpToAnnotation(session, ann);
@@ -6281,14 +6292,14 @@ function openMaterialGraphScreen({
     },
   });
   wireMaterialGraphScreen(host, session, {
-    onJumpToAnnotation: (s, ann) => {
-      storeActiveSession(s);
+    onJumpToAnnotation: async (s, ann) => {
+      await storeActiveSession(s);
       initSlowReader(s);
       showScreen("slowReader");
       jumpToAnnotation(s, ann);
     },
   });
-  if (session) storeActiveSession(session);
+  if (session) await storeActiveSession(session);
   showScreen("slowGraph");
 }
 
@@ -6346,7 +6357,7 @@ export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
  * Cross-document concept registry graph (gray/yellow/green maturity).
  * @param {{ focusedDocId?: string|null, projectId?: string|null }} [options]
  */
-export function openConceptRegistryGraphScreen(options = {}) {
+export async function openConceptRegistryGraphScreen(options = {}) {
   const host = document.getElementById("slowGraphContent");
   const detailHost = document.getElementById("vaultGraphDetailPanel");
   const layout = document.getElementById("slowGraphLayout");
@@ -6359,7 +6370,7 @@ export function openConceptRegistryGraphScreen(options = {}) {
   const exportBtn = document.getElementById("slowGraphExportBtn");
   if (exportBtn) exportBtn.hidden = true;
 
-  const doc = getActiveSession();
+  const doc = await getActiveSession();
   const focusedDocId = options.focusedDocId ?? doc?.docId ?? null;
 
   updateMaterialGraphScreenCopy({
@@ -6369,7 +6380,7 @@ export function openConceptRegistryGraphScreen(options = {}) {
       : "Concepts you have engaged with across all documents.",
   });
 
-  lastMaterialGraph = mountConceptRegistryGraph(host, detailHost, {
+  lastMaterialGraph = await mountConceptRegistryGraph(host, detailHost, {
     focusedDocId,
     projectId: options.projectId ?? null,
     onStudyConcept: (globalConceptId) => {
@@ -6387,9 +6398,9 @@ export async function enterRecallForGlobalConcept(globalConceptId) {
   if (!concept) return;
   const docId = (concept.sourceDocIds || [])[0];
   if (docId) {
-    const session = getSession(docId);
+    const session = await getSession(docId);
     if (session) {
-      setActiveSession(docId);
+      await setActiveSession(docId);
       state.activeSession = session;
     }
   }
@@ -6435,9 +6446,9 @@ export function buildPrefetchConfigKey({
   return `${nTest}:${nSocratic}|${ids}|${len}${holistic}`;
 }
 
-function resolveHolisticAssessmentContext(flow) {
+async function resolveHolisticAssessmentContext(flow) {
   const docId = state.activeDocId || state.activeSession?.docId;
-  const doc = docId ? getSession(docId) : null;
+  const doc = docId ? await getSession(docId) : null;
   const conceptGraph = flow?.conceptGraph ?? doc?.shared?.conceptGraph ?? null;
   const docHierarchy = flow?.docHierarchy ?? doc?.shared?.docHierarchy ?? null;
   const inventory = flow?.conceptInventory || [];
@@ -6875,7 +6886,7 @@ async function enterPrePackingAssessmentScreen() {
     ensurePrePackingItemsPromise(prePackingFlow);
     const items = await prePackingFlow.itemsPromise;
     prePackingFlow.assessmentItems = Array.isArray(items) ? items : [];
-    const doc = getActiveSession();
+    const doc = await getActiveSession();
     prePackingFlow.vaultPresumedKnown = buildVaultPresumedKnownMap(
       prePackingFlow.conceptInventory,
       doc?.shared?.docTopics || [],
@@ -7226,17 +7237,17 @@ function wireMaterialGraphHandlers() {
   });
 }
 
-function wireSlowPhase3Handlers() {
-  document.getElementById("slowPhase3BackBtn")?.addEventListener("click", () => {
+async function wireSlowPhase3Handlers() {
+  document.getElementById("slowPhase3BackBtn")?.addEventListener("click", async () => {
     const session = state.activeSession;
     if (!session?.slow) return;
     session.slow.phase = "phase1";
-    storeActiveSession(session);
+    await storeActiveSession(session);
     initSlowReader(session);
     showScreen("slowReader");
   });
 
-  document.getElementById("slowPhase3FinishBtn")?.addEventListener("click", () => {
+  document.getElementById("slowPhase3FinishBtn")?.addEventListener("click", async () => {
     const session = state.activeSession;
     if (!session?.slow) return;
     session.slow.depthScore = computeDepthScore(session.slow.annotations, {
@@ -7244,16 +7255,16 @@ function wireSlowPhase3Handlers() {
     });
     session.slow.phase = "complete";
     session.slow.graphEnrichedUnlocked = true;
-    storeActiveSession(session);
-    exportSessionMarkdown();
+    await storeActiveSession(session);
+    void exportSessionMarkdown();
     enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
-  const observer = new MutationObserver(() => {
+  const observer = new MutationObserver(async () => {
     if (els.screenSlowPhase3?.getAttribute("aria-hidden") === "false") {
       const session = state.activeSession;
       if (session?.slow) {
-        storeActiveSession(session);
+        await storeActiveSession(session);
         void initPhase3Screen(
           session,
           document.getElementById("slowPhase3Content"),
@@ -7268,7 +7279,7 @@ function wireSlowPhase3Handlers() {
   }
 }
 
-export function wireStudyHandlers() {
+export async function wireStudyHandlers() {
   registerChromeStudyModeResolver(() =>
     normalizeStudyMode(state.studyMode || state.activeSession?.studyMode),
   );
@@ -7301,9 +7312,9 @@ export function wireStudyHandlers() {
     const session = state.activeSession;
     if (session?.studyMode === "cloze") void runClozeGeneration(session);
   });
-  els.clozeStudyBtn?.addEventListener("click", () => {
+  els.clozeStudyBtn?.addEventListener("click", async () => {
     const session = state.activeSession;
-    if (session?.studyMode === "cloze") enterClozeStudyScreen(session, getActiveSession());
+    if (session?.studyMode === "cloze") enterClozeStudyScreen(session, await getActiveSession());
   });
   els.clozeViewGraphBtn?.addEventListener("click", () => {
     const session = state.activeSession;
@@ -7314,7 +7325,7 @@ export function wireStudyHandlers() {
     if (session?.studyMode === "cloze") exportClozeItemsMarkdown(session);
   });
   resetCreateScreenModeUi();
-  renderFlowPanel(getActiveSession());
+  renderFlowPanel(await getActiveSession());
 
   setBlockReadContentProvider(() => {
     const blocks = getBlocksSafe();
@@ -7352,8 +7363,8 @@ export function wireStudyHandlers() {
     els.startStudyingStatus.textContent = "";
 
     const studyMode = normalizeStudyMode(state.studyMode || getSelectedStudyModeRadio());
-    applyFlowRecommendationOnEnterMode(studyMode);
-    state.activeSession = loadActiveSession();
+    await applyFlowRecommendationOnEnterMode(studyMode);
+    state.activeSession = await loadActiveSession();
     if (!state.activeSession) {
       els.startStudyingError.hidden = false;
       els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
@@ -7366,7 +7377,7 @@ export function wireStudyHandlers() {
     }
     if (!Number.isFinite(Number(state.activeSession._meta.study_started_at))) {
       state.activeSession._meta.study_started_at = Date.now();
-      storeActiveSession(state.activeSession);
+      await storeActiveSession(state.activeSession);
     }
     state.nTest = clampInt(state.activeSession?.n_test, 0, MAX_N_TEST, state.nTest);
     state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
@@ -7376,7 +7387,7 @@ export function wireStudyHandlers() {
       savedQ != null && Number.isFinite(Number(savedQ))
         ? Math.max(0, Math.floor(Number(savedQ)))
         : 0;
-    applyQuestionsStudyOrderForSession(getActiveSession());
+    applyQuestionsStudyOrderForSession(await getActiveSession());
     if (
       isQuestionsStudyMode(state.activeSession) &&
       Array.isArray(state.questionsStudyOrder) &&
@@ -7584,7 +7595,7 @@ export function wireStudyHandlers() {
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = getDefaultLlmModel();
         const doc = await ensureDocumentSessionForUpload(cleanedText);
-        computeAndPersistModeRecommendation(doc, cleanedText, null);
+        await computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
           normalizedFormat,
@@ -7595,7 +7606,7 @@ export function wireStudyHandlers() {
         });
         persistModeSliceToDocument(doc, "cloze", sessionObj);
         state.activeSession = sessionObj;
-        storeActiveSession(sessionObj);
+        await storeActiveSession(sessionObj);
         setGenerateBlocksFormHidden(true);
         updateClozeSessionPanel(sessionObj);
         showCreateScreen();
@@ -7664,7 +7675,7 @@ export function wireStudyHandlers() {
         }
         persistModeSliceToDocument(doc, "slow", sessionObj);
         state.activeSession = sessionObj;
-        storeActiveSession(sessionObj);
+        await storeActiveSession(sessionObj);
         showScreen("slowScope");
         const needsAsyncHierarchy =
           cleanedText.length >= 3000 && !hasMarkdownHeadings(cleanedText);
@@ -7677,8 +7688,8 @@ export function wireStudyHandlers() {
           });
           sessionObj.docHierarchy = hierarchyResult;
           syncSlowDocHierarchyToShared(sessionObj);
-          computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult);
-          storeActiveSession(sessionObj);
+          await computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult);
+          await storeActiveSession(sessionObj);
           renderSlowScopeScreen(sessionObj);
         }
       } catch (err) {
@@ -7772,7 +7783,7 @@ export function wireStudyHandlers() {
       }
       state.originalMaterialText = cleanedText;
       const doc = await ensureDocumentSessionForUpload(cleanedText);
-      computeAndPersistModeRecommendation(doc, cleanedText, null);
+      await computeAndPersistModeRecommendation(doc, cleanedText, null);
 
       const fingerprint = buildBlockSplitFingerprint({
         file,
@@ -7884,7 +7895,7 @@ export function wireStudyHandlers() {
       promoteConceptInventoryToShared(conceptInventory, "rsvp");
 
       const docIdForPrep = state.activeDocId || state.activeSession?.docId;
-      const docForPrep = docIdForPrep ? getSession(docIdForPrep) : null;
+      const docForPrep = docIdForPrep ? await getSession(docIdForPrep) : null;
       const holistic = isHolisticAssessmentEnabled();
       const prepEdges = deriveInventoryEdges(
         conceptInventory,
@@ -7992,7 +8003,7 @@ export function wireStudyHandlers() {
         state.activeQuestionIndex = 0;
         state.nTest = sessionObj.n_test;
         state.nSocratic = 0;
-        storeActiveSession(sessionObj);
+        await storeActiveSession(sessionObj);
         refreshGuideContext();
         window.assessmentConfig = { skipped: true };
         showScreen("ready");
@@ -8152,7 +8163,7 @@ export function wireStudyHandlers() {
         conceptInventory: mgInventory,
       };
       promoteConceptInventoryToShared(mgInventory, "rsvp");
-      storeActiveSession(sessionObj);
+      await storeActiveSession(sessionObj);
       state.activeSession = sessionObj;
       refreshGuideContext();
       if (prePackingDraftMeta) {
@@ -8265,7 +8276,7 @@ export function wireStudyHandlers() {
         });
 
         state.activeSession.blocks = result.results;
-        storeActiveSession(state.activeSession, { bumpRev: true });
+        await storeActiveSession(state.activeSession, { bumpRev: true });
         const failed = result.results.filter((b) => b && b._failed).length;
 
         if (result.cancelled) {
@@ -8444,7 +8455,7 @@ export function wireStudyHandlers() {
     }
   });
 
-  els.socraticNextQuestionBtn.addEventListener("click", () => {
+  els.socraticNextQuestionBtn.addEventListener("click", async () => {
     if (isPrePackingAssessmentRunner()) {
       const ctx = getActiveQuestionContext();
       if (ctx.globalIndex < ctx.total - 1) {
@@ -8465,7 +8476,7 @@ export function wireStudyHandlers() {
       state.activeQuestionIndex += 1;
       if (state.activeSession && typeof state.activeSession === "object") {
         state.activeSession.active_question_index = state.activeQuestionIndex;
-        storeActiveSession(state.activeSession);
+        await storeActiveSession(state.activeSession);
       }
     }
     const nextCtx = getActiveQuestionContext();
@@ -8513,14 +8524,14 @@ export function wireStudyHandlers() {
     els.keyTermsGlossaryDialog?.close?.();
   });
 
-  els.testRestartBlockBtn.addEventListener("click", () => {
+  els.testRestartBlockBtn.addEventListener("click", async () => {
     clearTestError();
     els.testFeedback.hidden = true;
     clearMarkdownContainer(els.testFeedback);
     state.activeQuestionIndex = 0;
     if (state.activeSession && typeof state.activeSession === "object") {
       state.activeSession.active_question_index = 0;
-      storeActiveSession(state.activeSession);
+      await storeActiveSession(state.activeSession);
     }
     beginBlockReading({
       onDone: () => {
@@ -8612,7 +8623,7 @@ export function wireStudyHandlers() {
   }
 
   window.addEventListener("beforeunload", () => {
-    exportSessionMarkdown({ source: "beforeunload" });
+    void exportSessionMarkdown({ source: "beforeunload" });
   });
 
   wireRsvpHandlers();

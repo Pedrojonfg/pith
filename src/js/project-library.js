@@ -152,10 +152,10 @@ function renderProjectRows(store, parentId, container, onOpenProject) {
   });
 }
 
-function renderDocumentRows(projectId, container, onOpenDoc) {
+async function renderDocumentRows(projectId, container, onOpenDoc) {
   if (!container) return;
   const store = getProjectStore();
-  const sessions = getAllSessions().filter(
+  const sessions = (await getAllSessions()).filter(
     (s) => String(s?.projectId || MISC_PROJECT_ID) === String(projectId),
   );
   if (!sessions.length) {
@@ -164,20 +164,20 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
       : "";
     return;
   }
-  container.innerHTML = sessions
-    .map((doc) => {
-      const title = doc.shared?.docMeta?.titleInferred || "Untitled document";
-      const modes = Object.entries(doc.modes || {})
-        .filter(([, value]) => value != null)
-        .map(([key]) => key);
-      const smDue = getSmItemsDueToday(doc.docId).length;
-      const smDueHtml =
-        smDue > 0 ? `<span class="doc-library-sm-due">${smDue} due today</span>` : "";
-      const prepLabel = getPreparationBadgeLabel(doc);
-      const prepHtml = prepLabel
-        ? `<span class="doc-library-prep-badge doc-library-prep-badge--${prepLabel.toLowerCase()}">${escapeHtml(prepLabel)}</span>`
-        : "";
-      return `<div class="doc-library-row" role="listitem">
+  const rowHtml = [];
+  for (const doc of sessions) {
+    const title = doc.shared?.docMeta?.titleInferred || "Untitled document";
+    const modes = Object.entries(doc.modes || {})
+      .filter(([, value]) => value != null)
+      .map(([key]) => key);
+    const smDue = (await getSmItemsDueToday(doc.docId)).length;
+    const smDueHtml =
+      smDue > 0 ? `<span class="doc-library-sm-due">${smDue} due today</span>` : "";
+    const prepLabel = getPreparationBadgeLabel(doc);
+    const prepHtml = prepLabel
+      ? `<span class="doc-library-prep-badge doc-library-prep-badge--${prepLabel.toLowerCase()}">${escapeHtml(prepLabel)}</span>`
+      : "";
+    rowHtml.push(`<div class="doc-library-row" role="listitem">
         <button type="button" class="doc-library-item" data-doc-id="${escapeHtml(doc.docId)}">
           <span class="doc-library-title">${escapeHtml(title)}</span>
           <span class="doc-library-meta">
@@ -191,9 +191,9 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
           <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to project…</button>
           <button type="button" class="btn-secondary doc-library-delete-btn" data-delete-doc-id="${escapeHtml(doc.docId)}" aria-label="Delete session" title="Delete session">🗑</button>
         </div>
-      </div>`;
-    })
-    .join("");
+      </div>`);
+  }
+  container.innerHTML = rowHtml.join("");
 
   container.querySelectorAll("[data-doc-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -208,19 +208,19 @@ function renderDocumentRows(projectId, container, onOpenDoc) {
     });
   });
   container.querySelectorAll("[data-delete-doc-id]").forEach((btn) => {
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-delete-doc-id");
       if (!id) return;
       const ok = window.confirm("Delete this session? This cannot be undone.");
       if (!ok) return;
-      deleteSession(id);
-      renderProjectLibraryView();
+      await deleteSession(id);
+      await renderProjectLibraryView();
     });
   });
 }
 
-function promptMoveDocument(docId) {
-  const session = getSession(docId);
+async function promptMoveDocument(docId) {
+  const session = await getSession(docId);
   if (!session) return;
   const store = getProjectStore();
   const overlay = document.createElement("div");
@@ -235,15 +235,15 @@ function promptMoveDocument(docId) {
   mount?.appendChild(
     renderProjectPicker(store, {
       selectedId: session.projectId || MISC_PROJECT_ID,
-      onSelect: (projectId) => {
+      onSelect: async (projectId) => {
         const result = assignSessionToProject(session, projectId, store);
         if (!result.ok) {
           showProjectToast(result.error);
           return;
         }
-        saveActiveSession(result.session);
+        await saveActiveSession(result.session);
         document.body.removeChild(overlay);
-        renderProjectLibraryView();
+        await renderProjectLibraryView();
       },
     }),
   );
@@ -283,9 +283,9 @@ function promptRenameProject(projectId) {
   renderProjectLibraryView();
 }
 
-function promptDeleteProject(projectId) {
+async function promptDeleteProject(projectId) {
   const store = getProjectStore();
-  const sessions = getAllSessions();
+  const sessions = await getAllSessions();
   const result = deleteProject(store, projectId, sessions);
   if (!result.ok && result.error !== PROJECT_ERROR_DELETE_BLOCKED) {
     if (result.error) showProjectToast(result.error);

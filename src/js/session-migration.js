@@ -25,8 +25,8 @@ import { ensureMiscProject } from "./project-store.js";
 import { parseSessionsByModeRaw } from "./session.js";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 
-function hasV2Sessions() {
-  return getAllSessions().some((s) => s?.schemaVersion >= 2);
+async function hasV2Sessions() {
+  return (await getAllSessions()).some((s) => s?.schemaVersion >= 2);
 }
 
 function slotHasData(slot) {
@@ -269,8 +269,8 @@ export async function detectAndMigrateV1() {
       }),
     );
 
-    saveActiveSession(session);
-    setActiveSession(session.docId);
+    await saveActiveSession(session);
+    await setActiveSession(session.docId);
     localStorage.removeItem(LS_SESSIONS_BY_MODE_KEY);
   } catch (err) {
     console.error("[migration] failed — keeping V1", err);
@@ -281,7 +281,7 @@ export async function detectAndMigrateV1() {
  * Idempotent project store + session.projectId backfill.
  * @see specs/20260623-study-projects/contracts/project-migration.md
  */
-export function migrateProjects() {
+export async function migrateProjects() {
   let storeChanged = false;
 
   let store = loadProjectStore();
@@ -294,7 +294,7 @@ export function migrateProjects() {
     if (JSON.stringify(store) !== before) storeChanged = true;
   }
 
-  const sessionsChanged = backfillMissingProjectIds();
+  const sessionsChanged = await backfillMissingProjectIds();
 
   if (storeChanged || sessionsChanged) {
     saveProjectStore(store);

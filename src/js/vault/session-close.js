@@ -74,7 +74,7 @@ function isAnswerCorrect(response) {
  * @param {string} docId
  * @returns {Array<{ conceptId: string, type: string, rawSignal?: number, timestamp: number, docId: string, taskKind?: string, wrongAnswer?: string }>}
  */
-export function collectObservations(session, mode, docId) {
+export async function collectObservations(session, mode, docId) {
   const observations = [];
   const now = Date.now();
 
@@ -98,7 +98,7 @@ export function collectObservations(session, mode, docId) {
   const modes = ["rsvp", "questions", "cloze"];
   for (const m of modes) {
     let slice = session?.modes?.[m];
-    if (!slice) slice = loadSessionForMode(m);
+    if (!slice) slice = await loadSessionForMode(m);
     if (!slice) continue;
     slice = rehydrateBlocks(slice, docId);
 
@@ -285,7 +285,7 @@ export async function updateVaultFromSession(session, mode) {
     if (existingId) normalizationMap[conceptId] = existingId;
   }
 
-  const observations = collectObservations(session, mode, docId);
+  const observations = await collectObservations(session, mode, docId);
   const touchedEntryIds = applyObservations(vault, observations, normalizationMap);
   await runMisconceptionDetectionForEntries(vault, touchedEntryIds);
   elevatePrerequisiteRelations(session, normalizationMap);
@@ -294,10 +294,10 @@ export async function updateVaultFromSession(session, mode) {
     session.shared._vaultPendingObservations = [];
     try {
       const { saveActiveSession, getSession } = await import("../session-store.js");
-      const fresh = getSession(docId);
+      const fresh = await getSession(docId);
       if (fresh?.shared) {
         fresh.shared._vaultPendingObservations = [];
-        saveActiveSession(fresh);
+        await saveActiveSession(fresh);
       }
     } catch {
       // ignore persistence cleanup errors

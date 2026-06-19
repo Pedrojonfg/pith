@@ -612,8 +612,8 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
  * Dual-write Phase 0 concepts to DocumentSession.shared.conceptInventory.
  * @param {{ conceptsToFind?: { term?: string, authorUsage?: string }[] } | null} phase0
  */
-export function syncPhase0ConceptsToShared(phase0) {
-  const doc = getActiveSession();
+export async function syncPhase0ConceptsToShared(phase0) {
+  const doc = await getActiveSession();
   if (!doc?.docId || !phase0) return;
   const concepts = (phase0.conceptsToFind || [])
     .map((c) => ({
@@ -624,7 +624,7 @@ export function syncPhase0ConceptsToShared(phase0) {
     .filter((c) => c.label);
   if (!concepts.length) return;
   try {
-    addConceptsToShared(doc.docId, concepts);
+    await addConceptsToShared(doc.docId, concepts);
   } catch (err) {
     console.warn("[phase0] shared concepts dual-write failed", err);
   }

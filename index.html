@@ -351,6 +351,19 @@
           <button type="button" id="btnVaultUploadResume" class="btn-secondary">Resume</button>
         </div>
         <section
+          id="screenAuth"
+          class="screen auth-screen"
+          aria-hidden="true"
+          aria-label="Sign in"
+        >
+          <div class="card auth-card">
+            <h1>Pith</h1>
+            <p class="hint auth-lead">Sign in to sync your study sessions across devices.</p>
+            <button type="button" id="btnSignInGoogle" class="btn-primary">Sign in with Google</button>
+            <p id="authStatus" class="hint" role="status" hidden></p>
+          </div>
+        </section>
+        <section
           id="screenSettings"
           class="screen settings-screen"
           aria-hidden="true"
@@ -362,6 +375,11 @@
             <p id="settingsOnboardingBanner" class="hint settings-onboarding-banner" hidden>
               Add your DeepSeek API key to start using Pith.
             </p>
+
+            <h2 class="settings-section-title">Account</h2>
+            <button type="button" id="btnSignOut" class="btn-secondary">Sign out</button>
+
+            <div class="divider"></div>
 
             <h2 class="settings-section-title">API keys</h2>
             <p class="hint">
@@ -1758,7 +1776,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_6";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_7";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1774,7 +1792,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260619_6");
+        await import("./src/js/main.js?v=20260619_7");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

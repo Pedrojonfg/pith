@@ -99,11 +99,11 @@ function isQuotaError(err) {
   return msg.includes("quota") || msg.includes("exceeded");
 }
 
-export function writeThroughRsvpBlocks(doc, rsvpSlice) {
+export async function writeThroughRsvpBlocks(doc, rsvpSlice) {
   return writeThroughModeSlice(doc, "rsvp", rsvpSlice);
 }
 
-export function writeThroughModeSlice(doc, modeSlot, slice) {
+export async function writeThroughModeSlice(doc, modeSlot, slice) {
   const id = String(doc?.docId || "").trim();
   if (!id || !slice || typeof slice !== "object") {
     return { ok: false, error: "invalid" };
@@ -111,7 +111,7 @@ export function writeThroughModeSlice(doc, modeSlot, slice) {
   try {
     if (!doc.modes || typeof doc.modes !== "object") doc.modes = {};
     doc.modes[modeSlot] = slice;
-    saveActiveSession(doc);
+    await saveActiveSession(doc);
     lastWriteErrorByDocId[id] = null;
     return { ok: true };
   } catch (err) {

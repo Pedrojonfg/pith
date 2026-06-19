@@ -41,7 +41,7 @@ export function qualifiesForGreen(facet, quality, source) {
  * @param {string} globalConceptId
  * @param {string} inventoryEntryId
  */
-export function backfillGlobalConceptIds(session, globalConceptId, inventoryEntryId) {
+export async function backfillGlobalConceptIds(session, globalConceptId, inventoryEntryId) {
   if (!session?.shared) return;
   const invId = String(inventoryEntryId || "").trim();
   const globalId = String(globalConceptId || "").trim();
@@ -58,7 +58,7 @@ export function backfillGlobalConceptIds(session, globalConceptId, inventoryEntr
     const cid = String(sig?.conceptId || sig?.canonicalId || "").trim();
     if (cid === invId) sig.globalConceptId = globalId;
   }
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 function findInventoryEntry(session, conceptId) {

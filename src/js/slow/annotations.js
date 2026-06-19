@@ -49,7 +49,7 @@ export function isIAQueryAnnotation(ann) {
   return (ann.type === "⚑" || ann.type === "⇑") && Boolean(ann.aiReply);
 }
 
-export function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
+export async function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
   if (!session?.slow) return null;
   const scopeLen =
     Number(session.slow.readingScope?.charEnd) - Number(session.slow.readingScope?.charStart);
@@ -70,9 +70,9 @@ export function addAnnotation(session, { type, charStart, charEnd, userText = ""
   if (!Array.isArray(session.slow.annotations)) session.slow.annotations = [];
   session.slow.annotations.push(entry);
   try {
-    const doc = getActiveSession();
+    const doc = await getActiveSession();
     if (doc?.docId) {
-      addAnnotationToShared(doc.docId, {
+      await addAnnotationToShared(doc.docId, {
         type: entry.type,
         text: entry.userText,
         offset: entry.charStart,
@@ -86,8 +86,8 @@ export function addAnnotation(session, { type, charStart, charEnd, userText = ""
   return entry;
 }
 
-export function addIAQueryAnnotation(session, { userText, charStart, charEnd, aiReply = null }) {
-  return addAnnotation(session, {
+export async function addIAQueryAnnotation(session, { userText, charStart, charEnd, aiReply = null }) {
+  return await addAnnotation(session, {
     type: IA_QUERY_TYPE,
     charStart,
     charEnd,

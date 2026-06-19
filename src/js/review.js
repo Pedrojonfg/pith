@@ -112,7 +112,7 @@ function showSm2ReviewEmptyState(message) {
   showScreen("review");
 }
 
-function renderSm2ReviewItem() {
+async function renderSm2ReviewItem() {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) {
     showSm2ReviewSummary();
@@ -143,7 +143,7 @@ function renderSm2ReviewItem() {
   if (els.reviewSm2Preview) {
     const preview = String(item.contentPreview || "");
     if (!sm2ReviewDocId && item.docId) {
-      const origin = getSession(item.docId);
+      const origin = await getSession(item.docId);
       const docTitle = origin?.shared?.docMeta?.titleInferred || item.docId;
       els.reviewSm2Preview.textContent = preview ? `${docTitle} · ${preview}` : docTitle;
     } else {
@@ -152,7 +152,7 @@ function renderSm2ReviewItem() {
   }
 
   const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
-  const originSession = originDocId ? getSession(originDocId) : null;
+  const originSession = originDocId ? await getSession(originDocId) : null;
   const conceptIds = resolveSmItemConceptIds(item, originSession);
   const hintConceptId = conceptIds[0] || "";
   if (els.reviewMnemonicHintHost) {
@@ -182,7 +182,7 @@ function showSm2ReviewSummary() {
   if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = true;
 }
 
-function handleSm2QualityClick(quality) {
+async function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) return;
 
@@ -218,11 +218,11 @@ function handleSm2QualityClick(quality) {
   if (!originDocId) return;
 
   const updated = updateSmItem(item, quality);
-  upsertSmItem(originDocId, updated);
+  await upsertSmItem(originDocId, updated);
   sm2ReviewQueue[sm2ReviewIndex] = updated;
 
   if (updated.sourceType === "vault_concept") {
-    const session = getSession(originDocId);
+    const session = await getSession(originDocId);
     if (session) {
       applyVaultReviewObservation(session, updated.sourceId, {
         type: quality >= 3 ? "mcq_correct" : "mcq_wrong",
@@ -237,15 +237,15 @@ function handleSm2QualityClick(quality) {
 }
 
 /** Priority-queue spaced review for shared.smItems (single document). */
-export function runSm2ReviewSession(docId, options = {}) {
+export async function runSm2ReviewSession(docId, options = {}) {
   const id = String(docId || "").trim();
-  const session = getSession(id);
+  const session = await getSession(id);
   if (!session) return;
 
   sm2ReviewDocId = id;
   let queue = buildReviewQueue(session.shared?.smItems || []);
   if (options.mnemonicsOnly) {
-    queue = filterSmItemsByMnemonics(queue, getSession);
+    queue = await filterSmItemsByMnemonics(queue, getSession);
   }
   sm2ReviewQueue = queue;
   sm2ReviewIndex = 0;
@@ -264,22 +264,22 @@ export function runSm2ReviewSession(docId, options = {}) {
 }
 
 /** Cross-document vault review from aggregated due items. */
-export function runVaultSm2ReviewSession(scope, options = {}) {
+export async function runVaultSm2ReviewSession(scope, options = {}) {
   if (scope && typeof scope === "object") {
     setReviewScope(scope);
   }
   sm2ReviewDocId = "";
   let pool;
   if (reviewScope.projectId === "all") {
-    pool = buildGlobalReviewQueue({ projectId: "all" });
-    if (!pool.length) pool = getSmItemsDueToday();
+    pool = await buildGlobalReviewQueue({ projectId: "all" });
+    if (!pool.length) pool = await getSmItemsDueToday();
   } else {
-    pool = buildGlobalReviewQueue({
+    pool = await buildGlobalReviewQueue({
       projectId: reviewScope.projectId,
     });
     if (!pool.length) {
       pool = filterDueSmItems(
-        getReviewableItemsForProject(reviewScope.projectId, {
+        await getReviewableItemsForProject(reviewScope.projectId, {
           includeDescendants: reviewScope.includeDescendants,
         }),
       );
@@ -287,7 +287,7 @@ export function runVaultSm2ReviewSession(scope, options = {}) {
   }
   sm2ReviewQueue = pool;
   if (options.mnemonicsOnly) {
-    sm2ReviewQueue = filterSmItemsByMnemonics(sm2ReviewQueue, getSession);
+    sm2ReviewQueue = await filterSmItemsByMnemonics(sm2ReviewQueue, getSession);
   }
   sm2ReviewIndex = 0;
 
@@ -486,9 +486,9 @@ function getReviewQuestionCount() {
   return clampInt(els.reviewNQuestionsInput.value, 1, 100, 20);
 }
 
-function getSessionMarkdownForReview() {
+async function getSessionMarkdownForReview() {
   if (state.activeSession) {
-    const md = buildMarkdown(state.activeSession);
+    const md = await buildMarkdown(state.activeSession);
     try {
       localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
     } catch {
@@ -677,7 +677,7 @@ function getReviewFocusNotes() {
   return els.reviewFocusInput ? String(els.reviewFocusInput.value || "").trim() : "";
 }
 
-export function buildSessionContentForReview(selectedIndices = null) {
+export async function buildSessionContentForReview(selectedIndices = null) {
   const selected = new Set(
     (Array.isArray(selectedIndices) ? selectedIndices : [])
       .map((i) => Math.floor(Number(i)))
@@ -686,7 +686,7 @@ export function buildSessionContentForReview(selectedIndices = null) {
   const filterBlocks = selected.size > 0;
   const isSelected = (index) => !filterBlocks || selected.has(index);
 
-  const md = getSessionMarkdownForReview();
+  const md = await getSessionMarkdownForReview();
   const parsed = extractSessionContentFromMarkdown(md, filterBlocks ? [...selected] : null);
   const baseExplanations =
     parsed ||
@@ -966,7 +966,7 @@ function renderReviewQuestion() {
   setTimeout(() => els.reviewSocraticAnswer.focus(), 0);
 }
 
-function showReviewSummary() {
+async function showReviewSummary() {
   detachReviewMcKeydown();
   const total = reviewQuestions.length;
   const hasAnyTest = reviewQuestions.some((q) => q && q.type === "test");
@@ -1051,7 +1051,7 @@ function showReviewSummary() {
     // Keep the cached session markdown in sync too (used as review context).
     if (state.activeSession) {
       try {
-        const md = buildMarkdown(state.activeSession);
+        const md = await buildMarkdown(state.activeSession);
         localStorage.setItem(LS_REVIEW_SESSION_MD_KEY, md);
       } catch {
         // ignore
@@ -1127,7 +1127,7 @@ async function startReviewGeneration() {
     return;
   }
 
-  const sessionContent = buildSessionContentForReview(selectedBlocks);
+  const sessionContent = await buildSessionContentForReview(selectedBlocks);
   if (!sessionContent) {
     setReviewConfigError("Could not extract session content for review.");
     return;
@@ -1189,15 +1189,15 @@ async function startReviewGeneration() {
   renderReviewQuestion();
 }
 
-export function getCurrentSm2ReviewConceptIds() {
+export async function getCurrentSm2ReviewConceptIds() {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) return [];
   const docId = String(sm2ReviewDocId || item.docId || "").trim();
-  const session = docId ? getSession(docId) : null;
+  const session = docId ? await getSession(docId) : null;
   return resolveSmItemConceptIds(item, session);
 }
 
-export function wireReviewHandlers() {
+export async function wireReviewHandlers() {
   if (els.reviewSessionBtn) {
     els.reviewSessionBtn.addEventListener("click", () => {
       if (isQuestionsStudyMode(state.activeSession)) {
@@ -1268,8 +1268,8 @@ export function wireReviewHandlers() {
   });
 
   const spacedStartBtn = document.getElementById("reviewSpacedStartBtn");
-  spacedStartBtn?.addEventListener("click", () => {
-    const docId = String(getActiveSession()?.docId || "").trim();
+  spacedStartBtn?.addEventListener("click", async () => {
+    const docId = String((await getActiveSession())?.docId || "").trim();
     if (!docId) {
       setReviewConfigError("No active document session for spaced review.");
       return;
@@ -1298,7 +1298,7 @@ export function wireReviewHandlers() {
   els.reviewNextBtn.addEventListener("click", () => {
     const isLast = reviewIndex >= reviewQuestions.length - 1;
     if (isLast) {
-      showReviewSummary();
+      void showReviewSummary();
       return;
     }
     reviewIndex += 1;
@@ -1363,7 +1363,7 @@ export function wireReviewHandlers() {
   els.reviewSocraticNextBtn.addEventListener("click", () => {
     const isLast = reviewIndex >= reviewQuestions.length - 1;
     if (isLast) {
-      showReviewSummary();
+      void showReviewSummary();
       return;
     }
     reviewIndex += 1;

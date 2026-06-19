@@ -10,7 +10,7 @@ import { getSessionsByProject } from "../project-store.js";
 /**
  * @param {object} params
  */
-export function buildVaultGraph({ focusedDocId = null, projectId = null } = {}) {
+export async function buildVaultGraph({ focusedDocId = null, projectId = null } = {}) {
   const nodes = [];
   const edges = [];
   const nodeIds = new Set();
@@ -35,7 +35,7 @@ export function buildVaultGraph({ focusedDocId = null, projectId = null } = {}) 
   }
 
   if (focusedDocId) {
-    const session = getSession(focusedDocId);
+    const session = await getSession(focusedDocId);
     for (const entry of session?.shared?.conceptInventory || []) {
       if (entry.globalConceptId && nodeIds.has(entry.globalConceptId)) continue;
       const localId = `local:${focusedDocId}:${String(entry.canonicalId || entry.id || "").trim()}`;
@@ -57,18 +57,18 @@ export function buildVaultGraph({ focusedDocId = null, projectId = null } = {}) 
   return { nodes, edges };
 }
 
-function resolveProjectDocIds(projectId) {
+async function resolveProjectDocIds(projectId) {
   const pid = String(projectId || "").trim();
   if (!pid || pid === "all") return null;
   const store = loadProjectStore();
-  const sessions = getSessionsByProject(store, getAllSessions(), pid, {
+  const sessions = getSessionsByProject(store, await getAllSessions(), pid, {
     includeDescendants: true,
   });
   return new Set(sessions.map((s) => String(s.docId || "").trim()).filter(Boolean));
 }
 
-function addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds) {
-  const sessions = getAllSessions().filter((s) => {
+async function addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds) {
+  const sessions = (await getAllSessions()).filter((s) => {
     if (projectDocIds && !projectDocIds.has(s.docId)) return false;
     if (focusedDocId && s.docId !== focusedDocId) return false;
     return true;

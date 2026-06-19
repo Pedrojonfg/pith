@@ -34,11 +34,85 @@ import {
   showInstallHelpToast,
 } from "./pwa-install.js";
 import { dismissSplash } from "./splash.js?v=20260619_1";
+import {
+  getSupabaseAuthSession,
+  migrateLocalStorageToSupabase,
+  signInWithGoogle,
+  signOut,
+} from "./auth.js";
+import { supabase } from "./supabase-client.js";
+
+let appBooted = false;
+
+async function openInitialScreen() {
+  try {
+    if (getStoredKey()) {
+      await syncVaultUploadResumeBanner();
+      await enterAppHome();
+    } else {
+      showScreen("settings");
+    }
+  } catch (err) {
+    console.error("Failed to open initial screen:", err);
+    showScreen("settings");
+  }
+}
+
+async function continueAppBoot() {
+  if (appBooted) return;
+  appBooted = true;
+  await migrateLocalStorageToSupabase();
+
+  const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
+    !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
+  if (hasStoredSession) {
+    await migrateLegacyActiveSession();
+  }
+
+  await openInitialScreen();
+  dismissSplash(false);
+}
+
+function wireAuthUi() {
+  els.btnSignInGoogle?.addEventListener("click", async () => {
+    if (els.authStatus) {
+      els.authStatus.hidden = false;
+      els.authStatus.textContent = "Redirecting to Google…";
+    }
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      console.error("[auth] sign-in failed", err);
+      if (els.authStatus) {
+        els.authStatus.textContent = "Sign-in failed. Try again.";
+      }
+    }
+  });
+
+  els.btnSignOut?.addEventListener("click", async () => {
+    try {
+      await signOut();
+      appBooted = false;
+      showScreen("auth");
+    } catch (err) {
+      console.error("[auth] sign-out failed", err);
+    }
+  });
+
+  supabase.auth.onAuthStateChange(async (event, session) => {
+    if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
+      await continueAppBoot();
+    }
+    if (event === "SIGNED_OUT") {
+      appBooted = false;
+      showScreen("auth");
+    }
+  });
+}
 
 async function bootstrap() {
   migrateStorageKeysFromMyLearning();
   await detectAndMigrateV1();
-  migrateLegacyActiveSession();
   if (window.offlineMode !== true) window.offlineMode = false;
   if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
@@ -48,6 +122,7 @@ async function bootstrap() {
   initMnemonicSettingsUi();
   wireStudyHandlers();
   wireReviewHandlers();
+  wireAuthUi();
   wireVaultDebugUi(
     els.knowledgeVaultPanel,
     els.knowledgeVaultLink,
@@ -173,7 +248,7 @@ async function bootstrap() {
     closeSettingsScreen();
   });
 
-  els.apiKeyForm.addEventListener("submit", (e) => {
+  els.apiKeyForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const raw = els.apiKeyInput.value || "";
     const trimmed = raw.trim();
@@ -185,7 +260,7 @@ async function bootstrap() {
     const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
     if (geminiRaw) saveGeminiKey(geminiRaw);
     els.apiKeyStatus.textContent = geminiRaw ? "DeepSeek and Gemini saved." : "DeepSeek saved.";
-    enterAppHome();
+    await enterAppHome();
   });
 
   if (els.geminiApiKeyInput) {
@@ -193,25 +268,14 @@ async function bootstrap() {
     if (gk) els.geminiApiKeyInput.value = gk;
   }
 
-  const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
-    !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
-  if (hasStoredSession) {
-    migrateLegacyActiveSession();
+  const authSession = await getSupabaseAuthSession();
+  if (!authSession) {
+    showScreen("auth");
+    dismissSplash(false);
+    return;
   }
 
-  try {
-    if (getStoredKey()) {
-      syncVaultUploadResumeBanner();
-      enterAppHome();
-    } else {
-      showScreen("settings");
-    }
-  } catch (err) {
-    console.error("Failed to open initial screen:", err);
-    showScreen("settings");
-  } finally {
-    dismissSplash(false);
-  }
+  await continueAppBoot();
 }
 
 bootstrap();

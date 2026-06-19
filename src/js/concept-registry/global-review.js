@@ -16,14 +16,14 @@ import { recordObservationAndRecompute } from "./mastery.js";
 /**
  * @param {{ projectId?: string }} [options]
  */
-export function buildGlobalReviewQueue(options = {}) {
+export async function buildGlobalReviewQueue(options = {}) {
   const projectId = String(options?.projectId || "all").trim();
   const items = [];
   const seen = new Set();
 
   for (const { concept, schedule } of getDueFacetSchedules()) {
     if (projectId !== "all") {
-      const scoped = getSessionsByProject(loadProjectStore(), getAllSessions(), projectId, {
+      const scoped = getSessionsByProject(loadProjectStore(), await getAllSessions(), projectId, {
         includeDescendants: true,
       });
       const docIds = new Set(scoped.map((s) => s.docId));
@@ -52,9 +52,9 @@ export function buildGlobalReviewQueue(options = {}) {
     });
   }
 
-  for (const session of getAllSessions()) {
+  for (const session of await getAllSessions()) {
     if (projectId !== "all") {
-      const scoped = getSessionsByProject(loadProjectStore(), getAllSessions(), projectId, {
+      const scoped = getSessionsByProject(loadProjectStore(), await getAllSessions(), projectId, {
         includeDescendants: true,
       });
       if (!scoped.some((s) => s.docId === session.docId)) continue;

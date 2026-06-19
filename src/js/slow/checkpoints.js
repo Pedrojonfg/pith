@@ -58,7 +58,7 @@ function scopeTextForSession(session) {
   );
 }
 
-function dismissCheckpointsOnPage(session, breakpoints, pageIndex) {
+async function dismissCheckpointsOnPage(session, breakpoints, pageIndex) {
   const slow = session?.slow;
   if (!slow) return;
   const sections = buildSectionBoundaries(scopeTextForSession(session), slow.normalizedFormat);
@@ -67,7 +67,7 @@ function dismissCheckpointsOnPage(session, breakpoints, pageIndex) {
     .map((s) => s.id);
   slow.checkpointsDismissed = [...new Set([...(slow.checkpointsDismissed || []), ...ids])];
   hideCheckpointChip();
-  storeActiveSession(session);
+  await storeActiveSession(session);
 }
 
 export function maybeScheduleCheckpoint(session, breakpoints, pageIndex, onAnswer) {
@@ -113,7 +113,7 @@ export async function resolveCheckpointQuestion(session, section) {
   });
 
   slow.checkpointQuestions = { ...(slow.checkpointQuestions || {}), [section.id]: question };
-  storeActiveSession(session);
+  await storeActiveSession(session);
   return question;
 }
 
@@ -164,10 +164,10 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
   const send = document.createElement("button");
   send.type = "button";
   send.textContent = "→";
-  send.addEventListener("click", () => {
+  send.addEventListener("click", async () => {
     const text = input.value.trim();
     if (!text) return;
-    addAnnotation(session, {
+    await addAnnotation(session, {
       type: "→",
       charStart: section.charEnd - 1,
       charEnd: section.charEnd,

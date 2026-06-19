@@ -86,13 +86,13 @@ function itemById(session, id) {
   return valid.find((item) => item.id === id) || null;
 }
 
-function persistProgress(session) {
+async function persistProgress(session) {
   const cloze = getClozeData(session);
   if (!cloze) return;
   cloze.studyIndex = activeIndex;
   cloze.studyOrder = activeOrder.slice();
   cloze.studyStats = { correct, shown };
-  storeActiveSession(session);
+  await storeActiveSession(session);
 }
 
 function clearAdvanceTimer() {
@@ -152,7 +152,7 @@ function goToNextItem(session) {
   renderItem(session);
 }
 
-function handleOptionSelect(session, host, idx) {
+async function handleOptionSelect(session, host, idx) {
   if (answered) return;
   answered = true;
   shown += 1;
@@ -167,9 +167,9 @@ function handleOptionSelect(session, host, idx) {
   if (isCorrect) item.times_correct = (item.times_correct || 0) + 1;
 
   try {
-    const doc = getActiveSession();
+    const doc = await getActiveSession();
     if (doc?.docId) {
-      registerOrUpdateSmItem(doc.docId, {
+      await registerOrUpdateSmItem(doc.docId, {
         sourceType: "cloze_item",
         sourceId: String(item.id),
         title: String(item.blank_text || item.stem || "").slice(0, 80),
@@ -288,14 +288,14 @@ function renderItem(session) {
   });
 }
 
-export function enterClozeStudyScreen(session, doc = null) {
+export async function enterClozeStudyScreen(session, doc = null) {
   if (!session?.cloze) return;
   const valid = getValidItems(session.cloze.items || []);
   if (!valid.length) return;
 
   if (!Array.isArray(session.cloze.studyOrder) || !session.cloze.studyOrder.length) {
     applyAssessmentPrioritizedOrder(session, doc);
-    storeActiveSession(session);
+    await storeActiveSession(session);
   }
 
   activeOrder = buildStudyOrder(session);

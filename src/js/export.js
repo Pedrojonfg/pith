@@ -238,18 +238,18 @@ function formatGraphLinks(links) {
 }
 
 /** Append enriched (Slow) or material (Fast) graph — single graph section with delimiters. */
-export function appendGraphSections(lines, session, lang = "English") {
+export async function appendGraphSections(lines, session, lang = "English") {
   const isSlow = session?.studyMode === "slow" && session?.slow;
   const annotations = Array.isArray(session?.slow?.annotations) ? session.slow.annotations : [];
   const hasUserAnnotations = annotations.some((a) => String(a?.userText || "").trim());
 
   let graph = null;
   if (isSlow && (hasUserAnnotations || session.slow.graphEnrichedUnlocked)) {
-    graph = buildSessionGraph(session, { mode: "slow_enriched" });
+    graph = await buildSessionGraph(session, { mode: "slow_enriched" });
   } else if (!isSlow) {
     const blockIndex = session?._meta?.material_graph?.blockIndex;
     if (Array.isArray(blockIndex) && blockIndex.length) {
-      graph = buildSessionGraph(session, { mode: "rsvp" });
+      graph = await buildSessionGraph(session, { mode: "rsvp" });
     }
   }
 
@@ -396,7 +396,7 @@ function appendDepthScoreSection(lines, session, depthScore) {
   lines.push("");
 }
 
-function buildSlowMarkdown(session) {
+async function buildSlowMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   const slow = safe.slow || {};
   const scope = slow.readingScope || {};
@@ -427,7 +427,7 @@ function buildSlowMarkdown(session) {
   }
 
   appendConceptDictionarySection(lines, safe);
-  appendGraphSections(lines, safe, lang);
+  await appendGraphSections(lines, safe, lang);
 
   const synthesis = resolveStudentSynthesis(safe);
   lines.push("## Student synthesis");
@@ -444,10 +444,10 @@ function buildSlowMarkdown(session) {
   return `${lines.join("\n").trim()}\n`;
 }
 
-export function buildMarkdown(session) {
+export async function buildMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   if (safe.studyMode === "slow" && safe.slow) {
-    return buildSlowMarkdown(safe);
+    return await buildSlowMarkdown(safe);
   }
   if (safe.studyMode === "cloze" && safe.cloze) {
     return buildClozeMarkdown(safe);
@@ -668,7 +668,7 @@ export function buildMarkdown(session) {
   appendConceptDictionarySection(lines, safe);
 
   const exportLang = String(safe.language || "English").trim() || "English";
-  appendGraphSections(lines, safe, exportLang);
+  await appendGraphSections(lines, safe, exportLang);
 
   const formatHHMM = (ts) => {
     let d = null;
@@ -823,19 +823,19 @@ export function downloadTextFile({ filename, text }) {
   }
 }
 
-function resolveSessionSliceForOffline() {
-  const exportable = resolveSessionForExport();
+async function resolveSessionSliceForOffline() {
+  const exportable = await resolveSessionForExport();
   if (exportable) return exportable;
   const active = state.activeSession;
   if (active && Array.isArray(active.blocks) && active.blocks.length > 0) return active;
   const mode = state.studyMode != null ? String(state.studyMode) : "rsvp";
-  const doc = getActiveDocumentSession();
-  const raw = loadSessionForMode(mode) || loadSessionForMode("rsvp");
+  const doc = await getActiveDocumentSession();
+  const raw = (await loadSessionForMode(mode)) || (await loadSessionForMode("rsvp"));
   if (!raw) return null;
   return doc?.docId ? rehydrateBlocks(raw, doc.docId) : raw;
 }
 
-export function resolveSessionForExport() {
+export async function resolveSessionForExport() {
   const active = state.activeSession;
   if (active && typeof active === "object") {
     const activeBlocks = Array.isArray(active.blocks) ? active.blocks : [];
@@ -843,8 +843,12 @@ export function resolveSessionForExport() {
   }
 
   const mode = state.studyMode != null ? String(state.studyMode) : "rsvp";
-  const candidates = [loadSessionForMode(mode), loadSessionForMode("rsvp"), loadSessionForMode("questions")];
-  const doc = getActiveDocumentSession();
+  const candidates = [
+    await loadSessionForMode(mode),
+    await loadSessionForMode("rsvp"),
+    await loadSessionForMode("questions"),
+  ];
+  const doc = await getActiveDocumentSession();
   const docId = doc?.docId;
 
   for (const raw of candidates) {
@@ -868,13 +872,13 @@ export function exportClozeItemsMarkdown(session = state.activeSession) {
   });
 }
 
-export function exportSessionMarkdown({ force = false, source = "button" } = {}) {
+export async function exportSessionMarkdown({ force = false, source = "button" } = {}) {
   if (state.activeSession?.studyMode === "cloze") {
     exportClozeItemsMarkdown(state.activeSession);
     return { ok: true };
   }
 
-  const session = resolveSessionForExport();
+  const session = await resolveSessionForExport();
   if (!session) {
     return { ok: false, error: "no_session" };
   }
@@ -890,7 +894,7 @@ export function exportSessionMarkdown({ force = false, source = "button" } = {})
     }
   }
 
-  const md = buildMarkdown(session);
+  const md = await buildMarkdown(session);
   const ts = formatExportTimestamp(new Date());
   const stem = getExportFilenameStem();
   const blocks = Array.isArray(session.blocks) ? session.blocks : [];

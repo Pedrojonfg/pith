@@ -1,10 +1,17 @@
 import {
-  DOC_SESSION_SIZE_THRESHOLD,
   LS_ACTIVE_DOC_ID_KEY,
-  LS_DOC_SESSIONS_KEY,
   LS_DOC_TEXT_PREFIX,
   LS_PROJECTS_KEY,
 } from "./config.js";
+import {
+  deleteMarkdown,
+  deleteSessionRow,
+  downloadMarkdown,
+  fetchSessionRows,
+  getAuthUserId,
+  uploadMarkdown,
+  upsertSessionRow,
+} from "./session-persist-supabase.js";
 import {
   docBlocksKey,
   docResponsesKey,
@@ -42,43 +49,66 @@ function docTextKey(docId) {
   return `${LS_DOC_TEXT_PREFIX}${docId}`;
 }
 
-function readSessionsRaw() {
-  try {
-    const raw = localStorage.getItem(LS_DOC_SESSIONS_KEY);
-    if (!raw || !raw.trim()) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch (err) {
-    console.warn("[session-store] corrupt sessions JSON", err);
-    return [];
+/** @type {Map<string, object>|null} */
+let rowCache = null;
+
+async function readSessionRows() {
+  const userId = await getAuthUserId();
+  const rows = await fetchSessionRows(userId);
+  rowCache = new Map(rows.map((r) => [r.id, r]));
+  return rows;
+}
+
+async function ensureRowCache() {
+  if (!rowCache) await readSessionRows();
+  return rowCache;
+}
+
+function rowToSession(row, includeMarkdown) {
+  const session = {
+    ...row.session_data,
+    docId: row.session_data?.docId || row.id,
+  };
+  if (!includeMarkdown && session.shared) {
+    const sh = { ...session.shared };
+    delete sh.rawMarkdown;
+    return { ...session, shared: sh };
   }
+  return session;
 }
 
-function writeSessionsRaw(sessions) {
-  localStorage.setItem(LS_DOC_SESSIONS_KEY, JSON.stringify(sessions));
-}
-
-function rehydrateMarkdown(session) {
+async function rehydrateMarkdown(session, markdownRef) {
   if (!session?.shared) return rehydrateSessionModes(session);
   const sh = session.shared;
   if (typeof sh.rawMarkdown === "string") return rehydrateSessionModes(session);
-  const ref = sh.rawMarkdownRef;
-  if (!ref?.storageKey) return rehydrateSessionModes(session);
-  try {
-    const text = localStorage.getItem(ref.storageKey);
-    if (text == null) {
-      console.warn(`[session-store] missing externalized text: ${ref.storageKey}`);
-      return rehydrateSessionModes({
-        ...session,
-        shared: { ...sh, rawMarkdown: "" },
-      });
+
+  const storagePath = markdownRef || sh.rawMarkdownRef?.storageKey;
+  if (!storagePath) {
+    const legacyKey = sh.rawMarkdownRef?.storageKey;
+    if (legacyKey && legacyKey.startsWith(LS_DOC_TEXT_PREFIX)) {
+      try {
+        const text = localStorage.getItem(legacyKey);
+        if (text != null) {
+          return rehydrateSessionModes({
+            ...session,
+            shared: { ...sh, rawMarkdown: text },
+          });
+        }
+      } catch {
+        // ignore
+      }
     }
+    return rehydrateSessionModes({ ...session, shared: { ...sh, rawMarkdown: "" } });
+  }
+
+  try {
+    const text = await downloadMarkdown(storagePath);
     return rehydrateSessionModes({
       ...session,
       shared: { ...sh, rawMarkdown: text },
     });
   } catch (err) {
-    console.warn("[session-store] rehydrate failed", err);
+    console.warn("[session-store] storage rehydrate failed", err);
     return rehydrateSessionModes({ ...session, shared: { ...sh, rawMarkdown: "" } });
   }
 }
@@ -199,7 +229,7 @@ function migrateSessionV3(session) {
   return changed ? { ...session, shared: sh } : session;
 }
 
-function stripMarkdownForPersist(session) {
+async function stripMarkdownForPersist(session, userId) {
   const clone = JSON.parse(JSON.stringify(session));
   const docId = clone.docId;
 
@@ -211,26 +241,26 @@ function stripMarkdownForPersist(session) {
   }
 
   const sh = clone.shared;
-  if (!sh || typeof sh.rawMarkdown !== "string") return clone;
-
-  let payload = JSON.stringify(clone);
-  if (payload.length <= DOC_SESSION_SIZE_THRESHOLD) return clone;
-
-  const storageKey = docTextKey(docId);
-  const charCount = sh.rawMarkdown.length;
-  localStorage.setItem(storageKey, sh.rawMarkdown);
-  delete sh.rawMarkdown;
-  sh.rawMarkdownRef = { storageKey, charCount };
-  return clone;
+  let markdownRef = null;
+  if (sh && typeof sh.rawMarkdown === "string" && sh.rawMarkdown.length > 0) {
+    markdownRef = await uploadMarkdown(userId, docId, sh.rawMarkdown);
+    const charCount = sh.rawMarkdown.length;
+    delete sh.rawMarkdown;
+    sh.rawMarkdownRef = { storageKey: markdownRef, charCount };
+  }
+  return { sessionData: clone, markdownRef };
 }
 
-function upsertSessionInStore(session) {
-  const toSave = stripMarkdownForPersist(session);
-  const sessions = readSessionsRaw();
-  const idx = sessions.findIndex((s) => s?.docId === session.docId);
-  if (idx >= 0) sessions[idx] = toSave;
-  else sessions.push(toSave);
-  writeSessionsRaw(sessions);
+async function upsertSessionInStore(session) {
+  const userId = await getAuthUserId();
+  const { sessionData, markdownRef } = await stripMarkdownForPersist(session, userId);
+  await upsertSessionRow(userId, session.docId, sessionData, markdownRef);
+  if (!rowCache) rowCache = new Map();
+  rowCache.set(session.docId, {
+    id: session.docId,
+    session_data: sessionData,
+    markdown_ref: markdownRef,
+  });
 }
 
 /**
@@ -310,25 +340,27 @@ export async function createSession(rawMarkdown, options = {}) {
   };
   const v = validateDocumentSession(session);
   if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);
-  upsertSessionInStore(session);
+  await upsertSessionInStore(session);
   return session;
 }
 
 /**
  * @param {string} docId
  */
-export function getSession(docId) {
+export async function getSession(docId) {
   const id = String(docId || "").trim();
   if (!id) return null;
-  const found = readSessionsRaw().find((s) => s?.docId === id);
-  if (!found) return null;
-  return normalizeLoadedSession(rehydrateMarkdown(found));
+  const cache = await ensureRowCache();
+  const row = cache.get(id);
+  if (!row) return null;
+  const base = rowToSession(row, true);
+  return normalizeLoadedSession(await rehydrateMarkdown(base, row.markdown_ref));
 }
 
-export function getActiveSession() {
+export async function getActiveSession() {
   const docId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
   if (!docId || !docId.trim()) return null;
-  return getSession(docId);
+  return await getSession(docId);
 }
 
 /** Drop the active document pointer without deleting library entries. */
@@ -343,45 +375,44 @@ export function clearActiveDocumentPointer() {
 /**
  * @param {string} docId
  */
-export function setActiveSession(docId) {
+export async function setActiveSession(docId) {
   const id = String(docId || "").trim();
-  if (!getSession(id)) throw new Error("session not found");
+  if (!(await getSession(id))) throw new Error("session not found");
   localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
 }
 
 /**
  * @param {object} session
  */
-export function saveActiveSession(session) {
+export async function saveActiveSession(session) {
   const v = validateDocumentSession(session);
   if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);
   const updated = { ...session, updatedAt: Date.now() };
-  upsertSessionInStore(updated);
+  await upsertSessionInStore(updated);
   const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
   if (activeId === updated.docId) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, updated.docId);
   }
 }
 
-export function getAllSessions() {
-  return readSessionsRaw()
-    .map((s) => rehydrateMarkdown(s))
+export async function getAllSessions() {
+  const rows = await readSessionRows();
+  return rows
+    .map((row) => normalizeLoadedSession(rowToSession(row, false)))
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 }
 
 /**
  * @param {string} docId
  */
-export function deleteSession(docId) {
+export async function deleteSession(docId) {
   const id = String(docId || "").trim();
-  const sessions = readSessionsRaw();
-  const target = sessions.find((s) => s?.docId === id);
-  if (target?.shared?.rawMarkdownRef?.storageKey) {
-    try {
-      localStorage.removeItem(target.shared.rawMarkdownRef.storageKey);
-    } catch {
-      // ignore
-    }
+  const userId = await getAuthUserId();
+  const cache = await ensureRowCache();
+  const row = cache.get(id);
+  const markdownRef = row?.markdown_ref || row?.session_data?.shared?.rawMarkdownRef?.storageKey;
+  if (markdownRef) {
+    await deleteMarkdown(userId, markdownRef);
   } else {
     try {
       localStorage.removeItem(docTextKey(id));
@@ -395,7 +426,8 @@ export function deleteSession(docId) {
   } catch {
     // ignore
   }
-  writeSessionsRaw(sessions.filter((s) => s?.docId !== id));
+  await deleteSessionRow(userId, id);
+  cache.delete(id);
   const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
   if (activeId === id) {
     localStorage.removeItem(LS_ACTIVE_DOC_ID_KEY);
@@ -415,8 +447,8 @@ function mergeDetectedBy(existing, incoming) {
  * @param {string} docId
  * @param {object[]} concepts
  */
-export function addConceptsToShared(docId, concepts) {
-  const session = getSession(docId);
+export async function addConceptsToShared(docId, concepts) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   const list = Array.isArray(concepts) ? concepts : [];
   const byId = new Map(
@@ -451,15 +483,15 @@ export function addConceptsToShared(docId, concepts) {
     }
   }
   session.shared.conceptInventory = [...byId.values()];
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
  * @param {string} docId
  * @param {object} annotation
  */
-export function addAnnotationToShared(docId, annotation) {
-  const session = getSession(docId);
+export async function addAnnotationToShared(docId, annotation) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   if (!annotation || typeof annotation !== "object") return;
   if (!Array.isArray(session.shared.annotations)) session.shared.annotations = [];
@@ -477,18 +509,18 @@ export function addAnnotationToShared(docId, annotation) {
   };
   if (existingIdx >= 0) session.shared.annotations[existingIdx] = entry;
   else session.shared.annotations.push(entry);
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
  * @param {string} docId
  * @param {object} recommendation
  */
-export function updateRecommendation(docId, recommendation) {
-  const session = getSession(docId);
+export async function updateRecommendation(docId, recommendation) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   session.shared.modeRecommendation = recommendation;
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
@@ -497,8 +529,8 @@ export function updateRecommendation(docId, recommendation) {
  * @param {string} docId
  * @param {object} item
  */
-export function upsertSmItem(docId, item) {
-  const session = getSession(docId);
+export async function upsertSmItem(docId, item) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   const incoming = normalizeSmItem({ ...item, docId: item?.docId || docId });
   if (!incoming?.id) throw new Error("sm item requires id");
@@ -518,15 +550,15 @@ export function upsertSmItem(docId, item) {
   else items.push(incoming);
 
   session.shared.smItems = items;
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
  * @param {string} docId
  * @param {{ fileName?: string, originalFormat?: string, uploadedAt?: string }|null} meta
  */
-export function setUploadMeta(docId, meta) {
-  const session = getSession(docId);
+export async function setUploadMeta(docId, meta) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   if (meta == null) {
     session.shared.uploadMeta = null;
@@ -537,7 +569,7 @@ export function setUploadMeta(docId, meta) {
       uploadedAt: String(meta.uploadedAt || new Date().toISOString()),
     };
   }
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
@@ -545,23 +577,23 @@ export function setUploadMeta(docId, meta) {
  * @param {object} slice
  * @param {'rsvp'|'questions'} sourceMode
  */
-export function syncAssessmentSignalsToShared(docId, slice, sourceMode) {
-  const session = getSession(docId);
+export async function syncAssessmentSignalsToShared(docId, slice, sourceMode) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   const incoming = extractSignalsFromBlockSession(slice, sourceMode);
   const existing = Array.isArray(session.shared.assessmentSignals)
     ? session.shared.assessmentSignals
     : [];
   session.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
 /**
  * @param {string} docId
  * @returns {import('./session-types.js').AssessmentSignal[]}
  */
-export function getAssessmentSignals(docId) {
-  const session = getSession(docId);
+export async function getAssessmentSignals(docId) {
+  const session = await getSession(docId);
   if (!session) return [];
   return Array.isArray(session.shared.assessmentSignals)
     ? [...session.shared.assessmentSignals]
@@ -572,8 +604,8 @@ export function getAssessmentSignals(docId) {
  * @param {string} docId
  * @param {object} question
  */
-export function syncAssessmentSignalsFromRecall(docId, question) {
-  const session = getSession(docId);
+export async function syncAssessmentSignalsFromRecall(docId, question) {
+  const session = await getSession(docId);
   if (!session) throw new Error("session not found");
   const incoming = buildRecallAssessmentSignals(question);
   if (!incoming.length) return;
@@ -581,12 +613,12 @@ export function syncAssessmentSignalsFromRecall(docId, question) {
     ? session.shared.assessmentSignals
     : [];
   session.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
-  saveActiveSession(session);
+  await saveActiveSession(session);
 }
 
-export function getVaultReviewDueCount() {
+export async function getVaultReviewDueCount() {
   const globalDue = getGlobalReviewDueCount();
-  const smDue = getSmItemsDueToday().length;
+  const smDue = (await getSmItemsDueToday()).length;
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
   const cutoff = endOfDay.getTime();
@@ -598,11 +630,13 @@ export function getVaultReviewDueCount() {
   return globalDue + smDue + vaultDue;
 }
 
-export function getSmItemsDueToday(docId) {
+export async function getSmItemsDueToday(docId) {
   const endOfDay = new Date();
   endOfDay.setHours(23, 59, 59, 999);
   const cutoff = endOfDay.getTime();
-  const sessions = docId ? [getSession(docId)].filter(Boolean) : getAllSessions();
+  const sessions = docId
+    ? [await getSession(docId)].filter(Boolean)
+    : await getAllSessions();
   const due = [];
   for (const session of sessions) {
     for (const raw of session.shared?.smItems || []) {
@@ -663,17 +697,24 @@ export function persistProjectStore(store) {
   saveProjectStore(ensureMiscProject(store));
 }
 
-/** Backfill projectId on all persisted sessions missing it. @returns {boolean} whether any session changed */
-export function backfillMissingProjectIds() {
-  const sessions = readSessionsRaw();
+/** Backfill projectId on all persisted sessions missing it. @returns {Promise<boolean>} whether any session changed */
+export async function backfillMissingProjectIds() {
+  const rows = await readSessionRows();
   let changed = false;
-  for (const session of sessions) {
+  for (const row of rows) {
+    const session = row.session_data;
     if (!session || typeof session !== "object") continue;
     if (!session.projectId) {
       session.projectId = MISC_PROJECT_ID;
       changed = true;
+      await upsertSessionRow(
+        await getAuthUserId(),
+        row.id,
+        session,
+        row.markdown_ref,
+      );
     }
   }
-  if (changed) writeSessionsRaw(sessions);
+  if (changed) rowCache = null;
   return changed;
 }
