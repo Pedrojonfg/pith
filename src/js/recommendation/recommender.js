@@ -24,9 +24,6 @@ export const GENRE_LABEL_EN = {
   unknown: "Academic text",
 };
 
-/** @deprecated Use GENRE_LABEL_EN */
-export const GENRE_LABEL_ES = GENRE_LABEL_EN;
-
 /** @type {Record<string, { label: string, description: string }>} */
 const MODE_TEMPLATES = {
   slow: {

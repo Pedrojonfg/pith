@@ -332,6 +332,7 @@ function normalizeRecallQuestionsWithIdSet(raw, invIds, config = {}) {
  * @param {unknown} raw
  * @returns {{ critique: string, suggested_answer: string, quality: string }}
  */
+/** Canonical recall tutor JSON parser — re-exported via api.js for recall mode. */
 export function normalizeRecallTutorFeedback(raw) {
   let obj = raw;
   if (typeof raw === "string") {
@@ -357,9 +358,6 @@ export function normalizeRecallTutorFeedback(raw) {
   }
   return { critique, suggested_answer: suggested, quality };
 }
-
-/** @deprecated alias for normalizeRecallTutorFeedback */
-export { normalizeRecallTutorFeedback as parseRecallTutorFeedbackFromModelResponse };
 
 /**
  * @param {object} params

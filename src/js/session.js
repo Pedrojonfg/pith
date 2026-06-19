@@ -387,6 +387,7 @@ export function migrateLegacyActiveSession() {
     const legacy = JSON.parse(legacyRaw);
     if (!legacy || typeof legacy !== "object") return;
     const migrated = { rsvp: legacy, slow: null, cloze: null, questions: null, recall: null };
+    // One-time migration write — do not mirror RSVP slices to legacy keys elsewhere.
     localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
   } catch {
     // ignore corrupt legacy
@@ -419,16 +420,8 @@ export function storeSessionsByMode(data) {
     questions: data?.questions && typeof data.questions === "object" ? data.questions : null,
     recall: data?.recall && typeof data.recall === "object" ? data.recall : null,
   };
-  localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(safe));
-  if (safe.rsvp) {
-    localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(safe.rsvp));
-  } else {
-    try {
-      localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
-    } catch {
-      // ignore
-    }
-  }
+  // Legacy keys are read-only outside migration — DocumentSession is the write target.
+  return safe;
 }
 
 export function loadSessionForMode(mode) {
@@ -450,15 +443,6 @@ export function storeSessionForMode(mode, session) {
       doc.modes[slot] = null;
     }
     saveDocumentSession(doc);
-    if (slot === "rsvp" && doc.modes.rsvp) {
-      localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(doc.modes.rsvp));
-    } else if (slot === "rsvp" && !doc.modes.rsvp) {
-      try {
-        localStorage.removeItem(LS_ACTIVE_SESSION_KEY);
-      } catch {
-        // ignore
-      }
-    }
     return;
   }
   const all = loadSessionsByMode();
@@ -3260,13 +3244,6 @@ function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
   if (doc?.docId && (mode === "rsvp" || mode === "questions")) {
     const result = writeThroughModeSlice(doc, mode, slice);
     if (!result.ok) notifyPersistFailure(result.error);
-    else if (doc.modes?.rsvp) {
-      try {
-        localStorage.setItem(LS_ACTIVE_SESSION_KEY, JSON.stringify(doc.modes.rsvp));
-      } catch {
-        // ignore
-      }
-    }
     return result;
   }
 

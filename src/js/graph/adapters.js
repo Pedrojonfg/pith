@@ -134,8 +134,3 @@ export function buildSessionGraph(session, options = {}) {
 
   return { nodes: [], edges: [], kind: "empty" };
 }
-
-/** @deprecated Use buildSlowEnrichedGraph */
-export function buildEnrichedGraph(session) {
-  return buildSlowEnrichedGraph(session);
-}

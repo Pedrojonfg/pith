@@ -1,4 +1,5 @@
 import { LS_ACTIVE_SESSION_KEY, LS_BLOCK_INDEX_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260527_1";
+import { getSourceFidelityStrictPreference } from "./config/flags.js";
 import { detectAndMigrateV1 } from "./session-migration.js?v=20260609_1";
 import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260619_5";
 import {
@@ -26,6 +27,7 @@ import {
   closeBlockReadSidebar,
   initLanguageUi,
   initLlmModelUi,
+  initSourceFidelityStrictUi,
   els,
   openSettingsScreen,
   showScreen,
@@ -40,7 +42,7 @@ import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
-import { dismissSplash } from "./splash.js?v=20260613_2";
+import { dismissSplash } from "./splash.js?v=20260619_1";
 
 function clearActiveSessionStorage() {
   try {
@@ -123,6 +125,8 @@ async function bootstrap() {
   if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
   initLlmModelUi();
+  state.sourceFidelityStrict = getSourceFidelityStrictPreference();
+  initSourceFidelityStrictUi();
   wireStudyHandlers();
   wireReviewHandlers();
   wireVaultDebugUi(

@@ -1,5 +1,8 @@
 import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
 import { getStoredGeminiKey, getDefaultLlmModel, saveDefaultLlmModel, normalizeLlmModel } from "./llm.js?v=20260525_1";
+import {
+  getSourceFidelityStrictPreference,
+} from "./config/flags.js";
 import { renderMarkdown } from "./markdown.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { MISC_PROJECT_ID } from "./session-types.js";
@@ -449,8 +452,6 @@ export const els = {
   prePackingResultsDetail: document.getElementById("prePackingResultsDetail"),
   prePackingResultsDetailList: document.getElementById("prePackingResultsDetailList"),
   prePackingResultsStatus: document.getElementById("prePackingResultsStatus"),
-  screenInitialAssessment: document.getElementById("screenInitialAssessment"),
-  screenAssessmentGenerating: document.getElementById("screenAssessmentGenerating"),
   screenSessionReady: document.getElementById("screenSessionReady"),
   screenFullPackGenerating: document.getElementById("screenFullPackGenerating"),
   screenSocratic: document.getElementById("screenSocratic"),
@@ -576,19 +577,6 @@ export const els = {
   confirmBlocksBtn: document.getElementById("confirmBlocksBtn"),
   confirmBlocksStatus: document.getElementById("confirmBlocksStatus"),
   confirmBlocksError: document.getElementById("confirmBlocksError"),
-
-  assessmentChoiceWrap: document.getElementById("assessmentChoiceWrap"),
-  assessmentSkipBtn: document.getElementById("assessmentSkipBtn"),
-  assessmentTakeBtn: document.getElementById("assessmentTakeBtn"),
-  assessmentConfigWrap: document.getElementById("assessmentConfigWrap"),
-  assessmentMaxQuestions: document.getElementById("assessmentMaxQuestions"),
-  assessmentMaxQuestionsLabel: document.getElementById("assessmentMaxQuestionsLabel"),
-  assessmentPenaliseBtn: document.getElementById("assessmentPenaliseBtn"),
-  assessmentPenaliseSubtitle: document.getElementById("assessmentPenaliseSubtitle"),
-  assessmentStartBtn: document.getElementById("assessmentStartBtn"),
-  assessmentGeneratingLabel: document.getElementById("assessmentGeneratingLabel"),
-  assessmentGeneratingFill: document.getElementById("assessmentGeneratingFill"),
-  assessmentGeneratingError: document.getElementById("assessmentGeneratingError"),
 
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   studyFileInputRow: document.getElementById("studyFileInputRow"),
@@ -1145,6 +1133,19 @@ export function initLlmModelUi() {
   });
 }
 
+export function initSourceFidelityStrictUi() {
+  if (!els.sourceFidelityStrictToggleBtn) return;
+  const strictOn = getSourceFidelityStrictPreference();
+  syncSourceFidelityStrictUi(strictOn);
+}
+
+export function syncSourceFidelityStrictUi(strictOn) {
+  if (!els.sourceFidelityStrictToggleBtn) return;
+  const on = strictOn === true;
+  els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(on));
+  if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !on;
+}
+
 export function getStudyLanguage() {
   const stored = localStorage.getItem(LS_STUDY_LANG_KEY);
   if (stored && STUDY_LANG_OPTIONS.some((o) => o.value === stored)) {
@@ -1185,8 +1186,6 @@ export function showScreen(which) {
   const showPrePackingAssessment = which === "prePackingAssessment";
   const showPrePackingResults = which === "prePackingResults";
   const showBlocks = which === "blocks";
-  const showAssessment = which === "assessment";
-  const showAssessmentGenerating = which === "assessmentGenerating";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
   const showSocratic = which === "socratic";
@@ -1220,11 +1219,6 @@ export function showScreen(which) {
   );
   els.screenPrePackingResults?.setAttribute("aria-hidden", String(!showPrePackingResults));
   els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
-  els.screenInitialAssessment.setAttribute("aria-hidden", String(!showAssessment));
-  els.screenAssessmentGenerating?.setAttribute(
-    "aria-hidden",
-    String(!showAssessmentGenerating),
-  );
   els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
   els.screenFullPackGenerating.setAttribute("aria-hidden", String(!showFullPackGenerating));
   els.screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
@@ -1309,10 +1303,6 @@ export function showScreen(which) {
 
   if (showBlocks) {
     setTimeout(() => els.blocksListEditor?.focus?.(), 0);
-  }
-
-  if (showAssessment) {
-    setTimeout(() => els.assessmentSkipBtn?.focus?.(), 0);
   }
 
   if (showTest) {
