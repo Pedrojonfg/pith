@@ -1,4 +1,5 @@
 import { LS_ACTIVE_DOC_ID_KEY, LS_DOC_SESSIONS_KEY, LS_DOC_TEXT_PREFIX } from "./config.js";
+import { getOAuthRedirectUrl } from "./config/supabase.js";
 import { supabase } from "./supabase-client.js";
 import { upsertSessionRow, uploadMarkdown, getAuthUserId } from "./session-persist-supabase.js";
 import { validateDocumentSession } from "./session-types.js";
@@ -18,9 +19,10 @@ export async function getSupabaseAuthSession() {
 }
 
 export async function signInWithGoogle() {
+  const redirectTo = getOAuthRedirectUrl();
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: window.location.origin + window.location.pathname },
+    options: redirectTo ? { redirectTo } : {},
   });
   if (error) throw error;
 }
