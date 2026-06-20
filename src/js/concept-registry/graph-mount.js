@@ -31,7 +31,13 @@ export async function mountConceptRegistryGraph(containerEl, detailHost, options
   const graphEdges = edges.map((e) => ({
     from: e.source,
     to: e.target,
-    type: e.type === "co_occurrence" ? "relates" : e.type,
+    type:
+      e.type === "co_occurrence"
+        ? "relates"
+        : e.registryConnection
+          ? String(e.type || "associated").toLowerCase()
+          : e.type,
+    weight: typeof e.weight === "number" ? e.weight : undefined,
   }));
 
   renderGraphCanvas(

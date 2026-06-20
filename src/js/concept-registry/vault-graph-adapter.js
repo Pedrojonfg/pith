@@ -4,6 +4,7 @@
  */
 
 import { getAllConcepts, getConceptById } from "./registry-store.js";
+import { getConnectionsForGraph } from "./connection-store.js";
 import { getSession, getAllSessions, loadProjectStore } from "../session-store.js";
 import { getSessionsByProject } from "../project-store.js";
 
@@ -51,7 +52,8 @@ export async function buildVaultGraph({ focusedDocId = null, projectId = null } 
     }
   }
 
-  addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds);
+  addRegistryConnectionEdges(edges, nodeIds, projectDocIds, concepts);
+  addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds, nodeIds);
   addExplicitLinkEdges(edges, concepts, nodeIds);
 
   return { nodes, edges };
@@ -67,7 +69,37 @@ async function resolveProjectDocIds(projectId) {
   return new Set(sessions.map((s) => String(s.docId || "").trim()).filter(Boolean));
 }
 
-async function addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds) {
+function addRegistryConnectionEdges(edges, nodeIds, projectDocIds, concepts) {
+  const conceptSet =
+    projectDocIds == null
+      ? null
+      : new Set(
+          (Array.isArray(concepts) ? concepts : [])
+            .map((c) => c.id)
+            .filter(Boolean),
+        );
+  const connections = getConnectionsForGraph();
+  for (const conn of connections) {
+    const source = conn.sourceId;
+    const target = conn.targetId;
+    if (!nodeIds.has(source) || !nodeIds.has(target)) continue;
+    if (conceptSet && (!conceptSet.has(source) || !conceptSet.has(target))) continue;
+    edges.push({
+      source,
+      target,
+      type: String(conn.type || "ASSOCIATED").toLowerCase(),
+      weight: conn.weight,
+      registryConnection: true,
+    });
+  }
+}
+
+async function addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds, nodeIds) {
+  const registryPairs = new Set(
+    edges
+      .filter((e) => e.registryConnection)
+      .map((e) => `${e.source}|${e.target}`),
+  );
   const sessions = (await getAllSessions()).filter((s) => {
     if (projectDocIds && !projectDocIds.has(s.docId)) return false;
     if (focusedDocId && s.docId !== focusedDocId) return false;
@@ -88,6 +120,10 @@ async function addCoOccurrenceEdges(edges, concepts, focusedDocId, projectDocIds
     for (let i = 0; i < localIds.length; i++) {
       for (let j = i + 1; j < localIds.length; j++) {
         if (!localIds[i] || !localIds[j]) continue;
+        const pairKey = `${localIds[i]}|${localIds[j]}`;
+        const pairKeyRev = `${localIds[j]}|${localIds[i]}`;
+        if (registryPairs.has(pairKey) || registryPairs.has(pairKeyRev)) continue;
+        if (!nodeIds.has(localIds[i]) || !nodeIds.has(localIds[j])) continue;
         edges.push({
           source: localIds[i],
           target: localIds[j],

@@ -16,6 +16,7 @@ import { generatePhase0ForScope } from "./slow/phase0.js";
 import { generateRecallSliceForDoc } from "./recall-study.js";
 import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js";
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
+import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
 import { runConceptInventoryWithFallback } from "./session.js";
 import { assertLlmKeyPresent } from "./llm.js";
@@ -211,6 +212,7 @@ async function runPhaseT13(doc, ctx) {
     signal: ctx.signal,
   });
   doc.shared.conceptGraph = graph;
+  promoteGraphConnectionsToRegistry(doc, graph);
   return hashPayload({ nodes: graph.nodes?.length, edges: graph.edges?.length });
 }
 

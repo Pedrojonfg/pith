@@ -5,6 +5,33 @@
 import { mapMcqOutcomeToQuality, RECALL_QUALITY_TO_SM2 } from "../sm2-ingest.js";
 import { getSession } from "../session-store.js";
 import { onConceptEngagement } from "./promotion.js";
+import { reinforceConnectionsFireAndForget } from "./connection-store.js";
+
+function resolveGlobalConceptIds(session, localIds) {
+  const inventory = session?.shared?.conceptInventory || [];
+  const byLocal = new Map();
+  for (const entry of inventory) {
+    const local = String(entry?.canonicalId || entry?.id || "").trim();
+    const global = String(entry?.globalConceptId || "").trim();
+    if (local && global) byLocal.set(local, global);
+  }
+  return [...new Set(
+    (Array.isArray(localIds) ? localIds : [])
+      .map((id) => {
+        const local = String(id || "").trim();
+        return byLocal.get(local) || local;
+      })
+      .filter(Boolean),
+  )];
+}
+
+function maybeReinforceOnCorrect(session, localIds, correct) {
+  if (!correct) return;
+  const globalIds = resolveGlobalConceptIds(session, localIds);
+  if (globalIds.length >= 2) {
+    reinforceConnectionsFireAndForget(globalIds);
+  }
+}
 
 /**
  * @param {object} params
@@ -37,6 +64,7 @@ export async function promoteFromMcqBlock({
       console.warn("[concept-registry] MCQ promotion failed", id, err);
     }
   }
+  maybeReinforceOnCorrect(session, ids, correct);
 }
 
 /**
@@ -71,6 +99,8 @@ export async function promoteFromRecall({ docId, question }) {
       console.warn("[concept-registry] Recall promotion failed", id, err);
     }
   }
+  const strong = qualityKey === "strong" || qualityKey === "adequate";
+  maybeReinforceOnCorrect(session, conceptIds, strong);
 }
 
 /**
