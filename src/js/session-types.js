@@ -85,6 +85,16 @@ export const PROJECT_STORE_SCHEMA = 1;
  * @property {number} lastAt
  * @property {number} weight
  * @property {string} [globalConceptId] Global registry link when resolved
+ * @property {'unprompted_articulation'|'tested_recall'} [signalOrigin] Capture context; default tested_recall when absent
+ */
+
+/**
+ * @typedef {object} InterviewTurn
+ * @property {number} turn
+ * @property {string} question
+ * @property {'fixed'|'generated'} questionSource
+ * @property {string} answer
+ * @property {number} answeredAt
  */
 
 const MODE_KEYS = ["rsvp", "slow", "cloze", "questions", "recall"];
@@ -251,6 +261,12 @@ export function validateDocumentSession(session) {
     }
     if (sh.mnemonicDevices != null && !Array.isArray(sh.mnemonicDevices)) {
       errors.push("shared.mnemonicDevices must be array");
+    }
+    if (sh.interviewTranscript != null && !Array.isArray(sh.interviewTranscript)) {
+      errors.push("shared.interviewTranscript must be array");
+    }
+    if (sh.interviewSynthesisComplete != null && typeof sh.interviewSynthesisComplete !== "boolean") {
+      errors.push("shared.interviewSynthesisComplete must be boolean");
     }
   }
   if (!session.modes || typeof session.modes !== "object") {

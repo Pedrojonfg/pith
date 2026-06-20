@@ -17,6 +17,8 @@
 } from "./api.js?v=20260527_1";
 import {
   ASSESSMENT_FLAGS,
+  INTERVIEW_MAX_FOLLOWUP_ROUNDS,
+  INTERVIEW_MIN_ANSWERED_TURNS,
   isAssessmentQuestionsUiEnabled,
   isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
@@ -60,6 +62,23 @@ import {
   runDocumentPreparationPipeline,
   PHASE_LABELS,
 } from "./document-preparation.js";
+import { getOpeningQuestions } from "./interview/opening-questions.js";
+import {
+  appendTurn,
+  canProceedToSynthesis,
+  countAnsweredTurns,
+  createTurn,
+  dynamicFollowUpsUsed,
+  normalizeInterviewTranscript,
+} from "./interview/transcript.js";
+import {
+  getDefaultModesForSession,
+  INTERVIEW_PLACEHOLDER_MARKDOWN,
+  isInterviewOriginSession,
+  isModeAvailableForSession,
+} from "./interview/origin.js";
+import { generateInterviewFollowUp } from "./interview/interview-api.js";
+import { applyInterviewSynthesis } from "./interview/synthesis.js";
 import { normalizePreparationState } from "./session-types.js";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import {
@@ -640,6 +659,19 @@ async function syncModeSelectView(doc = null) {
     els.modeSelectUseRecommendedBtn.hidden = !canReturnToRecommended;
   }
   els.modeSelectContinuity?.classList.toggle("mode-select-continuity--separated", showRecommended);
+  syncInterviewModeGate(doc);
+}
+
+function syncInterviewModeGate(doc) {
+  const hidden = isInterviewOriginSession(doc) ? ["rsvp", "slow", "questions"] : [];
+  for (const mode of ["rsvp", "slow", "cloze", "questions", "recall"]) {
+    const input = document.querySelector(`input[name="studyMode"][value="${mode}"]`);
+    const label = input?.closest(".study-mode-option");
+    if (label) label.hidden = hidden.includes(mode);
+    if (input && hidden.includes(mode) && input.checked) {
+      input.checked = false;
+    }
+  }
 }
 
 async function openModeSelectManualView() {
@@ -1027,7 +1059,10 @@ async function resetModeSelectUi() {
   });
   modeSelectManualOpen = false;
   clearFlowRecommendFeedback();
-  for (const mode of ["rsvp", "slow", "cloze", "questions", "recall"]) {
+  const doc = await getActiveSession();
+  syncInterviewModeGate(doc);
+  const modes = getDefaultModesForSession(doc);
+  for (const mode of modes) {
     if (await loadSessionForMode(mode)) {
       setStudyModeRadio(mode);
       break;
@@ -1124,6 +1159,273 @@ export async function enterModeSelectScreen() {
 }
 
 let createSessionStartRunId = 0;
+
+/** @type {{ currentQuestion: string, questionSource: 'fixed'|'generated', runId: number }} */
+const interviewCaptureState = {
+  currentQuestion: "",
+  questionSource: "fixed",
+  runId: 0,
+};
+
+function setInterviewCaptureError(message) {
+  if (!els.interviewCaptureError) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    els.interviewCaptureError.hidden = true;
+    els.interviewCaptureError.textContent = "";
+    return;
+  }
+  els.interviewCaptureError.hidden = false;
+  els.interviewCaptureError.textContent = text;
+}
+
+function interviewFollowUpErrorMessage(err) {
+  const code = String(err?.code || "").trim();
+  if (code.includes("TRUNCATED")) {
+    return "The follow-up response was cut off. Try again.";
+  }
+  if (code.includes("SCHEMA")) {
+    return "The follow-up response had an unexpected shape. Try again.";
+  }
+  if (code.includes("PARSE")) {
+    return "Could not read the follow-up response. Try again.";
+  }
+  return err?.message || "Could not generate a follow-up question.";
+}
+
+function showInterviewGeneratingScreen(label) {
+  if (els.reviewGeneratingLabel) {
+    els.reviewGeneratingLabel.textContent = String(label || "Working…");
+  }
+  showScreen("reviewGenerating");
+}
+
+async function ensureInterviewSession(sessionTitle) {
+  const title = String(sessionTitle || "").trim() || "Interview session";
+  const doc = await createSession(INTERVIEW_PLACEHOLDER_MARKDOWN, {
+    projectId: getUploadDefaultProjectId(),
+  });
+  await setUploadMeta(doc.docId, {
+    fileName: title,
+    originalFormat: "interview",
+    uploadedAt: new Date().toISOString(),
+  });
+  doc.shared.docMeta = {
+    ...(doc.shared.docMeta || {}),
+    titleInferred: title,
+  };
+  doc.shared.interviewTranscript = [];
+  doc.shared.interviewSynthesisComplete = false;
+  await saveDocumentSession(doc);
+  await setActiveSession(doc.docId);
+  return doc;
+}
+
+function renderInterviewCaptureUi(doc) {
+  const transcript = normalizeInterviewTranscript(doc?.shared?.interviewTranscript);
+  const answered = countAnsweredTurns(transcript);
+  const followUps = dynamicFollowUpsUsed(transcript);
+  const atCap = followUps >= INTERVIEW_MAX_FOLLOWUP_ROUNDS;
+  const canFinish = canProceedToSynthesis(transcript, INTERVIEW_MIN_ANSWERED_TURNS);
+
+  if (els.interviewQuestionText) {
+    els.interviewQuestionText.textContent = interviewCaptureState.currentQuestion || "";
+  }
+  if (els.interviewTurnMeta) {
+    els.interviewTurnMeta.textContent =
+      answered > 0
+        ? `Answered ${answered} · Follow-ups ${followUps}/${INTERVIEW_MAX_FOLLOWUP_ROUNDS}`
+        : "Opening question — no network needed";
+  }
+  if (els.interviewFinishBtn) {
+    els.interviewFinishBtn.hidden = !canFinish;
+  }
+  if (els.interviewSubmitAnswerBtn) {
+    els.interviewSubmitAnswerBtn.textContent = atCap ? "Submit final answer" : "Submit answer";
+    els.interviewSubmitAnswerBtn.disabled = !interviewCaptureState.currentQuestion;
+  }
+  if (els.interviewCaptureStatus && atCap && !canFinish) {
+    els.interviewCaptureStatus.textContent =
+      "Round cap reached — answer this question to reach the minimum for synthesis.";
+  } else if (els.interviewCaptureStatus && !canFinish && answered > 0) {
+    els.interviewCaptureStatus.textContent = `Answer at least ${INTERVIEW_MIN_ANSWERED_TURNS} questions before finishing.`;
+  } else if (els.interviewCaptureStatus) {
+    els.interviewCaptureStatus.textContent = "";
+  }
+}
+
+async function loadNextInterviewQuestion(doc) {
+  const transcript = normalizeInterviewTranscript(doc?.shared?.interviewTranscript);
+  const followUps = dynamicFollowUpsUsed(transcript);
+  if (followUps >= INTERVIEW_MAX_FOLLOWUP_ROUNDS) {
+    interviewCaptureState.currentQuestion = "";
+    interviewCaptureState.questionSource = "generated";
+    return doc;
+  }
+  const lang = getStudyLanguage();
+  if (transcript.length === 0) {
+    const bank = getOpeningQuestions(lang);
+    interviewCaptureState.currentQuestion = bank.questions[bank.defaultIndex] || bank.questions[0] || "";
+    interviewCaptureState.questionSource = "fixed";
+    return doc;
+  }
+  const runId = ++interviewCaptureState.runId;
+  showInterviewGeneratingScreen("Generating follow-up question…");
+  try {
+    assertLlmKeyPresent(getSessionLlmModel());
+    const { question } = await generateInterviewFollowUp({
+      transcript,
+      studyLang: lang,
+      llmModel: getSessionLlmModel(),
+    });
+    if (runId !== interviewCaptureState.runId) return doc;
+    interviewCaptureState.currentQuestion = question;
+    interviewCaptureState.questionSource = "generated";
+    setInterviewCaptureError("");
+    showScreen("interviewCapture");
+    return doc;
+  } catch (err) {
+    if (runId !== interviewCaptureState.runId) return doc;
+    showScreen("interviewCapture");
+    setInterviewCaptureError(interviewFollowUpErrorMessage(err));
+    throw err;
+  }
+}
+
+export async function enterInterviewCaptureScreen() {
+  interviewCaptureState.runId += 1;
+  setInterviewCaptureError("");
+  const existing = await getActiveSession();
+  let doc = existing;
+  if (!isInterviewOriginSession(existing) || existing?.shared?.interviewSynthesisComplete) {
+    doc = await ensureInterviewSession(els.interviewSessionNameInput?.value || "Interview session");
+  }
+  const title =
+    doc?.shared?.docMeta?.titleInferred ||
+    doc?.shared?.uploadMeta?.fileName ||
+    "Interview session";
+  if (els.interviewSessionNameInput) {
+    els.interviewSessionNameInput.value = title;
+  }
+  if (els.interviewAnswerInput) els.interviewAnswerInput.value = "";
+  const transcript = normalizeInterviewTranscript(doc?.shared?.interviewTranscript);
+  if (!transcript.length) {
+    const bank = getOpeningQuestions(getStudyLanguage());
+    interviewCaptureState.currentQuestion = bank.questions[bank.defaultIndex] || bank.questions[0] || "";
+    interviewCaptureState.questionSource = "fixed";
+  } else if (!interviewCaptureState.currentQuestion) {
+    await loadNextInterviewQuestion(doc);
+  }
+  renderInterviewCaptureUi(doc);
+  mountModeSelectBreadcrumb(doc);
+  showScreen("interviewCapture");
+}
+
+async function handleInterviewSubmitAnswer() {
+  setInterviewCaptureError("");
+  const doc = await getActiveSession();
+  if (!doc || !isInterviewOriginSession(doc) || doc.shared?.interviewSynthesisComplete) {
+    setInterviewCaptureError("Start a new interview session first.");
+    return;
+  }
+  const answer = String(els.interviewAnswerInput?.value || "").trim();
+  if (!answer) {
+    setInterviewCaptureError("Write an answer before submitting.");
+    return;
+  }
+  if (!interviewCaptureState.currentQuestion) {
+    setInterviewCaptureError("No question to answer.");
+    return;
+  }
+  const transcript = normalizeInterviewTranscript(doc.shared.interviewTranscript);
+  const turn = createTurn({
+    turn: transcript.length + 1,
+    question: interviewCaptureState.currentQuestion,
+    questionSource: interviewCaptureState.questionSource,
+    answer,
+  });
+  doc.shared.interviewTranscript = appendTurn(transcript, turn);
+  await saveDocumentSession(doc);
+  if (els.interviewAnswerInput) els.interviewAnswerInput.value = "";
+
+  const followUpsAfter = dynamicFollowUpsUsed(doc.shared.interviewTranscript);
+  if (followUpsAfter >= INTERVIEW_MAX_FOLLOWUP_ROUNDS) {
+    renderInterviewCaptureUi(doc);
+    await handleInterviewFinish(true);
+    return;
+  }
+
+  try {
+    await loadNextInterviewQuestion(doc);
+  } catch {
+    renderInterviewCaptureUi(doc);
+    return;
+  }
+  renderInterviewCaptureUi(doc);
+}
+
+async function handleInterviewFinish(fromCap = false) {
+  setInterviewCaptureError("");
+  const doc = await getActiveSession();
+  if (!doc?.shared) return;
+  const transcript = normalizeInterviewTranscript(doc.shared.interviewTranscript);
+  if (!canProceedToSynthesis(transcript, INTERVIEW_MIN_ANSWERED_TURNS)) {
+    setInterviewCaptureError(
+      `Answer at least ${INTERVIEW_MIN_ANSWERED_TURNS} questions before finishing the interview.`,
+    );
+    return;
+  }
+  if (doc.shared.interviewSynthesisComplete) {
+    enterModeSelectScreen();
+    return;
+  }
+
+  const sessionTitle =
+    String(els.interviewSessionNameInput?.value || "").trim() ||
+    doc.shared.docMeta?.titleInferred ||
+    "Interview session";
+  doc.shared.docMeta = { ...(doc.shared.docMeta || {}), titleInferred: sessionTitle };
+  await saveDocumentSession(doc);
+
+  const runId = ++interviewCaptureState.runId;
+  showInterviewGeneratingScreen("Structuring your answers…");
+  try {
+    assertLlmKeyPresent(getSessionLlmModel());
+    const { doc: updated } = await applyInterviewSynthesis(doc, {
+      transcript,
+      studyLang: getStudyLanguage(),
+      sessionTitle,
+      llmModel: getSessionLlmModel(),
+    });
+    if (runId !== interviewCaptureState.runId) return;
+    await saveDocumentSession(updated);
+    await startDocumentPreparation(updated, {
+      stopAfterTier: 2,
+      onProgress: (msg) => {
+        if (els.reviewGeneratingLabel) {
+          els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+        }
+      },
+    });
+    if (fromCap && els.interviewCaptureStatus) {
+      els.interviewCaptureStatus.textContent = "Interview complete — round cap reached.";
+    }
+    enterModeSelectScreen();
+  } catch (err) {
+    if (runId !== interviewCaptureState.runId) return;
+    showScreen("interviewCapture");
+    const code = String(err?.code || "");
+    if (code.includes("FIDELITY")) {
+      setInterviewCaptureError("Synthesis introduced content not in your answers. Try again.");
+    } else if (code.includes("TRUNCATED")) {
+      setInterviewCaptureError("Synthesis was cut off. Try again.");
+    } else if (code.includes("SCHEMA") || code.includes("PARSE")) {
+      setInterviewCaptureError("Could not read the synthesis response. Try again.");
+    } else {
+      setInterviewCaptureError(err?.message || "Synthesis failed. Try again.");
+    }
+  }
+}
 
 function guessSessionNameFromFileName(fileName) {
   const raw = String(fileName || "").trim();
@@ -2132,6 +2434,12 @@ export async function enterModeWithContinuity(mode) {
     return;
   }
   const normalized = normalizeStudyMode(raw);
+  const docGate = await getActiveSession();
+  if (docGate && !isModeAvailableForSession(docGate, normalized)) {
+    if (els.modeSelectManual) els.modeSelectManual.hidden = false;
+    alert("This mode is not available for sessions created from an interview.");
+    return;
+  }
 
   applyFlowRecommendationOnEnterMode(normalized);
   const doc = await getActiveSession();
@@ -3383,11 +3691,21 @@ function wireDocLibraryHandlers() {
   });
 
   els.createSessionStartBackBtn?.addEventListener("click", () => enterDocLibraryScreen());
+  els.createSessionNoFileBtn?.addEventListener("click", () => {
+    void enterInterviewCaptureScreen();
+  });
   els.createSessionStartFileInput?.addEventListener("change", () => {
     void handleCreateSessionStartFilePicked();
   });
   els.createSessionStartContinueBtn?.addEventListener("click", () => {
     handleCreateSessionStartContinue();
+  });
+  els.interviewCaptureBackBtn?.addEventListener("click", () => enterCreateSessionStartScreen());
+  els.interviewSubmitAnswerBtn?.addEventListener("click", () => {
+    void handleInterviewSubmitAnswer();
+  });
+  els.interviewFinishBtn?.addEventListener("click", () => {
+    void handleInterviewFinish(false);
   });
 }
 

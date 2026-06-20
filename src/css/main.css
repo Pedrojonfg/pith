@@ -1890,6 +1890,39 @@ body.assessment-runner-active .assessment-runner-chrome {
   justify-content: flex-end;
 }
 
+.create-session-start-divider {
+  text-align: center;
+  margin: 16px 0 10px;
+}
+
+.create-session-no-file-btn {
+  width: 100%;
+}
+
+.interview-capture-card {
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+}
+
+.interview-capture-lead {
+  margin-bottom: 12px;
+}
+
+.interview-question {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent, #6ea8fe);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.interview-capture-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
 .doc-library-vault-row {
   margin: 0 0 12px;
   display: flex;

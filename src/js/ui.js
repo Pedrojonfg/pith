@@ -381,6 +381,17 @@ export const els = {
   createSessionStartNameInput: document.getElementById("createSessionStartNameInput"),
   createSessionStartStatus: document.getElementById("createSessionStartStatus"),
   createSessionStartContinueBtn: document.getElementById("createSessionStartContinueBtn"),
+  createSessionNoFileBtn: document.getElementById("createSessionNoFileBtn"),
+  screenInterviewCapture: document.getElementById("screenInterviewCapture"),
+  interviewCaptureBackBtn: document.getElementById("interviewCaptureBackBtn"),
+  interviewSessionNameInput: document.getElementById("interviewSessionNameInput"),
+  interviewTurnMeta: document.getElementById("interviewTurnMeta"),
+  interviewQuestionText: document.getElementById("interviewQuestionText"),
+  interviewAnswerInput: document.getElementById("interviewAnswerInput"),
+  interviewCaptureStatus: document.getElementById("interviewCaptureStatus"),
+  interviewCaptureError: document.getElementById("interviewCaptureError"),
+  interviewSubmitAnswerBtn: document.getElementById("interviewSubmitAnswerBtn"),
+  interviewFinishBtn: document.getElementById("interviewFinishBtn"),
   screenDocLibrary: document.getElementById("screenDocLibrary"),
   docLibraryList: document.getElementById("docLibraryList"),
   docLibraryProjectList: document.getElementById("docLibraryProjectList"),
@@ -1190,6 +1201,7 @@ export function showScreen(which) {
   const showVaultBranch = which === "vaultBranch";
   const showUploadToVault = which === "uploadToVaultCandidates";
   const showCreateSessionStart = which === "createSessionStart";
+  const showInterviewCapture = which === "interviewCapture";
   const showModeSelect = which === "modeSelect";
   const showDocLibrary = which === "docLibrary";
   const showRetrievalHub = which === "retrievalHub";
@@ -1223,6 +1235,7 @@ export function showScreen(which) {
   els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
   els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
   els.screenCreateSessionStart?.setAttribute("aria-hidden", String(!showCreateSessionStart));
+  els.screenInterviewCapture?.setAttribute("aria-hidden", String(!showInterviewCapture));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
   els.screenRetrievalHub?.setAttribute("aria-hidden", String(!showRetrievalHub));

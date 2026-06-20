@@ -16,6 +16,7 @@ import { generatePhase0ForScope } from "./slow/phase0.js";
 import { generateRecallSliceForDoc } from "./recall-study.js";
 import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js";
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
+import { isInterviewOriginSession } from "./interview/origin.js";
 import { runConceptInventoryWithFallback } from "./session.js";
 import { assertLlmKeyPresent } from "./llm.js";
 import { isOfflineMode } from "./offline.js";
@@ -168,6 +169,13 @@ async function runPhaseT11(doc, ctx) {
 }
 
 async function runPhaseT12(doc, ctx) {
+  if (
+    doc.shared?.interviewSynthesisComplete === true &&
+    Array.isArray(doc.shared.conceptInventory) &&
+    doc.shared.conceptInventory.length > 0
+  ) {
+    return hashPayload(doc.shared.conceptInventory.length);
+  }
   const text = getMarkdown(doc);
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   const invResult = await runConceptInventoryWithFallback(text, {
@@ -332,6 +340,9 @@ async function runPhaseT22(doc, ctx) {
 }
 
 async function runPhaseT23(doc, ctx) {
+  if (isInterviewOriginSession(doc)) {
+    return hashPayload("skipped-interview-origin");
+  }
   const text = getMarkdown(doc);
   const meta = doc.shared?.uploadMeta || {};
   const slowSession = {

@@ -501,6 +501,49 @@
                 Continue
               </button>
             </div>
+            <p class="create-session-start-divider hint">or</p>
+            <button type="button" id="createSessionNoFileBtn" class="btn-secondary create-session-no-file-btn">
+              I don't have a file for this
+            </button>
+          </div>
+        </section>
+
+        <section
+          id="screenInterviewCapture"
+          class="screen interview-capture-screen"
+          aria-hidden="true"
+          aria-label="Explain what you learned"
+        >
+          <div class="card interview-capture-card">
+            <button type="button" id="interviewCaptureBackBtn" class="create-back-btn">← Back</button>
+            <h1>Explain what you learned</h1>
+            <p class="hint interview-capture-lead">
+              No upload needed — answer in your own words. We structure your answers into study material without adding facts you didn't say.
+            </p>
+            <label for="interviewSessionNameInput">Session name</label>
+            <input
+              id="interviewSessionNameInput"
+              name="interviewSessionNameInput"
+              type="text"
+              placeholder="e.g. Chapter 3 — Thermodynamics"
+              maxlength="120"
+            />
+            <p id="interviewTurnMeta" class="hint" role="status"></p>
+            <div id="interviewQuestionText" class="interview-question"></div>
+            <label for="interviewAnswerInput">Your answer</label>
+            <textarea
+              id="interviewAnswerInput"
+              name="interviewAnswerInput"
+              rows="6"
+              spellcheck="true"
+              placeholder="Write what you remember…"
+            ></textarea>
+            <p id="interviewCaptureStatus" class="hint" role="status"></p>
+            <div id="interviewCaptureError" class="error" hidden></div>
+            <div class="row interview-capture-actions">
+              <button type="button" id="interviewSubmitAnswerBtn" class="btn-primary">Submit answer</button>
+              <button type="button" id="interviewFinishBtn" class="btn-secondary" hidden>Finish interview</button>
+            </div>
           </div>
         </section>
 
@@ -1751,7 +1794,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260619_8";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_2";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1767,7 +1810,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260619_8");
+        await import("./src/js/main.js?v=20260620_2");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

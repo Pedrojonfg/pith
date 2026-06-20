@@ -245,3 +245,22 @@ export function validateBlockFidelity({
     })),
   };
 }
+
+/**
+ * Validate interview synthesis output against concatenated transcript source.
+ * @param {{ transcriptText: string, synthesizedMarkdown: string, strictMode?: boolean }} args
+ */
+export function validateInterviewSynthesisFidelity({
+  transcriptText = "",
+  synthesizedMarkdown = "",
+  strictMode = false,
+} = {}) {
+  return validateBlockFidelity({
+    chunk: transcriptText,
+    explanation: synthesizedMarkdown,
+    blockTitle: "",
+    signature: [],
+    concepts: [],
+    strictMode,
+  });
+}
