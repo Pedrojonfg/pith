@@ -1,6 +1,8 @@
 ﻿import {
   deepSeekAuditBlockOverlap,
   deepSeekGenerateBlockJson,
+  deepSeekRegenerateBlockQuestions,
+  buildQuestionCountRetryInstruction,
   deepSeekSocraticTutor,
   deepSeekSummarySoFar,
   GapSynthesisError,
@@ -177,6 +179,7 @@ import {
   runConceptInventory,
   runConceptInventoryWithFallback,
   packInventoryToBlocks,
+  applyKnowledgeProfileToBlockIndex,
   twoPhaseConceptSplit,
   state,
   storeActiveSession,
@@ -197,6 +200,7 @@ import {
   setAssessmentSkipped,
   setPackingIgnoredProfile,
 } from "./session.js?v=20260611_2";
+import { isBoldHeaderLine, warnStructuredHeaderCount } from "./rsvp-section-headers.js";
 import {
   isZeroQuestionBlockTitle,
   isKeyTermsBlockTitle,
@@ -222,6 +226,7 @@ import {
   showSidebar,
   showInventoryStatusBanner,
   syncSourceFidelityStrictUi,
+  wireSourceFidelityStrictUi,
   syncStudyLanguage,
   typesetMath,
   updateFullPackProgressUi,
@@ -5295,6 +5300,48 @@ function blockHasReadableExplanation(block) {
   return Boolean(text) && !text.startsWith("[Generation failed");
 }
 
+function extractConnectionHookFromExplanation(explanation) {
+  const parts = String(explanation || "")
+    .split(/\n\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  for (const part of parts) {
+    if (isBoldHeaderLine(part)) continue;
+    return part.slice(0, 220);
+  }
+  return "";
+}
+
+function countBlockQuestionsByType(questions) {
+  const list = Array.isArray(questions) ? questions : [];
+  return {
+    test: list.filter((q) => q && typeof q === "object" && q.type === "test").length,
+    socratic: list.filter((q) => q && typeof q === "object" && q.type === "socratic").length,
+  };
+}
+
+function blockQuestionsNeedRetry(cleaned, cfg) {
+  const counts = countBlockQuestionsByType(cleaned?.questions);
+  if (counts.test < (cfg.n_test || 0) || counts.socratic < (cfg.n_socratic || 0)) return true;
+  const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
+  if (gaps.length > 0 && counts.test + counts.socratic < gaps.length) return true;
+  return false;
+}
+
+function attachQuestionCountDiagnostics(block, cfg, counts) {
+  const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
+  const totalGot = counts.test + counts.socratic;
+  const countOk = counts.test >= (cfg.n_test || 0) && counts.socratic >= (cfg.n_socratic || 0);
+  const gapOk = gaps.length === 0 || totalGot >= gaps.length;
+  if (countOk && gapOk) return block;
+  return {
+    ...block,
+    question_count_status: "short",
+    question_count_actual: { test: counts.test, socratic: counts.socratic },
+    question_count_requested: { test: cfg.n_test || 0, socratic: cfg.n_socratic || 0 },
+  };
+}
+
 async function ensureBlockGenerated(blockIndex) {
   const existing = getBlock(blockIndex);
   const needsReaderText = !isQuestionsStudyMode(state.activeSession);
@@ -5345,10 +5392,7 @@ async function ensureBlockGenerated(blockIndex) {
     let prevBlockSummaryForConnection = "";
     if (blockIndex > 0) {
       const prev = state.activeSession?.blocks?.[blockIndex - 1];
-      prevBlockSummaryForConnection = String(prev?.explanation || "")
-        .split(/\n\n/)[0]
-        .trim()
-        .slice(0, 220);
+      prevBlockSummaryForConnection = extractConnectionHookFromExplanation(prev?.explanation);
     }
 
     const blockRequest = {
@@ -5425,6 +5469,45 @@ async function ensureBlockGenerated(blockIndex) {
     warnBlockGenerationProfileMismatch(obj, cfg);
     cleaned = normalizeBlockJson(obj, cfg, blockIndex);
     cleaned.questions = shuffleTestQuestionsInList(cleaned.questions);
+
+    let questionCounts = countBlockQuestionsByType(cleaned.questions);
+    if (blockQuestionsNeedRetry(cleaned, cfg)) {
+      const prevTitles = [];
+      for (const line of blocksListText.split("\n")) {
+        const m = line.match(/^\s*\d+\.\s*(.+)$/);
+        if (m) prevTitles.push(m[1].trim());
+      }
+      try {
+        const retryObj = await deepSeekRegenerateBlockQuestions({
+          llmModel,
+          language: getStudyLanguage(),
+          n_test: cfg.n_test,
+          n_socratic: cfg.n_socratic,
+          blockTitle,
+          blockIndex,
+          include_connection_questions: cfg.include_connection_questions,
+          explanation: cleaned.explanation,
+          materialText: materialChunk,
+          gap_focus: cfg.gap_focus,
+          previousBlocksTitles: prevTitles.slice(0, Math.max(0, blockIndex)),
+          coverageManifest: coverageManifest.slice(-20),
+          questionScope,
+          prevBlockSummaryForConnection,
+          userExtra: buildQuestionCountRetryInstruction(cfg, questionCounts),
+        });
+        if (Array.isArray(retryObj?.questions) && retryObj.questions.length) {
+          cleaned.questions = shuffleTestQuestionsInList(retryObj.questions);
+        }
+        questionCounts = countBlockQuestionsByType(cleaned.questions);
+      } catch (retryErr) {
+        console.warn(
+          `Block ${blockIndex + 1}: question-count retry failed:`,
+          retryErr?.message || retryErr,
+        );
+      }
+    }
+    cleaned = attachQuestionCountDiagnostics(cleaned, cfg, questionCounts);
+    warnStructuredHeaderCount(cleaned.explanation);
   }
 
   const testCount = cleaned.questions.filter((q) => q && typeof q === "object" && q.type === "test")
@@ -6910,11 +6993,15 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
 async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
   if (!prePackingFlow) throw new Error("Pre-packing flow not initialized.");
   const { conceptInventory, nBlocks, cleanedText, splitOpts } = prePackingFlow;
-  return packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
+  const packed = await packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
     ...splitOpts,
     knowledgeProfile,
     onProgress,
   });
+  if (packed?.blockIndex) {
+    packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
+  }
+  return packed;
 }
 
 function renderPrePackingAssessmentGraph(inventory) {
@@ -7632,9 +7719,7 @@ export async function wireStudyHandlers() {
   state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
   renderQuestionConfigUi();
 
-  if (els.sourceFidelityStrictToggleBtn) {
-    syncSourceFidelityStrictUi(state.sourceFidelityStrict === true);
-  }
+  syncSourceFidelityStrictUi(state.sourceFidelityStrict === true);
 
   function goAfterBlocksConfirmed(nBlocks) {
     goToSessionReady(nBlocks);
@@ -8126,6 +8211,7 @@ export async function wireStudyHandlers() {
             "Block split returned no blocks. Please try generating blocks again.",
           );
         }
+        packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
         promoteConceptInventoryToShared(
           packed.conceptInventory ||
             packed.splitRunMeta?.concept_inventory ||
@@ -8389,6 +8475,10 @@ export async function wireStudyHandlers() {
         if (Array.isArray(b.chunk_match_terms) && b.chunk_match_terms.length) {
           row.chunk_match_terms = b.chunk_match_terms;
         }
+        if (b.learning_goal) row.learning_goal = b.learning_goal;
+        if (b._initial_block_config && typeof b._initial_block_config === "object") {
+          row._initial_block_config = b._initial_block_config;
+        }
         merged.push(row);
       }
       merged.sort((a, b) => a.id - b.id);
@@ -8424,6 +8514,15 @@ export async function wireStudyHandlers() {
           sessionObj.blocks[i]._config.n_test = sessionObj.n_test;
           sessionObj.blocks[i]._config.n_socratic = sessionObj.n_socratic;
           sessionObj.blocks[i]._config.include_connection_questions = sessionObj.include_connection_questions;
+          const initialCfg = merged[i]?._initial_block_config;
+          if (initialCfg && typeof initialCfg === "object") {
+            if (initialCfg.explanation_profile) {
+              sessionObj.blocks[i]._config.explanation_profile = initialCfg.explanation_profile;
+            }
+            if (Array.isArray(initialCfg.gap_focus) && initialCfg.gap_focus.length) {
+              sessionObj.blocks[i]._config.gap_focus = initialCfg.gap_focus;
+            }
+          }
         }
       }
       if (!sessionObj._meta || typeof sessionObj._meta !== "object") {
@@ -8638,15 +8737,10 @@ export async function wireStudyHandlers() {
     });
   }
 
-  if (els.sourceFidelityStrictToggleBtn) {
-    els.sourceFidelityStrictToggleBtn.addEventListener("click", () => {
-      const pressed = els.sourceFidelityStrictToggleBtn.getAttribute("aria-pressed") === "true";
-      const next = !pressed;
-      state.sourceFidelityStrict = next;
-      saveSourceFidelityStrictPreference(next);
-      syncSourceFidelityStrictUi(next);
-    });
-  }
+  wireSourceFidelityStrictUi((strict) => {
+    state.sourceFidelityStrict = strict;
+    saveSourceFidelityStrictPreference(strict);
+  });
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
     if (isPrePackingAssessmentRunner()) {
