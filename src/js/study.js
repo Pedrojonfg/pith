@@ -85,6 +85,10 @@ import {
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
 import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
+import {
+  resolveRsvpInventoryForPack,
+  shouldSkipRsvpInventoryLlm,
+} from "./rsvp-shared-consumption.js";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import {
   recordUserOverride,
@@ -2479,7 +2483,6 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
   if (els.createModeLabel) {
     els.createModeLabel.textContent = getStudyModeLabel(mode);
   }
-  updateCreateScreenModeVisibility(mode);
 
   if (mode === "slow") {
     if (doc.shared?.docHierarchy) {
@@ -2488,6 +2491,7 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
     }
     setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
+    updateCreateScreenModeVisibility(mode);
     showScreen("slowScope");
     renderSlowScopeScreen(slice);
     return;
@@ -2496,6 +2500,7 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
   if (mode === "cloze") {
     setGenerateBlocksFormHidden(true);
     setMaterialBootstrapUi(true, doc);
+    updateCreateScreenModeVisibility(mode);
     updateClozeSessionPanel(slice);
     showCreateScreen();
     return;
@@ -2503,6 +2508,8 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
 
   setGenerateBlocksFormHidden(false);
   setMaterialBootstrapUi(true, doc);
+  applySharedBlockRecommendationToUi(doc);
+  updateCreateScreenModeVisibility(mode);
   showCreateScreen();
 }
 
@@ -4129,8 +4136,9 @@ async function maybeAutoRecommendBlockCount() {
   const mode = resolveActiveCreateMode();
   if (mode !== "rsvp") return;
   if (!els.generateBlocksForm || els.generateBlocksForm.hidden) return;
-  if (!hasMaterialForBlockRecommend()) return;
+  if (!(await hasMaterialForBlockRecommend())) return;
   const doc = await getActiveSession();
+  if (doc && shouldSkipRsvpInventoryLlm(doc) && applySharedBlockRecommendationToUi(doc)) return;
   if (doc && applySharedBlockRecommendationToUi(doc)) return;
   if (doc && isDocumentPreparationReady(doc) && doc.shared?.blockRecommendation) {
     applySharedBlockRecommendationToUi(doc);
@@ -4225,6 +4233,9 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
   clearRecommendBlocksUi();
 
   const docEarly = await getActiveSession();
+  if (docEarly && shouldSkipRsvpInventoryLlm(docEarly) && applySharedBlockRecommendationToUi(docEarly)) {
+    return;
+  }
   if (docEarly && applySharedBlockRecommendationToUi(docEarly)) {
     return;
   }
@@ -4273,11 +4284,14 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
     });
     const cache = getBlockSplitCache();
     let inventory;
+    const doc = await getActiveSession();
+    const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
 
-    if (isBlockSplitCacheValid(cache, fingerprint)) {
+    if (preparedPack) {
+      inventory = preparedPack.inventory;
+    } else if (isBlockSplitCacheValid(cache, fingerprint)) {
       inventory = cache.conceptInventory;
     } else {
-      const doc = await getActiveSession();
       const docHierarchy = await ensureDocHierarchyForInventory(
         doc,
         cleanedText,
@@ -8260,7 +8274,15 @@ export async function wireStudyHandlers() {
 
       if (!prePackingOn) {
         let packed;
-        if (isBlockSplitCacheValid(cache, fingerprint)) {
+        const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
+        if (preparedPack) {
+          packed = await packInventoryToBlocks(
+            preparedPack.inventory,
+            nBlocks,
+            cleanedText,
+            splitOpts,
+          );
+        } else if (isBlockSplitCacheValid(cache, fingerprint)) {
           packed = await packInventoryToBlocks(
             cache.conceptInventory,
             nBlocks,
@@ -8303,7 +8325,10 @@ export async function wireStudyHandlers() {
       }
 
       let conceptInventory;
-      if (isBlockSplitCacheValid(cache, fingerprint)) {
+      const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
+      if (preparedPack) {
+        conceptInventory = preparedPack.inventory;
+      } else if (isBlockSplitCacheValid(cache, fingerprint)) {
         conceptInventory = cache.conceptInventory;
       } else {
         const docHierarchy = await ensureDocHierarchyForInventory(
