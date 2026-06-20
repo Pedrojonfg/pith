@@ -31,6 +31,7 @@ import {
   createEmptyPreparationState,
   normalizePreparationState,
   normalizeMarkdownForHash,
+  isTier1PreparationComplete,
 } from "./session-types.js";
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6"]);
@@ -552,6 +553,57 @@ export function getPreparationBadgeLabel(doc) {
   if (status === "legacy") return "";
   if (status === "pending") return "Preparing";
   return "";
+}
+
+const TIER2_PHASE_IDS = ["T2.1", "T2.2", "T2.3"];
+/** @type {Map<string, Promise<{ doc?: object } | object>>} */
+const tier1InFlight = new Map();
+
+function tier2PhasesPending(doc, fingerprint) {
+  const prep = ensurePreparation(doc);
+  return TIER2_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
+}
+
+/**
+ * Await Tier 1 DPP; dedupes concurrent runs per docId.
+ * @param {object} doc
+ * @param {object} [options]
+ */
+export async function ensureTier1Preparation(doc, options = {}) {
+  if (!doc?.docId) return null;
+  if (isTier1PreparationComplete(doc)) return doc;
+
+  const docId = doc.docId;
+  let flight = tier1InFlight.get(docId);
+  if (!flight) {
+    flight = runDocumentPreparationPipeline(doc, {
+      ...options,
+      stopAfterTier: 1,
+    }).finally(() => {
+      tier1InFlight.delete(docId);
+    });
+    tier1InFlight.set(docId, flight);
+  }
+  const result = await flight;
+  return result?.doc ?? doc;
+}
+
+/**
+ * Run Tier 2 phases without blocking UI when Tier 1 is complete.
+ * @param {object} doc
+ * @param {object} [options]
+ */
+export function kickoffTier2PreparationInBackground(doc, options = {}) {
+  if (!doc?.docId || !isTier1PreparationComplete(doc)) return;
+  const fingerprint = computePreparationFingerprint(doc, options);
+  if (!tier2PhasesPending(doc, fingerprint)) return;
+  void runDocumentPreparationPipeline(doc, { ...options, stopAfterTier: 2 });
+}
+
+export function hasPendingTier2Preparation(doc, options = {}) {
+  if (!doc?.docId || !isTier1PreparationComplete(doc)) return false;
+  const fingerprint = computePreparationFingerprint(doc, options);
+  return tier2PhasesPending(doc, fingerprint);
 }
 
 export { TIER1_PHASES, PHASE_LABELS };

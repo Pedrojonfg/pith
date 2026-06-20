@@ -466,10 +466,19 @@ export function normalizePreparationState(raw) {
  */
 export function isTier1PreparationComplete(session) {
   const prep = normalizePreparationState(session?.shared?.preparation);
-  if (prep.status === "ready" || prep.status === "legacy") return true;
-  if (prep.status !== "partial" && prep.status !== "running") return false;
-  const inv = session?.shared?.conceptInventory;
-  return Array.isArray(inv) && inv.length > 0;
+  const shared = session?.shared;
+  const inv = shared?.conceptInventory;
+  const hasInventory = Array.isArray(inv) && inv.length > 0;
+  const hasBlockRec =
+    shared?.blockRecommendation != null &&
+    Number(shared.blockRecommendation.nBlocks) > 0;
+  const hasModeRec =
+    shared?.modeRecommendation != null && typeof shared.modeRecommendation === "object";
+  const artifactsReady = hasInventory && hasBlockRec && hasModeRec;
+
+  if (prep.status === "ready" || prep.status === "legacy") return artifactsReady;
+  if (prep.status === "partial") return artifactsReady;
+  return false;
 }
 
 export { MODE_KEYS };

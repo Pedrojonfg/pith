@@ -496,7 +496,7 @@
             <button type="button" id="createSessionStartBackBtn" class="create-back-btn">← Library</button>
             <h1>Create a new session</h1>
             <p class="hint create-session-start-lead">
-              Upload your material first. We will analyze it in the background while you pick how to study.
+              Upload your material and name the session. We will analyze it before you choose how to study.
             </p>
             <div id="createSessionStartBreadcrumb" class="project-breadcrumb-mount"></div>
             <label for="createSessionStartFileInput">Material file</label>
@@ -1814,7 +1814,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_5";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_6";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1830,7 +1830,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260620_5");
+        await import("./src/js/main.js?v=20260620_6");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
