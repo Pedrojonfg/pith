@@ -13,6 +13,8 @@ import {
   getMinExplanationParagraphs,
   hasValidExplanationParagraphs,
 } from "./explanationParagraphs.js?v=20260527_1";
+import { deriveBlockType } from "./pipeline-levers.js";
+import { EXPLANATION_RSVP_STRUCTURED_HEADERS } from "./rsvp-section-headers.js";
 import {
   getActiveSessionLlmModel,
   getApiKeyForLlmModel,
@@ -1857,6 +1859,13 @@ WRITING RULES (non-negotiable):
 - Do NOT contradict or replace source definitions; paraphrase short sentences. No 80-word sentences, no undefined vocabulary.
 - Total length: 200-300 words maximum. Dense but scannable at speed.`;
 
+const EXPLANATION_RELATIONAL_COMPRESSED = `Relational RSVP recap when the student already knows related concepts. CANNOT re-read. Target ~40% of a standard block word budget (roughly 80–120 words).
+
+Focus ONLY on how this concept relates to concepts already covered in prior blocks. Compress non-relational content aggressively.
+When this block is not first, open with one sentence linking to the previous block title or key concept.
+Same output rules as thorough: flowing prose, one blank line between paragraphs.
+Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; source-fidelity rules supreme.`;
+
 const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title starts with "Key terms:"). The student reads via RSVP and CANNOT re-read.
 
 Write ONLY definitions—no narrative, no relationships between terms yet.
@@ -1874,6 +1883,34 @@ When this block is not first, the first Hook sentence (first sentence of the fir
 That bridge sentence must come first so a four-sentence preview still shows the connection before the later Connection paragraph.
 Same output rules as thorough: flowing prose, no section labels or headings, one blank line between paragraphs for subsection pauses.
 Same writing rules: subject-verb-object; max 15 words per sentence; one idea per sentence; definition before example; no source regurgitation.`;
+
+function formatGapFocusForPrompt(item) {
+  if (typeof item === "string") return item.trim();
+  if (!item || typeof item !== "object") return "";
+  const id = String(item.concept_id || item.label || "").trim();
+  const reason = String(item.reason || "").trim();
+  if (!id) return "";
+  return reason ? `${id} (${reason})` : id;
+}
+
+function formatGapFocusList(gap_focus) {
+  return Array.isArray(gap_focus)
+    ? gap_focus.map(formatGapFocusForPrompt).filter(Boolean)
+    : [];
+}
+
+export function buildQuestionCountRetryInstruction(cfg, actualCounts = {}) {
+  const nTest = Math.max(0, Math.floor(Number(cfg?.n_test) || 0));
+  const nSoc = Math.max(0, Math.floor(Number(cfg?.n_socratic) || 0));
+  const gotTest = Math.max(0, Math.floor(Number(actualCounts?.test) || 0));
+  const gotSoc = Math.max(0, Math.floor(Number(actualCounts?.socratic) || 0));
+  const gaps = formatGapFocusList(cfg?.gap_focus);
+  let msg = `\n\nRETRY REQUIRED: Your previous attempt under-delivered questions. You MUST return exactly ${nTest} test and ${nSoc} socratic questions (you returned ${gotTest} test, ${gotSoc} socratic).`;
+  if (gaps.length > 0) {
+    msg += ` Generate at least one gap-targeted question per learning gap (${gaps.length} gap(s)): ${gaps.join("; ")}.`;
+  }
+  return msg;
+}
 
 function getPreviousBlockTitleFromList(blocksListText, blockNumber) {
   const targetNo = Math.floor(Number(blockNumber));
@@ -2111,11 +2148,15 @@ export function buildBlockGenerationSystemPrompt({
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
-  const profile = String(explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
+  const profileRaw = String(explanation_profile || "").trim();
+  const profile =
+    profileRaw === "brief_deep"
+      ? "brief_deep"
+      : profileRaw === "relational_compressed"
+        ? "relational_compressed"
+        : "thorough";
   const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
-  const gaps = Array.isArray(gap_focus)
-    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
-    : [];
+  const gaps = formatGapFocusList(gap_focus);
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, profile);
   const paragraphRule = explanationParagraphHardRule(paragraphOpts);
   const blockNo = Number(blockIndex) + 1;
@@ -2129,11 +2170,17 @@ export function buildBlockGenerationSystemPrompt({
     extractedClaims,
   });
   const explanationPreamble = `${EXPLANATION_PEDAGOGICAL_HEADER}\n\n${EXPLANATION_OPENING_HOOK}\n\n`;
+  const useStructuredHeaders =
+    deriveBlockType(blockTitle) === "development" && profile === "thorough";
   const explanationSection = isVocabularyBlock
     ? `${explanationPreamble}${EXPLANATION_VOCABULARY_BLOCK}\n${sourceStructure}\n${paragraphRule}`
     : profile === "brief_deep"
       ? `${explanationPreamble}${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
-      : `${explanationPreamble}${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
+      : profile === "relational_compressed"
+        ? `${explanationPreamble}${EXPLANATION_RELATIONAL_COMPRESSED}\n${sourceStructure}\n${paragraphRule}`
+        : useStructuredHeaders
+          ? `${explanationPreamble}${EXPLANATION_RSVP_STRUCTURED_HEADERS}\n${sourceStructure}\n${paragraphRule}`
+          : `${explanationPreamble}${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
   const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
   const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
 
@@ -2199,9 +2246,7 @@ export function buildBlockGenerationUserContent({
   gap_focus = [],
   coverageManifest = null,
 }) {
-  const gaps = Array.isArray(gap_focus)
-    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
-    : [];
+  const gaps = formatGapFocusList(gap_focus);
   const gapBlock =
     gaps.length > 0
       ? `\n\nLearning gaps to target (generate ≥1 question per gap):\n${gaps.map((g, i) => `${i + 1}. ${g}`).join("\n")}`
@@ -2255,9 +2300,7 @@ export function buildQuestionsOnlySystemPrompt({
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
-  const gaps = Array.isArray(gap_focus)
-    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
-    : [];
+  const gaps = formatGapFocusList(gap_focus);
   const blockNo = Number(blockIndex) + 1;
   const blockNoSafe = Number.isFinite(blockNo) && blockNo > 0 ? blockNo : 1;
   const connectionEnabled = include_connection_questions !== false;
@@ -2320,9 +2363,7 @@ export function buildQuestionsOnlyUserContent({
   gap_focus = [],
   previousBlocksTitles = [],
 }) {
-  const gaps = Array.isArray(gap_focus)
-    ? gap_focus.map((g) => String(g || "").trim()).filter(Boolean)
-    : [];
+  const gaps = formatGapFocusList(gap_focus);
   const prevTitles = Array.isArray(previousBlocksTitles) ? previousBlocksTitles : [];
   const prevBlockSection =
     prevTitles.length > 0
@@ -2382,6 +2423,7 @@ export async function deepSeekRegenerateBlockQuestions({
   questionScope = null,
   avoidOverlapWith = null,
   prevBlockSummaryForConnection = "",
+  userExtra = "",
 }) {
   const manifestSlice = Array.isArray(coverageManifest) ? coverageManifest.slice(-20) : [];
   const systemPrompt =
@@ -2398,13 +2440,14 @@ export async function deepSeekRegenerateBlockQuestions({
       prevBlockSummaryForConnection,
     }) +
     (manifestSlice.length ? `\n\n${renderCoverageManifestForPrompt(manifestSlice)}` : "");
-  const userContent = buildQuestionsOnlyUserContent({
-    blockTitle,
-    explanation,
-    materialText,
-    gap_focus,
-    previousBlocksTitles,
-  });
+  const userContent =
+    buildQuestionsOnlyUserContent({
+      blockTitle,
+      explanation,
+      materialText,
+      gap_focus,
+      previousBlocksTitles,
+    }) + String(userExtra || "");
 
   const raw = await llmChatCompletions({
     llmModel: resolveLlmModelArg(llmModel),

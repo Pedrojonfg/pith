@@ -416,10 +416,30 @@
             <div class="divider"></div>
 
             <h2 class="settings-section-title">Source fidelity</h2>
-            <div class="toggle" role="group" aria-label="Strict source fidelity">
-              <button type="button" id="sourceFidelityStrictToggleBtn" aria-pressed="false">
-                Strict source fidelity
-              </button>
+            <p class="hint settings-fidelity-lead">
+              Strict stays closer to your source material and may feel terser. Standard allows more
+              natural explanations with slight interpretation.
+            </p>
+            <div class="source-fidelity-mode" role="radiogroup" aria-label="Source fidelity mode">
+              <label class="review-scope-include">
+                <input
+                  type="radio"
+                  name="sourceFidelityMode"
+                  id="sourceFidelityStandardRadio"
+                  value="standard"
+                  checked
+                />
+                Standard — more natural explanations, slightly more interpretive
+              </label>
+              <label class="review-scope-include">
+                <input
+                  type="radio"
+                  name="sourceFidelityMode"
+                  id="sourceFidelityStrictRadio"
+                  value="strict"
+                />
+                Strict — stays closer to your source material, may feel terser
+              </label>
             </div>
             <p class="hint" id="sourceFidelityStrictHint" hidden>
               STRICT MODE — write explanation ONLY from extracted claims JSON below. Omit any
@@ -1794,7 +1814,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_3";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260620_4";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1810,7 +1830,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260620_3");
+        await import("./src/js/main.js?v=20260620_4");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

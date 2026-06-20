@@ -1,5 +1,7 @@
 // Portable helpers: every block explanation must use distinct paragraphs (\n\n).
 
+import { isBoldHeaderLine } from "./rsvp-section-headers.js";
+
 /** @param {string} text */
 export function splitExplanationParagraphs(text) {
   return String(text || "")
@@ -21,10 +23,16 @@ export function countExplanationParagraphs(text) {
 export function getMinExplanationParagraphs(opts = {}) {
   const title = String(opts.blockTitle || "").trim();
   const isVocab = opts.isVocabularyBlock === true || /^Key terms:/i.test(title);
+  const profileRaw = String(opts.explanation_profile || "").trim();
   const profile =
-    String(opts.explanation_profile || "").trim() === "brief_deep" ? "brief_deep" : "thorough";
+    profileRaw === "brief_deep"
+      ? "brief_deep"
+      : profileRaw === "relational_compressed"
+        ? "relational_compressed"
+        : "thorough";
   if (isVocab) return 6;
   if (profile === "brief_deep") return 4;
+  if (profile === "relational_compressed") return 3;
   return 6;
 }
 
@@ -140,7 +148,15 @@ export function hasValidExplanationParagraphs(explanation, opts = {}) {
   if (!text) return false;
   if (text.startsWith("[Generation failed")) return true;
 
-  const count = countExplanationParagraphs(text);
+  const allParagraphs = splitExplanationParagraphs(text);
+  const headerCount = allParagraphs.filter(isBoldHeaderLine).length;
+  const contentParagraphs = allParagraphs.filter((p) => !isBoldHeaderLine(p));
+
+  if (headerCount >= 2) {
+    return contentParagraphs.length >= Math.max(2, headerCount);
+  }
+
+  const count = contentParagraphs.length;
   if (count < 2) return false;
 
   const min = getMinExplanationParagraphs(opts);

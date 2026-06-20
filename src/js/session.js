@@ -118,7 +118,7 @@ export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
   }
 }
 
-const EXPLANATION_PROFILES = new Set(["thorough", "brief_deep"]);
+const EXPLANATION_PROFILES = new Set(["thorough", "brief_deep", "relational_compressed"]);
 const GAPS_SOURCES = new Set(["synthesis", "user", "merged", "none"]);
 const SYNTHESIS_STATUSES = new Set(["ok", "timeout", "error", "skipped"]);
 
@@ -136,15 +136,27 @@ export function normalizeGapFocus(value) {
       typeof item === "string"
         ? item.trim()
         : item && typeof item === "object"
-          ? String(item.label || "").trim()
+          ? String(item.label || item.concept_id || "").trim()
           : "";
     if (!label) continue;
-    if (out.includes(label)) continue;
-    out.push(label);
+    if (out.some((entry) => (typeof entry === "string" ? entry : entry?.concept_id || entry?.label) === label)) {
+      continue;
+    }
+    if (item && typeof item === "object" && (item.concept_id || item.reason)) {
+      out.push({
+        concept_id: String(item.concept_id || label).trim(),
+        ...(item.reason ? { reason: String(item.reason).trim() } : {}),
+        label,
+      });
+    } else {
+      out.push(label);
+    }
     if (out.length >= 8) break;
   }
   return out;
 }
+
+export { mapKnowledgeProfileToBlockConfig, applyKnowledgeProfileToBlockIndex } from "./block-profile-config.js";
 
 export function normalizeGapsByBlock(gapsByBlock) {
   if (!gapsByBlock || typeof gapsByBlock !== "object" || Array.isArray(gapsByBlock)) return {};
@@ -693,6 +705,12 @@ export function warnBlockGenerationProfileMismatch(blockObj, cfg) {
     const wc = countExplanationWords(blockObj.explanation);
     if (wc > 0 && (wc < 60 || wc > 140)) {
       console.warn(`Block generation: brief_deep explanation has ${wc} words (expected max 120).`);
+    }
+  }
+  if (profile === "relational_compressed") {
+    const wc = countExplanationWords(blockObj.explanation);
+    if (wc > 0 && wc > 140) {
+      console.warn(`Block generation: relational_compressed explanation has ${wc} words (expected ~40% of standard).`);
     }
   }
   if (gaps.length > 0 && questions.length < gaps.length) {

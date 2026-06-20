@@ -575,7 +575,8 @@ export const els = {
   recommendBlocksWhy: document.getElementById("recommendBlocksWhy"),
   languageSelect: document.getElementById("languageSelect"),
   studyNotesInput: document.getElementById("studyNotesInput"),
-  sourceFidelityStrictToggleBtn: document.getElementById("sourceFidelityStrictToggleBtn"),
+  sourceFidelityStandardRadio: document.getElementById("sourceFidelityStandardRadio"),
+  sourceFidelityStrictRadio: document.getElementById("sourceFidelityStrictRadio"),
   sourceFidelityStrictHint: document.getElementById("sourceFidelityStrictHint"),
   generateBlocksBtn: document.getElementById("generateBlocksBtn"),
   generateBlocksStatus: document.getElementById("generateBlocksStatus"),
@@ -1146,9 +1147,23 @@ export function initLlmModelUi() {
 }
 
 export function initSourceFidelityStrictUi() {
-  if (!els.sourceFidelityStrictToggleBtn) return;
+  if (!els.sourceFidelityStandardRadio || !els.sourceFidelityStrictRadio) return;
   const strictOn = getSourceFidelityStrictPreference();
   syncSourceFidelityStrictUi(strictOn);
+}
+
+export function wireSourceFidelityStrictUi(onChange) {
+  const handler = typeof onChange === "function" ? onChange : () => {};
+  if (!els.sourceFidelityStandardRadio || !els.sourceFidelityStrictRadio) return;
+  if (els.sourceFidelityStandardRadio.dataset.fidelityWired === "1") return;
+  els.sourceFidelityStandardRadio.dataset.fidelityWired = "1";
+  const syncFromRadios = () => {
+    const strict = els.sourceFidelityStrictRadio.checked === true;
+    syncSourceFidelityStrictUi(strict);
+    handler(strict);
+  };
+  els.sourceFidelityStandardRadio.addEventListener("change", syncFromRadios);
+  els.sourceFidelityStrictRadio.addEventListener("change", syncFromRadios);
 }
 
 export function initMnemonicSettingsUi() {
@@ -1163,9 +1178,9 @@ export function initMnemonicSettingsUi() {
 }
 
 export function syncSourceFidelityStrictUi(strictOn) {
-  if (!els.sourceFidelityStrictToggleBtn) return;
   const on = strictOn === true;
-  els.sourceFidelityStrictToggleBtn.setAttribute("aria-pressed", String(on));
+  if (els.sourceFidelityStandardRadio) els.sourceFidelityStandardRadio.checked = !on;
+  if (els.sourceFidelityStrictRadio) els.sourceFidelityStrictRadio.checked = on;
   if (els.sourceFidelityStrictHint) els.sourceFidelityStrictHint.hidden = !on;
 }
 
