@@ -63,6 +63,9 @@ import {
 import {
   runDocumentPreparationPipeline,
   PHASE_LABELS,
+  ensureTier1Preparation,
+  kickoffTier2PreparationInBackground,
+  hasPendingTier2Preparation,
 } from "./document-preparation.js";
 import { getOpeningQuestions } from "./interview/opening-questions.js";
 import {
@@ -81,7 +84,7 @@ import {
 } from "./interview/origin.js";
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
-import { normalizePreparationState } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import {
   recordUserOverride,
@@ -397,8 +400,14 @@ let documentPreparationRunId = 0;
  */
 export async function startDocumentPreparation(doc, options = {}) {
   if (!doc?.docId) return null;
+  const stopAfterTier = options.stopAfterTier ?? 2;
+  if (stopAfterTier <= 1 && isTier1PreparationComplete(doc)) return doc;
   const prep = normalizePreparationState(doc.shared?.preparation);
-  if (prep.status === "ready") return doc;
+  if (prep.status === "ready" && stopAfterTier >= 2) {
+    if (!hasPendingTier2Preparation(doc, options)) return doc;
+  } else if (prep.status === "ready" && stopAfterTier <= 1) {
+    return doc;
+  }
   const runId = ++documentPreparationRunId;
   const result = await runDocumentPreparationPipeline(doc, {
     llmModel: getSessionLlmModel(),
@@ -416,7 +425,58 @@ export async function startDocumentPreparation(doc, options = {}) {
 function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
-  return `${label}${wave}â€¦`;
+  return `${label}${wave}…`;
+}
+
+function preparationGateOptions(onProgress) {
+  return {
+    llmModel: getSessionLlmModel(),
+    language: getStudyLanguage(),
+    studyNotes: state.studyNotes,
+    onProgress,
+  };
+}
+
+function showDocumentPreparingScreen(initialLabel = "Processing document…") {
+  if (els.reviewGeneratingLabel) {
+    els.reviewGeneratingLabel.textContent = initialLabel;
+  }
+  if (els.reviewGeneratingCancelBtn) {
+    els.reviewGeneratingCancelBtn.hidden = true;
+  }
+  if (els.reviewGeneratingError) {
+    els.reviewGeneratingError.hidden = true;
+    els.reviewGeneratingError.textContent = "";
+  }
+  showScreen("reviewGenerating");
+}
+
+async function enterModeSelectAfterTier1Gate() {
+  let doc = await getActiveSession();
+  if (!doc?.docId) {
+    enterModeSelectScreen();
+    return;
+  }
+  if (!isTier1PreparationComplete(doc)) {
+    showDocumentPreparingScreen();
+    doc = await ensureTier1Preparation(doc, {
+      ...preparationGateOptions((msg) => {
+        if (els.reviewGeneratingLabel) {
+          els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+        }
+      }),
+    });
+    if (!isTier1PreparationComplete(doc)) {
+      showScreen("createSessionStart");
+      if (els.createSessionStartStatus) {
+        els.createSessionStartStatus.textContent =
+          "Document preparation incomplete. Add an API key in Settings or retry.";
+      }
+      return;
+    }
+  }
+  kickoffTier2PreparationInBackground(doc, preparationGateOptions());
+  enterModeSelectScreen();
 }
 
 function applySharedBlockRecommendationToUi(doc) {
@@ -761,14 +821,18 @@ export async function recommendFlowFromUploadedFile(file) {
   state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
   state.materialBootstrapActive = false;
 
-  void startDocumentPreparation(doc, {
-    studyNotes: state.studyNotes,
-    onProgress: async () => {
-      renderFlowPanel(await getActiveSession());
-    },
-  }).then(async () => {
-    renderFlowPanel(await getActiveSession());
+  showDocumentPreparingScreen();
+  const prepared = await ensureTier1Preparation(doc, {
+    ...preparationGateOptions((msg) => {
+      if (els.reviewGeneratingLabel) {
+        els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+      }
+    }),
   });
+  if (!isTier1PreparationComplete(prepared)) {
+    throw new Error("Document preparation incomplete. Add an API key in Settings or retry.");
+  }
+  kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
 
   const refreshed = await getActiveSession();
   resetModeSelectUi();
@@ -1381,7 +1445,7 @@ async function handleInterviewFinish(fromCap = false) {
     return;
   }
   if (doc.shared.interviewSynthesisComplete) {
-    enterModeSelectScreen();
+    await enterModeSelectAfterTier1Gate();
     return;
   }
 
@@ -1404,14 +1468,24 @@ async function handleInterviewFinish(fromCap = false) {
     });
     if (runId !== interviewCaptureState.runId) return;
     await saveDocumentSession(updated);
-    await startDocumentPreparation(updated, {
-      stopAfterTier: 2,
-      onProgress: (msg) => {
+    if (els.reviewGeneratingLabel) {
+      els.reviewGeneratingLabel.textContent = "Processing document…";
+    }
+    const prepared = await ensureTier1Preparation(updated, {
+      ...preparationGateOptions((msg) => {
         if (els.reviewGeneratingLabel) {
           els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
         }
-      },
+      }),
     });
+    if (!isTier1PreparationComplete(prepared)) {
+      showScreen("interviewCapture");
+      setInterviewCaptureError(
+        "Document preparation incomplete. Add an API key in Settings or retry.",
+      );
+      return;
+    }
+    kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
     if (fromCap && els.interviewCaptureStatus) {
       els.interviewCaptureStatus.textContent = "Interview complete — round cap reached.";
     }
@@ -1495,25 +1569,28 @@ async function handleCreateSessionStartFilePicked() {
     }
     mountModeSelectBreadcrumb(doc);
     void startDocumentPreparation(doc, {
-      studyNotes: state.studyNotes,
-      onProgress: (msg) => {
+      stopAfterTier: 1,
+      ...preparationGateOptions((msg) => {
         if (runId !== createSessionStartRunId) return;
         if (els.createSessionStartStatus) {
           els.createSessionStartStatus.textContent = formatPreparationProgressMessage(msg);
         }
-      },
+      }),
     })
-      .then(() => {
+      .then(async () => {
         if (runId !== createSessionStartRunId) return;
+        const fresh = await getActiveSession();
         if (els.createSessionStartStatus) {
-          els.createSessionStartStatus.textContent = "Document ready. You can continue.";
+          els.createSessionStartStatus.textContent = isTier1PreparationComplete(fresh)
+            ? "Document ready. You can continue."
+            : "Preparing document…";
         }
       })
       .catch(() => {
         if (runId !== createSessionStartRunId) return;
         if (els.createSessionStartStatus) {
           els.createSessionStartStatus.textContent =
-            "Document uploaded. Preparation incomplete; you can continue anyway.";
+            "Preparation incomplete. Add an API key in Settings, then tap Continue.";
         }
       });
   } catch (err) {
@@ -1535,8 +1612,8 @@ async function handleCreateSessionStartContinue() {
     return;
   }
   const title = String(els.createSessionStartNameInput?.value || "").trim();
-  applySessionTitleToActiveDoc(title || "Untitled session");
-  enterModeSelectScreen();
+  await applySessionTitleToActiveDoc(title || "Untitled session");
+  await enterModeSelectAfterTier1Gate();
 }
 
 export async function enterCreateSessionStartScreen() {
