@@ -481,4 +481,23 @@ export function isTier1PreparationComplete(session) {
   return false;
 }
 
+/**
+ * @param {unknown} session
+ * @returns {object[] | null}
+ */
+export function resolvePreparedRsvpInventory(session) {
+  if (!isTier1PreparationComplete(session)) return null;
+  const inv = session?.shared?.conceptInventory;
+  if (!Array.isArray(inv) || inv.length === 0) return null;
+  return inv;
+}
+
+/**
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function shouldSkipRsvpInventoryLlm(session) {
+  return resolvePreparedRsvpInventory(session) != null;
+}
+
 export { MODE_KEYS };
