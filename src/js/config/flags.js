@@ -51,3 +51,9 @@ export function saveSourceFidelityStrictPreference(strict) {
 export function isSourceFidelityStrictEnabled() {
   return getSourceFidelityStrictPreference() === true;
 }
+
+/** Interview capture — max LLM follow-up rounds after fixed opener (20260620-nodoc-interview-capture). */
+export const INTERVIEW_MAX_FOLLOWUP_ROUNDS = 4;
+
+/** Minimum answered turns before interview synthesis (20260620-nodoc-interview-capture). */
+export const INTERVIEW_MIN_ANSWERED_TURNS = 2;
