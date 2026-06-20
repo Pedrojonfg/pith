@@ -81,6 +81,7 @@ Return ONLY valid JSON with this schema:
     "source_id": "node_001",
     "target_id": "node_002",
     "type": "implies|causes|supports|contradicts|defines|exemplifies|is_a|part_of|prerequisite_of",
+    "registry_type": "PREREQUISITE|CONTRADICTS|EXEMPLIFIES|PART_OF|ASSOCIATED",
     "sentence_context": "anchor sentence from text"
   }]
 }
@@ -88,6 +89,7 @@ Return ONLY valid JSON with this schema:
 Rules:
 - importance 1=trivial, 5=central; exclude importance 1 from being central concepts
 - Every edge needs sentence_context from or adapted from the text
+- registry_type MUST be one of the five enum values; pick the best fit (default ASSOCIATED)
 - 20-50 nodes typical for a medium document`;
 
   const userPrompt = `Material:\n\n${truncateForPrompt(text)}`;

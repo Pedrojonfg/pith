@@ -57,3 +57,6 @@ export const INTERVIEW_MAX_FOLLOWUP_ROUNDS = 4;
 
 /** Minimum answered turns before interview synthesis (20260620-nodoc-interview-capture). */
 export const INTERVIEW_MIN_ANSWERED_TURNS = 2;
+
+/** Registry connection lazy decay threshold in days (20260620-typed-weighted-connections). */
+export const CONNECTION_DECAY_DAYS = 30;

@@ -79,6 +79,7 @@ export function normalizeEpistemicEdge(raw, index = 0) {
     source_id,
     target_id,
     type,
+    registry_type: String(raw.registry_type || "").trim() || undefined,
     sentence_context: String(raw.sentence_context || "").trim(),
   };
 }

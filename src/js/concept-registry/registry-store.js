@@ -4,17 +4,20 @@
  */
 
 export const REGISTRY_STORAGE_KEY = "mylearning_concept_registry";
-export const REGISTRY_SCHEMA_VERSION = 1;
+export const REGISTRY_SCHEMA_VERSION = 2;
 
 function newConceptId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `concept-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+import { normalizeConnections } from "./connection-types.js";
+
 function emptyRegistry() {
   return {
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     concepts: [],
+    connections: [],
     observations: [],
     lastUpdated: Date.now(),
   };
@@ -32,6 +35,7 @@ export function loadRegistry() {
     return {
       schemaVersion: Number(parsed.schemaVersion) || REGISTRY_SCHEMA_VERSION,
       concepts: Array.isArray(parsed.concepts) ? parsed.concepts.map(normalizeConcept) : [],
+      connections: normalizeConnections(parsed),
       observations: Array.isArray(parsed.observations) ? [...parsed.observations] : [],
       lastUpdated: Number(parsed.lastUpdated) || Date.now(),
     };
@@ -48,6 +52,7 @@ export function saveRegistry(registry) {
   const payload = {
     schemaVersion: REGISTRY_SCHEMA_VERSION,
     concepts: Array.isArray(registry?.concepts) ? registry.concepts.map(normalizeConcept) : [],
+    connections: normalizeConnections(registry),
     observations: Array.isArray(registry?.observations) ? [...registry.observations] : [],
     lastUpdated: Date.now(),
   };

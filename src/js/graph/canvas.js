@@ -30,6 +30,10 @@ const EDGE_COLORS = {
   refuta: "#ef4444",
   prerequisite: "#64748b",
   co_prerequisite: "#94a3b8",
+  prerequisite_of: "#64748b",
+  associated: "#3b82f6",
+  exemplifies: "#8b5cf6",
+  part_of: "#14b8a6",
 };
 
 const EDGE_DASH_SOLID = new Set([
@@ -43,8 +47,21 @@ const EDGE_DASH_SOLID = new Set([
   "mentions",
   "instantiates",
   "prerequisite",
+  "prerequisite_of",
+  "part_of",
+  "exemplifies",
 ]);
 const EDGE_DASH_HEAVY = new Set(["contradicts", "refuta", "cuestiona"]);
+
+function weightStrokeScale(weight) {
+  const w = Number(weight);
+  if (!Number.isFinite(w)) return { width: 2, opacity: 0.55 };
+  const t = Math.max(0.05, Math.min(1, w));
+  return {
+    width: 1.2 + t * 2.3,
+    opacity: 0.35 + t * 0.6,
+  };
+}
 
 function edgeStrokeAttrs(type) {
   const edgeType = String(type || "").trim();
@@ -167,7 +184,8 @@ function vaultLegendHtml(lang) {
     <li><span class="material-graph-legend-dot" style="background:${mid.fill};border-color:${mid.stroke}"></span>${escapeHtml(es ? "Parcial" : "Partial")}</li>
     <li><span class="material-graph-legend-dot" style="background:${high.fill};border-color:${high.stroke}"></span>${escapeHtml(es ? "Alto dominio" : "High mastery")}</li>
     <li><span class="material-graph-legend-line material-graph-legend-line-solid"></span>${escapeHtml(es ? "Prerrequisito" : "Prerequisite")}</li>
-    <li><span class="material-graph-legend-line material-graph-legend-line-dashed"></span>${escapeHtml(es ? "Co-prerrequisito" : "Co-prerequisite")}</li>
+    <li><span class="material-graph-legend-line material-graph-legend-line-dashed"></span>${escapeHtml(es ? "Asociado / ejemplo / parte" : "Associated / example / part")}</li>
+    <li><span class="material-graph-legend-line material-graph-legend-line-heavy"></span>${escapeHtml(es ? "Contradicción" : "Contradiction")}</li>
   </ul>`;
 }
 
@@ -214,9 +232,12 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
       if (!from || !to) return "";
       const color = EDGE_COLORS[e.type] || "#64748b";
       const stroke = edgeStrokeAttrs(e.type);
+      const weightScale = weightStrokeScale(e.weight);
+      const strokeWidth = Number.isFinite(e.weight) ? weightScale.width : stroke.width;
+      const strokeOpacity = Number.isFinite(e.weight) ? weightScale.opacity : 1;
       const dashAttr =
         stroke.dasharray === "none" ? "" : ` stroke-dasharray="${stroke.dasharray}"`;
-      return `<path class="material-graph-edge" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="${stroke.width}"${dashAttr} marker-end="url(#material-graph-arrow)"/>`;
+      return `<path class="material-graph-edge" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashAttr} marker-end="url(#material-graph-arrow)"/>`;
     })
     .join("");
 

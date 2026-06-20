@@ -14,6 +14,7 @@ import {
   upsertFacetSchedule,
 } from "./registry-store.js";
 import { recordObservationAndRecompute } from "./mastery.js";
+import { promoteGraphConnectionsToRegistry } from "./connection-promotion.js";
 
 const GREEN_FACETS = new Set(["synthesis", "relational", "argumentative"]);
 const GREEN_QUALITY_MIN = 2;
@@ -179,6 +180,11 @@ export async function onConceptEngagement({
   }
 
   const updated = getConceptById(globalConceptId);
+  try {
+    promoteGraphConnectionsToRegistry(session);
+  } catch (err) {
+    console.warn("[concept-registry] connection promotion failed", err?.message || err);
+  }
   return {
     globalConceptId,
     maturity: updated?.maturity || "yellow",
