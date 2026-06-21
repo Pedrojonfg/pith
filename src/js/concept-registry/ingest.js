@@ -70,6 +70,41 @@ export async function promoteFromMcqBlock({
 /**
  * @param {object} params
  */
+export async function promoteFromSocraticBlock({
+  docId,
+  conceptIds,
+  quality,
+  source = "rsvp",
+  contentText = "",
+}) {
+  const session = await getSession(docId);
+  if (!session) return;
+  const q = Number(quality);
+  if (!Number.isFinite(q)) return;
+  const ids = Array.isArray(conceptIds) ? conceptIds : [];
+  const answer = String(contentText || "").trim();
+  for (const conceptId of ids) {
+    const id = String(conceptId || "").trim();
+    if (!id) continue;
+    try {
+      await onConceptEngagement({
+        session,
+        conceptId: id,
+        facet: "synthesis",
+        quality: q,
+        source,
+        contentText: answer,
+      });
+    } catch (err) {
+      console.warn("[concept-registry] Socratic promotion failed", id, err);
+    }
+  }
+  maybeReinforceOnCorrect(session, ids, q >= 4);
+}
+
+/**
+ * @param {object} params
+ */
 export async function promoteFromRecall({ docId, question }) {
   const session = await getSession(docId);
   if (!session) return;
