@@ -4,7 +4,7 @@
  */
 
 import { syncAssessmentSignalsToShared } from "./session-store.js";
-import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
+import { mapMcqOutcomeToQuality, registerOrUpdateSmItem, confirmComprehensionForConcepts } from "./sm2-ingest.js";
 import { promoteFromMcqBlock, promoteFromSocraticBlock } from "./concept-registry/ingest.js";
 import { normalizeStudyMode } from "./session.js";
 
@@ -78,7 +78,9 @@ export async function finalizeBlockQuestionAnswer({
       sourceId: blockId,
       title,
       contentPreview: preview,
+      conceptIds,
       quality,
+      reviewProvenance: "document",
     });
     await promoteFromMcqBlock({
       docId: id,
@@ -94,12 +96,15 @@ export async function finalizeBlockQuestionAnswer({
 
   if (questionType === "socratic") {
     const qi = Number.isFinite(Number(questionIndex)) ? Number(questionIndex) : 0;
+    await confirmComprehensionForConcepts(id, conceptIds, "socratic", SOCRATIC_ENGAGEMENT_QUALITY);
     await registerOrUpdateSmItem(id, {
       sourceType: "rsvp_block",
       sourceId: `${blockId}:socratic:${qi}`,
       title,
       contentPreview: preview,
+      conceptIds,
       quality: SOCRATIC_ENGAGEMENT_QUALITY,
+      reviewProvenance: "document",
     });
     await promoteFromSocraticBlock({
       docId: id,

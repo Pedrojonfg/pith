@@ -1856,6 +1856,37 @@
   border-left-color: var(--border-subtle, rgba(255, 255, 255, 0.06));
 }
 
+.slow-doc-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem auto;
+  border-radius: var(--radius-sm, 3px);
+}
+
+.slow-doc-image-placeholder {
+  display: block;
+  margin: 1rem 0;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.45));
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.04));
+  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-sm, 3px);
+}
+
+/* Pedagogical principles — dim familiar / cap highlights (20260701) */
+.pedagogy-dim {
+  opacity: 0.55;
+}
+
+.pedagogy-highlight {
+  background: rgba(255, 214, 102, 0.22);
+  border-radius: 2px;
+  padding: 0 0.1em;
+}
+
 .slow-screen .slow-scope-list li button[aria-selected="true"] {
   background: var(--accent-muted, rgba(24, 196, 170, 0.12));
 }

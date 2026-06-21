@@ -1,5 +1,11 @@
 import { storeActiveSession } from "../session.js?v=20260527_1";
 import { markdownToHtml } from "../markdown.js?v=20260525_1";
+import {
+  buildConceptSpanIndex,
+  selectHighlightSpans,
+  wrapPlainTextWithPedagogyMarks,
+} from "../pedagogy/concept-span-index.js";
+import { getPedagogicalFlags } from "../config/flags.js";
 import { els, showScreen } from "../ui.js?v=20260525_1";
 import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260528_1";
 import { matchConceptFindings } from "./gamification.js?v=20260528_1";
@@ -36,6 +42,8 @@ import {
   invalidatePaginationCache,
 } from "./pagination.js?v=20260528_1";
 import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260609_1";
+import { renderSlowMarkdownWithImages } from "../document-images/render.js";
+import { replacePithImageTokens } from "../document-images/replace-tokens.js";
 import {
   hideConceptPicker,
   renderSlowSidebar,
@@ -130,10 +138,14 @@ function getReaderContentHeight() {
 
 function buildPaginationMeasureContent(session, typography) {
   const usesMd = usesMarkdownRender(session);
+  const images = session.shared?.images || [];
   return (el, slice) => {
     applyTypographyToMeasureEl(el, typography, usesMd);
     if (usesMd) {
-      el.innerHTML = markdownToHtml(slice);
+      const html = images.length
+        ? markdownToHtml(replacePithImageTokens(slice, images, {}))
+        : markdownToHtml(slice);
+      el.innerHTML = html;
     } else {
       el.textContent = slice;
     }
@@ -1033,6 +1045,29 @@ function renderFillableMapPanel(session) {
   panel.appendChild(list);
 }
 
+function applyPedagogyToSlicePlain(session, slicePlain, slice) {
+  const inv = session?.shared?.conceptInventory;
+  if (!Array.isArray(inv) || !inv.length) return slicePlain;
+  const scopeText = getScopeText(session);
+  const spans = buildConceptSpanIndex(scopeText, inv);
+  const highlights = selectHighlightSpans(spans, getPedagogicalFlags().HIGHLIGHT_WORD_BUDGET);
+  const pageSpans = spans
+    .filter((s) => s.end > slice.charStart && s.start < slice.charEnd)
+    .map((s) => ({
+      ...s,
+      start: Math.max(0, s.start - slice.charStart),
+      end: Math.min(slicePlain.length, s.end - slice.charStart),
+    }));
+  const pageHighlights = highlights
+    .filter((s) => s.end > slice.charStart && s.start < slice.charEnd)
+    .map((s) => ({
+      ...s,
+      start: Math.max(0, s.start - slice.charStart),
+      end: Math.min(slicePlain.length, s.end - slice.charStart),
+    }));
+  return wrapPlainTextWithPedagogyMarks(slicePlain, pageSpans, pageHighlights);
+}
+
 export async function renderSlowReaderPage(session, opts = {}) {
   if (!session?.slow) return;
   applyTypographyToPage(session);
@@ -1042,14 +1077,21 @@ export async function renderSlowReaderPage(session, opts = {}) {
   const scopeText = getScopeText(session);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+  const pedagogyPlain = applyPedagogyToSlicePlain(session, slicePlain, slice);
   if (pageEl) {
     if (usesMarkdownRender(session)) {
       pageEl.classList.add("md-content");
-      pageEl.innerHTML = markdownToHtml(slicePlain);
+      const images = session.shared?.images || [];
+      if (images.length) {
+        pageEl.innerHTML = await renderSlowMarkdownWithImages(pedagogyPlain, images);
+      } else {
+        pageEl.innerHTML = markdownToHtml(pedagogyPlain);
+      }
       pageEl._slowSlicePlain = slicePlain;
     } else {
       pageEl.classList.remove("md-content");
-      pageEl.textContent = slicePlain;
+      if (pedagogyPlain.includes("<span")) pageEl.innerHTML = pedagogyPlain;
+      else pageEl.textContent = pedagogyPlain;
       pageEl._slowSlicePlain = slicePlain;
     }
     applyInlineAnnotationHighlights(session, pageEl, slice, slicePlain);

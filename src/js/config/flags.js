@@ -130,3 +130,35 @@ export function isAdaptiveProbingEnabled() {
 export function getAdaptiveProbingFlags() {
   return ADAPTIVE_PROBING_FLAGS;
 }
+
+/** Pedagogical principles layer (20260701-pedagogical-principles). */
+export const PEDAGOGICAL_FLAGS = Object.freeze({
+  DETERMINISTIC_FACTUAL_QUESTIONS_ENABLED: true,
+  MAX_CLASSIFICATION_LLM_CALLS_PER_DOC: 1,
+  COMPREHENSION_GATE_ENABLED: true,
+  HIGHLIGHT_WORD_BUDGET: 150,
+  /** Secondary sort penalty for gap_fill items (Pith-calibrated placeholder). */
+  GAP_FILL_PRIORITY_PENALTY: 2.0,
+  MAX_GAP_FILL_PER_SESSION: 3,
+  NOVELTY_BIASED_PACKING_ENABLED: false,
+  TARGET_NOVELTY_RATIO: 0.7,
+  NOVELTY_BLEND_WEIGHT: 0.15,
+  /** Heuristic confidence below this triggers batched LLM classification. */
+  FACTUAL_CLASSIFIER_LLM_THRESHOLD: 0.55,
+});
+
+export function isDeterministicFactualQuestionsEnabled() {
+  return PEDAGOGICAL_FLAGS.DETERMINISTIC_FACTUAL_QUESTIONS_ENABLED === true;
+}
+
+export function isComprehensionGateEnabled() {
+  return PEDAGOGICAL_FLAGS.COMPREHENSION_GATE_ENABLED === true;
+}
+
+export function isNoveltyBiasedPackingEnabled() {
+  return PEDAGOGICAL_FLAGS.NOVELTY_BIASED_PACKING_ENABLED === true;
+}
+
+export function getPedagogicalFlags() {
+  return PEDAGOGICAL_FLAGS;
+}

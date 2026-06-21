@@ -46,6 +46,9 @@ import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260527_1";
 import { getStudyLanguage } from "./ui.js?v=20260525_1";
 import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
+import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
+import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
+import { isDeterministicFactualQuestionsEnabled } from "./config/flags.js";
 export {
   computeInventoryHash,
   createEmptyRecallSlice,
@@ -681,6 +684,53 @@ export function getBlockIndexEntry(blockIndex) {
   return arr.find((b) => b && typeof b === "object" && Number(b.id) === id) || null;
 }
 
+function resolveSessionConceptInventory(session) {
+  return (
+    session?.shared?.conceptInventory ||
+    session?._meta?.material_graph?.conceptInventory ||
+    []
+  );
+}
+
+function resolveBlockConcepts(blockIndex, inventory) {
+  const entry = getBlockIndexEntry(blockIndex);
+  const ids = new Set(
+    (Array.isArray(entry?.concept_ids) ? entry.concept_ids : [])
+      .map((c) => String(c || "").trim())
+      .filter(Boolean),
+  );
+  const inv = Array.isArray(inventory) ? inventory : [];
+  if (!ids.size) return inv.filter((c) => c?.questionClass === "factual");
+  return inv.filter((c) => {
+    const id = String(c?.id || c?.canonicalId || "").trim();
+    return ids.has(id);
+  });
+}
+
+async function buildFactualQuestionsForBlock(blockIndex, cfg) {
+  const session = state.activeSession;
+  if (!session || !isDeterministicFactualQuestionsEnabled()) {
+    return { questions: [], llmFallbackConceptIds: [], validationCallCount: 0, remainingNTest: cfg.n_test };
+  }
+  const inventory = resolveSessionConceptInventory(session);
+  const concepts = resolveBlockConcepts(blockIndex, inventory);
+  const sourceText =
+    getBlockChunkFromIndex(blockIndex) ||
+    String(session.shared?.rawMarkdown || state.originalMaterialText || "");
+  const result = await buildFactualBlockQuestions(
+    concepts,
+    inventory,
+    sourceText,
+    getStudyLanguage(),
+    session,
+    { maxQuestions: cfg.n_test, llmModel: getSessionLlmModel(session) },
+  );
+  return {
+    ...result,
+    remainingNTest: Math.max(0, cfg.n_test - result.questions.length),
+  };
+}
+
 export function getBlockChunkFromIndex(blockIndex) {
   const entry = getBlockIndexEntry(blockIndex);
   const chunk =
@@ -823,14 +873,19 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   }
 
   const blockIndexArr = loadBlockIndex() || [];
-  const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+  const inventory =
+    state.activeSession?.shared?.conceptInventory ||
+    state.activeSession?._meta?.material_graph?.conceptInventory ||
+    [];
   const coverageManifest = ensureSessionCoverageManifest(state.activeSession);
   const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
+
+  const factualBundle = await buildFactualQuestionsForBlock(idx, cfg);
 
   const request = {
     llmModel,
     language: getStudyLanguage(),
-    n_test: cfg.n_test,
+    n_test: factualBundle.remainingNTest,
     n_socratic: cfg.n_socratic,
     blockTitle,
     blockIndex: idx,
@@ -844,21 +899,24 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   };
 
   let response = null;
-  try {
-    response = await deepSeekRegenerateBlockQuestions(request);
-  } catch (err) {
-    const message = err?.message ? String(err.message) : String(err);
-    if (!message.includes("valid JSON")) throw err;
-    response = await deepSeekRegenerateBlockQuestions(request);
+  if (factualBundle.remainingNTest > 0 || cfg.n_socratic > 0) {
+    try {
+      response = await deepSeekRegenerateBlockQuestions(request);
+    } catch (err) {
+      const message = err?.message ? String(err.message) : String(err);
+      if (!message.includes("valid JSON")) throw err;
+      response = await deepSeekRegenerateBlockQuestions(request);
+    }
+    warnQuestionsOnlyCountMismatch(response, { ...cfg, n_test: factualBundle.remainingNTest });
   }
-  warnQuestionsOnlyCountMismatch(response, cfg);
 
+  const llmQuestions = Array.isArray(response?.questions) ? response.questions : [];
   const merged = normalizeBlockJson(
     {
       id: idx + 1,
       title: blockTitle,
       explanation: "",
-      questions: Array.isArray(response?.questions) ? response.questions : [],
+      questions: [...factualBundle.questions, ...llmQuestions],
       concepts: Array.isArray(response?.concepts) ? response.concepts : [],
     },
     cfg,
@@ -972,14 +1030,19 @@ export async function generateQuestionsOnlyForIndex(
   }
 
   const blockIndexArr = loadBlockIndex() || [];
-  const inventory = state.activeSession?._meta?.material_graph?.conceptInventory || [];
+  const inventory =
+    state.activeSession?.shared?.conceptInventory ||
+    state.activeSession?._meta?.material_graph?.conceptInventory ||
+    [];
   const coverageManifest = ensureSessionCoverageManifest(state.activeSession);
   const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
+
+  const factualBundle = await buildFactualQuestionsForBlock(idx, cfg);
 
   const request = {
     llmModel,
     language: getStudyLanguage(),
-    n_test: cfg.n_test,
+    n_test: factualBundle.remainingNTest,
     n_socratic: cfg.n_socratic,
     blockTitle,
     blockIndex: idx,
@@ -993,22 +1056,28 @@ export async function generateQuestionsOnlyForIndex(
   };
 
   let response = null;
-  try {
-    response = await deepSeekRegenerateBlockQuestions(request);
-  } catch (err) {
-    const message = err?.message ? String(err.message) : String(err);
-    if (!message.includes("valid JSON")) throw err;
-    response = await deepSeekRegenerateBlockQuestions(request);
+  if (factualBundle.remainingNTest > 0 || cfg.n_socratic > 0) {
+    try {
+      response = await deepSeekRegenerateBlockQuestions(request);
+    } catch (err) {
+      const message = err?.message ? String(err.message) : String(err);
+      if (!message.includes("valid JSON")) throw err;
+      response = await deepSeekRegenerateBlockQuestions(request);
+    }
+    warnQuestionsOnlyCountMismatch(response, { ...cfg, n_test: factualBundle.remainingNTest });
   }
-  warnQuestionsOnlyCountMismatch(response, cfg);
-  updateCoverageManifestAfterBlock(idx, response?.questions);
+  updateCoverageManifestAfterBlock(idx, [
+    ...factualBundle.questions,
+    ...(Array.isArray(response?.questions) ? response.questions : []),
+  ]);
 
+  const llmQuestions = Array.isArray(response?.questions) ? response.questions : [];
   const merged = {
     ...base,
     id: base.id != null ? base.id : idx + 1,
     title: base.title || blockTitle,
     explanation,
-    questions: Array.isArray(response?.questions) ? response.questions : [],
+    questions: [...factualBundle.questions, ...llmQuestions],
     concepts:
       Array.isArray(response?.concepts) && response.concepts.length
         ? response.concepts
@@ -2475,12 +2544,13 @@ export async function runConceptInventoryWithFallback(
 }
 
 /** Local pack when LLM output truncates — no network, assigns every concept once. */
-export function packInventoryDeterministic(inventory, nBlocks, lang = "English") {
+export function packInventoryDeterministic(inventory, nBlocks, lang = "English", options = {}) {
   const targetN = Math.max(1, Math.floor(Number(nBlocks) || 1));
-  const inv = (Array.isArray(inventory) ? inventory : [])
-    .filter((c) => c && String(c.id || "").trim())
-    .slice()
-    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  let inv = (Array.isArray(inventory) ? inventory : [])
+    .filter((c) => c && String(c.id || "").trim());
+
+  inv = applyNoveltyPackingBias(inv, { beliefState: options.beliefState || null });
+  inv = inv.slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
   if (!inv.length) {
     return { blocks: [], pack_meta: { target_n: targetN, final_block_count: 0, merges: [] } };
   }
