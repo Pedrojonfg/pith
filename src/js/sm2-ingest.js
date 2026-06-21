@@ -1,5 +1,10 @@
 import { createSmItem, normalizeSmItem, updateSmItem } from "./sm2.js";
-import { getSession, upsertSmItem } from "./session-store.js";
+import { getSession, upsertSmItem, saveActiveSession } from "./session-store.js";
+import { isComprehensionGateEnabled } from "./config/flags.js";
+import {
+  applyComprehensionSignal,
+  mayScheduleSm2ForConcepts,
+} from "./pedagogy/comprehension-gate.js";
 
 /**
  * @param {{ correct?: boolean, firstTry?: boolean, usedHint?: boolean, skipped?: boolean }} outcome
@@ -47,6 +52,18 @@ export async function registerOrUpdateSmItem(docId, params) {
   const sourceId = String(params.sourceId || "").trim();
   if (!sourceType || !sourceId) throw new Error("registerOrUpdateSmItem requires sourceType and sourceId");
 
+  const conceptIds = Array.isArray(params.conceptIds)
+    ? params.conceptIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+
+  if (isComprehensionGateEnabled() && conceptIds.length) {
+    if (!mayScheduleSm2ForConcepts(session, conceptIds)) {
+      return null;
+    }
+  }
+
+  const reviewProvenance = params.reviewProvenance || "document";
+
   const existing = (session.shared?.smItems || [])
     .map((raw) => normalizeSmItem({ ...raw, docId }))
     .find((item) => item && item.sourceType === sourceType && item.sourceId === sourceId);
@@ -67,14 +84,44 @@ export async function registerOrUpdateSmItem(docId, params) {
         sourceId,
         title: params.title,
         contentPreview: params.contentPreview,
+        reviewProvenance,
       });
 
   if (params.quality != null) {
     item = updateSmItem(item, params.quality);
+    if (params.quality < 3) {
+      item = { ...item, lastMissAt: Date.now() };
+    }
   }
 
   await upsertSmItem(docId, item);
   return item;
+}
+
+/**
+ * Mark comprehension confirmed on concept inventory entries.
+ * @param {string} docId
+ * @param {string[]} conceptIds
+ * @param {'recall'|'socratic'} signal
+ * @param {number|string} [quality]
+ */
+export async function confirmComprehensionForConcepts(docId, conceptIds, signal, quality) {
+  const session = await getSession(docId);
+  if (!session || !Array.isArray(session.shared?.conceptInventory)) return;
+
+  const ids = new Set((conceptIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+  if (!ids.size) return;
+
+  let changed = false;
+  session.shared.conceptInventory = session.shared.conceptInventory.map((entry) => {
+    const cid = String(entry?.canonicalId || entry?.id || "").trim();
+    if (!ids.has(cid)) return entry;
+    const updated = applyComprehensionSignal(entry, signal, quality);
+    if (updated !== entry) changed = true;
+    return updated;
+  });
+
+  if (changed) await saveActiveSession(session);
 }
 
 /**
@@ -86,9 +133,12 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
   const quality = RECALL_QUALITY_TO_SM2[qualityKey];
   if (quality == null) return;
 
+  const conceptIds = Array.isArray(q.concept_ids) ? q.concept_ids : [];
+  await confirmComprehensionForConcepts(docId, conceptIds, "recall", qualityKey);
+
   const title = String(q.question || "").trim();
-  const preview = (Array.isArray(q.concept_ids) ? q.concept_ids : []).join(", ");
-  for (const conceptId of Array.isArray(q.concept_ids) ? q.concept_ids : []) {
+  const preview = conceptIds.join(", ");
+  for (const conceptId of conceptIds) {
     const id = String(conceptId || "").trim();
     if (!id) continue;
     await registerOrUpdateSmItem(docId, {
@@ -96,7 +146,9 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
       sourceId: `${String(q.id || "").trim()}:${id}`,
       title: title.slice(0, 80),
       contentPreview: preview,
+      conceptIds: [id],
       quality,
+      reviewProvenance: "document",
     });
   }
 }

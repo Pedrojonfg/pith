@@ -22,6 +22,14 @@ const SOURCE_TYPES = new Set([
   "vault_concept",
   "vault_review_item",
   "global_concept",
+  "recall_question",
+]);
+
+export const REVIEW_PROVENANCE_TYPES = new Set([
+  "document",
+  "gap_fill",
+  "mnemonic",
+  "vault_curation",
 ]);
 
 const LEGACY_SOURCE_MAP = {
@@ -39,6 +47,24 @@ function clampQuality(quality) {
   if (!Number.isFinite(q)) return 0;
   return Math.max(0, Math.min(5, q));
 }
+
+function resolveReviewProvenance(raw) {
+  const p = String(raw?.reviewProvenance || "").trim();
+  if (REVIEW_PROVENANCE_TYPES.has(p)) return p;
+  const legacySource = String(raw?.source || "").trim();
+  if (legacySource === "mnemonic") return "mnemonic";
+  if (legacySource === "vault_curation" || legacySource === "vault") return "vault_curation";
+  if (legacySource === "gap_fill") return "gap_fill";
+  return "document";
+}
+
+function provenancePenalty(provenance, gapFillPenalty) {
+  if (provenance === "gap_fill") return Number(gapFillPenalty) || 0;
+  return 0;
+}
+
+/** Due bucket width for secondary sort (1 hour). */
+const DUE_BUCKET_MS = 3_600_000;
 
 function resolveSourceType(raw) {
   if (typeof raw?.sourceType === "string" && SOURCE_TYPES.has(raw.sourceType)) {
@@ -78,6 +104,7 @@ export function createSmItem(params = {}) {
     lastReviewed: params.lastReviewed ?? SM2_DEFAULTS.lastReviewed,
     observations: Array.isArray(params.observations) ? [...params.observations] : [],
     createdAt: Number.isFinite(params.createdAt) ? params.createdAt : now,
+    reviewProvenance: resolveReviewProvenance(params),
   };
 }
 
@@ -135,11 +162,13 @@ export function normalizeSmItem(raw) {
     lastReviewed: Number.isFinite(raw.lastReviewed) ? raw.lastReviewed : SM2_DEFAULTS.lastReviewed,
     observations: Array.isArray(raw.observations) ? [...raw.observations] : [],
     createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    reviewProvenance: resolveReviewProvenance(raw),
   };
   if (raw.source) out.source = raw.source;
   if (raw.facet) out.facet = raw.facet;
   if (raw.globalConceptId) out.globalConceptId = raw.globalConceptId;
   if (raw.vaultEntryId) out.vaultEntryId = raw.vaultEntryId;
+  if (Number.isFinite(raw.lastMissAt)) out.lastMissAt = raw.lastMissAt;
   return out;
 }
 
@@ -219,21 +248,52 @@ export function updateSmItem(item, quality, now = Date.now()) {
 /**
  * @param {object[]} items
  * @param {number} [now]
+ * @param {{ gapFillPenalty?: number, maxGapFillPerSession?: number, applySessionCap?: boolean }} [options]
  * @returns {object[]}
  */
-export function buildReviewQueue(items, now = Date.now()) {
+export function buildReviewQueue(items, now = Date.now(), options = {}) {
   void now;
+  const gapFillPenalty = Number.isFinite(options.gapFillPenalty) ? options.gapFillPenalty : 2.0;
+  const maxGapFill = Number.isFinite(options.maxGapFillPerSession)
+    ? options.maxGapFillPerSession
+    : 3;
+  const applyCap = options.applySessionCap !== false;
+
   const normalized = (Array.isArray(items) ? items : [])
     .map((raw) => normalizeSmItem(raw))
     .filter(Boolean);
-  return normalized
+
+  const sorted = normalized
     .map((item, index) => ({ item, index }))
     .sort((a, b) => {
-      const dueDiff = (Number(a.item.scheduledDue) || 0) - (Number(b.item.scheduledDue) || 0);
+      const dueA = Number(a.item.scheduledDue) || 0;
+      const dueB = Number(b.item.scheduledDue) || 0;
+      const dueDiff = dueA - dueB;
       if (dueDiff !== 0) return dueDiff;
+
+      const bucketA = Math.floor(dueA / DUE_BUCKET_MS);
+      const bucketB = Math.floor(dueB / DUE_BUCKET_MS);
+      if (bucketA !== bucketB) return dueA - dueB;
+
+      const penA = provenancePenalty(a.item.reviewProvenance, gapFillPenalty);
+      const penB = provenancePenalty(b.item.reviewProvenance, gapFillPenalty);
+      if (penA !== penB) return penA - penB;
       return a.index - b.index;
     })
     .map(({ item }) => ({ ...item }));
+
+  if (!applyCap) return sorted;
+
+  let gapFillCount = 0;
+  const capped = [];
+  for (const item of sorted) {
+    if (item.reviewProvenance === "gap_fill") {
+      if (gapFillCount >= maxGapFill) continue;
+      gapFillCount += 1;
+    }
+    capped.push(item);
+  }
+  return capped;
 }
 
 /**

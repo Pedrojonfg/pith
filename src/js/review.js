@@ -22,6 +22,8 @@ import {
 import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260612_1";
 import { els, showScreen, typesetMath } from "./ui.js?v=20260525_1";
 import { buildReviewQueue, isOnTime, normalizeSmItem, updateSmItem } from "./sm2.js";
+import { getPedagogicalFlags } from "./config/flags.js";
+import { computeWhyThisExplanation } from "./pedagogy/why-this.js";
 import { getSession, getSmItemsDueToday, upsertSmItem } from "./session-store.js";
 import {
   filterDueSmItems,
@@ -125,8 +127,17 @@ async function renderSm2ReviewItem() {
 
   const now = Date.now();
   const early = !isOnTime(item, now);
+  const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
+  const originSession = originDocId ? await getSession(originDocId) : null;
+
   if (els.reviewSm2Meta) {
-    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length}`;
+    const why = computeWhyThisExplanation({
+      item,
+      beliefState: originSession?.shared?.knowledgeBeliefState,
+      assessmentSignals: originSession?.shared?.assessmentSignals,
+      now,
+    });
+    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length} · ${why}`;
   }
   if (els.reviewSm2EarlyChip) {
     els.reviewSm2EarlyChip.classList.toggle("hidden", !early);
@@ -135,24 +146,28 @@ async function renderSm2ReviewItem() {
     const facet = String(item.facet || "").trim();
     const facetLabel = facet ? FACET_LABELS[facet] || facet : "";
     const sourceLabel = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
-    els.reviewSm2SourceBadge.textContent = facetLabel
-      ? `${sourceLabel} · ${facetLabel}`
-      : sourceLabel;
+    let badge = facetLabel ? `${sourceLabel} · ${facetLabel}` : sourceLabel;
+    const conceptIds = resolveSmItemConceptIds(item, originSession);
+    const pending = conceptIds.some((cid) => {
+      const c = originSession?.shared?.conceptInventory?.find(
+        (e) => String(e?.canonicalId || e?.id || "") === cid,
+      );
+      return c && c.questionClass !== "factual" && c.comprehensionConfirmed !== true;
+    });
+    if (pending) badge += " · needs deeper understanding first";
+    els.reviewSm2SourceBadge.textContent = badge;
   }
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
   if (els.reviewSm2Preview) {
     const preview = String(item.contentPreview || "");
     if (!sm2ReviewDocId && item.docId) {
-      const origin = await getSession(item.docId);
-      const docTitle = origin?.shared?.docMeta?.titleInferred || item.docId;
+      const docTitle = originSession?.shared?.docMeta?.titleInferred || item.docId;
       els.reviewSm2Preview.textContent = preview ? `${docTitle} · ${preview}` : docTitle;
     } else {
       els.reviewSm2Preview.textContent = preview;
     }
   }
 
-  const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
-  const originSession = originDocId ? await getSession(originDocId) : null;
   const conceptIds = resolveSmItemConceptIds(item, originSession);
   const hintConceptId = conceptIds[0] || "";
   if (els.reviewMnemonicHintHost) {
@@ -243,7 +258,11 @@ export async function runSm2ReviewSession(docId, options = {}) {
   if (!session) return;
 
   sm2ReviewDocId = id;
-  let queue = buildReviewQueue(session.shared?.smItems || []);
+  const flags = getPedagogicalFlags();
+  let queue = buildReviewQueue(session.shared?.smItems || [], Date.now(), {
+    gapFillPenalty: flags.GAP_FILL_PRIORITY_PENALTY,
+    maxGapFillPerSession: flags.MAX_GAP_FILL_PER_SESSION,
+  });
   if (options.mnemonicsOnly) {
     queue = await filterSmItemsByMnemonics(queue, getSession);
   }

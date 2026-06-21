@@ -23,6 +23,11 @@ import { assertLlmKeyPresent } from "./llm.js";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
 import { scoreConceptNovelty } from "./vault/novelty-scoring.js";
+import {
+  classifyInventoryHeuristic,
+  applyBatchClassification,
+} from "./pedagogy/factual-classifier.js";
+import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags } from "./config/flags.js";
 import { runDedupForDocument } from "./concept-registry/dedup-gates.js";
 import {
   filterProposalsWithContradictionCheck,
@@ -207,6 +212,20 @@ async function runPhaseT12(doc, ctx) {
   }
   const inventory = invResult.inventory || [];
   doc.shared.conceptInventory = inventory;
+  if (inventory.length && isDeterministicFactualQuestionsEnabled()) {
+    const sourceText = getMarkdown(doc);
+    const flags = getPedagogicalFlags();
+    const { inventory: classified, ambiguous } = classifyInventoryHeuristic(
+      inventory,
+      sourceText,
+      { threshold: flags.FACTUAL_CLASSIFIER_LLM_THRESHOLD },
+    );
+    doc.shared.conceptInventory = applyBatchClassification(classified, {});
+    for (const entry of doc.shared.conceptInventory) {
+      if (!entry.questionClass) entry.questionClass = "conceptual";
+    }
+    void ambiguous;
+  }
   if (inventory.length) {
     await addConceptsToShared(
       doc.docId,
