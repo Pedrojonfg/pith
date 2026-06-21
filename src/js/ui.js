@@ -380,6 +380,7 @@ export const els = {
   createSessionStartFileInput: document.getElementById("createSessionStartFileInput"),
   createSessionStartNameInput: document.getElementById("createSessionStartNameInput"),
   createSessionStartStatus: document.getElementById("createSessionStartStatus"),
+  createSessionStartInsight: document.getElementById("createSessionStartInsight"),
   createSessionStartContinueBtn: document.getElementById("createSessionStartContinueBtn"),
   createSessionNoFileBtn: document.getElementById("createSessionNoFileBtn"),
   screenInterviewCapture: document.getElementById("screenInterviewCapture"),

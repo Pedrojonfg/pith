@@ -518,6 +518,7 @@ export function renderVaultPanel(host) {
   filterWrap.appendChild(select);
   header.appendChild(filterWrap);
   host.appendChild(header);
+  host.appendChild(renderMergeProposalsSection(host));
   host.appendChild(renderPendingInferenceSection(host));
   host.appendChild(renderImportSection(host));
   host.appendChild(renderFileImportSection(host));
@@ -728,6 +729,94 @@ function escapeHtml(text) {
 
 function escapeAttr(text) {
   return escapeHtml(text).replace(/'/g, "&#39;");
+}
+
+function renderMergeProposalsSection(host) {
+  const section = document.createElement("section");
+  section.className = "vault-merge-proposals";
+  section.innerHTML = '<p class="hint">Loading merge proposals…</p>';
+
+  void (async () => {
+    const { getActiveSession, saveActiveSession } = await import("../session-store.js");
+    const { dryRunCascadeMerge, mergeConceptProposal } = await import(
+      "../concept-registry/cascade-merge.js"
+    );
+    const { recordMergeRejection } = await import("../vault/embedding-persist.js");
+    const { getConceptById } = await import("../concept-registry/registry-store.js");
+
+    const doc = await getActiveSession();
+    const proposals = (doc?.shared?.mergeProposals || []).filter((p) => p.status === "pending");
+    section.innerHTML = "";
+    if (!proposals.length) {
+      section.hidden = true;
+      return;
+    }
+
+    const h3 = document.createElement("h3");
+    h3.textContent = "Merge proposals";
+    section.appendChild(h3);
+
+    for (const proposal of proposals) {
+      const src = getConceptById(proposal.sourceConceptId);
+      const tgt = getConceptById(proposal.targetConceptId);
+      const card = document.createElement("div");
+      card.className = "vault-merge-card";
+
+      const title = document.createElement("p");
+      title.textContent = `${src?.canonicalName || proposal.sourceConceptId} → ${tgt?.canonicalName || proposal.targetConceptId} (${(proposal.cosineScore ?? 0).toFixed(2)})`;
+      card.appendChild(title);
+
+      const preview = document.createElement("pre");
+      preview.className = "vault-merge-preview hint";
+      const dry = dryRunCascadeMerge(proposal.sourceConceptId, proposal.targetConceptId);
+      preview.textContent =
+        dry.relinkDetail.length > 0
+          ? dry.relinkDetail.join("\n")
+          : "No relinks detected (dry run).";
+      card.appendChild(preview);
+
+      const row = document.createElement("div");
+      row.className = "row";
+      const approve = document.createElement("button");
+      approve.type = "button";
+      approve.className = "btn-primary";
+      approve.textContent = "Approve merge";
+      approve.addEventListener("click", async () => {
+        try {
+          await mergeConceptProposal(proposal.sourceConceptId, proposal.targetConceptId, {
+            approvedBy: "vault_overlay",
+            gateResults: proposal.gateResults,
+          });
+          proposal.status = "approved";
+          doc.shared.mergeProposals = (doc.shared.mergeProposals || []).filter(
+            (p) => p.status === "pending",
+          );
+          await saveActiveSession(doc);
+          renderVaultPanel(host);
+        } catch (err) {
+          alert(err?.message || "Merge failed");
+        }
+      });
+      const reject = document.createElement("button");
+      reject.type = "button";
+      reject.className = "btn-secondary";
+      reject.textContent = "Reject";
+      reject.addEventListener("click", async () => {
+        await recordMergeRejection(proposal.sourceConceptId, proposal.targetConceptId);
+        proposal.status = "rejected";
+        doc.shared.mergeProposals = (doc.shared.mergeProposals || []).filter(
+          (p) => p.status === "pending",
+        );
+        await saveActiveSession(doc);
+        renderVaultPanel(host);
+      });
+      row.append(approve, reject);
+      card.appendChild(row);
+      section.appendChild(card);
+    }
+  })();
+
+  return section;
 }
 
 function getVaultOverlay(panel) {
