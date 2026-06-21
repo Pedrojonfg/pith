@@ -298,8 +298,7 @@ import {
 } from "./project-library.js";
 import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260612_1";
 import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
-import { mapMcqOutcomeToQuality, registerOrUpdateSmItem } from "./sm2-ingest.js";
-import { promoteFromMcqBlock } from "./concept-registry/ingest.js";
+import { finalizeBlockQuestionAnswer } from "./block-answer-signals.js";
 import { createRecallStudyController } from "./recall-study.js";
 import {
   buildModeSliceFromShared,
@@ -2192,39 +2191,6 @@ function onRetrievalHubPick(modeKey) {
   const mode = normalizeStudyMode(modeKey);
   if (!mode || mode === "review") return;
   void enterModeWithContinuity(mode);
-}
-
-async function ingestSm2FromTestAnswer({ correct, firstTry = true, usedHint = false, skipped = false }) {
-  try {
-    const doc = await getActiveSession();
-    if (!doc?.docId) return;
-    const blocks = getBlocksSafe();
-    const block = blocks[state.activeBlockIndex];
-    const blockId = String(block?.block_id ?? block?.id ?? state.activeBlockIndex);
-    const conceptIds = Array.isArray(block?.concept_ids)
-      ? block.concept_ids
-      : Array.isArray(block?.concepts)
-        ? block.concepts.map((c) => c?.canonicalId || c?.label || c).filter(Boolean)
-        : [];
-    await registerOrUpdateSmItem(doc.docId, {
-      sourceType: "rsvp_block",
-      sourceId: blockId,
-      title: getBlockTitleSafe(state.activeBlockIndex),
-      contentPreview: conceptIds.slice(0, 3).join(", "),
-      quality: mapMcqOutcomeToQuality({ correct, firstTry, usedHint, skipped }),
-    });
-    void promoteFromMcqBlock({
-      docId: doc.docId,
-      conceptIds,
-      correct,
-      firstTry,
-      usedHint,
-      skipped,
-      source: isQuestionsStudyMode() ? "questions" : "rsvp",
-    });
-  } catch (err) {
-    console.warn("[sm2-ingest] RSVP ingest failed", err);
-  }
 }
 
 /** Active concept ids for mnemonic panel prefill (mode-specific). */
@@ -6107,10 +6073,28 @@ async function handleTestAnswer({ chosen, correct, feedback }) {
     feedback: String(feedback || ""),
     correctAnswer: String(correct || ""),
   });
-  syncActiveSessionAssessmentSignals();
-  ingestSm2FromTestAnswer({
-    correct: String(chosen || "").trim().toUpperCase() === String(correct || "").trim().toUpperCase(),
-  });
+  try {
+    const doc = await getActiveSession();
+    const blocks = getBlocksSafe();
+    const block = blocks[state.activeBlockIndex];
+    if (doc?.docId && block) {
+      await finalizeBlockQuestionAnswer({
+        docId: doc.docId,
+        slice: state.activeSession,
+        sourceMode: state.activeSession?.studyMode || state.studyMode,
+        blockIndex: state.activeBlockIndex,
+        block,
+        questionType: "test",
+        questionIndex: ctx.globalIndex,
+        mcqOutcome: {
+          correct:
+            String(chosen || "").trim().toUpperCase() === String(correct || "").trim().toUpperCase(),
+        },
+      });
+    }
+  } catch (err) {
+    console.warn("[block-answer-signals] test finalize failed", err);
+  }
 
   const normalizedChosen = String(chosen || "").trim().toUpperCase();
   const normalizedCorrect = String(correct || "").trim().toUpperCase();
@@ -8923,7 +8907,23 @@ export async function wireStudyHandlers() {
         feedback: resp,
         correctAnswer: "",
       });
-      syncActiveSessionAssessmentSignals();
+      try {
+        const doc = await getActiveSession();
+        if (doc?.docId) {
+          await finalizeBlockQuestionAnswer({
+            docId: doc.docId,
+            slice: state.activeSession,
+            sourceMode: state.activeSession?.studyMode || state.studyMode,
+            blockIndex: state.activeBlockIndex,
+            block,
+            questionType: "socratic",
+            questionIndex: ctx.globalIndex,
+            socraticAnswer: answer,
+          });
+        }
+      } catch (err) {
+        console.warn("[block-answer-signals] socratic finalize failed", err);
+      }
 
       const isLastQuestion = ctx.globalIndex >= ctx.total - 1;
       const isLastBlock = state.activeBlockIndex >= blocks.length - 1;
