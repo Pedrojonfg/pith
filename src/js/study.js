@@ -24,8 +24,17 @@ import {
   isAssessmentQuestionsUiEnabled,
   isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
+  isAdaptiveProbingEnabled,
   saveSourceFidelityStrictPreference,
 } from "./config/flags.js";
+import {
+  buildAdaptiveCoveragePlan,
+  applyAdaptiveBeliefUpdate,
+  filterInventoryForAdaptiveProbing,
+} from "./adaptive-probing/assessment-integration.js";
+import { mergeSessionBeliefs, loadProjectBeliefs } from "./adaptive-probing/belief-persist.js";
+import { buildProbeGraph } from "./adaptive-probing/probe-graph.js";
+import { computeFringes, labelConcepts } from "./adaptive-probing/knowledge-fringe.js";
 import {
   buildAssessmentCoveragePlan,
   computeHolisticAssessmentBudget,
@@ -1697,6 +1706,66 @@ export function enterAppHome() {
 
 export function enterVaultBranch() {
   showScreen("vaultBranch");
+  renderVaultKnowledgeFringe().catch((err) => {
+    console.warn("[adaptive-probing] fringe render failed", err?.message || err);
+  });
+}
+
+async function renderVaultKnowledgeFringe() {
+  const host = els.vaultKnowledgeFringe;
+  if (!host) return;
+  const projectId = getUploadDefaultProjectId();
+  const beliefs = await loadProjectBeliefs(projectId);
+  const conceptIds = Object.keys(beliefs);
+  if (!conceptIds.length) {
+    host.hidden = true;
+    return;
+  }
+  const graph = buildProbeGraph({
+    conceptInventory: conceptIds.map((id) => ({ id, label: id })),
+    conceptGraph: null,
+  });
+  /** @type {Record<string, object>} */
+  const state = {};
+  for (const id of conceptIds) {
+    state[id] = { ...beliefs[id] };
+  }
+  const { outerFringe, innerFringe } = computeFringes(graph, state);
+  const outerLabels = labelConcepts(outerFringe, conceptIds.map((id) => ({ id, label: id })));
+  const innerLabels = labelConcepts(innerFringe, conceptIds.map((id) => ({ id, label: id })));
+  const outerList = els.vaultOuterFringeList;
+  const innerList = els.vaultInnerFringeList;
+  if (outerList) {
+    outerList.innerHTML = "";
+    if (!outerLabels.length) {
+      const li = document.createElement("li");
+      li.className = "hint";
+      li.textContent = "None identified yet.";
+      outerList.appendChild(li);
+    } else {
+      for (const row of outerLabels) {
+        const li = document.createElement("li");
+        li.textContent = row.label;
+        outerList.appendChild(li);
+      }
+    }
+  }
+  if (innerList) {
+    innerList.innerHTML = "";
+    if (!innerLabels.length) {
+      const li = document.createElement("li");
+      li.className = "hint";
+      li.textContent = "None identified yet.";
+      innerList.appendChild(li);
+    } else {
+      for (const row of innerLabels) {
+        const li = document.createElement("li");
+        li.textContent = row.label;
+        innerList.appendChild(li);
+      }
+    }
+  }
+  host.hidden = false;
 }
 
 /**
@@ -6964,43 +7033,104 @@ async function resolveHolisticAssessmentContext(flow) {
       : deriveInventoryEdges(inventory, conceptGraph);
   const budget = computeHolisticAssessmentBudget(inventory, edges);
   const chunks = buildInventoryChunks(docHierarchy, flow?.cleanedText || "");
-  const plan = buildAssessmentCoveragePlan({
-    inventory,
-    edges,
-    inventoryChunks: chunks,
-    rawMarkdown: flow?.cleanedText || "",
-    budget,
-  });
+
+  let plan;
+  if (isAdaptiveProbingEnabled()) {
+    const adaptive = buildAdaptiveCoveragePlan({
+      inventory,
+      edges,
+      inventoryChunks: chunks,
+      rawMarkdown: flow?.cleanedText || "",
+      budget,
+      conceptGraph,
+      projectId: doc?.projectId || getUploadDefaultProjectId(),
+      docId: doc?.docId || docId || "",
+    });
+    plan = adaptive?.plan || adaptive;
+    if (adaptive?.graph && adaptive?.beliefState) {
+      flow.adaptiveProbing = {
+        graph: adaptive.graph,
+        beliefState: adaptive.beliefState,
+        selectedConceptIds: adaptive.selectedConceptIds || [],
+      };
+      await persistAdaptiveBeliefToSession(doc, flow);
+    }
+  } else {
+    plan = buildAssessmentCoveragePlan({
+      inventory,
+      edges,
+      inventoryChunks: chunks,
+      rawMarkdown: flow?.cleanedText || "",
+      budget,
+    });
+  }
   return { edges, docHierarchy, conceptGraph, budget, plan };
+}
+
+async function persistAdaptiveBeliefFromFlow() {
+  if (!prePackingFlow?.adaptiveProbing?.beliefState) return;
+  const doc = await getActiveSession();
+  if (!doc?.shared) return;
+  doc.shared.knowledgeBeliefState = { ...prePackingFlow.adaptiveProbing.beliefState };
+  await saveDocumentSession(doc);
+}
+
+async function persistAdaptiveBeliefToSession(doc, flow) {
+  if (!doc?.shared || !flow?.adaptiveProbing?.beliefState) return;
+  doc.shared.knowledgeBeliefState = { ...flow.adaptiveProbing.beliefState };
+  if (flow.adaptiveProbing.graph?.meta) {
+    doc.shared.probeGraphMeta = flow.adaptiveProbing.graph.meta;
+  }
+  await saveDocumentSession(doc);
 }
 
 function createPrePackingItemsPromise(flow) {
   if (isHolisticAssessmentEnabled()) {
-    const ctx = resolveHolisticAssessmentContext(flow);
-    flow.edges = ctx.edges;
-    flow.docHierarchy = ctx.docHierarchy;
-    flow.coveragePlan = ctx.plan;
-    flow.holisticBudget = ctx.budget;
-    return generateHolisticPrePackingAssessmentItems({
-      conceptInventory: flow.conceptInventory,
-      edges: ctx.edges,
-      materialText: flow.cleanedText,
-      docHierarchy: ctx.docHierarchy,
-      conceptGraph: ctx.conceptGraph,
-      plan: ctx.plan,
-      onProgress: (msg) => {
-        flow.assessmentGenerationStatus = msg;
-        if (els.testMeta) els.testMeta.textContent = String(msg || "");
-        if (els.generateBlocksStatus) els.generateBlocksStatus.textContent = String(msg || "");
-      },
-      llmModel: flow.splitOpts?.llmModel,
-      language: flow.splitOpts?.language || getStudyLanguage(),
+    return Promise.resolve(resolveHolisticAssessmentContext(flow)).then((ctx) => {
+      flow.edges = ctx.edges;
+      flow.docHierarchy = ctx.docHierarchy;
+      flow.coveragePlan = ctx.plan;
+      flow.holisticBudget = ctx.budget;
+      return generateHolisticPrePackingAssessmentItems({
+        conceptInventory: flow.conceptInventory,
+        edges: ctx.edges,
+        materialText: flow.cleanedText,
+        docHierarchy: ctx.docHierarchy,
+        conceptGraph: ctx.conceptGraph,
+        plan: ctx.plan,
+        onProgress: (msg) => {
+          flow.assessmentGenerationStatus = msg;
+          if (els.testMeta) els.testMeta.textContent = String(msg || "");
+          if (els.generateBlocksStatus) els.generateBlocksStatus.textContent = String(msg || "");
+        },
+        llmModel: flow.splitOpts?.llmModel,
+        language: flow.splitOpts?.language || getStudyLanguage(),
+      });
     });
   }
 
   const qCfg = resolvePrePackingQuestionConfig();
+  let inventory = flow.conceptInventory;
+  if (isAdaptiveProbingEnabled()) {
+    const docId = state.activeDocId || state.activeSession?.docId;
+    const filtered = filterInventoryForAdaptiveProbing({
+      conceptInventory: flow.conceptInventory,
+      conceptGraph: flow.conceptGraph,
+      n: qCfg.n_test + qCfg.n_socratic,
+      projectId: getUploadDefaultProjectId(),
+      docId: docId || "",
+    });
+    if (filtered.inventory?.length) inventory = filtered.inventory;
+    if (filtered.graph && filtered.beliefState) {
+      flow.adaptiveProbing = {
+        graph: filtered.graph,
+        beliefState: filtered.beliefState,
+        selectedConceptIds: filtered.selectedConceptIds || [],
+      };
+    }
+  }
   return generatePrePackingAssessmentItems({
-    conceptInventory: flow.conceptInventory,
+    conceptInventory: inventory,
     edges: flow.edges || [],
     materialText: flow.cleanedText,
     n_test: qCfg.n_test,
@@ -7012,20 +7142,58 @@ function createPrePackingItemsPromise(flow) {
 
 function getCurrentPrefetchConfigKey(flow) {
   if (isHolisticAssessmentEnabled()) {
-    const ctx = resolveHolisticAssessmentContext(flow);
+    const inventory = flow.conceptInventory || [];
+    const edges =
+      Array.isArray(flow.edges) && flow.edges.length
+        ? flow.edges
+        : deriveInventoryEdges(inventory, flow.conceptGraph);
+    const budget = computeHolisticAssessmentBudget(inventory, edges);
+    const chunks = buildInventoryChunks(flow.docHierarchy, flow.cleanedText || "");
+    let plan = flow.coveragePlan;
+    if (!plan) {
+      if (isAdaptiveProbingEnabled()) {
+        const adaptive = buildAdaptiveCoveragePlan({
+          inventory,
+          edges,
+          inventoryChunks: chunks,
+          rawMarkdown: flow.cleanedText || "",
+          budget,
+          conceptGraph: flow.conceptGraph,
+          projectId: getUploadDefaultProjectId(),
+          docId: state.activeDocId || "",
+        });
+        plan = adaptive?.plan || adaptive;
+      } else {
+        plan = buildAssessmentCoveragePlan({
+          inventory,
+          edges,
+          inventoryChunks: chunks,
+          rawMarkdown: flow.cleanedText || "",
+          budget,
+        });
+      }
+    }
+    const adaptiveSuffix = flow.adaptiveProbing?.selectedConceptIds?.length
+      ? `|adp:${flow.adaptiveProbing.selectedConceptIds.join(",")}`
+      : plan?.adaptiveProbing?.selectedConceptIds?.length
+        ? `|adp:${plan.adaptiveProbing.selectedConceptIds.join(",")}`
+        : "";
     return buildPrefetchConfigKey({
-      qCfg: ctx.budget,
+      qCfg: budget,
       conceptInventory: flow.conceptInventory,
       cleanedText: flow.cleanedText,
-      holisticPlanHash: ctx.plan?.planHash || hashCoveragePlan(ctx.plan),
+      holisticPlanHash: `${plan?.planHash || hashCoveragePlan(plan)}${adaptiveSuffix}`,
     });
   }
   const qCfg = resolvePrePackingQuestionConfig();
-  return buildPrefetchConfigKey({
+  const adaptiveSuffix = flow.adaptiveProbing?.selectedConceptIds?.length
+    ? `|adp:${flow.adaptiveProbing.selectedConceptIds.join(",")}`
+    : "";
+  return `${buildPrefetchConfigKey({
     qCfg,
     conceptInventory: flow.conceptInventory,
     cleanedText: flow.cleanedText,
-  });
+  })}${adaptiveSuffix}`;
 }
 
 function ensurePrePackingItemsPromise(flow) {
@@ -7178,6 +7346,8 @@ function handleAssessmentTestAnswer({ chosen, correct, feedback }) {
     concept_id: String(q?.concept_id || ""),
     questionText: q?.question != null ? String(q.question) : "",
   });
+  applyAdaptiveBeliefUpdate(prePackingFlow, q, userAnswer);
+  persistAdaptiveBeliefFromFlow().catch(() => {});
 
   const normalizedChosen = String(chosen || "").trim().toUpperCase();
   const normalizedCorrect = String(correct || "").trim().toUpperCase();
@@ -7476,6 +7646,8 @@ async function advancePrePackingAssessment() {
   if (existing >= 0) responses[existing] = row;
   else responses.push(row);
   prePackingFlow.responses = responses;
+  applyAdaptiveBeliefUpdate(prePackingFlow, item, answer);
+  persistAdaptiveBeliefFromFlow().catch(() => {});
 
   if (idx < items.length - 1) {
     prePackingFlow.questionIndex = idx + 1;
@@ -7519,6 +7691,15 @@ async function finishPrePackingAssessment() {
   prePackingFlow.knowledgeProfile = profile;
   prePackingFlow.assessmentSkipped = false;
   prePackingFlow.packingIgnoredProfile = false;
+
+  const doc = await getActiveSession();
+  if (doc && prePackingFlow.adaptiveProbing?.beliefState) {
+    doc.shared.knowledgeBeliefState = { ...prePackingFlow.adaptiveProbing.beliefState };
+    await saveDocumentSession(doc);
+    mergeSessionBeliefs(doc.projectId || getUploadDefaultProjectId(), doc.shared.knowledgeBeliefState).catch(
+      (err) => console.warn("[adaptive-probing] merge beliefs", err?.message || err),
+    );
+  }
 
   if (ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING && profile) {
     const flow = prePackingFlow;
@@ -8425,18 +8606,31 @@ export async function wireStudyHandlers() {
       const holisticBudget = holistic
         ? computeHolisticAssessmentBudget(conceptInventory, prepEdges)
         : null;
-      const holisticPlan = holistic
-        ? buildAssessmentCoveragePlan({
+      let holisticPlan = null;
+      if (holistic && holisticBudget) {
+        const chunks = buildInventoryChunks(docForPrep?.shared?.docHierarchy, cleanedText);
+        if (isAdaptiveProbingEnabled()) {
+          const adaptive = buildAdaptiveCoveragePlan({
             inventory: conceptInventory,
             edges: prepEdges,
-            inventoryChunks: buildInventoryChunks(
-              docForPrep?.shared?.docHierarchy,
-              cleanedText,
-            ),
+            inventoryChunks: chunks,
             rawMarkdown: cleanedText,
             budget: holisticBudget,
-          })
-        : null;
+            conceptGraph: docForPrep?.shared?.conceptGraph ?? null,
+            projectId: docForPrep?.projectId || getUploadDefaultProjectId(),
+            docId: docForPrep?.docId || docIdForPrep || "",
+          });
+          holisticPlan = adaptive?.plan || adaptive;
+        } else {
+          holisticPlan = buildAssessmentCoveragePlan({
+            inventory: conceptInventory,
+            edges: prepEdges,
+            inventoryChunks: chunks,
+            rawMarkdown: cleanedText,
+            budget: holisticBudget,
+          });
+        }
+      }
       const qCfg = holistic ? holisticBudget : resolvePrePackingQuestionConfig();
       const prefetchConfigKey = buildPrefetchConfigKey({
         qCfg,
