@@ -358,7 +358,7 @@
 
             <h2 class="settings-section-title">API keys</h2>
             <p class="hint">
-              DeepSeek is required. Add a Gemini key to use Gemini 2.5 Flash. Keys are stored locally.
+              DeepSeek is required for all AI features. Add a Gemini key for Knowledge Vault semantic embeddings (optional). Keys are stored locally.
             </p>
             <form id="apiKeyForm" autocomplete="off">
               <label for="apiKeyInput">DeepSeek API key</label>
@@ -373,7 +373,7 @@
                 placeholder="sk-…"
                 required
               />
-              <label for="geminiApiKeyInput" style="margin-top: 12px">Gemini API key (optional)</label>
+              <label for="geminiApiKeyInput" style="margin-top: 12px">Gemini API key (optional, embeddings only)</label>
               <input
                 id="geminiApiKeyInput"
                 name="geminiApiKey"
@@ -395,15 +395,6 @@
             <h2 class="settings-section-title">Study language</h2>
             <label for="languageSelect">Language</label>
             <select id="languageSelect" name="language" aria-label="Study language"></select>
-
-            <div class="divider"></div>
-
-            <h2 class="settings-section-title">LLM model</h2>
-            <label for="llmModelSelect">Default model for new sessions</label>
-            <select id="llmModelSelect" name="llmModel" aria-label="LLM model">
-              <option value="deepseek">DeepSeek</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            </select>
 
             <div class="divider"></div>
 
@@ -1821,7 +1812,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260621_7";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260621_8";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1837,7 +1828,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260621_7");
+        await import("./src/js/main.js?v=20260621_8");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

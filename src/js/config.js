@@ -51,9 +51,6 @@ export const HOLISTIC_ASSESSMENT_MIN = 8;
 export const DS_CHAT_COMPLETIONS_URL =
   "https://api.deepseek.com/v1/chat/completions";
 
-export const GEMINI_OPENAI_CHAT_URL =
-  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
-
 export const STUDY_LANG_OPTIONS = [
   { value: "English", label: "English" },
   { value: "Spanish", label: "Spanish" },

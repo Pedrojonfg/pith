@@ -618,9 +618,7 @@ export async function synthesizeAssessmentGaps({
   if (!getApiKeyForLlmModel(model)) {
     throw new GapSynthesisError(
       "missing_api_key",
-      model === "gemini-2.5-flash"
-        ? "Missing Gemini API key. Open API setup to add it."
-        : "Missing DeepSeek API key. Open API setup to add it.",
+      "Missing DeepSeek API key. Open API setup to add it.",
     );
   }
 

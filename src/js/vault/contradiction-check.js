@@ -2,7 +2,7 @@
  * R4 — Contradiction detection via LLM for high-similarity pairs.
  */
 
-import { LLM_MODEL_GEMINI } from "../llm.js";
+import { DEFAULT_LLM_MODEL } from "../llm.js";
 import { isVaultContradictionCheckEnabled, getMaxContradictionChecksPerDppRun } from "../config/flags.js";
 import { isVaultEmbeddingsEnabled } from "./embeddings.js";
 import { DEDUP_HARD_GATE_THRESHOLD } from "./embedding-thresholds.js";
@@ -35,7 +35,7 @@ export async function classifyConceptRelation(conceptA, conceptB, options = {}) 
   const user = `Concept A: ${nameA}\n${defA ? `Definition A: ${defA}` : ""}\n\nConcept B: ${nameB}\n${defB ? `Definition B: ${defB}` : ""}`;
 
   const text = await llmChatCompletions({
-    llmModel: options.llmModel || LLM_MODEL_GEMINI,
+    llmModel: options.llmModel || DEFAULT_LLM_MODEL,
     messages: [
       { role: "system", content: system },
       { role: "user", content: user },

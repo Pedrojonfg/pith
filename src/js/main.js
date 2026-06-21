@@ -17,7 +17,6 @@ import {
   closeSettingsScreen,
   closeBlockReadSidebar,
   initLanguageUi,
-  initLlmModelUi,
   initMnemonicSettingsUi,
   initSourceFidelityStrictUi,
   els,
@@ -116,7 +115,6 @@ async function bootstrap() {
   if (window.offlineMode !== true) window.offlineMode = false;
   if (!("offlinePack" in window)) window.offlinePack = null;
   initLanguageUi();
-  initLlmModelUi();
   state.sourceFidelityStrict = getSourceFidelityStrictPreference();
   initSourceFidelityStrictUi();
   initMnemonicSettingsUi();
@@ -259,7 +257,9 @@ async function bootstrap() {
     localStorage.setItem("ds_api_key", trimmed);
     const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
     if (geminiRaw) saveGeminiKey(geminiRaw);
-    els.apiKeyStatus.textContent = geminiRaw ? "DeepSeek and Gemini saved." : "DeepSeek saved.";
+    els.apiKeyStatus.textContent = geminiRaw
+      ? "DeepSeek and Gemini (embeddings) saved."
+      : "DeepSeek saved.";
     await enterAppHome();
   });
 

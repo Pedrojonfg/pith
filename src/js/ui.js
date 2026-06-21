@@ -1,5 +1,5 @@
 import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
-import { getStoredGeminiKey, getDefaultLlmModel, saveDefaultLlmModel, normalizeLlmModel } from "./llm.js?v=20260525_1";
+import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
@@ -506,7 +506,6 @@ export const els = {
   apiKeyInput: document.getElementById("apiKeyInput"),
   geminiApiKeyInput: document.getElementById("geminiApiKeyInput"),
   apiKeyStatus: document.getElementById("apiKeyStatus"),
-  llmModelSelect: document.getElementById("llmModelSelect"),
 
   studyProgress: document.getElementById("studyProgress"),
   studyProgressLabel: document.getElementById("studyProgressLabel"),
@@ -1139,14 +1138,6 @@ export function initLanguageUi() {
     const v = String(els.languageSelect.value || "").trim();
     const safe = v && STUDY_LANG_OPTIONS.some((o) => o.value === v) ? v : "English";
     localStorage.setItem(LS_STUDY_LANG_KEY, safe);
-  });
-}
-
-export function initLlmModelUi() {
-  if (!els.llmModelSelect) return;
-  els.llmModelSelect.value = getDefaultLlmModel();
-  els.llmModelSelect.addEventListener("change", () => {
-    saveDefaultLlmModel(els.llmModelSelect.value);
   });
 }
 
