@@ -67,6 +67,11 @@ import {
   kickoffTier2PreparationInBackground,
   hasPendingTier2Preparation,
 } from "./document-preparation.js";
+import { computeAverageNovelty } from "./vault/novelty-scoring.js";
+import {
+  DOC_SIMILARITY_DUPLICATE_THRESHOLD,
+  DOC_SIMILARITY_RELATED_THRESHOLD,
+} from "./vault/embedding-thresholds.js";
 import { getOpeningQuestions } from "./interview/opening-questions.js";
 import {
   appendTurn,
@@ -376,18 +381,30 @@ export async function syncSlowDocHierarchyToShared(slowSession) {
   await saveDocumentSession(doc);
 }
 
-export async function ensureDocumentSessionForUpload(markdown) {
+export async function ensureDocumentSessionForUpload(markdown, options = {}) {
   const text = String(markdown || "");
   const docId = await computeDocId(text);
   let doc = await getSession(docId);
   if (!doc) {
-    doc = await createSession(text, { docId, projectId: getUploadDefaultProjectId() });
+    doc = await createSession(text, {
+      docId,
+      projectId: getUploadDefaultProjectId(),
+      pendingImages: options.pendingImages,
+    });
   } else if (doc.shared.rawMarkdown !== text) {
     doc.shared.rawMarkdown = text;
     doc.shared.docMeta = {
       ...doc.shared.docMeta,
       charCount: text.length,
     };
+    if (Array.isArray(options.pendingImages) && options.pendingImages.length) {
+      const { persistPendingImages } = await import("./document-images/storage.js");
+      try {
+        doc.shared.images = await persistPendingImages(docId, options.pendingImages);
+      } catch (err) {
+        console.warn("[study] image persist failed", err?.message || err);
+      }
+    }
     await saveDocumentSession(doc);
   }
   await setActiveSession(docId);
@@ -429,6 +446,35 @@ function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
   return `${label}${wave}…`;
+}
+
+function refreshCreateSessionInsights(doc) {
+  const el = els.createSessionStartInsight;
+  if (!el) return;
+  if (!doc?.shared) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  const parts = [];
+  const avgNew = computeAverageNovelty(doc.shared.conceptInventory);
+  if (avgNew != null) {
+    parts.push(`~${avgNew}% of this material looks new to you`);
+  }
+  const related = Array.isArray(doc.shared.relatedDocuments) ? doc.shared.relatedDocuments : [];
+  const dupe = related.find((r) => (r?.score ?? 0) >= DOC_SIMILARITY_DUPLICATE_THRESHOLD);
+  if (dupe) {
+    parts.push(
+      `This looks very similar to "${dupe.title || dupe.docId}" — did you mean to re-upload?`,
+    );
+  }
+  if (!parts.length) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = parts.join(" · ");
 }
 
 function preparationGateOptions(onProgress) {
@@ -809,11 +855,11 @@ async function buildHierarchyForFlowRecommendation(markdownText, llmModel) {
  * @param {File} file
  */
 export async function recommendFlowFromUploadedFile(file) {
-  const { cleanedText, originalFormat } = await readAndCleanMaterialText(file);
+  const { cleanedText, originalFormat, pendingImages } = await readAndCleanMaterialText(file);
   if (!cleanedText.trim()) {
     throw new Error("The file appears to be empty.");
   }
-  const doc = await ensureDocumentSessionForUpload(cleanedText);
+  const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
   await setUploadMeta(doc.docId, {
     fileName: String(file.name || ""),
     originalFormat: String(originalFormat || ""),
@@ -1540,12 +1586,12 @@ async function handleCreateSessionStartFilePicked() {
     els.createSessionStartNameInput.disabled = true;
   }
   try {
-    const { cleanedText, originalFormat } = await readAndCleanMaterialText(file);
+    const { cleanedText, originalFormat, pendingImages } = await readAndCleanMaterialText(file);
     if (!String(cleanedText || "").trim()) {
       throw new Error("The file appears to be empty.");
     }
     if (runId !== createSessionStartRunId) return;
-    const doc = await ensureDocumentSessionForUpload(cleanedText);
+    const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
     const suggestedTitle = guessSessionNameFromFileName(file.name);
     await setUploadMeta(doc.docId, {
       fileName: String(file.name || ""),
@@ -1588,6 +1634,7 @@ async function handleCreateSessionStartFilePicked() {
             ? "Document ready. You can continue."
             : "Preparing document…";
         }
+        refreshCreateSessionInsights(fresh);
       })
       .catch(() => {
         if (runId !== createSessionStartRunId) return;
@@ -1638,6 +1685,7 @@ export async function enterCreateSessionStartScreen() {
       ? "Document loaded. Update session name and continue."
       : "Upload your material to start.";
   }
+  refreshCreateSessionInsights(doc || null);
   mountModeSelectBreadcrumb(doc || null);
   showScreen("createSessionStart");
 }
@@ -2323,6 +2371,8 @@ export async function buildDocLibraryRows() {
   const sessions = await getAllSessions();
   const rows = [];
   for (const doc of sessions) {
+    const related = Array.isArray(doc.shared?.relatedDocuments) ? doc.shared.relatedDocuments : [];
+    const hasRelated = related.some((r) => (r?.score ?? 0) >= DOC_SIMILARITY_RELATED_THRESHOLD);
     rows.push({
       docId: doc.docId,
       title: doc.shared?.docMeta?.titleInferred || "Untitled document",
@@ -2331,6 +2381,7 @@ export async function buildDocLibraryRows() {
         .map(([key]) => key),
       smDue: (await getSmItemsDueToday(doc.docId)).length,
       updatedAt: doc.updatedAt || 0,
+      relatedBadge: hasRelated,
     });
   }
   return rows;
@@ -2352,10 +2403,14 @@ export async function renderDocLibrary() {
         row.smDue > 0
           ? `<span class="doc-library-sm-due">${row.smDue} due today</span>`
           : "";
+      const relatedHtml = row.relatedBadge
+        ? `<span class="doc-library-related">Related document</span>`
+        : "";
       return `<button type="button" class="doc-library-item" data-doc-id="${escapeDocLibraryHtml(row.docId)}" role="listitem">
         <span class="doc-library-title">${escapeDocLibraryHtml(row.title)}</span>
         <span class="doc-library-meta">
           <span class="doc-library-modes">${escapeDocLibraryHtml(formatDocLibraryModes(row.modes))}</span>
+          ${relatedHtml}
           ${smDueHtml}
           <span class="doc-library-date">${escapeDocLibraryHtml(formatDocLibraryDate(row.updatedAt))}</span>
         </span>
@@ -4737,7 +4792,7 @@ export async function readAndCleanMaterialText(file) {
       ? await readFileAsArrayBuffer(file)
       : await readFileAsText(file);
 
-  const { normalizedFormat, normalizedContent, warnings, fallbackSections } =
+  const { normalizedFormat, normalizedContent, warnings, fallbackSections, pendingImages } =
     await normalizeStudyMaterial(rawContent, detectedFormat);
 
   const cleanedText = normalizedContent;
@@ -4748,6 +4803,7 @@ export async function readAndCleanMaterialText(file) {
     normalizedFormat,
     warnings: warnings || [],
     fallbackSections: fallbackSections || null,
+    pendingImages: pendingImages || [],
   };
 }
 
@@ -8043,10 +8099,10 @@ export async function wireStudyHandlers() {
       }
       els.generateBlocksStatus.textContent = "";
       try {
-        const { file, cleanedText, normalizedFormat, originalFormat } = resolvedCloze;
+        const { file, cleanedText, normalizedFormat, originalFormat, pendingImages } = resolvedCloze;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = getDefaultLlmModel();
-        const doc = await ensureDocumentSessionForUpload(cleanedText);
+        const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
         await computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
@@ -8104,11 +8160,12 @@ export async function wireStudyHandlers() {
           originalFormat,
           warnings,
           fallbackSections,
+          pendingImages,
         } = resolvedSlow;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const criticalMode =
           els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
-        const doc = await ensureDocumentSessionForUpload(cleanedText);
+        const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
         const sessionObj = createSlowSession({
           normalizedText: cleanedText,
           normalizedFormat,
@@ -8221,7 +8278,7 @@ export async function wireStudyHandlers() {
     els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
-      const { file, cleanedText, wordCount } = resolvedRsvp;
+      const { file, cleanedText, wordCount, pendingImages } = resolvedRsvp;
       if (!bootstrapRsvp) {
         state.lastCleanedMaterialText = cleanedText;
         state.lastCleanedMaterialWordCount = wordCount;
@@ -8234,7 +8291,7 @@ export async function wireStudyHandlers() {
         throw new Error("File appears to be empty.");
       }
       state.originalMaterialText = cleanedText;
-      const doc = await ensureDocumentSessionForUpload(cleanedText);
+      const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
       await computeAndPersistModeRecommendation(doc, cleanedText, null);
 
       const fingerprint = buildBlockSplitFingerprint({

@@ -21,6 +21,14 @@ import { isInterviewOriginSession } from "./interview/origin.js";
 import { runConceptInventoryWithFallback } from "./session.js";
 import { assertLlmKeyPresent } from "./llm.js";
 import { isOfflineMode } from "./offline.js";
+import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
+import { scoreConceptNovelty } from "./vault/novelty-scoring.js";
+import { runDedupForDocument } from "./concept-registry/dedup-gates.js";
+import {
+  filterProposalsWithContradictionCheck,
+  resetContradictionCheckBudget,
+} from "./vault/contradiction-check.js";
+import { runDocumentSimilarityForProject } from "./vault/doc-similarity.js";
 import {
   getSession,
   saveActiveSession,
@@ -34,7 +42,7 @@ import {
   isTier1PreparationComplete,
 } from "./session-types.js";
 
-const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6"]);
+const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
 const PHASE_DEPS = {
   "T0.1": [],
   "T0.2": ["T0.1"],
@@ -44,6 +52,9 @@ const PHASE_DEPS = {
   "T1.4": ["T1.2"],
   "T1.5": ["T1.1", "T0.2"],
   "T1.6": ["T1.2"],
+  "T1.7": ["T1.2"],
+  "T1.8": ["T1.2", "T1.6"],
+  "T1.9": ["T1.2", "T1.8"],
   "T2.1": ["T1.3"],
   "T2.2": ["T1.2", "T1.5"],
   "T2.3": ["T1.1"],
@@ -58,6 +69,9 @@ const PHASE_LABELS = {
   "T1.4": "Computing block recommendation",
   "T1.5": "Recommending study flow",
   "T1.6": "Linking vault concepts",
+  "T1.7": "Analyzing document figures",
+  "T1.8": "Scoring concept novelty",
+  "T1.9": "Computing project document similarity",
   "T2.1": "Generating Cloze items",
   "T2.2": "Generating Recall questions",
   "T2.3": "Preparing Slow orientation",
@@ -278,6 +292,60 @@ async function runPhaseT16(doc) {
   return hashPayload(inventory.map((c) => c.globalConceptId || c.canonicalId));
 }
 
+async function runPhaseT17(doc, ctx) {
+  const images = doc.shared?.images;
+  if (!Array.isArray(images) || !images.length) {
+    return hashPayload(0);
+  }
+  const pending = images.filter((img) => img.visionStatus === "pending");
+  if (!pending.length) {
+    return hashPayload(images.map((img) => img.imageId));
+  }
+  const { runImageVisionAnalysis } = await import("./document-images/vision.js");
+  const result = await runImageVisionAnalysis(doc, {
+    llmModel: ctx.llmModel,
+    language: ctx.language,
+    onProgress: (msg) =>
+      ctx.onProgress?.({ phaseId: "T1.7", label: msg, status: "running" }),
+  });
+  return hashPayload({ analyzed: result.analyzed, failed: result.failed });
+}
+
+async function runPhaseT18(doc, ctx) {
+  if (!isVaultEmbeddingsEnabled()) {
+    return { skipped: true, hash: "embeddings_disabled" };
+  }
+  const result = await scoreConceptNovelty(doc);
+  if (result.status === "skipped") {
+    return { skipped: true, hash: result.reason || "skipped" };
+  }
+  resetContradictionCheckBudget();
+  const dedup = await runDedupForDocument(doc);
+  if (dedup.status !== "skipped" && Array.isArray(dedup.proposals)) {
+    const filtered = await filterProposalsWithContradictionCheck(dedup.proposals, {
+      llmModel: ctx?.llmModel,
+    });
+    doc.shared.mergeProposals = filtered.map((p) => ({ ...p, status: "pending" }));
+  }
+  persistDoc(doc);
+  return hashPayload({
+    novelty: (doc.shared.conceptInventory || []).map((c) => [c.canonicalId, c.noveltyScore]),
+    proposals: doc.shared?.mergeProposals?.length ?? 0,
+  });
+}
+
+async function runPhaseT19(doc) {
+  if (!isVaultEmbeddingsEnabled()) {
+    return { skipped: true, hash: "embeddings_disabled" };
+  }
+  const sim = await runDocumentSimilarityForProject(doc);
+  if (sim.status === "skipped") {
+    return { skipped: true, hash: sim.reason || "doc_similarity_skipped" };
+  }
+  persistDoc(doc);
+  return hashPayload({ pairs: sim.pairs ?? 0 });
+}
+
 async function runPhaseT21(doc, ctx) {
   const text = getMarkdown(doc);
   const meta = doc.shared?.uploadMeta || {};
@@ -380,6 +448,9 @@ const PHASE_RUNNERS = {
   "T1.4": runPhaseT14,
   "T1.5": runPhaseT15,
   "T1.6": runPhaseT16,
+  "T1.7": runPhaseT17,
+  "T1.8": runPhaseT18,
+  "T1.9": runPhaseT19,
   "T2.1": runPhaseT21,
   "T2.2": runPhaseT22,
   "T2.3": runPhaseT23,
@@ -472,14 +543,18 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
           status: "running",
         });
         try {
-          const outputHash = await executePhase(doc, phaseId, ctx);
-          markPhase(prep, phaseId, "success", outputHash);
+          const output = await executePhase(doc, phaseId, ctx);
+          if (output && typeof output === "object" && output.skipped) {
+            markPhase(prep, phaseId, "skipped", output.hash || "skipped");
+          } else {
+            markPhase(prep, phaseId, "success", output);
+          }
           persistDoc(doc);
           options.onProgress?.({
             phaseId,
             wave: wi + 1,
             label: PHASE_LABELS[phaseId] || phaseId,
-            status: "success",
+            status: output?.skipped ? "skipped" : "success",
           });
           return { phaseId, ok: true };
         } catch (err) {

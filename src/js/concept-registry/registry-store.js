@@ -98,6 +98,7 @@ export function normalizeConcept(raw) {
     relatedConceptIds: Array.isArray(raw?.relatedConceptIds)
       ? [...new Set(raw.relatedConceptIds.map((d) => String(d || "").trim()).filter(Boolean))]
       : [],
+    merged_into: String(raw?.merged_into || "").trim() || undefined,
     createdAt: String(raw?.createdAt || now),
     updatedAt: String(raw?.updatedAt || now),
   };
