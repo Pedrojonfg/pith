@@ -41,7 +41,7 @@ export async function classifyConceptRelation(conceptA, conceptB, options = {}) 
       { role: "user", content: user },
     ],
     max_tokens: CLASSIFY_MAX_TOKENS,
-    temperature: 0,
+    temperature: 0.1,
   });
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return { label: "neutral", confidence: 0.5 };

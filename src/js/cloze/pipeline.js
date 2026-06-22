@@ -30,7 +30,7 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
     content = await llmChatCompletions({
       llmModel,
       max_tokens,
-      temperature: 0.2,
+      temperature: 0.1,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
@@ -43,7 +43,7 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
       content = await llmChatCompletions({
         llmModel,
         max_tokens,
-        temperature: 0.2,
+        temperature: 0.1,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

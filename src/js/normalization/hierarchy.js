@@ -89,7 +89,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     raw = await llmFn({
       systemPrompt: HIERARCHY_SYSTEM_PROMPT,
       userPrompt,
-      temperature: 0,
+      temperature: 0.1,
       maxTokens: 2000,
       signal: options.signal,
     });

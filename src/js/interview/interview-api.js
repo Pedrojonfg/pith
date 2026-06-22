@@ -117,7 +117,7 @@ Rules:
         content: `Transcript so far:\n\n${source}\n\nReturn the next follow-up question JSON.`,
       },
     ],
-    temperature: 0.5,
+    temperature: 0.1,
     max_tokens: INTERVIEW_FOLLOWUP_MAX_TOKENS,
   });
 
@@ -172,7 +172,7 @@ Rules:
         }),
       },
     ],
-    temperature: 0.3,
+    temperature: 0.1,
     max_tokens: INTERVIEW_SYNTHESIS_MAX_TOKENS,
   });
 
