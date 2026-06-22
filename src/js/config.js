@@ -1,5 +1,7 @@
 export const LS_KEY = "ds_api_key";
 export const LS_GEMINI_KEY = "gemini_api_key";
+/** Optional — Google Books metadata fallback for book-enriched nodoc (20260622-book-enriched-nodoc). */
+export const LS_GOOGLE_BOOKS_KEY = "google_books_api_key";
 export const LS_ACTIVE_SESSION_KEY = "active_session";
 export const LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode";
 export const LS_DEFAULT_LLM_MODEL_KEY = "default_llm_model";

@@ -67,10 +67,28 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * @typedef {object} BookMeta
+ * @property {string} title
+ * @property {string} author
+ * @property {string|null} coverUrl
+ * @property {boolean} coverUrlVerified
+ * @property {boolean} coverLoadFailed
+ * @property {string|null} coverMimeType
+ * @property {boolean} coverFormatSupported
+ * @property {number|null} coverSizeBytes
+ * @property {boolean} coverSizeOk
+ * @property {'A'|'B'|'C'} level
+ * @property {Array<{number?: string, title: string}>|null} toc
+ * @property {string|null} description
+ * @property {number} cachedAt
+ */
+
+/**
  * @typedef {object} UploadMeta
  * @property {string} fileName
  * @property {string} originalFormat
  * @property {string} uploadedAt
+ * @property {BookMeta} [bookMeta]
  */
 
 /**
@@ -182,6 +200,58 @@ export function inferDocMeta(rawMarkdown) {
 }
 
 /**
+ * @typedef {object} DocumentImage
+ * @property {string} imageId
+ * @property {"embedded"|"full_page_fallback"} sourceType
+ * @property {"pdf"|"html"} sourceFormat
+ * @property {number|null} pageNumber
+ * @property {string} storagePath
+ * @property {number|null} width
+ * @property {number|null} height
+ * @property {string} mimeType
+ * @property {number} createdAt
+ * @property {"pending"|"ready"|"failed"|"skipped"} visionStatus
+ * @property {string|null} visionDescription
+ * @property {string[]} conceptLinks
+ */
+
+/**
+ * @param {unknown} raw
+ * @returns {DocumentImage|null}
+ */
+export function normalizeDocumentImage(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const imageId = String(raw.imageId || "").trim();
+  const storagePath = String(raw.storagePath || "").trim();
+  if (!imageId || !storagePath) return null;
+  const sourceType = raw.sourceType === "full_page_fallback" ? "full_page_fallback" : "embedded";
+  const sourceFormat = raw.sourceFormat === "html" ? "html" : "pdf";
+  const visionStatus =
+    raw.visionStatus === "ready" ||
+    raw.visionStatus === "failed" ||
+    raw.visionStatus === "skipped"
+      ? raw.visionStatus
+      : "pending";
+  return {
+    imageId,
+    sourceType,
+    sourceFormat,
+    pageNumber: Number.isFinite(raw.pageNumber) ? raw.pageNumber : null,
+    storagePath,
+    width: Number.isFinite(raw.width) ? raw.width : null,
+    height: Number.isFinite(raw.height) ? raw.height : null,
+    mimeType: String(raw.mimeType || "image/png"),
+    createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now(),
+    visionStatus,
+    visionDescription:
+      raw.visionDescription != null ? String(raw.visionDescription) : null,
+    conceptLinks: Array.isArray(raw.conceptLinks)
+      ? raw.conceptLinks.map((id) => String(id).trim()).filter(Boolean)
+      : [],
+  };
+}
+
+/**
  * @param {unknown} session
  * @returns {{ ok: boolean, errors: string[] }}
  */
@@ -251,6 +321,18 @@ export function validateDocumentSession(session) {
         if (typeof sh.uploadMeta.uploadedAt !== "string") {
           errors.push("shared.uploadMeta.uploadedAt must be string");
         }
+        const bm = sh.uploadMeta.bookMeta;
+        if (bm != null) {
+          if (typeof bm !== "object" || Array.isArray(bm)) {
+            errors.push("shared.uploadMeta.bookMeta must be object");
+          } else {
+            if (typeof bm.title !== "string") errors.push("bookMeta.title must be string");
+            if (typeof bm.author !== "string") errors.push("bookMeta.author must be string");
+            if (!["A", "B", "C"].includes(String(bm.level || ""))) {
+              errors.push("bookMeta.level must be A, B, or C");
+            }
+          }
+        }
       }
     }
     if (sh.assessmentSignals != null && !Array.isArray(sh.assessmentSignals)) {
@@ -267,6 +349,9 @@ export function validateDocumentSession(session) {
     }
     if (sh.interviewSynthesisComplete != null && typeof sh.interviewSynthesisComplete !== "boolean") {
       errors.push("shared.interviewSynthesisComplete must be boolean");
+    }
+    if (sh.images != null && !Array.isArray(sh.images)) {
+      errors.push("shared.images must be array");
     }
   }
   if (!session.modes || typeof session.modes !== "object") {
