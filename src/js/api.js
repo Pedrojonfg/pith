@@ -1,4 +1,4 @@
-import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260527_1";
+﻿import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260622_5";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
@@ -12,7 +12,7 @@ import {
   explanationParagraphHardRule,
   getMinExplanationParagraphs,
   hasValidExplanationParagraphs,
-} from "./explanationParagraphs.js?v=20260527_1";
+} from "./explanationParagraphs.js?v=20260622_5";
 import { deriveBlockType } from "./pipeline-levers.js";
 import { EXPLANATION_RSVP_STRUCTURED_HEADERS } from "./rsvp-section-headers.js";
 import {
@@ -20,7 +20,7 @@ import {
   getApiKeyForLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "./llm.js?v=20260525_1";
+} from "./llm.js?v=20260622_5";
 import {
   normalizeTestQuestion,
   shuffleInPlace,
@@ -34,7 +34,7 @@ import {
   filterEdgesForBatch,
   filterInventoryForBatch,
   mergeHolisticAssessmentQuestions,
-} from "./assessment-coverage.js?v=20260618_1";
+} from "./assessment-coverage.js?v=20260622_5";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -267,7 +267,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260525_1");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260622_5");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated
@@ -654,7 +654,7 @@ export async function synthesizeAssessmentGaps({
 
       const parsed = parseGapSynthesisResponse(lastRaw);
       if (parsed) {
-        const { normalizeGapsByBlock } = await import("./session.js?v=20260525_1");
+        const { normalizeGapsByBlock } = await import("./session.js?v=20260622_5");
         const gaps_by_block = normalizeGapsByBlock(parsed.gaps_by_block);
         const out = { gaps_by_block };
         if (parsed.notes) out.notes = parsed.notes;

@@ -1,12 +1,12 @@
-import { LS_RSVP_READING_MODE_KEY } from "./config.js?v=20260527_1";
-import { markdownToHtml } from "./markdown.js?v=20260525_1";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260525_1";
+﻿import { LS_RSVP_READING_MODE_KEY } from "./config.js?v=20260622_5";
+import { markdownToHtml } from "./markdown.js?v=20260622_5";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_5";
 import {
   computePageBreakpoints,
   getPageCount,
   getPageSlice,
   invalidatePaginationCache,
-} from "./slow/pagination.js?v=20260528_1";
+} from "./slow/pagination.js?v=20260622_5";
 
 const TYPO_DEFAULTS = {
   fontSizePx: 16,

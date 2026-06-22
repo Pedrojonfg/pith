@@ -1,5 +1,5 @@
-import { llmChatCompletions } from "../llm.js?v=20260525_1";
-import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260609_1";
+﻿import { llmChatCompletions } from "../llm.js?v=20260622_5";
+import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260622_5";
 import { createSmItem } from "../sm2.js";
 import {
   getValidItems,
@@ -8,7 +8,7 @@ import {
   normalizeEpistemicGraph,
   normalizeSemanticAnalysis,
   parseModelJsonObject,
-} from "./normalize.js?v=20260607_1";
+} from "./normalize.js?v=20260622_5";
 
 const PHASE_LABELS = [
   "Grafo epistémico",

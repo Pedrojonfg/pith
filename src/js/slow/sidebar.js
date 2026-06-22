@@ -1,8 +1,8 @@
-import { storeActiveSession } from "../session.js?v=20260527_1";
-import { getSortedSessionConcepts } from "../dictionary.js?v=20260527_1";
-import { ANNOTATION_TYPES } from "./annotations.js?v=20260528_1";
-import { charOffsetToPage } from "./pagination.js?v=20260528_1";
-import { slugGraphTermId } from "./phase0.js?v=20260528_1";
+﻿import { storeActiveSession } from "../session.js?v=20260622_5";
+import { getSortedSessionConcepts } from "../dictionary.js?v=20260622_5";
+import { ANNOTATION_TYPES } from "./annotations.js?v=20260622_5";
+import { charOffsetToPage } from "./pagination.js?v=20260622_5";
+import { slugGraphTermId } from "./phase0.js?v=20260622_5";
 
 const TYPE_LABELS_ES = {
   "≈": "Paráfrasis",

@@ -1,9 +1,9 @@
-import {
+﻿import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPTS_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
-} from "./config.js?v=20260525_1";
+} from "./config.js?v=20260622_5";
 import {
   buildResumePayload,
   hasGeneratedBlockContent,
@@ -12,14 +12,14 @@ import {
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
-} from "./session.js?v=20260527_1";
+} from "./session.js?v=20260622_5";
 import { getActiveSession as getActiveDocumentSession, getSession } from "./session-store.js";
 import { rehydrateBlocks } from "./block-store.js";
-import { isOfflineMode } from "./offline.js?v=20260606_1";
-import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260528_1";
-import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260607_1";
-import { buildSessionGraph } from "./graph/adapters.js?v=20260607_2";
-import { buildClozeMarkdown } from "./cloze/export-import.js?v=20260607_1";
+import { isOfflineMode } from "./offline.js?v=20260622_5";
+import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260622_5";
+import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260622_5";
+import { buildSessionGraph } from "./graph/adapters.js?v=20260622_5";
+import { buildClozeMarkdown } from "./cloze/export-import.js?v=20260622_5";
 import {
   appendSourceOfTruthAndResumeCapsule,
   buildExportFrontmatter,
@@ -30,7 +30,7 @@ import {
   isTestResponseIncorrect,
   resolveSocraticMode,
   resolveStudentSynthesis,
-} from "./export-format.js?v=20260607_1";
+} from "./export-format.js?v=20260622_5";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();

@@ -1,11 +1,11 @@
-import {
+﻿import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY,
-} from "./config.js?v=20260527_1";
-import { state, getBlocksSafe } from "./session.js?v=20260527_1";
-import { renderMarkdown } from "./markdown.js?v=20260525_1";
-import { els } from "./ui.js?v=20260525_1";
+} from "./config.js?v=20260622_5";
+import { state, getBlocksSafe } from "./session.js?v=20260622_5";
+import { renderMarkdown } from "./markdown.js?v=20260622_5";
+import { els } from "./ui.js?v=20260622_5";
 
 /** @type {null | (() => void)} */
 let dictionaryChromeSyncHook = null;

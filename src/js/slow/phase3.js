@@ -1,23 +1,23 @@
-import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260525_1";
-import { getStudyLanguage } from "../ui.js?v=20260525_1";
+﻿import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_5";
+import { getStudyLanguage } from "../ui.js?v=20260622_5";
 import {
   annotationsToFlashcardPayload,
   renderPhase3GamificationPanel,
-} from "./gamification.js?v=20260528_1";
-import { getScopeText } from "./reader.js?v=20260528_1";
-import { charOffsetToPage } from "./pagination.js?v=20260528_1";
+} from "./gamification.js?v=20260622_5";
+import { getScopeText } from "./reader.js?v=20260622_5";
+import { charOffsetToPage } from "./pagination.js?v=20260622_5";
 import {
   addSlowFlashcardFromPayload,
   getActiveReviewSessionId,
   getSlowFlashcardAnnotationIds,
   loadSlowFlashcards,
-} from "../review.js?v=20260528_1";
+} from "../review.js?v=20260622_5";
 import { getActiveSession } from "../session-store.js";
 import { registerOrUpdateSmItem } from "../sm2-ingest.js";
 import {
   PROXIMITY,
   resolveArgumentMapNodeAnchor,
-} from "../graph/proximity.js?v=20260607_2";
+} from "../graph/proximity.js?v=20260622_5";
 
 export { PROXIMITY, resolveArgumentMapNodeAnchor };
 

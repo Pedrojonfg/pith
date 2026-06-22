@@ -1,12 +1,12 @@
-import {
+﻿import {
   LS_RSVP_COMPREHENSION_EVERY_KEY,
   LS_RSVP_COMPREHENSION_PAUSE_KEY,
   LS_RSVP_DEFAULT_WPF_KEY,
   LS_RSVP_DEFAULT_WPM_KEY,
-} from "./config.js?v=20260525_1";
-import { clampInt } from "./session.js?v=20260525_1";
-import { stripMarkdownForPlainText } from "./markdown.js?v=20260525_1";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260525_1";
+} from "./config.js?v=20260622_5";
+import { clampInt } from "./session.js?v=20260622_5";
+import { stripMarkdownForPlainText } from "./markdown.js?v=20260622_5";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_5";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean, afterBoldEnd?: boolean }} RsvpChunk */
 
