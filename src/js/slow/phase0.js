@@ -1,15 +1,15 @@
-ï»¿import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260622_5";
+import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260622_6";
 import {
   flattenHierarchy,
   getChunksFromHierarchy,
-} from "../normalization/hierarchy.js?v=20260622_5";
-import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260622_5";
+} from "../normalization/hierarchy.js?v=20260622_6";
+import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260622_6";
 import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "../llm.js?v=20260622_5";
-import { getStudyLanguage } from "../ui.js?v=20260622_5";
+} from "../llm.js?v=20260622_6";
+import { getStudyLanguage } from "../ui.js?v=20260622_6";
 import { addConceptsToShared, getActiveSession } from "../session-store.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
@@ -211,7 +211,7 @@ function buildPhase0SystemPrompt(language, criticalMode) {
   const lang = normalizeString(language) || "English";
   const criticalBlock = criticalMode
     ? `
-6. criticalExaminePoints: array of 2-3 strings â€” structural weak points to examine critically (not verdicts on correctness).`
+6. criticalExaminePoints: array of 2-3 strings — structural weak points to examine critically (not verdicts on correctness).`
     : "";
   return `You are a philosophical reading assistant. Analyze the text and produce structured orientation BEFORE the student reads.
 
@@ -223,14 +223,14 @@ Rules:
   LINEAR_ARGUMENT (linear thesis + premises), GENEALOGY (historical evolution of a concept),
   DEBATE (contrasting authors on one problem), DEFINITION (what a concept is/is not),
   CASE_ANALYSIS (concrete case with theoretical frame).
-- thesis: one sentence â€” what the author wants the reader to accept (conclusion-oriented, not a summary).
+- thesis: one sentence — what the author wants the reader to accept (conclusion-oriented, not a summary).
 - argumentMap shape depends on textGenre:
-  LINEAR_ARGUMENT â†’ P1, P2, â€¦, C with status on premises;
-  GENEALOGY â†’ G1, G2, â€¦ chronological with required period per node;
-  DEBATE â†’ D1, D2, â€¦ positions with required author per node;
-  DEFINITION â†’ DEF central node + S1, S2 satellites;
-  CASE_ANALYSIS â†’ CASE + M1, M2 theoretical frame nodes.
-- conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } â€” technical or redefined concepts.
+  LINEAR_ARGUMENT ? P1, P2, …, C with status on premises;
+  GENEALOGY ? G1, G2, … chronological with required period per node;
+  DEBATE ? D1, D2, … positions with required author per node;
+  DEFINITION ? DEF central node + S1, S2 satellites;
+  CASE_ANALYSIS ? CASE + M1, M2 theoretical frame nodes.
+- conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } — technical or redefined concepts.
   For each node indicate type: [CONCEPT], [PERSON], [WORK], [MOVEMENT], or [EVENT].
   Never create a [PERSON] node for the author of the text you are analyzing.
   If the text contains its own name as a bibliographic reference, ignore it as a node.
@@ -398,7 +398,7 @@ export function buildSectionBoundariesForScope(session) {
 }
 
 /**
- * Split scope text into map-reduce chunks (â‰¤50k chars).
+ * Split scope text into map-reduce chunks (=50k chars).
  */
 export function buildMapReduceChunks(
   scopeText,
@@ -448,7 +448,7 @@ export function buildMapReduceChunks(
       current = { title: b.title, start: b.charStart, end: b.charEnd };
     } else {
       current.end = b.charEnd;
-      current.title = `${current.title} Â· ${b.title}`;
+      current.title = `${current.title} · ${b.title}`;
     }
   }
   chunks.push({
@@ -503,7 +503,7 @@ export async function generatePhase0Single(scopeText, opts = {}) {
 }
 
 /**
- * Map-reduce Phase 0 for scope â‰¥ 60k chars.
+ * Map-reduce Phase 0 for scope = 60k chars.
  */
 export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
   const {
@@ -542,7 +542,7 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     scopedHierarchy,
   );
   if (!chunks.length) {
-    throw new Error("Scope text is empty â€” cannot generate Phase 0.");
+    throw new Error("Scope text is empty — cannot generate Phase 0.");
   }
 
   const partials = [];
@@ -844,10 +844,10 @@ export function buildCheckpointQuestionTemplate(section, argumentMap, lang = "En
       .slice(0, 3)
       .map((n) => `${n.id}: ${n.text}`)
       .join("; ");
-    return `How does what you read in Â«${title}Â» connect to the argument map (${nodes})?`;
+    return `How does what you read in «${title}» connect to the argument map (${nodes})?`;
   }
 
-  return `How would you integrate what you read under Â«${title}Â» with the author's line of argument?`;
+  return `How would you integrate what you read under «${title}» with the author's line of argument?`;
 }
 
 function normalizeCheckpointQuestion(text) {
@@ -896,7 +896,7 @@ export async function generateCheckpointQuestion({
           role: "system",
           content:
             `Generate exactly ONE integration checkpoint question for a slow reading session. ` +
-            `The question must require synthesizing the section text with the Phase 0 argument map â€” ` +
+            `The question must require synthesizing the section text with the Phase 0 argument map — ` +
             `NOT factual trivia, NOT "who is the author", NOT "summarize in one sentence". ` +
             `Respond with ONLY the question, no quotes, no numbering. Language: ${studyLang}.`,
         },

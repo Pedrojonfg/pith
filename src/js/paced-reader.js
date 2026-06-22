@@ -1,12 +1,12 @@
-﻿import { LS_RSVP_READING_MODE_KEY } from "./config.js?v=20260622_5";
-import { markdownToHtml } from "./markdown.js?v=20260622_5";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_5";
+import { LS_RSVP_READING_MODE_KEY } from "./config.js?v=20260622_6";
+import { markdownToHtml } from "./markdown.js?v=20260622_6";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_6";
 import {
   computePageBreakpoints,
   getPageCount,
   getPageSlice,
   invalidatePaginationCache,
-} from "./slow/pagination.js?v=20260622_5";
+} from "./slow/pagination.js?v=20260622_6";
 
 const TYPO_DEFAULTS = {
   fontSizePx: 16,
@@ -172,7 +172,7 @@ function renderProgress() {
   const total = getPageCount(pacedReaderState.breakpoints);
   const idx = pacedReaderState.currentPageIndex;
   if (els.pacedReaderPageIndicator) {
-    if (!total) els.pacedReaderPageIndicator.textContent = "—";
+    if (!total) els.pacedReaderPageIndicator.textContent = "�";
     else if (total === 1) els.pacedReaderPageIndicator.textContent = "1 page";
     else els.pacedReaderPageIndicator.textContent = `Page ${idx + 1} of ${total}`;
   }

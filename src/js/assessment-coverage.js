@@ -1,9 +1,9 @@
-﻿/**
- * Holistic pre-packing assessment — budget, section coverage plan, merge.
+/**
+ * Holistic pre-packing assessment � budget, section coverage plan, merge.
  * @see specs/20260618-holistic-assessment-coverage/
  */
 
-import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_5";
+import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_6";
 
 function clamp(n, min, max) {
   const x = Number(n);
@@ -91,7 +91,7 @@ export function computeHolisticAssessmentBudget(inventory, edges) {
     Math.max(E >= 4 ? 2 : 0, Math.floor(n_test * 0.25)),
   );
 
-  const rationale = `${N} concepts, ${E} edges → ${n_test} test-only MCQ (${edgeTestQuota} relationship)`;
+  const rationale = `${N} concepts, ${E} edges ? ${n_test} test-only MCQ (${edgeTestQuota} relationship)`;
 
   return { n_test, n_socratic, edgeTestQuota, rationale };
 }

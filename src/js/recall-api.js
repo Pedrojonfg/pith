@@ -1,8 +1,8 @@
-ï»¿import {
+import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "./llm.js?v=20260622_5";
+} from "./llm.js?v=20260622_6";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);
@@ -96,7 +96,7 @@ function recallInventoryIdSet(inventory) {
 function truncateMaterialExcerpt(text, maxChars = 12000) {
   const s = String(text || "").trim();
   if (s.length <= maxChars) return s;
-  return `${s.slice(0, maxChars)}\nâ€¦[truncated]`;
+  return `${s.slice(0, maxChars)}\n…[truncated]`;
 }
 
 /**
@@ -205,10 +205,10 @@ Rules:
 - Each question MUST have recall_type: one of synthesis, relational, argumentative, applicative.
 - Include at least one synthesis question.
 - Distribute recall_type values across: ${safeTypes.join(", ")} (aligned with primary learning goal "${goal}").
-- Each question references 1â€“3 concept_ids from the inventory below.
+- Each question references 1–3 concept_ids from the inventory below.
 - Each question MUST include source_chunks: 1+ verbatim or lightly trimmed excerpts from the source material (non-empty strings).
 - Questions must require integration beyond a single definition.
-- Use stable ids rq1, rq2, â€¦ in order.
+- Use stable ids rq1, rq2, … in order.
 Return a single JSON object:
 {"questions":[{"id":"rq1","recall_type":"synthesis","question":"...","concept_ids":["c1"],"source_chunks":["excerpt from source"]}]}
 Respond entirely in ${lang}.
@@ -292,7 +292,7 @@ function normalizeRecallQuestionsWithIdSet(raw, invIds, config = {}) {
           .slice(0, 3)
       : [];
     if (!conceptIds.length) {
-      throw new Error(`Recall question ${idx + 1} must include 1â€“3 concept_ids.`);
+      throw new Error(`Recall question ${idx + 1} must include 1–3 concept_ids.`);
     }
     for (const cid of conceptIds) {
       if (invIds.size && !invIds.has(cid)) {
@@ -332,7 +332,7 @@ function normalizeRecallQuestionsWithIdSet(raw, invIds, config = {}) {
  * @param {unknown} raw
  * @returns {{ critique: string, suggested_answer: string, quality: string }}
  */
-/** Canonical recall tutor JSON parser â€” re-exported via api.js for recall mode. */
+/** Canonical recall tutor JSON parser — re-exported via api.js for recall mode. */
 export function normalizeRecallTutorFeedback(raw) {
   let obj = raw;
   if (typeof raw === "string") {

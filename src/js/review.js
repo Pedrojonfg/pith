@@ -1,26 +1,26 @@
-ï»¿import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260622_5";
+import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260622_6";
 import {
   assertLlmKeyPresent,
   getLlmCallingLabel,
   getSessionLlmModel,
-} from "./llm.js?v=20260622_5";
+} from "./llm.js?v=20260622_6";
 import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
-import { buildMarkdown } from "./export.js?v=20260622_5";
+import { buildMarkdown } from "./export.js?v=20260622_6";
 import {
   LS_REVIEW_CONFIG_PREFIX,
   LS_REVIEW_FLASHCARDS_PREFIX,
   LS_REVIEW_SESSION_MD_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
-} from "./config.js?v=20260622_5";
-import { clampInt, getMissedTestQuestions, getTotalBlocksSafe, isQuestionsStudyMode, state } from "./session.js?v=20260622_5";
+} from "./config.js?v=20260622_6";
+import { clampInt, getMissedTestQuestions, getTotalBlocksSafe, isQuestionsStudyMode, state } from "./session.js?v=20260622_6";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
   renderMarkdown,
   renderMcOptionHtml,
-} from "./markdown.js?v=20260622_5";
-import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_5";
-import { els, showScreen, typesetMath } from "./ui.js?v=20260622_5";
+} from "./markdown.js?v=20260622_6";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_6";
+import { els, showScreen, typesetMath } from "./ui.js?v=20260622_6";
 import { buildReviewQueue, isOnTime, normalizeSmItem, updateSmItem } from "./sm2.js";
 import { getPedagogicalFlags } from "./config/flags.js";
 import { computeWhyThisExplanation } from "./pedagogy/why-this.js";
@@ -42,7 +42,7 @@ import {
   buildMnemonicHintHtml,
   filterSmItemsByMnemonics,
   resolveSmItemConceptIds,
-} from "./mnemonic.js?v=20260622_5";
+} from "./mnemonic.js?v=20260622_6";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */
@@ -137,7 +137,7 @@ async function renderSm2ReviewItem() {
       assessmentSignals: originSession?.shared?.assessmentSignals,
       now,
     });
-    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length} Â· ${why}`;
+    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length} · ${why}`;
   }
   if (els.reviewSm2EarlyChip) {
     els.reviewSm2EarlyChip.classList.toggle("hidden", !early);
@@ -146,7 +146,7 @@ async function renderSm2ReviewItem() {
     const facet = String(item.facet || "").trim();
     const facetLabel = facet ? FACET_LABELS[facet] || facet : "";
     const sourceLabel = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
-    let badge = facetLabel ? `${sourceLabel} Â· ${facetLabel}` : sourceLabel;
+    let badge = facetLabel ? `${sourceLabel} · ${facetLabel}` : sourceLabel;
     const conceptIds = resolveSmItemConceptIds(item, originSession);
     const pending = conceptIds.some((cid) => {
       const c = originSession?.shared?.conceptInventory?.find(
@@ -154,7 +154,7 @@ async function renderSm2ReviewItem() {
       );
       return c && c.questionClass !== "factual" && c.comprehensionConfirmed !== true;
     });
-    if (pending) badge += " Â· needs deeper understanding first";
+    if (pending) badge += " · needs deeper understanding first";
     els.reviewSm2SourceBadge.textContent = badge;
   }
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
@@ -162,7 +162,7 @@ async function renderSm2ReviewItem() {
     const preview = String(item.contentPreview || "");
     if (!sm2ReviewDocId && item.docId) {
       const docTitle = originSession?.shared?.docMeta?.titleInferred || item.docId;
-      els.reviewSm2Preview.textContent = preview ? `${docTitle} Â· ${preview}` : docTitle;
+      els.reviewSm2Preview.textContent = preview ? `${docTitle} · ${preview}` : docTitle;
     } else {
       els.reviewSm2Preview.textContent = preview;
     }
@@ -820,7 +820,7 @@ function normalizeReviewQuestion(q) {
       feedback: obj.feedback != null ? String(obj.feedback).trim() : "",
     };
   }
-  // Keep full model fields (choices, option_A, etc.) â€” same path as session block generation.
+  // Keep full model fields (choices, option_A, etc.) — same path as session block generation.
   return shuffleTestQuestionOptions(normalizeTestQuestion({ ...obj, type: "test", question }));
 }
 
@@ -1094,7 +1094,7 @@ function resetReviewRun() {
   clearReviewConfigError();
   clearReviewGeneratingError();
   clearReviewError();
-  els.reviewGeneratingLabel.textContent = "Generating questionsâ€¦";
+  els.reviewGeneratingLabel.textContent = "Generating questions…";
   els.reviewGeneratingFill.style.width = "0%";
   els.reviewTestFeedback.hidden = true;
   clearMarkdownContainer(els.reviewTestFeedback);
@@ -1167,7 +1167,7 @@ async function startReviewGeneration() {
   const all = [];
   for (const batchSize of batches) {
     if (reviewGenCancelToken.cancelled) return;
-    els.reviewGeneratingLabel.textContent = `Generating questionsâ€¦ (${done}/${total})`;
+    els.reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
     els.reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
 
     const content = await deepSeekGenerateReviewBatch({
@@ -1189,7 +1189,7 @@ async function startReviewGeneration() {
     }
 
     done += batchSize;
-    els.reviewGeneratingLabel.textContent = `Generating questionsâ€¦ (${done}/${total})`;
+    els.reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
     els.reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
   }
 
@@ -1276,7 +1276,7 @@ export async function wireReviewHandlers() {
 
   els.reviewStartBtn.addEventListener("click", async () => {
     els.reviewConfigStatus.textContent = "";
-    els.reviewConfigStatus.textContent = "Preparingâ€¦";
+    els.reviewConfigStatus.textContent = "Preparing…";
     try {
       await startReviewGeneration();
     } catch (err) {

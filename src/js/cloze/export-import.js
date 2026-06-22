@@ -1,11 +1,11 @@
-ï»¿import {
+import {
   getValidItems,
   normalizeClozeItem,
   normalizeEpistemicEdge,
   normalizeEpistemicGraph,
   normalizeEpistemicNode,
-} from "./normalize.js?v=20260622_5";
-import { buildExportFrontmatter } from "../export-format.js?v=20260622_5";
+} from "./normalize.js?v=20260622_6";
+import { buildExportFrontmatter } from "../export-format.js?v=20260622_6";
 
 const CLOZE_PACK_RE = /<!--\s*cloze-pack:v1:([A-Za-z0-9+/=]+)\s*-->/;
 
@@ -32,13 +32,13 @@ function buildItemSection(item, index) {
   const safe = normalizeClozeItem(item);
   if (!safe) return [];
   const lines = [];
-  lines.push(`### ${safe.id} Â· ${safe.item_type} Â· ${safe.difficulty}`);
+  lines.push(`### ${safe.id} · ${safe.item_type} · ${safe.difficulty}`);
   lines.push("");
   lines.push(safe.sentence_with_blank);
   lines.push("");
   const options = Array.isArray(safe.options) ? safe.options : [];
   options.forEach((opt, idx) => {
-    const mark = opt.is_correct ? " âœ“" : "";
+    const mark = opt.is_correct ? " ?" : "";
     lines.push(`- ${optionLabel(idx)}) ${opt.text}${mark}`);
   });
   lines.push("");
@@ -77,7 +77,7 @@ export function buildClozeMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   const valid = getValidItems(safe.cloze?.items || []);
   const lang = String(safe.language || "English").trim() || "English";
-  const fileName = String(safe.materialMeta?.fileName || "â€”").trim() || "â€”";
+  const fileName = String(safe.materialMeta?.fileName || "—").trim() || "—";
   const lines = [];
 
   const frontmatterSession = {

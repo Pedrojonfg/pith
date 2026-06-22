@@ -1,25 +1,25 @@
-﻿import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260622_5";
+import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260622_6";
 import { addAnnotationToShared, getActiveSession } from "../session-store.js";
 
-/** Annotation types registry — FR-004, FR-013, FR-016 */
+/** Annotation types registry � FR-004, FR-013, FR-016 */
 
 export const IA_QUERY_TYPE = "ia-query";
 
 export const ANNOTATION_TYPES = [
-  { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
+  { symbol: "�", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
   { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question", hotkey: "2" },
-  { symbol: "→", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain", hotkey: "3" },
-  { symbol: "⟷", id: "link", tier: "primary", criticalMenu: false, label: "Connection", hotkey: "4" },
-  { symbol: "⚑", id: "flag", tier: "primary", criticalMenu: false, label: "Ask AI", hotkey: "5" },
-  { symbol: "⊘", id: "reject", tier: "critical", criticalMenu: true, label: "Objection", hotkey: "6" },
-  { symbol: "↯", id: "tension", tier: "critical", criticalMenu: true, label: "Tension", hotkey: "7" },
-  { symbol: "⚠", id: "weak", tier: "critical", criticalMenu: true, label: "Weakness", hotkey: "8" },
-  { symbol: "★", id: "strong", tier: "critical", criticalMenu: true, label: "Strength", hotkey: "9" },
-  { symbol: "⇑", id: "steel", tier: "critical", criticalMenu: true, label: "Steel man", hotkey: "0" },
-  { symbol: "📌", id: "pin", tier: "secondary", criticalMenu: false, label: "Pin", hotkey: "p" },
-  { symbol: "⚡", id: "insight", tier: "secondary", criticalMenu: false, label: "Insight", hotkey: "i" },
-  { symbol: "↩", id: "return", tier: "secondary", criticalMenu: false, label: "Return", hotkey: "r" },
-  { symbol: "🔗", id: "graph", tier: "secondary", criticalMenu: false, label: "Graph", hotkey: "g" },
+  { symbol: "?", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain", hotkey: "3" },
+  { symbol: "?", id: "link", tier: "primary", criticalMenu: false, label: "Connection", hotkey: "4" },
+  { symbol: "?", id: "flag", tier: "primary", criticalMenu: false, label: "Ask AI", hotkey: "5" },
+  { symbol: "?", id: "reject", tier: "critical", criticalMenu: true, label: "Objection", hotkey: "6" },
+  { symbol: "?", id: "tension", tier: "critical", criticalMenu: true, label: "Tension", hotkey: "7" },
+  { symbol: "?", id: "weak", tier: "critical", criticalMenu: true, label: "Weakness", hotkey: "8" },
+  { symbol: "?", id: "strong", tier: "critical", criticalMenu: true, label: "Strength", hotkey: "9" },
+  { symbol: "?", id: "steel", tier: "critical", criticalMenu: true, label: "Steel man", hotkey: "0" },
+  { symbol: "??", id: "pin", tier: "secondary", criticalMenu: false, label: "Pin", hotkey: "p" },
+  { symbol: "?", id: "insight", tier: "secondary", criticalMenu: false, label: "Insight", hotkey: "i" },
+  { symbol: "?", id: "return", tier: "secondary", criticalMenu: false, label: "Return", hotkey: "r" },
+  { symbol: "??", id: "graph", tier: "secondary", criticalMenu: false, label: "Graph", hotkey: "g" },
 ];
 
 export function visibleAnnotationTypes(criticalMode, { showSecondary = false } = {}) {
@@ -46,7 +46,7 @@ export function newAnnotationId() {
 export function isIAQueryAnnotation(ann) {
   if (!ann) return false;
   if (ann.type === IA_QUERY_TYPE || ann.isIAQuery) return true;
-  return (ann.type === "⚑" || ann.type === "⇑") && Boolean(ann.aiReply);
+  return (ann.type === "?" || ann.type === "?") && Boolean(ann.aiReply);
 }
 
 export async function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
@@ -58,7 +58,7 @@ export async function addAnnotation(session, { type, charStart, charEnd, userTex
   const end = Math.min(max, Math.max(start + 1, Math.floor(Number(charEnd) || start + 1)));
   const entry = {
     id: newAnnotationId(),
-    type: String(type || "≈"),
+    type: String(type || "�"),
     charStart: start,
     charEnd: end,
     userText: String(userText || "").trim(),
@@ -147,20 +147,20 @@ export function annotationsOnPage(annotations, pageSlice) {
 
 /** CSS slug per annotation type for inline highlights (one distinct color each). */
 export const ANNOTATION_HIGHLIGHT_CLASS = {
-  "≈": "approx",
+  "�": "approx",
   "?": "question",
-  "→": "explain",
-  "⟷": "link",
-  "⚑": "flag",
-  "⊘": "reject",
-  "↯": "tension",
-  "⚠": "weak",
-  "★": "strong",
-  "⇑": "steel",
-  "📌": "pin",
-  "⚡": "insight",
-  "↩": "return",
-  "🔗": "graph",
+  "?": "explain",
+  "?": "link",
+  "?": "flag",
+  "?": "reject",
+  "?": "tension",
+  "?": "weak",
+  "?": "strong",
+  "?": "steel",
+  "??": "pin",
+  "?": "insight",
+  "?": "return",
+  "??": "graph",
   [IA_QUERY_TYPE]: "ia-query",
 };
 
@@ -169,7 +169,7 @@ export function annotationHighlightClass(type) {
 }
 
 export function annotationMarkClass(type) {
-  if (["⊘", "↯", "⚠"].includes(type)) return "critical";
+  if (["?", "?", "?"].includes(type)) return "critical";
   return annotationHighlightClass(type);
 }
 
@@ -183,7 +183,7 @@ export function pickPrimaryAnnotation(covering) {
 /**
  * Build nested highlight spans (inner = older, outer = newer) for layered overlap tint.
  * @param {Document} doc
- * @param {Node} contents — text or fragment to wrap
+ * @param {Node} contents � text or fragment to wrap
  */
 export function createNestedHighlightSpans(covering, doc, contents) {
   const sorted = [...covering].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -237,13 +237,13 @@ export function buildAnnotationHighlightSegments(pageSlice, slicePlain, annotati
 }
 
 /** Critical types that trigger steel-man nudge on confirm (T07). */
-export const STEELMAN_NUDGE_TYPES = new Set(["⊘", "↯", "⚠"]);
+export const STEELMAN_NUDGE_TYPES = new Set(["?", "?", "?"]);
 
 /** Prior annotation types that satisfy steel-man prerequisite (T07). */
-export const STEELMAN_PRECURSOR_TYPES = new Set(["⇑", "≈"]);
+export const STEELMAN_PRECURSOR_TYPES = new Set(["?", "�"]);
 
 /**
- * True if a ⇑/≈ annotation with user text exists within ±windowChars of target.
+ * True if a ?/� annotation with user text exists within �windowChars of target.
  */
 export function hasSteelManPrecursorNearby(annotations, targetAnn, windowChars = 500) {
   if (!targetAnn) return false;
