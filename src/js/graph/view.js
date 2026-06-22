@@ -1,6 +1,6 @@
-import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260622_6";
-import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260622_6";
-import { getStudyLanguage } from "../ui.js?v=20260622_6";
+import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260622_7";
+import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260622_7";
+import { getStudyLanguage } from "../ui.js?v=20260622_7";
 import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
 import { pruneOrphanNodes } from "./build.js";
 import { renderGraphCanvas } from "./canvas.js";

@@ -1,15 +1,15 @@
-import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260622_6";
+import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260622_7";
 import {
   flattenHierarchy,
   getChunksFromHierarchy,
-} from "../normalization/hierarchy.js?v=20260622_6";
-import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260622_6";
+} from "../normalization/hierarchy.js?v=20260622_7";
+import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260622_7";
 import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "../llm.js?v=20260622_6";
-import { getStudyLanguage } from "../ui.js?v=20260622_6";
+} from "../llm.js?v=20260622_7";
+import { getStudyLanguage } from "../ui.js?v=20260622_7";
 import { addConceptsToShared, getActiveSession } from "../session-store.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;

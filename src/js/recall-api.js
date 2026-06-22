@@ -2,7 +2,7 @@ import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "./llm.js?v=20260622_6";
+} from "./llm.js?v=20260622_7";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);

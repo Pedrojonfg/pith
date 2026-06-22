@@ -1,18 +1,18 @@
-import { LS_ACTIVE_SESSION_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260622_6";
+import { LS_ACTIVE_SESSION_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260622_7";
 import { getSourceFidelityStrictPreference } from "./config/flags.js";
-import { detectAndMigrateV1 } from "./session-migration.js?v=20260622_6";
-import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260622_6";
+import { detectAndMigrateV1 } from "./session-migration.js?v=20260622_7";
+import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260622_7";
 import {
   initGuideChat,
   sendGuideMessage,
-} from "./guide-chat.js?v=20260622_6";
+} from "./guide-chat.js?v=20260622_7";
 import {
   getStoredKey,
   migrateLegacyActiveSession,
   saveGeminiKey,
   getStoredGeminiKey,
   state,
-} from "./session.js?v=20260622_6";
+} from "./session.js?v=20260622_7";
 import { getGoogleBooksApiKey, saveGoogleBooksApiKey } from "./book-lookup.js";
 import {
   closeSettingsScreen,
@@ -25,15 +25,15 @@ import {
   showScreen,
   toggleBlockReadSidebar,
   toggleSidebar,
-} from "./ui.js?v=20260622_6";
-import { wireReviewHandlers } from "./review.js?v=20260622_6";
-import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260622_6";
+} from "./ui.js?v=20260622_7";
+import { wireReviewHandlers } from "./review.js?v=20260622_7";
+import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260622_7";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
-import { dismissSplash } from "./splash.js?v=20260622_6";
+import { dismissSplash } from "./splash.js?v=20260622_7";
 import {
   getSupabaseAuthSession,
   migrateLocalStorageToSupabase,
@@ -77,7 +77,7 @@ function wireAuthUi() {
   els.btnSignInGoogle?.addEventListener("click", async () => {
     if (els.authStatus) {
       els.authStatus.hidden = false;
-      els.authStatus.textContent = "Redirecting to Google…";
+      els.authStatus.textContent = "Redirecting to Googleï¿½";
     }
     try {
       await signInWithGoogle();

@@ -1,4 +1,4 @@
-import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260622_6";
+import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260622_7";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
@@ -12,7 +12,7 @@ import {
   explanationParagraphHardRule,
   getMinExplanationParagraphs,
   hasValidExplanationParagraphs,
-} from "./explanationParagraphs.js?v=20260622_6";
+} from "./explanationParagraphs.js?v=20260622_7";
 import { deriveBlockType } from "./pipeline-levers.js";
 import { EXPLANATION_RSVP_STRUCTURED_HEADERS } from "./rsvp-section-headers.js";
 import {
@@ -20,7 +20,7 @@ import {
   getApiKeyForLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "./llm.js?v=20260622_6";
+} from "./llm.js?v=20260622_7";
 import {
   normalizeTestQuestion,
   shuffleInPlace,
@@ -33,8 +33,8 @@ import {
   deriveInventoryEdges,
   filterEdgesForBatch,
   filterInventoryForBatch,
-  mergeHolisticAssessmentQuestions,
-} from "./assessment-coverage.js?v=20260622_6";
+  tryMergeHolisticAssessmentQuestions,
+} from "./assessment-coverage.js?v=20260622_7";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -267,7 +267,7 @@ Respond in {language}.`
     }
   }
 
-  const { estimateBlockPageRange } = await import("./session.js?v=20260622_6");
+  const { estimateBlockPageRange } = await import("./session.js?v=20260622_7");
   const estimated = estimateBlockPageRange(safeBlocks, totalPages);
   const estimatedById = new Map(
     estimated
@@ -347,7 +347,7 @@ export async function generateAssessmentQuestions(blockIndex, maxQuestions, llmM
     summary: String(b?.summary || "").trim(),
   }));
 
-  // Step 1 ù distribute budget
+  // Step 1 ÔøΩ distribute budget
   let selected = minimalIndex;
   if (minimalIndex.length > maxQ) {
     const step = minimalIndex.length / maxQ;
@@ -392,14 +392,14 @@ export async function generateAssessmentQuestions(blockIndex, maxQuestions, llmM
     }
   }
 
-  // Step 2 ù single DeepSeek call
+  // Step 2 ÔøΩ single DeepSeek call
   const systemPrompt = `Generate exactly {maxQuestions} multiple-choice assessment questions 
 from this study index. Rules:
 - Conceptual only. No arithmetic. Answerable in under 10 seconds.
 - 4 options (A/B/C/D), one correct answer.
 - ${MC_OPTION_PARITY_RULES}
 - Questions must test recognition and understanding, not computation.
-- Each question must be answerable from that block's summary aloneùdo not ask about examples or topics the summary does not explain.
+- Each question must be answerable from that block's summary aloneÔøΩdo not ask about examples or topics the summary does not explain.
 - For cause-effect questions, the correct option must include causal links the summary does not already make obvious.
 - Cover ALL blocks proportionally. 
   Distribution: {block_id: n_questions, ...}
@@ -437,7 +437,7 @@ Distribution: {distribution}`.replace("{maxQuestions}", String(maxQ)).replace(
     throw new Error("Model did not return a valid JSON array. Please try again.");
   }
 
-  // Step 3 ù shuffle question order, permute options, cap to requested count
+  // Step 3 ÔøΩ shuffle question order, permute options, cap to requested count
   const capped = shuffleInPlace(Array.isArray(arr) ? [...arr] : []).slice(0, maxQ);
   return shuffleTestQuestionsInList(capped);
 }
@@ -578,11 +578,11 @@ async function callGapSynthesisApi({ llmModel, userPayload, language, signal }) 
 Rules:
 - Respond in ${lang}.
 - Return ONLY a JSON object: {"gaps_by_block":{"<block_id>":[{"label":"...","evidence":"..."}]}}.
-- Infer 0ù3 gaps per block that has wrong or skipped answers; use 0 gaps for strong blocks unless a clear misconception appears in responses.
-- Labels: short student-facing noun phrases (3ù80 chars). Do NOT include block numbers in labels.
+- Infer 0ÔøΩ3 gaps per block that has wrong or skipped answers; use 0 gaps for strong blocks unless a clear misconception appears in responses.
+- Labels: short student-facing noun phrases (3ÔøΩ80 chars). Do NOT include block numbers in labels.
 - evidence: optional one short phrase tying the gap to a missed question (may be empty string).
 - Max 8 gaps total across the entire session (drop lowest-priority gaps if needed).
-- Conceptual gaps only ù no arithmetic drills, no "practice calculatingù" style tasks.
+- Conceptual gaps only ÔøΩ no arithmetic drills, no "practice calculatingÔøΩ" style tasks.
 - Mark each gap with "source":"synthesis" when you include source (optional).`;
 
   try {
@@ -654,7 +654,7 @@ export async function synthesizeAssessmentGaps({
 
       const parsed = parseGapSynthesisResponse(lastRaw);
       if (parsed) {
-        const { normalizeGapsByBlock } = await import("./session.js?v=20260622_6");
+        const { normalizeGapsByBlock } = await import("./session.js?v=20260622_7");
         const gaps_by_block = normalizeGapsByBlock(parsed.gaps_by_block);
         const out = { gaps_by_block };
         if (parsed.notes) out.notes = parsed.notes;
@@ -681,7 +681,7 @@ Structure your reply in two parts (use these exact headings, in the same languag
 
 **Critique**
 - Briefly note what is correct in the student's answer.
-- Point out gaps, misconceptions, or weak reasoning. Be direct and preciseùnot only destructive, and not empty praise.
+- Point out gaps, misconceptions, or weak reasoning. Be direct and preciseÔøΩnot only destructive, and not empty praise.
 
 **Suggested answer**
 - After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
@@ -756,7 +756,7 @@ Respond entirely in ${lang}.`;
   const recap = String(finishedBlockRecap || "").trim();
   if (recap) parts.push(`What they read: ${recap}`);
   parts.push(
-    `Up next ù block ${Math.max(1, Math.floor(Number(nextBlockIndex) || 0) + 1)}: "${String(nextBlockTitle || "").trim()}"`,
+    `Up next ÔøΩ block ${Math.max(1, Math.floor(Number(nextBlockIndex) || 0) + 1)}: "${String(nextBlockTitle || "").trim()}"`,
   );
   const nSummary = String(nextBlockSummary || "").trim();
   if (nSummary) parts.push(`Next block plan: ${nSummary}`);
@@ -784,7 +784,7 @@ ${SOURCE_FIDELITY_RULES}
 Design for learning while respecting source definitions:
 - Order blocks by prerequisites (foundations before applications).
 - Prefer pedagogical order, but block titles and signatures must reflect terms as the source uses them.
-- Each block = ONE teachable concept OR ONE vocabulary setùnot one chapter heading.
+- Each block = ONE teachable concept OR ONE vocabulary setÔøΩnot one chapter heading.
 - If several sections teach the same core idea, merge them into ONE block named after the concept.
 - Never duplicate the same primary concept in two blocks.
 
@@ -812,10 +812,10 @@ Cover the full material. Respond entirely in ${lang}.`;
 /** DeepSeek/Gemini output ceiling for block-pack JSON (large inventories need headroom). */
 export const CONCEPT_PACK_MAX_TOKENS = 8192;
 
-/** Phase 1 single-pass: =8k words (~54 concepts ù ~200 tok ù 10.8k). */
+/** Phase 1 single-pass: =8k words (~54 concepts ÔøΩ ~200 tok ÔøΩ 10.8k). */
 export const CONCEPT_INVENTORY_MAX_TOKENS = 12288;
 
-/** Phase 1 map-reduce per-chunk: ~3500 words (~22 concepts ù ~200 tok ù 4.4k). */
+/** Phase 1 map-reduce per-chunk: ~3500 words (~22 concepts ÔøΩ ~200 tok ÔøΩ 4.4k). */
 export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 6144;
 
 /** Phase 1 map-reduce merge: consolidated partials, deduped output. */
@@ -1012,7 +1012,7 @@ export async function deepSeekSplitIntoBlocks({
     if (Array.isArray(blocks) && blocks.length) {
       return blocks;
     }
-    console.warn("Block split: parse failed, trying next attemptù", lastRaw.slice(0, 400));
+    console.warn("Block split: parse failed, trying next attemptÔøΩ", lastRaw.slice(0, 400));
   }
 
   console.warn("Block split: all parse attempts failed:", lastRaw.slice(0, 800));
@@ -1031,7 +1031,7 @@ export function buildConceptInventoryPrompt(lang, { wordCount, estimatedConceptT
     target > 0 && wc > 0
       ? `Identify ALL pedagogically significant concepts for this material.
 For a document of this length (~${wc} words), expect approximately ${target} concepts.
-Do not stop at major themes only ù include distinctions, named arguments, and critical examples.`
+Do not stop at major themes only ÔøΩ include distinctions, named arguments, and critical examples.`
       : `Return enough concepts to cover the material (typically at least 5 for substantial texts).`;
   return `You are extracting an ordered inventory of teachable concepts from study material.
 
@@ -1040,8 +1040,8 @@ ${SOURCE_FIDELITY_RULES}
 Rules:
 - One concept = one teachable idea sized for RSVP (single pass, no re-read).
 - Order by learning prerequisites (foundations before applications).
-- Each concept: stable id (c1, c2, ù), order (1-based, strictly increasing), title, scope_one_line.
-- REQUIRED when the term appears in the material: source_phrase ù a short anchor quote (=25 words) copied or nearly copied from the document.
+- Each concept: stable id (c1, c2, ÔøΩ), order (1-based, strictly increasing), title, scope_one_line.
+- REQUIRED when the term appears in the material: source_phrase ÔøΩ a short anchor quote (=25 words) copied or nearly copied from the document.
 - If no localizable quote exists but the concept is essential: anchor_type "inferred" (omit source_phrase).
 - Optional: module (thematic label), prerequisite_ids (array of other concept ids), concept_type (definition | argument | example | distinction | excursus).
 - ${densityLine}
@@ -1195,7 +1195,7 @@ export async function callConceptInventoryLlm({
         inventoryMode: attempt.terse ? "terse" : "full",
       };
     }
-    console.warn("Concept inventory: parse failed, trying next attemptù", lastRaw.slice(0, 400));
+    console.warn("Concept inventory: parse failed, trying next attemptÔøΩ", lastRaw.slice(0, 400));
   }
 
   console.warn("Concept inventory: all parse attempts failed:", lastRaw.slice(0, 800));
@@ -1308,6 +1308,62 @@ export function recoverPartialConceptArray(rawText) {
   return recovered;
 }
 
+/**
+ * Extracts complete question objects from a potentially truncated JSON response.
+ * @param {string} rawText
+ * @returns {object[]}
+ */
+export function recoverPartialQuestionArray(rawText) {
+  const questionsMatch = String(rawText || "").match(/"questions"\s*:\s*\[/);
+  if (!questionsMatch) return [];
+
+  const arrayStart = questionsMatch.index + questionsMatch[0].length;
+  const text = rawText.slice(arrayStart);
+
+  /** @type {object[]} */
+  const recovered = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objectStart = -1;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === "{") {
+      if (depth === 0) objectStart = i;
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0 && objectStart !== -1) {
+        try {
+          const obj = JSON.parse(text.slice(objectStart, i + 1));
+          recovered.push(obj);
+        } catch {
+          // skip malformed object
+        }
+        objectStart = -1;
+      }
+    }
+  }
+
+  return recovered;
+}
+
 export function buildMergeConceptInventoriesPrompt(lang, partialsJson) {
   const language = String(lang || "English").trim() || "English";
   return `You are merging partial concept inventories from sections of one document into a single ordered inventory.
@@ -1317,7 +1373,7 @@ The first character of your response must be \`{\` and the last must be \`}\`.
 
 Rules:
 1. Deduplicate: merge concepts that represent the same idea across sections. Keep the richest title and source_phrase.
-2. Assign final ids c1, c2, ù in document order (by first appearance).
+2. Assign final ids c1, c2, ÔøΩ in document order (by first appearance).
 3. Resolve cross-section prerequisite_ids using the new final ids.
 4. Set module from the section label of first appearance.
 5. Preserve concept_type, anchor_type, source_phrase from the richest partial entry.
@@ -1441,13 +1497,13 @@ export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfil
   const profileBlock = knowledgeProfile
     ? `
 
-Knowledge profile present ù input inventory is COMPLETE; output only affects active study blocks.
+Knowledge profile present ÔøΩ input inventory is COMPLETE; output only affects active study blocks.
 Maximum blocks (ceiling) = ${targetN}. You MAY return fewer than ${targetN} blocks.
 Omit dedicated blocks for concepts with mastery === 'full' AND confidence > ${threshold}.
 If a dominated concept is prerequisite for a non-dominated concept, include it in the dependent block with learning_goal: 'prerequisite_review'.
 For relational-only gaps use learning_goal: 'relational' and compress content (~40% of normal).
 Add learning_goal (string) and mastery_adjusted (boolean) on each block when profile-informed.
-Do NOT filter concepts out of the inventory JSON ù only omit dominated dedicated blocks.
+Do NOT filter concepts out of the inventory JSON ÔøΩ only omit dominated dedicated blocks.
 
 Knowledge profile:
 ${JSON.stringify(knowledgeProfile)}`
@@ -1644,7 +1700,7 @@ export async function deepSeekPackConceptsToBlocks({
     if (packed?.blocks?.length) {
       return packed;
     }
-    console.warn("Concept pack: parse failed, trying next attemptù", lastRaw.slice(0, 400));
+    console.warn("Concept pack: parse failed, trying next attemptÔøΩ", lastRaw.slice(0, 400));
   }
 
   console.warn("Concept pack: all parse attempts failed:", lastRaw.slice(0, 800));
@@ -1679,7 +1735,7 @@ Your task:
       "keep_id": 3,
       "absorb_ids": [4, 5],
       "new_title": "Line Integrals: Concept, Calculation and Circulation",
-      "reason": "Blocks 3, 4, 5 all teach the formula ?Fùc'dt with the same example"
+      "reason": "Blocks 3, 4, 5 all teach the formula ?FÔøΩc'dt with the same example"
     }
   ],
   "no_change": [1, 2, 6, 7],
@@ -1750,7 +1806,7 @@ export function buildOverlapAuditPrompt({
     ? priors
         .map((p, i) => {
           const sig = p.signature?.length ? `\nKey terms: ${p.signature.join(", ")}` : "";
-          return `Prior block ${i + 1} ù "${p.title}":\n${p.explanation_excerpt || "(no excerpt)"}${sig}`;
+          return `Prior block ${i + 1} ÔøΩ "${p.title}":\n${p.explanation_excerpt || "(no excerpt)"}${sig}`;
         })
         .join("\n\n")
     : "(none)";
@@ -1918,19 +1974,19 @@ const BLOCK_JSON_SCHEMA = `{
   ]
 }`;
 
-const EXPLANATION_PEDAGOGICAL_HEADER = `You are explaining this content to a student who needs to understand it well enough to explain it back and answer exam questions on it. Write for understanding, not for reference. Use concrete examples, analogies, or consequences where they add clarity. Avoid encyclopedic neutrality ù teach.`;
+const EXPLANATION_PEDAGOGICAL_HEADER = `You are explaining this content to a student who needs to understand it well enough to explain it back and answer exam questions on it. Write for understanding, not for reference. Use concrete examples, analogies, or consequences where they add clarity. Avoid encyclopedic neutrality ÔøΩ teach.`;
 
-const EXPLANATION_OPENING_HOOK = `Always open with the core idea of this block stated plainly in one sentence (bolded). Then expand. Do not open with historical context, author biography, or background ù lead with the concept itself.`;
+const EXPLANATION_OPENING_HOOK = `Always open with the core idea of this block stated plainly in one sentence (bolded). Then expand. Do not open with historical context, author biography, or background ÔøΩ lead with the concept itself.`;
 
 const EXPLANATION_RSVP_THOROUGH = `You are writing study material optimized for RSVP reading (rapid serial visual presentation). The student reads word by word at high speed and CANNOT re-read. This imposes strict rules:
 
-CONTENT STRUCTURE (mandatory drafting orderùnever expose these step names in the explanation text):
-1. Hook ù 1 sentence: why this concept matters per the source (not invented stakes).
-2. Core definition ù 1-3 sentences: preserve the author's technical sense in plain RSVP prose.
-3. Technical layer ù 2-4 sentences: formal terms as the source presents them.
-4. Example ù ONLY if the source chunk contains an example; otherwise omit entirely.
-5. Contrast ù ONLY if the source mentions confusion, opposition, or contrast; otherwise omit.
-6. Connection ù 1-2 sentences: link to the next concept or the course arc.
+CONTENT STRUCTURE (mandatory drafting orderÔøΩnever expose these step names in the explanation text):
+1. Hook ÔøΩ 1 sentence: why this concept matters per the source (not invented stakes).
+2. Core definition ÔøΩ 1-3 sentences: preserve the author's technical sense in plain RSVP prose.
+3. Technical layer ÔøΩ 2-4 sentences: formal terms as the source presents them.
+4. Example ÔøΩ ONLY if the source chunk contains an example; otherwise omit entirely.
+5. Contrast ÔøΩ ONLY if the source mentions confusion, opposition, or contrast; otherwise omit.
+6. Connection ÔøΩ 1-2 sentences: link to the next concept or the course arc.
 
 When this block is not first, add a bridge from the previous block (the previous block title or its key concept).
 That bridge goes in the very first Hook sentence (first sentence of the first paragraph) and uses the provided previous title.
@@ -1938,7 +1994,7 @@ This keeps the connection visible even when only four sentences are previewed (t
 
 OUTPUT FORMAT (explanation field):
 - Continuous prose only. Never print section names or headings (no HOOK, CORE, EXAMPLE, CONTRAST, ALL-CAPS labels, or markdown **bold** section titles).
-- One paragraph per structure step above, in order. Put exactly one blank line between paragraphs so the RSVP reader inserts a short pauseùthis marks subsections; visible labels distract at speed.
+- One paragraph per structure step above, in order. Put exactly one blank line between paragraphs so the RSVP reader inserts a short pauseÔøΩthis marks subsections; visible labels distract at speed.
 - Each paragraph uses short flowing sentences; a step may use 2-3 sentences but stays one paragraph.
 
 WRITING RULES (non-negotiable):
@@ -1946,13 +2002,13 @@ WRITING RULES (non-negotiable):
 - One idea per sentence. Never connect two concepts with "and" or "but" in the same sentence.
 - No parentheses. No semicolons. No em-dashes.
 - Define every technical term the first time it appears. Never use a term before defining it.
-- If a concept requires knowing another concept first, teach that first (in an earlier blockùnot here).
+- If a concept requires knowing another concept first, teach that first (in an earlier blockÔøΩnot here).
 - Strict pedagogical order: definition ? concrete example ? implication. Never reverse (no example before definition; no implication before the example that supports it).
 - Prefer active voice. Prefer concrete nouns over abstract ones.
 - Do NOT contradict or replace source definitions; paraphrase short sentences. No 80-word sentences, no undefined vocabulary.
 - Total length: 200-300 words maximum. Dense but scannable at speed.`;
 
-const EXPLANATION_RELATIONAL_COMPRESSED = `Relational RSVP recap when the student already knows related concepts. CANNOT re-read. Target ~40% of a standard block word budget (roughly 80ù120 words).
+const EXPLANATION_RELATIONAL_COMPRESSED = `Relational RSVP recap when the student already knows related concepts. CANNOT re-read. Target ~40% of a standard block word budget (roughly 80ÔøΩ120 words).
 
 Focus ONLY on how this concept relates to concepts already covered in prior blocks. Compress non-relational content aggressively.
 When this block is not first, open with one sentence linking to the previous block title or key concept.
@@ -1961,10 +2017,10 @@ Same writing rules: subject-verb-object; max 15 words per sentence; one idea per
 
 const EXPLANATION_VOCABULARY_BLOCK = `This block is a VOCABULARY block (title starts with "Key terms:"). The student reads via RSVP and CANNOT re-read.
 
-Write ONLY definitionsùno narrative, no relationships between terms yet.
+Write ONLY definitionsÔøΩno narrative, no relationships between terms yet.
 
 Format the explanation as one paragraph per term (6-10 terms):
-**TERM** ù Definition tracking the source chunk wording and technical sense for that term.
+**TERM** ÔøΩ Definition tracking the source chunk wording and technical sense for that term.
 
 WRITING RULES: subject-verb-object; max 15 words per sentence; one idea per sentence; no parentheses, semicolons, or em-dashes; define before use.
 Include a one-sentence example only if the chunk provides one for that term. Do not use section labels or headings.`;
@@ -2019,14 +2075,14 @@ function getPreviousBlockTitleFromList(blocksListText, blockNumber) {
   return "";
 }
 
-/** Shared MC distractor rules ù reduces "correct answer stands out" cues. */
-export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options AùD must look like siblingsùsame language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four doùor all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone. Exception: when causal completeness requires a longer correct option, distractors stay plausible full clauses but need not pad to match that length.`;
+/** Shared MC distractor rules ÔøΩ reduces "correct answer stands out" cues. */
+export const MC_OPTION_PARITY_RULES = `Option parity (required for every test question): All four options AÔøΩD must look like siblingsÔøΩsame language/register, notation, grammar pattern, and similar length (each within ~30% of the median word count; never one 15-word option and three 2-word stubs). If one uses Latin (or a foreign term), all four doÔøΩor all give the same style of translation/gloss, or none do. If one has a parenthetical, all do or none do. If the correct answer is a full clause/sentence, every distractor is too. Wrong options stay plausible; do not make the correct one identifiable by formatting, length, or polish alone. Exception: when causal completeness requires a longer correct option, distractors stay plausible full clauses but need not pad to match that length.`;
 
-const QUESTION_SCOPE_RULES = `Scope (answerability): The student has ONLY seen this block's explanation and source chunk (plus earlier blocks for connection questionsùnot later blocks). Every question MUST be solvable from that material alone. Do NOT ask about topics reserved for future blocks, examples only named in the source but not explained in this block's explanation, or cultural/historical references the text does not unpack. Going beyond literal wording is fine ONLY if the reasoning chain is already available in the provided material.`;
+const QUESTION_SCOPE_RULES = `Scope (answerability): The student has ONLY seen this block's explanation and source chunk (plus earlier blocks for connection questionsÔøΩnot later blocks). Every question MUST be solvable from that material alone. Do NOT ask about topics reserved for future blocks, examples only named in the source but not explained in this block's explanation, or cultural/historical references the text does not unpack. Going beyond literal wording is fine ONLY if the reasoning chain is already available in the provided material.`;
 
 const QUESTION_CAUSAL_RULES = `Causal completeness: For "why", "because", "what explains", or cause-effect questions, the correct option must make the reasoning chain answerable without guesswork. If the block explanation already walks through the full chain (premise ? intermediate step ? conclusion), the correct option may state the conclusion or a key step the explanation makes obvious. If the explanation does NOT spell out intermediate steps, the correct option MUST include the missing causal links (e.g. not just "responsibility" but "because the intellectual's symbolic power creates unavoidable responsibility, which requires political commitment"). Distractors may stay shorter; the correct option should never be a bare label that only makes sense after unstated inference.`;
 
-const QUESTION_PEDAGOGY_RULES = `Questions must test understanding (apply, discriminate, predict)ùnot verbatim recall of source phrasing.
+const QUESTION_PEDAGOGY_RULES = `Questions must test understanding (apply, discriminate, predict)ÔøΩnot verbatim recall of source phrasing.
 For vocabulary blocks: test term-to-meaning or meaning-to-term only; no multi-step application yet.
 ${QUESTION_SCOPE_RULES}
 ${QUESTION_CAUSAL_RULES}`;
@@ -2035,24 +2091,24 @@ const TEST_FEEDBACK_RULES = `Test feedback quality rules (required for every tes
 - Feedback must read as a short conceptual explanation, not as a label for the right option.
 - Start by restating the underlying idea or rule in your own words (without copying any option).
 - Then explain why that idea makes the correct option work, using principle-level reasoning.
-- For cause-effect questions, trace the full reasoning chain in feedback when the correct option is abbreviatedùsupply any intermediate steps the block did not already make explicit.
-- Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails becauseù" / "Option C confusesù".
+- For cause-effect questions, trace the full reasoning chain in feedback when the correct option is abbreviatedÔøΩsupply any intermediate steps the block did not already make explicit.
+- Briefly contrast with at least one plausible distractor: refer to distractors by option letter (A/B/C/D) matching your JSON options object, e.g. "Option B fails becauseÔøΩ" / "Option C confusesÔøΩ".
 - Do NOT copy or closely paraphrase the text of the correct option in the feedback.
-- Avoid giveaway lead-ins such as "The correct answer isù" or naming the correct letter outright.
+- Avoid giveaway lead-ins such as "The correct answer isÔøΩ" or naming the correct letter outright.
 - Keep it concise (3-5 short sentences), specific, and still useful after the student already knows if they were right or wrong.`;
 
-/** Dictionary entries are NOT shown in RSVP ù they may be substantive. */
+/** Dictionary entries are NOT shown in RSVP ÔøΩ they may be substantive. */
 export const CONCEPT_DICTIONARY_EXTRACTION_RULES = (isVocabularyBlock) =>
   `Also list key concepts for the session dictionary in concepts[]: ${
     isVocabularyBlock
       ? "every term in this vocabulary block (6-10)."
       : "3-8 non-obvious domain-specific terms introduced in this block."
   }
-For each: the term exactly as used in the source chunk. Definition MUST paraphrase how the chunk defines or uses the term ù not a generic textbook gloss.
+For each: the term exactly as used in the source chunk. Definition MUST paraphrase how the chunk defines or uses the term ÔøΩ not a generic textbook gloss.
 Keep these extraction definitions brief; fuller entries are generated in a separate pass.
 Only include terms grounded in the chunk. No common words.`;
 
-export const CONCEPT_DICTIONARY_ENRICHMENT_RULES = `You are writing session dictionary entries. The student reads these in a sidebar and in the exported session markdown ù NOT via RSVP. Entries may be substantive.
+export const CONCEPT_DICTIONARY_ENRICHMENT_RULES = `You are writing session dictionary entries. The student reads these in a sidebar and in the exported session markdown ÔøΩ NOT via RSVP. Entries may be substantive.
 
 Rules (non-negotiable):
 - Ground EVERY claim in the provided study material and block explanation. Do NOT invent external history, authors, dates, or formulas unless explicitly named in the text.
@@ -2060,10 +2116,10 @@ Rules (non-negotiable):
 - When the text supports it, cover in order:
   1. How the material defines or uses the term (paraphrase closely; quote key phrases if short).
   2. Formal statement, equation, criterion, or procedure if present in the text.
-  3. Who formulated or named it ONLY if the text names them ù otherwise omit.
+  3. Who formulated or named it ONLY if the text names them ÔøΩ otherwise omit.
   4. One concrete example taken FROM the material (not invented).
   5. Contrast or common confusion if the text mentions it.
-- If the text is silent on origin or formulation, say how the text uses the term ù do not guess.
+- If the text is silent on origin or formulation, say how the text uses the term ÔøΩ do not guess.
 - If a term has multiple senses, give the sense used in THIS block.
 - Keep the exact term spelling from the input list.
 
@@ -2095,10 +2151,10 @@ export function buildConceptEnrichmentUserContent({
 Terms to define (use exact spelling):
 ${termList || "(none)"}
 
-Block explanation (study layer ù use as secondary source, prefer raw material):
+Block explanation (study layer ÔøΩ use as secondary source, prefer raw material):
 ${expl || "(none)"}
 
-Study material (primary source ù do not go beyond this):
+Study material (primary source ÔøΩ do not go beyond this):
 ${material || "(none)"}`;
 }
 
@@ -2281,8 +2337,8 @@ export function buildBlockGenerationSystemPrompt({
     gaps.length > 0
       ? `
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
-- Generate at least one question per gap (test or socratic) ù ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
-- Each gap-targeted question must focus on that gap: application, discrimination, or common errors ù not generic recall.
+- Generate at least one question per gap (test or socratic) ÔøΩ ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
+- Each gap-targeted question must focus on that gap: application, discrimination, or common errors ÔøΩ not generic recall.
 ${requireConnection ? `- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.` : `- Connection questions are NOT required for this block.`}
 ${requireConnection ? `- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).` : ``}`
       : "";
@@ -2362,7 +2418,7 @@ export function buildBlockGenerationUserContent({
       ? `\n\n${renderCoverageManifestForPrompt(coverageManifest)}`
       : "";
 
-  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk aboveùnot from future blocks or unexplained asides in the source.${coverageBlock}`;
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk aboveÔøΩnot from future blocks or unexplained asides in the source.${coverageBlock}`;
 }
 
 const QUESTIONS_ONLY_JSON_SCHEMA = `{
@@ -2405,8 +2461,8 @@ export function buildQuestionsOnlySystemPrompt({
     gaps.length > 0
       ? `
 Gap-focused questions (${gaps.length} learning gap(s) listed in the user message):
-- Generate at least one question per gap (test or socratic) ù ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
-- Each gap-targeted question must focus on that gap: application, discrimination, or common errors ù not generic recall.
+- Generate at least one question per gap (test or socratic) ÔøΩ ${gaps.length} gap(s) require at least ${gaps.length} gap-targeted question(s) in total.
+- Each gap-targeted question must focus on that gap: application, discrimination, or common errors ÔøΩ not generic recall.
 ${requireConnection ? `- Since exactly ONE connection question is required, you only have up to ${gapSlots} question slot(s) for gap-focused questions.` : `- Connection questions are NOT required for this block.`}
 ${requireConnection ? `- If ${gapSlots} is less than the gap count, prioritize gaps in the numbered order given (assessment misses first).` : ``}`
       : "";
@@ -2423,7 +2479,7 @@ Placement rule:
 - Not required for this block (block 1 only, or when the option is disabled).
 - Do NOT generate any connection question.`;
 
-  const basePrompt = `You will receive a FIXED block explanation and source material. Generate ONLY new questions ù do NOT modify, rewrite, or return the explanation or title.
+  const basePrompt = `You will receive a FIXED block explanation and source material. Generate ONLY new questions ÔøΩ do NOT modify, rewrite, or return the explanation or title.
 Return a single JSON object with this schema:
 ${QUESTIONS_ONLY_JSON_SCHEMA}
 Respond entirely in ${String(language || "English").trim() || "English"}.
@@ -2436,7 +2492,7 @@ Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 ${connectionSection}
 ${QUESTION_PEDAGOGY_RULES}
-Questions MUST test understanding of the PROVIDED explanation text and the source material ù not verbatim recall of unrelated source phrasing.
+Questions MUST test understanding of the PROVIDED explanation text and the source material ÔøΩ not verbatim recall of unrelated source phrasing.
 When the material includes equations or expressions that must be reproduced exactly, include AT LEAST one question whose primary focus is choosing the CORRECT FORM of the key formula or expression versus plausible incorrect variants.
 ${gapSection}
 ${buildQuestionScopePromptSection(questionScope, nTest)}
@@ -2477,7 +2533,7 @@ ${fixedExplanation}
 Source material (verbatim chunk for grounding):
 ${String(materialText || "").trim()}${gapBlock}${prevBlockSection}
 
-Question scope: assume the student knows only the FIXED EXPLANATION and source chunk above (plus earlier blocks for connection questions)ùnot later blocks or unexplained source asides.`;
+Question scope: assume the student knows only the FIXED EXPLANATION and source chunk above (plus earlier blocks for connection questions)ÔøΩnot later blocks or unexplained source asides.`;
 }
 
 export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
@@ -2486,9 +2542,9 @@ export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(cfg.n_test))));
   const nSoc = Math.max(0, Math.min(3, Math.round(Number(cfg.n_socratic))));
   const expected = nTest + nSoc;
-  if (expected > 0 && questions.length !== expected) {
+  if (expected > 0 && questions.length < expected) {
     console.warn(
-      `Questions-only regen: expected ${expected} question(s) (${nTest} test, ${nSoc} socratic), got ${questions.length}.`,
+      `Questions-only regen: expected at least ${expected} question(s) (${nTest} test, ${nSoc} socratic), got ${questions.length}.`,
     );
   }
   const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
@@ -2558,7 +2614,7 @@ export async function deepSeekRegenerateBlockQuestions({
     throw new Error("Model did not return valid JSON for questions. Please try again.");
   }
   if (Object.prototype.hasOwnProperty.call(obj, "explanation")) {
-    console.warn("Questions-only regen returned forbidden explanation field ù ignoring it.");
+    console.warn("Questions-only regen returned forbidden explanation field ÔøΩ ignoring it.");
     delete obj.explanation;
   }
   if (Object.prototype.hasOwnProperty.call(obj, "title")) {
@@ -2968,7 +3024,7 @@ export async function generateAllBlocks(blockIndex, config = {}) {
         break;
       } catch (err) {
         if (attempt === 0) {
-          if (onWarning) onWarning(`Block ${i + 1} failed ù retrying...`);
+          if (onWarning) onWarning(`Block ${i + 1} failed ÔøΩ retrying...`);
           continue;
         }
         failedCount += 1;
@@ -3071,13 +3127,13 @@ const PREPACKING_ASSESSMENT_JSON_SCHEMA = `{
   }]
 }`;
 
-/** Per-batch holistic assessment JSON (~15 test + 3 socratic ù ~450 tokens). */
+/** Per-batch holistic assessment JSON (~15 test + 3 socratic ÔøΩ ~450 tokens). */
 const HOLISTIC_ASSESSMENT_BATCH_MAX_TOKENS = 8000;
 
 function truncateMaterialExcerpt(text, maxChars = 12000) {
   const s = String(text || "").trim();
   if (s.length <= maxChars) return s;
-  return `${s.slice(0, maxChars)}\nù[truncated]`;
+  return `${s.slice(0, maxChars)}\nÔøΩ[truncated]`;
 }
 
 function inventoryIdSet(inventory) {
@@ -3128,7 +3184,7 @@ Socratic questions: open-ended, no options, no answer field.
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 Each question MUST include concept_id from the inventory (required).
-Cover the FULL provided concept subset evenly ù do not cluster on the first concepts only.
+Cover the FULL provided concept subset evenly ÔøΩ do not cluster on the first concepts only.
 Prioritize THESIS and ARGUMENT concepts for coverage; include prerequisite edges when useful.
 ${edgeRules}
 ${QUESTION_PEDAGOGY_RULES}
@@ -3225,7 +3281,7 @@ export function normalizePrePackingAssessmentQuestions(
       }
       const options = normalized.options;
       if (!options || !["A", "B", "C", "D"].every((l) => String(options[l] || "").trim())) {
-        throw new Error(`Assessment test question ${idx} needs options AùD.`);
+        throw new Error(`Assessment test question ${idx} needs options AÔøΩD.`);
       }
       const answer = String(normalized.answer || "").trim().toUpperCase();
       if (!["A", "B", "C", "D"].includes(answer)) {
@@ -3254,10 +3310,16 @@ export function normalizePrePackingAssessmentQuestions(
 
   const testCount = out.filter((q) => q.type === "test").length;
   const socCount = out.filter((q) => q.type === "socratic").length;
-  if (testCount !== nTest || socCount !== nSocratic) {
+  if (testCount < nTest || socCount < nSocratic) {
     throw new Error(
-      `Assessment question count mismatch: expected ${nTest} test + ${nSocratic} socratic, got ${testCount} test + ${socCount} socratic.`,
+      `Assessment question count mismatch: expected at least ${nTest} test + ${nSocratic} socratic, got ${testCount} test + ${socCount} socratic.`,
     );
+  }
+
+  if (testCount > nTest || socCount > nSocratic) {
+    const tests = out.filter((q) => q.type === "test").slice(0, nTest);
+    const socs = out.filter((q) => q.type === "socratic").slice(0, nSocratic);
+    return [...tests, ...socs];
   }
 
   return out;
@@ -3716,14 +3778,50 @@ Respond in ${lang}.`;
     ...(holisticBatch ? { max_tokens: HOLISTIC_ASSESSMENT_BATCH_MAX_TOKENS } : {}),
   });
 
-  const parsed = parseModelJsonValue(content);
-  const normalized = normalizePrePackingAssessmentQuestions(parsed, {
-    n_test: nTest,
-    n_socratic: nSocratic,
-    inventory,
-    maxTest: holisticBatch ? HOLISTIC_ASSESSMENT_MAX : undefined,
-    maxSocratic: holisticBatch ? 5 : undefined,
-  });
+  let parsed = parseModelJsonValue(content);
+  if (!parsed) {
+    const recovered = recoverPartialQuestionArray(content);
+    if (recovered.length) {
+      console.log(
+        `[assessment] Partial recovery: extracted ${recovered.length} complete question object(s) from truncated response.`,
+      );
+      parsed = { questions: recovered };
+    }
+  }
+
+  let normalized;
+  try {
+    normalized = normalizePrePackingAssessmentQuestions(parsed, {
+      n_test: nTest,
+      n_socratic: nSocratic,
+      inventory,
+      maxTest: holisticBatch ? HOLISTIC_ASSESSMENT_MAX : undefined,
+      maxSocratic: holisticBatch ? 5 : undefined,
+    });
+  } catch (err) {
+    const recovered = recoverPartialQuestionArray(content);
+    if (recovered.length) {
+      console.log(
+        `[assessment] Parse failed; partial recovery extracted ${recovered.length} complete question object(s).`,
+      );
+      try {
+        normalized = normalizePrePackingAssessmentQuestions(
+          { questions: recovered },
+          {
+            n_test: nTest,
+            n_socratic: nSocratic,
+            inventory,
+            maxTest: holisticBatch ? HOLISTIC_ASSESSMENT_MAX : undefined,
+            maxSocratic: holisticBatch ? 5 : undefined,
+          },
+        );
+      } catch {
+        throw err;
+      }
+    } else {
+      throw err;
+    }
+  }
   const tagged = coverageBatchId
     ? normalized.map((q) => ({ ...q, coverage_batch: coverageBatchId }))
     : normalized;
@@ -3772,15 +3870,19 @@ export async function generateHolisticPrePackingAssessmentItems({
 
   const batches = plan.batches;
   const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
-  /** @type {object[][]} */
-  const batchResults = [];
+  const MAX_MERGE_ATTEMPTS = 4;
+  const MERGE_RETRY_DELAY_MS = 15000;
 
-  for (let i = 0; i < batches.length; i += batchSize) {
+  async function runHolisticBatches() {
+    /** @type {object[][]} */
+    const batchResults = [];
+
+    for (let i = 0; i < batches.length; i += batchSize) {
     const slice = batches.slice(i, i + batchSize);
     const batchNum = i + 1;
     const totalBatches = batches.length;
     if (typeof onProgress === "function") {
-      onProgress(`Generating questions ${batchNum}ù${Math.min(i + slice.length, totalBatches)}/${totalBatches}ù`);
+      onProgress(`Generating questions ${batchNum}ÔøΩ${Math.min(i + slice.length, totalBatches)}/${totalBatches}ÔøΩ`);
     }
 
     const sliceResults = await Promise.all(
@@ -3809,10 +3911,31 @@ export async function generateHolisticPrePackingAssessmentItems({
       }),
     );
     batchResults.push(...sliceResults);
+    }
+
+    return batchResults;
   }
 
-  const merged = mergeHolisticAssessmentQuestions(batchResults, plan);
-  return shuffleTestQuestionsInList(merged);
+  let lastMergeError = null;
+  for (let attempt = 1; attempt <= MAX_MERGE_ATTEMPTS; attempt += 1) {
+    const batchResults = await runHolisticBatches();
+    const mergeResult = tryMergeHolisticAssessmentQuestions(batchResults, plan);
+    if (mergeResult.ok) {
+      return shuffleTestQuestionsInList(mergeResult.questions);
+    }
+
+    lastMergeError = new Error(
+      `Holistic assessment merge: expected at least ${mergeResult.minTest} test questions, got ${mergeResult.testCount}.`,
+    );
+    if (attempt < MAX_MERGE_ATTEMPTS) {
+      console.log(
+        `[assessment] Merge attempt ${attempt}/${MAX_MERGE_ATTEMPTS} ‚Äî got ${mergeResult.testCount} questions, need at least ${mergeResult.minTest}. Retrying in ${MERGE_RETRY_DELAY_MS / 1000}s‚Ä¶`,
+      );
+      await sleep(MERGE_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastMergeError || new Error("Holistic assessment merge failed after all retry attempts.");
 }
 
 export async function evaluatePrePackingAssessmentResponses({
@@ -3911,7 +4034,7 @@ Structure your reply in two parts (use these exact headings, in the same languag
 
 **Critique**
 - Briefly note what is correct in the student's answer.
-- Point out gaps, misconceptions, or weak reasoning. Be direct and preciseùnot only destructive, and not empty praise.
+- Point out gaps, misconceptions, or weak reasoning. Be direct and preciseÔøΩnot only destructive, and not empty praise.
 
 **Suggested answer**
 - After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
@@ -4118,7 +4241,7 @@ export async function extractVaultCandidates({
 - tags: optional short list`;
 
   const systemPrompt = `You extract knowledge-vault curation candidates from studied concepts.
-For each concept, using its source chunk (source fidelity ù use the material's own terms):
+For each concept, using its source chunk (source fidelity ÔøΩ use the material's own terms):
 
 - definition: a concise markdown definition in the source material's notation
 - suggestedReviewItems: 0-3 items, each with a distinct facet from
@@ -4287,7 +4410,7 @@ Respond with JSON only:
 Rules:
 - fromId: prerequisite concept id (learn first)
 - toId: dependent concept id (requires fromId)
-- confidence: 0.0-1.0 ù only include edges you are reasonably sure about (=0.6)
+- confidence: 0.0-1.0 ÔøΩ only include edges you are reasonably sure about (=0.6)
 - Do NOT include self-loops, duplicate edges, or ids not in the concept list
 - Maximum 30 edges
 - Prefer foundational concepts as prerequisites`;

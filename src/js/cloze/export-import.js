@@ -4,8 +4,8 @@ import {
   normalizeEpistemicEdge,
   normalizeEpistemicGraph,
   normalizeEpistemicNode,
-} from "./normalize.js?v=20260622_6";
-import { buildExportFrontmatter } from "../export-format.js?v=20260622_6";
+} from "./normalize.js?v=20260622_7";
+import { buildExportFrontmatter } from "../export-format.js?v=20260622_7";
 
 const CLOZE_PACK_RE = /<!--\s*cloze-pack:v1:([A-Za-z0-9+/=]+)\s*-->/;
 

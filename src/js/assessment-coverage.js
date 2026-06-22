@@ -1,9 +1,9 @@
 /**
- * Holistic pre-packing assessment ó budget, section coverage plan, merge.
+ * Holistic pre-packing assessment ù budget, section coverage plan, merge.
  * @see specs/20260618-holistic-assessment-coverage/
  */
 
-import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_6";
+import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_7";
 
 function clamp(n, min, max) {
   const x = Number(n);
@@ -249,10 +249,9 @@ function questionFingerprint(q) {
 /**
  * @param {object[][]} batchResults
  * @param {object} plan
- * @returns {object[]}
+ * @returns {{ ok: boolean, questions: object[], testCount: number, minTest: number, expectedTest: number }}
  */
-export function mergeHolisticAssessmentQuestions(batchResults, plan) {
-  const batches = Array.isArray(plan?.batches) ? plan.batches : [];
+export function tryMergeHolisticAssessmentQuestions(batchResults, plan) {
   const expectedTest = Math.floor(Number(plan?.totals?.n_test) || 0);
 
   const seen = new Set();
@@ -270,13 +269,25 @@ export function mergeHolisticAssessmentQuestions(batchResults, plan) {
   }
 
   const minTest = Math.max(1, Math.floor(expectedTest * 0.5));
-  if (tests.length < minTest) {
+  const ok = tests.length >= minTest;
+  const questions = tests.slice(0, expectedTest || tests.length);
+
+  return { ok, questions, testCount: tests.length, minTest, expectedTest };
+}
+
+/**
+ * @param {object[][]} batchResults
+ * @param {object} plan
+ * @returns {object[]}
+ */
+export function mergeHolisticAssessmentQuestions(batchResults, plan) {
+  const result = tryMergeHolisticAssessmentQuestions(batchResults, plan);
+  if (!result.ok) {
     throw new Error(
-      `Holistic assessment merge: expected at least ${minTest} test questions, got ${tests.length}.`,
+      `Holistic assessment merge: expected at least ${result.minTest} test questions, got ${result.testCount}.`,
     );
   }
-
-  return tests.slice(0, expectedTest || tests.length);
+  return result.questions;
 }
 
 /** @param {string} edgeId @param {object[]} edgeList */
