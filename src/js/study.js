@@ -202,6 +202,9 @@ import {
   runConceptInventory,
   runConceptInventoryWithFallback,
   packInventoryToBlocks,
+  isConceptInventoryValid,
+  evaluateConceptInventoryGuard,
+  pollUntilConceptInventoryReady,
   applyKnowledgeProfileToBlockIndex,
   twoPhaseConceptSplit,
   state,
@@ -427,16 +430,26 @@ let documentPreparationRunId = 0;
 /**
  * Run DPP after upload; updates shared preparation state.
  * @param {import("./session-store.js").DocumentSession} doc
- * @param {{ onProgress?: (msg: object) => void, studyNotes?: string, stopAfterTier?: number }} [options]
+ * @param {{ onProgress?: (msg: object) => void, studyNotes?: string, stopAfterTier?: number, forceRerun?: boolean }} [options]
  */
 export async function startDocumentPreparation(doc, options = {}) {
   if (!doc?.docId) return null;
+  const forceRerun = options.forceRerun === true;
+  if (forceRerun) {
+    console.log("[DPP-GUARD] Force rerun requested — bypassing guard.");
+    if (!doc.shared) doc.shared = {};
+    doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
+    doc.shared.preparation.status = "pending";
+    doc.shared.preparation.failReason = null;
+    await saveDocumentSession(doc);
+  }
   const stopAfterTier = options.stopAfterTier ?? 2;
+  if (!forceRerun && stopAfterTier <= 1 && isConceptInventoryValid(doc)) return doc;
   if (stopAfterTier <= 1 && isTier1PreparationComplete(doc)) return doc;
   const prep = normalizePreparationState(doc.shared?.preparation);
-  if (prep.status === "ready" && stopAfterTier >= 2) {
+  if (!forceRerun && prep.status === "ready" && stopAfterTier >= 2) {
     if (!hasPendingTier2Preparation(doc, options)) return doc;
-  } else if (prep.status === "ready" && stopAfterTier <= 1) {
+  } else if (!forceRerun && prep.status === "ready" && stopAfterTier <= 1) {
     return doc;
   }
   const runId = ++documentPreparationRunId;
@@ -445,6 +458,7 @@ export async function startDocumentPreparation(doc, options = {}) {
     language: getStudyLanguage(),
     studyNotes: options.studyNotes ?? state.studyNotes ?? "",
     stopAfterTier: options.stopAfterTier,
+    forceRerun,
     onProgress: (msg) => {
       if (runId !== documentPreparationRunId) return;
       options.onProgress?.(msg);
@@ -457,6 +471,108 @@ function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
   return `${label}${wave}…`;
+}
+
+const PREPARATION_FAILED_MSG =
+  "Document preparation failed. The concept analysis could not complete. You can retry preparation or continue with limited functionality.";
+
+function renderPreparationFailedUi(doc, message = PREPARATION_FAILED_MSG) {
+  if (els.modeSelectPreparationFailed) {
+    els.modeSelectPreparationFailed.hidden = false;
+    const textEl = els.modeSelectPreparationFailed.querySelector(".preparation-failed-text");
+    if (textEl) textEl.textContent = message;
+  }
+  if (els.generateBlocksError) {
+    els.generateBlocksError.hidden = false;
+    els.generateBlocksError.textContent = message;
+  }
+  if (els.generateBlocksRetryPreparationBtn) {
+    els.generateBlocksRetryPreparationBtn.hidden = false;
+  }
+  void doc;
+}
+
+function clearPreparationFailedUi() {
+  if (els.modeSelectPreparationFailed) els.modeSelectPreparationFailed.hidden = true;
+  if (els.generateBlocksRetryPreparationBtn) els.generateBlocksRetryPreparationBtn.hidden = true;
+}
+
+async function handleRetryPreparationClick() {
+  const doc = await getActiveSession();
+  if (!doc?.docId) return;
+  clearPreparationFailedUi();
+  if (els.generateBlocksError) {
+    els.generateBlocksError.hidden = true;
+    els.generateBlocksError.textContent = "";
+  }
+  showDocumentPreparingScreen("Retrying document preparation…");
+  await startDocumentPreparation(doc, {
+    forceRerun: true,
+    ...preparationGateOptions((msg) => {
+      if (els.reviewGeneratingLabel) {
+        els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+      }
+    }),
+  });
+  const fresh = await getActiveSession();
+  const guard = evaluateConceptInventoryGuard(fresh);
+  if (guard.decision === "failed") {
+    renderPreparationFailedUi(fresh);
+    enterModeSelectScreen();
+    return;
+  }
+  await enterModeSelectAfterTier1Gate();
+}
+
+async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOpts, statusEl) {
+  const guard = evaluateConceptInventoryGuard(doc);
+  if (guard.decision === "failed") {
+    renderPreparationFailedUi(doc);
+    throw new Error(PREPARATION_FAILED_MSG);
+  }
+  if (guard.decision === "waiting") {
+    if (statusEl) statusEl.textContent = "Document preparation in progress…";
+    const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
+    doc = polled.session || doc;
+    const after = evaluateConceptInventoryGuard(doc);
+    if (after.decision === "failed") {
+      renderPreparationFailedUi(doc);
+      throw new Error(PREPARATION_FAILED_MSG);
+    }
+    if (after.decision === "waiting") {
+      throw new Error("Document preparation is still in progress. Try again shortly.");
+    }
+  }
+  if (isConceptInventoryValid(doc)) {
+    return { inventory: doc.shared.conceptInventory, doc };
+  }
+  if (guard.decision === "degraded" || evaluateConceptInventoryGuard(doc).decision === "degraded") {
+    const inv = doc?.shared?.conceptInventory;
+    if (Array.isArray(inv) && inv.length > 0) {
+      return { inventory: inv, doc };
+    }
+  }
+  const docHierarchy = await ensureDocHierarchyForInventory(
+    doc,
+    cleanedText,
+    wordCount,
+    (msg) => {
+      if (statusEl) statusEl.textContent = msg;
+    },
+  );
+  const invResult = await runConceptInventoryWithFallback(cleanedText, {
+    ...splitOpts,
+    docHierarchy,
+    wordCount,
+  });
+  notifyInventoryRunStatus(invResult);
+  if (invResult.kind === "fallback_mono") {
+    throw new Error(
+      "Concept inventory could not be generated. Try a shorter section or chapter scope.",
+    );
+  }
+  persistInventoryRunMeta(doc, invResult);
+  return { inventory: invResult.inventory, doc };
 }
 
 function refreshCreateSessionInsights(doc) {
@@ -517,7 +633,36 @@ async function enterModeSelectAfterTier1Gate() {
     enterModeSelectScreen();
     return;
   }
-  if (!isTier1PreparationComplete(doc)) {
+
+  clearPreparationFailedUi();
+  let guard = evaluateConceptInventoryGuard(doc);
+  if (guard.decision === "failed") {
+    renderPreparationFailedUi(doc);
+    enterModeSelectScreen();
+    return;
+  }
+
+  if (guard.decision === "waiting") {
+    showDocumentPreparingScreen("Document preparation in progress…");
+    const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
+    doc = polled.session || doc;
+    guard = evaluateConceptInventoryGuard(doc);
+    if (guard.decision === "failed") {
+      renderPreparationFailedUi(doc);
+      enterModeSelectScreen();
+      return;
+    }
+    if (guard.decision === "waiting") {
+      renderPreparationFailedUi(
+        doc,
+        "Document preparation is still in progress. Try again shortly.",
+      );
+      enterModeSelectScreen();
+      return;
+    }
+  }
+
+  if (!isTier1PreparationComplete(doc) && !isConceptInventoryValid(doc)) {
     showDocumentPreparingScreen();
     doc = await ensureTier1Preparation(doc, {
       ...preparationGateOptions((msg) => {
@@ -526,7 +671,13 @@ async function enterModeSelectAfterTier1Gate() {
         }
       }),
     });
-    if (!isTier1PreparationComplete(doc)) {
+    if (!isTier1PreparationComplete(doc) && !isConceptInventoryValid(doc)) {
+      const afterGuard = evaluateConceptInventoryGuard(doc);
+      if (afterGuard.decision === "failed") {
+        renderPreparationFailedUi(doc);
+        enterModeSelectScreen();
+        return;
+      }
       showScreen("createSessionStart");
       if (els.createSessionStartStatus) {
         els.createSessionStartStatus.textContent =
@@ -1142,6 +1293,11 @@ async function getRecallController() {
       },
       runConceptInventoryForDoc: async () => {
         const doc = await getActiveSession();
+        const guard = evaluateConceptInventoryGuard(doc);
+        if (guard.decision === "skip" || guard.decision === "degraded") return;
+        if (guard.decision === "failed") {
+          throw new Error(PREPARATION_FAILED_MSG);
+        }
         const text = String(doc?.shared?.rawMarkdown || "").trim();
         if (!text) throw new Error("No document text for concept inventory.");
         const wc = text.split(/\s+/).filter(Boolean).length;
@@ -4550,34 +4706,27 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
       inventory = preparedPack.inventory;
     } else if (isBlockSplitCacheValid(cache, fingerprint)) {
       inventory = cache.conceptInventory;
+    } else if (isConceptInventoryValid(doc)) {
+      inventory = doc.shared.conceptInventory;
+      setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
     } else {
-      const docHierarchy = await ensureDocHierarchyForInventory(
+      const resolved = await resolveInventoryForBlockFlow(
         doc,
         cleanedText,
         wordCount,
-        (msg) => {
-          if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
+        {
+          llmModel,
+          studyNotes: String(state.studyNotes || ""),
+          language: getStudyLanguage(),
+          nBlocks: Number(els.blocksInput?.value) || 12,
+          onProgress: (msg) => {
+            if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
+          },
         },
+        els.recommendBlocksStatus,
       );
-      const invResult = await runConceptInventoryWithFallback(cleanedText, {
-        llmModel,
-        studyNotes: String(state.studyNotes || ""),
-        language: getStudyLanguage(),
-        docHierarchy,
-        wordCount,
-        nBlocks: Number(els.blocksInput?.value) || 12,
-        onProgress: (msg) => {
-          if (els.recommendBlocksStatus) els.recommendBlocksStatus.textContent = msg;
-        },
-      });
-      notifyInventoryRunStatus(invResult);
-      if (invResult.kind === "fallback_mono") {
-        throw new Error(
-          "Concept inventory could not be generated. Try a shorter section or chapter scope.",
-        );
-      }
-      inventory = invResult.inventory;
-      persistInventoryRunMeta(doc, invResult);
+      inventory = resolved.inventory;
+      doc = resolved.doc;
       setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
     }
 
@@ -8160,6 +8309,12 @@ export async function wireStudyHandlers() {
   });
   setSlowSessionGetter(() => state.activeSession);
   wireStudyModeSelector();
+  els.modeSelectRetryPreparationBtn?.addEventListener("click", () => {
+    void handleRetryPreparationClick();
+  });
+  els.generateBlocksRetryPreparationBtn?.addEventListener("click", () => {
+    void handleRetryPreparationClick();
+  });
   els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());
   wireSlowScopeHandlers();
   wireSlowPhase0Handlers();
@@ -8680,20 +8835,37 @@ export async function wireStudyHandlers() {
             cleanedText,
             splitOpts,
           );
+        } else if (isConceptInventoryValid(doc)) {
+          packed = await packInventoryToBlocks(
+            doc.shared.conceptInventory,
+            nBlocks,
+            cleanedText,
+            splitOpts,
+          );
         } else {
-          const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
-          packed = {
-            blockIndex: splitResult.blockIndex,
-            splitRunMeta: splitResult.splitRunMeta,
-            conceptInventory: splitResult.conceptInventory,
-          };
-          const inv = splitResult.conceptInventory;
-          if (Array.isArray(inv) && inv.length > 0) {
-            setBlockSplitCache({
-              fingerprint,
-              conceptInventory: inv,
-              recommendation: cache?.recommendation ?? null,
-            });
+          const sparseInv = doc?.shared?.conceptInventory;
+          const blockGuard = evaluateConceptInventoryGuard(doc);
+          if (
+            blockGuard.decision === "degraded" &&
+            Array.isArray(sparseInv) &&
+            sparseInv.length > 0
+          ) {
+            packed = await packInventoryToBlocks(sparseInv, nBlocks, cleanedText, splitOpts);
+          } else {
+            const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
+            packed = {
+              blockIndex: splitResult.blockIndex,
+              splitRunMeta: splitResult.splitRunMeta,
+              conceptInventory: splitResult.conceptInventory,
+            };
+            const inv = splitResult.conceptInventory;
+            if (Array.isArray(inv) && inv.length > 0) {
+              setBlockSplitCache({
+                fingerprint,
+                conceptInventory: inv,
+                recommendation: cache?.recommendation ?? null,
+              });
+            }
           }
         }
         if (!Array.isArray(packed.blockIndex) || !packed.blockIndex.length) {
@@ -8721,35 +8893,18 @@ export async function wireStudyHandlers() {
         conceptInventory = preparedPack.inventory;
       } else if (isBlockSplitCacheValid(cache, fingerprint)) {
         conceptInventory = cache.conceptInventory;
+      } else if (isConceptInventoryValid(doc)) {
+        conceptInventory = doc.shared.conceptInventory;
       } else {
-        const docHierarchy = await ensureDocHierarchyForInventory(
+        const resolved = await resolveInventoryForBlockFlow(
           doc,
           cleanedText,
           wordCount,
-          (msg) => {
-            els.generateBlocksStatus.textContent = msg;
-          },
+          { ...splitOpts, nBlocks },
+          els.generateBlocksStatus,
         );
-        const invResult = await runConceptInventoryWithFallback(cleanedText, {
-          ...splitOpts,
-          docHierarchy,
-          nBlocks,
-          wordCount,
-        });
-        notifyInventoryRunStatus(invResult);
-        persistInventoryRunMeta(doc, invResult);
-        if (invResult.kind === "fallback_mono") {
-          promoteConceptInventoryToShared([], "rsvp");
-          applyPackedBlocksToEditor(
-            {
-              blockIndex: invResult.blockIndex,
-              splitRunMeta: invResult.splitRunMeta,
-            },
-            [],
-          );
-          return;
-        }
-        conceptInventory = invResult.inventory;
+        conceptInventory = resolved.inventory;
+        doc = resolved.doc;
         if (Array.isArray(conceptInventory) && conceptInventory.length > 0) {
           setBlockSplitCache({
             fingerprint,

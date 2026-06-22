@@ -675,6 +675,13 @@
               <div id="modeSelectBreadcrumb" class="project-breadcrumb-mount"></div>
             </div>
 
+            <div id="modeSelectPreparationFailed" class="error preparation-failed-banner" hidden>
+              <p class="preparation-failed-text"></p>
+              <button type="button" id="modeSelectRetryPreparationBtn" class="btn-secondary">
+                Retry preparation
+              </button>
+            </div>
+
             <div id="sessionHubActions" class="session-hub-actions row">
               <button type="button" id="btnUploadToVault" class="btn-secondary">Upload to vault</button>
             </div>
@@ -973,6 +980,14 @@
                 <span class="hint" id="generateBlocksStatus" role="status"></span>
               </div>
               <div id="generateBlocksError" class="error" hidden></div>
+              <button
+                type="button"
+                id="generateBlocksRetryPreparationBtn"
+                class="btn-secondary"
+                hidden
+              >
+                Retry preparation
+              </button>
             </div>
           </div>
         </section>
@@ -1895,7 +1910,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_2";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_5";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1911,7 +1926,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260622_2");
+        await import("./src/js/main.js?v=20260622_5");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
