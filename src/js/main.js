@@ -1,15 +1,15 @@
-import { LS_ACTIVE_SESSION_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260622_7";
+import { LS_ACTIVE_SESSION_KEY, LS_SESSIONS_BY_MODE_KEY } from "./config.js?v=20260622_9";
 import { getSourceFidelityStrictPreference } from "./config/flags.js";
-import { detectAndMigrateV1 } from "./session-migration.js?v=20260622_7";
-import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260622_7";
+import { detectAndMigrateV1 } from "./session-migration.js?v=20260622_9";
+import { migrateStorageKeysFromMyLearning } from "./storage-rebrand-migration.js?v=20260622_9";
 import {
   initGuideChat,
   sendGuideMessage,
-} from "./guide-chat.js?v=20260622_7";
+} from "./guide-chat.js?v=20260622_9";
 import {
   migrateLegacyActiveSession,
   state,
-} from "./session.js?v=20260622_7";
+} from "./session.js?v=20260622_9";
 import {
   closeSettingsScreen,
   closeBlockReadSidebar,
@@ -21,16 +21,16 @@ import {
   showScreen,
   toggleBlockReadSidebar,
   toggleSidebar,
-} from "./ui.js?v=20260622_7";
-import { syncPlatformLlmAccessFromSession } from "./llm.js?v=20260622_8";
-import { wireReviewHandlers } from "./review.js?v=20260622_7";
-import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260622_7";
+} from "./ui.js?v=20260622_9";
+import { syncPlatformLlmAccessFromSession } from "./llm.js?v=20260622_9";
+import { wireReviewHandlers } from "./review.js?v=20260622_9";
+import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260622_9";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
   showInstallHelpToast,
 } from "./pwa-install.js";
-import { dismissSplash } from "./splash.js?v=20260622_7";
+import { dismissSplash } from "./splash.js?v=20260622_9";
 import {
   getSupabaseAuthSession,
   migrateLocalStorageToSupabase,

@@ -6,7 +6,7 @@
  * `html_min` tag parsing is retained only for legacy sessions.
  */
 
-import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_7";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_9";
 
 const DEFAULT_HEADING_FORMAT = "markdown";
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/gm;

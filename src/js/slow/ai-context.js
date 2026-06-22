@@ -1,6 +1,6 @@
-import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_7";
-import { getStudyLanguage } from "../ui.js?v=20260622_7";
-import { getScopeText } from "./reader.js?v=20260622_7";
+import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_9";
+import { getStudyLanguage } from "../ui.js?v=20260622_9";
+import { getScopeText } from "./reader.js?v=20260622_9";
 
 export function buildIAContext(slow) {
   const text = getScopeText({ slow });
