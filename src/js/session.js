@@ -5,13 +5,13 @@ import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSIONS_BY_MODE_KEY,
   MAX_N_TEST,
-} from "./config.js?v=20260622_9";
+} from "./config.js?v=20260622_10";
 import {
   getActiveSession as getActiveDocumentSession,
   saveActiveSession as saveDocumentSession,
 } from "./session-store.js";
 import { writeThroughModeSlice } from "./block-store.js";
-import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_9";
+import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_10";
 import {
   deepSeekGenerateBlockBridge,
   deepSeekGenerateBlockJson,
@@ -19,7 +19,7 @@ import {
   generateBlockFromChunk,
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
-} from "./api.js?v=20260622_9";
+} from "./api.js?v=20260622_10";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
 import {
   annotateBlockIndexEntry,
@@ -32,16 +32,16 @@ import {
   replaceCoverageForBlock,
   findSemanticDuplicatePairs,
 } from "./pipeline-levers.js";
-import { extractSneakPeek } from "./sneakPeek.js?v=20260622_9";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260622_10";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
   getSessionLlmModel,
-} from "./llm.js?v=20260622_9";
-import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_9";
-import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_9";
-import { getStudyLanguage } from "./ui.js?v=20260622_9";
-import { isOfflineMode } from "./offline.js?v=20260622_9";
+} from "./llm.js?v=20260622_10";
+import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_10";
+import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_10";
+import { getStudyLanguage } from "./ui.js?v=20260622_10";
+import { isOfflineMode } from "./offline.js?v=20260622_10";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
 import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
@@ -2333,7 +2333,7 @@ export async function runConceptInventoryMapReduce(
     deepSeekMergeConceptInventories,
     INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
     INVENTORY_MAX_PARALLEL_CALLS,
-  } = await import("./api.js?v=20260622_9");
+  } = await import("./api.js?v=20260622_10");
 
   const wordCount =
     Number(splitOpts.wordCount) ||
@@ -2464,7 +2464,7 @@ export async function runConceptInventory(
     };
   }
 
-  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_9");
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_10");
   progress("Indexing concepts�");
   const result = await deepSeekConceptInventory({
     llmModel: model,
@@ -2666,7 +2666,7 @@ export async function runConceptInventoryWithFallback(
 
   const runFallback = async (reason) => {
     progress("Using classic split (fallback)�");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_9");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_10");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -2873,7 +2873,7 @@ export async function packInventoryToBlocks(
   };
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
-    "./api.js?v=20260622_9",
+    "./api.js?v=20260622_10",
   );
 
   progress(`Packing ${requested_n} blocks�`);
@@ -3030,7 +3030,7 @@ export async function twoPhaseConceptSplit(
 
   const runFallback = async () => {
     progress("Using classic split (fallback)�");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_9");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_10");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -3085,7 +3085,7 @@ export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApi
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_9");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_10");
   const text = await deepSeekAuditBlockIndex({
     llmModel: model,
     blockIndexJson: payload,
@@ -3116,7 +3116,7 @@ export async function mergeChunks(
     .trim();
 
   const blockCount = 1 + absorbs.length;
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_9");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_10");
   const mergedChunk = await deepSeekPostMergeChunk({
     llmModel: model,
     keep_id,

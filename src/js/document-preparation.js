@@ -19,7 +19,7 @@ import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
 import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
 import { runConceptInventoryWithFallback, isConceptInventoryValid } from "./session.js";
-import { getSupabaseAuthToken } from "./llm.js?v=20260622_9";
+import { getSupabaseAuthToken } from "./llm.js?v=20260622_10";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
 import { scoreConceptNovelty } from "./vault/novelty-scoring.js";

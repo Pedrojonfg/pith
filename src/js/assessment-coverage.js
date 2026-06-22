@@ -3,7 +3,7 @@
  * @see specs/20260618-holistic-assessment-coverage/
  */
 
-import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_9";
+import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_10";
 
 function clamp(n, min, max) {
   const x = Number(n);

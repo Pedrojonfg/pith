@@ -26,8 +26,8 @@ import {
   renameProject,
 } from "./project-store.js";
 import { getPreparationBadgeLabel } from "./document-preparation.js";
-import { exportDocumentSessionMarkdown } from "./export.js?v=20260622_9";
-import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260622_9";
+import { exportDocumentSessionMarkdown } from "./export.js?v=20260622_10";
+import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260622_10";
 
 /** @type {{ currentProjectId: string|null, fromLibraryDocId: string|null, uploadProjectId: string|null }} */
 export const projectLibraryState = {
