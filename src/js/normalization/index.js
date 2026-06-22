@@ -10,7 +10,10 @@ import { extractPdfBlocks } from "./extract-pdf-blocks.js";
 import { extractPdfOutline, matchOutlineToBlocks, computeOutlineCoverage } from "./pdf-outline.js";
 import { getFrontMatterPageRange, detectFrontMatterPages } from "./front-matter-detector.js";
 import { extractHtmlBlocks } from "./extract-html-blocks.js";
-import { emitMarkdown, dehyphenate } from "./emit-markdown.js";
+import { extractHtmlBlocksWithImages } from "../document-images/extract-html.js";
+import { extractPdfImages } from "../document-images/extract-pdf.js";
+import { emitMarkdown, dehyphenate as dehyphenateRaw } from "./emit-markdown.js";
+import { protectMarkdownTransform } from "../document-images/tokens.js";
 import { buildEqualLengthSections } from "../slow/headings.js";
 import { createTextBlock } from "./types.js";
 
@@ -48,20 +51,41 @@ function extractPlainBlocks(text, source) {
 async function extractBlocks(rawContent, format) {
   if (format === "html") {
     const html = typeof rawContent === "string" ? rawContent : "";
-    return { blocks: extractHtmlBlocks(html), pageHeights: [], doc: null };
+    const withImages = await extractHtmlBlocksWithImages(html);
+    if (withImages.blocks.length) {
+      return {
+        blocks: withImages.blocks,
+        pageHeights: [],
+        doc: null,
+        pendingImages: withImages.pendingImages,
+      };
+    }
+    return {
+      blocks: extractHtmlBlocks(html),
+      pageHeights: [],
+      doc: null,
+      pendingImages: [],
+    };
   }
   if (format === "pdf") {
     if (!(rawContent instanceof ArrayBuffer)) {
-      return { blocks: [], pageHeights: [], doc: null };
+      return { blocks: [], pageHeights: [], doc: null, pendingImages: [] };
     }
     const { blocks, pageHeights, doc } = await extractPdfBlocks(rawContent);
-    return { blocks, pageHeights, doc };
+    const pdfImages = await extractPdfImages(doc, blocks, pageHeights);
+    return {
+      blocks: pdfImages.blocks,
+      pageHeights,
+      doc,
+      pendingImages: pdfImages.pendingImages,
+    };
   }
   const text = typeof rawContent === "string" ? rawContent : "";
   return {
     blocks: extractPlainBlocks(text, format === "md" ? "md" : "txt"),
     pageHeights: [],
     doc: null,
+    pendingImages: [],
   };
 }
 
@@ -74,11 +98,12 @@ async function extractBlocks(rawContent, format) {
  *   normalizedFormat?: "markdown",
  *   normalizedContent?: string,
  *   fallbackSections?: ReturnType<typeof buildEqualLengthSections>,
+ *   pendingImages?: import("../document-images/storage.js").PendingDocumentImage[],
  * }>}
  */
 export async function normalizeDocumentStructure({ rawContent, format }) {
   const fmt = String(format || "").toLowerCase();
-  const { blocks: rawBlocks, pageHeights, doc } = await extractBlocks(rawContent, fmt);
+  const { blocks: rawBlocks, pageHeights, doc, pendingImages = [] } = await extractBlocks(rawContent, fmt);
 
   let outline = [];
   if (doc) {
@@ -125,7 +150,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
 
   const headings = validateHeadingHierarchy(inferred);
   const emitted = emitMarkdown(stripResult.blocks, headings);
-  const normalizedContent = dehyphenate(emitted.markdown);
+  const normalizedContent = protectMarkdownTransform(emitted.markdown, dehyphenateRaw);
   const headingsWithOffsets = emitted.headings;
   const totalChars = normalizedContent?.length || 0;
   const confidence = aggregateConfidence(headingsWithOffsets, totalChars);
@@ -158,6 +183,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     normalizedFormat: "markdown",
     normalizedContent,
     fallbackSections,
+    pendingImages,
   };
 }
 

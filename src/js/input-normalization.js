@@ -4,6 +4,7 @@
  */
 
 import { normalizeDocumentStructure } from "./normalization/index.js";
+import { protectMarkdownTransform } from "./document-images/tokens.js";
 
 export const SUPPORTED_INPUT_FORMATS = Object.freeze(["pdf", "html", "txt", "md"]);
 
@@ -182,10 +183,12 @@ export function plainTextToMarkdown(text) {
 
 /** Light cleanup for existing markdown files. */
 export function cleanupMarkdown(md) {
-  let out = stripScriptAndStyleBlocks(String(md || ""));
-  out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-  out = out.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
-  return out.trim();
+  return protectMarkdownTransform(String(md || ""), (text) => {
+    let out = stripScriptAndStyleBlocks(text);
+    out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
+    out = out.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+    return out.trim();
+  });
 }
 
 export async function loadPdfJs() {
@@ -259,6 +262,7 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
       normalizedContent,
       warnings,
       fallbackSections: pipeline.fallbackSections || null,
+      pendingImages: pipeline.pendingImages || [],
       structure: {
         heading_count: pipeline.structure?.headingCount ?? 0,
         confidence: pipeline.structure?.confidence ?? "low",
