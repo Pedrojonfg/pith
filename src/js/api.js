@@ -1252,9 +1252,68 @@ export async function deepSeekConceptInventoryChunk(chunk, splitOpts = {}) {
   });
 }
 
+/**
+ * Extracts complete concept objects from a potentially truncated JSON response.
+ * @param {string} rawText
+ * @returns {object[]}
+ */
+export function recoverPartialConceptArray(rawText) {
+  const conceptsMatch = String(rawText || "").match(/"concepts"\s*:\s*\[/);
+  if (!conceptsMatch) return [];
+
+  const arrayStart = conceptsMatch.index + conceptsMatch[0].length;
+  const text = rawText.slice(arrayStart);
+
+  /** @type {object[]} */
+  const recovered = [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objectStart = -1;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (ch === "{") {
+      if (depth === 0) objectStart = i;
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0 && objectStart !== -1) {
+        try {
+          const obj = JSON.parse(text.slice(objectStart, i + 1));
+          recovered.push(obj);
+        } catch {
+          // skip malformed object
+        }
+        objectStart = -1;
+      }
+    }
+  }
+
+  return recovered;
+}
+
 export function buildMergeConceptInventoriesPrompt(lang, partialsJson) {
   const language = String(lang || "English").trim() || "English";
   return `You are merging partial concept inventories from sections of one document into a single ordered inventory.
+
+Output ONLY valid JSON. No preamble, no explanation, no markdown code fences.
+The first character of your response must be \`{\` and the last must be \`}\`.
 
 Rules:
 1. Deduplicate: merge concepts that represent the same idea across sections. Keep the richest title and source_phrase.
@@ -1273,9 +1332,11 @@ Respond entirely in ${language}.`;
 }
 
 export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) {
-  const { llmModel, language } = splitOpts;
+  const { llmModel, language, charCount } = splitOpts;
+  const { minViableConcepts } = await import("./config/flags.js");
   const model = resolveLlmModelArg(llmModel);
   const lang = String(language || "English").trim() || "English";
+  const minRequired = minViableConcepts(charCount ?? 0);
   const payload = (Array.isArray(partials) ? partials : [])
     .map((p) => ({
       label: String(p?.label || "Section"),
@@ -1287,14 +1348,24 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
   }
   const partialsJson = JSON.stringify(payload);
   const system = buildMergeConceptInventoriesPrompt(lang, partialsJson);
-  const attempts = [
-    { compact: false, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: true },
-    { compact: true, useJsonObjectMode: false },
-    { compact: true, terse: true, useJsonObjectMode: true },
+  const MAX_MERGE_ATTEMPTS = 3;
+  const attemptConfigs = [
+    { compact: false, terse: false },
+    { compact: true, terse: false },
+    { compact: true, terse: true },
   ];
+
+  function normalizeRecoveredConcepts(recovered) {
+    if (!Array.isArray(recovered) || !recovered.length) return [];
+    const validated = parseConceptInventoryFromModelResponse(
+      JSON.stringify({ concepts: recovered }),
+    );
+    return Array.isArray(validated) ? validated : [];
+  }
+
   let lastRaw = "";
-  for (const attempt of attempts) {
+  for (let attemptIndex = 0; attemptIndex < MAX_MERGE_ATTEMPTS; attemptIndex += 1) {
+    const attempt = attemptConfigs[attemptIndex] || attemptConfigs[attemptConfigs.length - 1];
     const userContent = attempt.terse
       ? "Merge into one inventory. JSON only. If needed omit source_phrase and optional fields."
       : attempt.compact
@@ -1307,11 +1378,11 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
           { role: "system", content: attempt.terse ? buildConceptInventoryTersePrompt(lang) : system },
           { role: "user", content: userContent },
         ],
-        useJsonObjectMode: attempt.useJsonObjectMode,
+        useJsonObjectMode: true,
         max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
       });
     } catch (err) {
-      if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+      if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
         lastRaw = await callLlmSplit({
           llmModel: model,
           messages: [
@@ -1325,17 +1396,41 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
         throw err;
       }
     }
+
     const concepts = parseConceptInventoryFromModelResponse(lastRaw);
-    if (Array.isArray(concepts) && concepts.length) {
+    if (Array.isArray(concepts) && concepts.length >= minRequired) {
       return {
         concepts,
         inventoryMode: attempt.terse ? "map_reduce_terse" : "map_reduce",
       };
     }
-    console.warn("Concept inventory merge: parse failed, trying next attempt…", lastRaw.slice(0, 400));
+
+    console.log(
+      `[inventory-merge] Parse failed. Running partial recovery on ${lastRaw.length} chars of raw response.`,
+    );
+    const recovered = normalizeRecoveredConcepts(recoverPartialConceptArray(lastRaw));
+    console.log(`[inventory-merge] Partial recovery: extracted ${recovered.length} complete objects.`);
+
+    if (recovered.length >= minRequired) {
+      console.log(
+        `[inventory-merge] Partial recovery accepted (${recovered.length} >= minRequired ${minRequired}). Proceeding without retry.`,
+      );
+      return {
+        concepts: recovered,
+        inventoryMode: "map_reduce_partial",
+      };
+    }
+
+    if (attemptIndex < MAX_MERGE_ATTEMPTS - 1) {
+      console.log(
+        `[inventory-merge] Partial recovery insufficient (${recovered.length} < minRequired ${minRequired}). Retrying LLM call (attempt ${attemptIndex + 2}/${MAX_MERGE_ATTEMPTS}).`,
+      );
+      continue;
+    }
   }
-  console.warn("Concept inventory merge: all parse attempts failed:", lastRaw.slice(0, 800));
-  throwConceptInventoryParseError(lastRaw);
+
+  console.warn("[inventory-merge] All attempts failed. Marking DPP as failed.");
+  return { concepts: [], failReason: "MERGE_TRUNCATED" };
 }
 
 export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null, vaultContextBlock = "" } = {}) {

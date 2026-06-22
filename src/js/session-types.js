@@ -519,6 +519,7 @@ export function createEmptyPreparationState(fingerprint = "") {
     waves: [],
     phaseResults: {},
     errors: [],
+    failReason: null,
   };
 }
 
@@ -542,6 +543,7 @@ export function normalizePreparationState(raw) {
       ? { ...raw.phaseResults }
       : {};
   base.errors = Array.isArray(raw.errors) ? [...raw.errors] : [];
+  base.failReason = raw.failReason != null ? String(raw.failReason) : null;
   return base;
 }
 
