@@ -68,8 +68,14 @@ export function minViableConcepts(charCount = 0) {
   return Math.max(MIN_CONCEPTS_ABSOLUTE, Math.floor(chars / MIN_CHARS_PER_CONCEPT));
 }
 
-/** Max idle time before a stuck DPP run is marked failed (20260622-fix-dpp-recalculation-guard). */
+/** Max idle time before a stuck DPP run is retried or failed (20260622-fix-dpp-recalculation-guard). */
 export const DPP_STALE_TIMEOUT_MS = 10 * 60 * 1000;
+
+/** Auto-retries after STALE_RUN before surfacing failed to the user. */
+export const MAX_DPP_STALE_RETRIES = 2;
+
+/** Allow re-run when preparation is still pending with no persisted activity timestamp. */
+export const DPP_PENDING_GRACE_MS = 30 * 1000;
 
 /** Interview capture — max LLM follow-up rounds after fixed opener (20260620-nodoc-interview-capture). */
 export const INTERVIEW_MAX_FOLLOWUP_ROUNDS = 4;

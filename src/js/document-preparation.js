@@ -18,8 +18,8 @@ import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js"
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
 import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
-import { runConceptInventoryWithFallback, isConceptInventoryValid } from "./session.js";
-import { getSupabaseAuthToken } from "./llm.js?v=20260622_10";
+import { runConceptInventoryWithFallback, isConceptInventoryValid, runDedupedDppFlight } from "./session.js";
+import { getSupabaseAuthToken } from "./llm.js?v=20260622_11";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
 import { scoreConceptNovelty } from "./vault/novelty-scoring.js";
@@ -543,6 +543,15 @@ async function executePhase(doc, phaseId, ctx) {
  */
 export async function runDocumentPreparationPipeline(doc, options = {}) {
   if (!doc?.docId) throw new Error("DPP requires docId");
+  return runDedupedDppFlight(
+    doc.docId,
+    () => runDocumentPreparationPipelineInner(doc, options),
+    { force: options.forceRerun === true },
+  );
+}
+
+async function runDocumentPreparationPipelineInner(doc, options = {}) {
+  if (!doc?.docId) throw new Error("DPP requires docId");
   const stopAfterTier = options.stopAfterTier ?? 2;
   const fingerprint = computePreparationFingerprint(doc, options);
   const prep = ensurePreparation(doc);
@@ -550,6 +559,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   setPreparationStatus(prep, "running");
   prep.startedAt = prep.startedAt || Date.now();
   prep.errors = prep.errors || [];
+  await persistDoc(doc);
 
   const ctx = {
     llmModel: options.llmModel,

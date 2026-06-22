@@ -5,13 +5,13 @@ import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSIONS_BY_MODE_KEY,
   MAX_N_TEST,
-} from "./config.js?v=20260622_10";
+} from "./config.js?v=20260622_11";
 import {
   getActiveSession as getActiveDocumentSession,
   saveActiveSession as saveDocumentSession,
 } from "./session-store.js";
 import { writeThroughModeSlice } from "./block-store.js";
-import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_10";
+import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_11";
 import {
   deepSeekGenerateBlockBridge,
   deepSeekGenerateBlockJson,
@@ -19,7 +19,7 @@ import {
   generateBlockFromChunk,
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
-} from "./api.js?v=20260622_10";
+} from "./api.js?v=20260622_11";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
 import {
   annotateBlockIndexEntry,
@@ -32,16 +32,16 @@ import {
   replaceCoverageForBlock,
   findSemanticDuplicatePairs,
 } from "./pipeline-levers.js";
-import { extractSneakPeek } from "./sneakPeek.js?v=20260622_10";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260622_11";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
   getSessionLlmModel,
-} from "./llm.js?v=20260622_10";
-import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_10";
-import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_10";
-import { getStudyLanguage } from "./ui.js?v=20260622_10";
-import { isOfflineMode } from "./offline.js?v=20260622_10";
+} from "./llm.js?v=20260622_11";
+import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_11";
+import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_11";
+import { getStudyLanguage } from "./ui.js?v=20260622_11";
+import { isOfflineMode } from "./offline.js?v=20260622_11";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
 import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
@@ -51,6 +51,8 @@ import {
   MIN_CHARS_PER_CONCEPT,
   minViableConcepts,
   DPP_STALE_TIMEOUT_MS,
+  DPP_PENDING_GRACE_MS,
+  MAX_DPP_STALE_RETRIES,
 } from "./config/flags.js";
 import { normalizePreparationState, setPreparationStatus } from "./session-types.js";
 
@@ -2333,7 +2335,7 @@ export async function runConceptInventoryMapReduce(
     deepSeekMergeConceptInventories,
     INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
     INVENTORY_MAX_PARALLEL_CALLS,
-  } = await import("./api.js?v=20260622_10");
+  } = await import("./api.js?v=20260622_11");
 
   const wordCount =
     Number(splitOpts.wordCount) ||
@@ -2464,7 +2466,7 @@ export async function runConceptInventory(
     };
   }
 
-  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_10");
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_11");
   progress("Indexing concepts�");
   const result = await deepSeekConceptInventory({
     llmModel: model,
@@ -2538,6 +2540,76 @@ export function isConceptInventoryValid(session) {
   return false;
 }
 
+/** @type {Map<string, Promise<unknown>>} */
+const dppFlights = new Map();
+
+/**
+ * Dedupe concurrent DPP runs per docId (used by document-preparation.js).
+ * @param {string} docId
+ * @param {() => Promise<unknown>} factory
+ * @param {{ force?: boolean }} [options]
+ */
+export function runDedupedDppFlight(docId, factory, options = {}) {
+  const id = String(docId || "").trim();
+  if (!id) return Promise.resolve(factory());
+  if (!options.force && dppFlights.has(id)) return dppFlights.get(id);
+  const flight = Promise.resolve()
+    .then(factory)
+    .finally(() => {
+      if (dppFlights.get(id) === flight) dppFlights.delete(id);
+    });
+  dppFlights.set(id, flight);
+  return flight;
+}
+
+export function isDppInFlight(docId) {
+  return dppFlights.has(String(docId || "").trim());
+}
+
+function getPreparationActivityTs(prep) {
+  if (Number.isFinite(Number(prep?.updatedAt))) return Number(prep.updatedAt);
+  if (Number.isFinite(Number(prep?.startedAt))) return Number(prep.startedAt);
+  return null;
+}
+
+function isPreparationStale(prep, session) {
+  const activityTs = getPreparationActivityTs(prep);
+  if (activityTs != null) {
+    return Date.now() - activityTs > DPP_STALE_TIMEOUT_MS;
+  }
+  const docTs = Number(session?.updatedAt) || Number(session?.createdAt) || 0;
+  return docTs > 0 && Date.now() - docTs > DPP_PENDING_GRACE_MS;
+}
+
+async function handlePreparationStaleRun(session) {
+  if (!session.shared) session.shared = {};
+  const prep = normalizePreparationState(session.shared.preparation);
+  session.shared.preparation = prep;
+  const retries = Number(prep.staleRetryCount) || 0;
+
+  if (retries < MAX_DPP_STALE_RETRIES) {
+    prep.staleRetryCount = retries + 1;
+    prep.failReason = "STALE_RUN";
+    setPreparationStatus(prep, "pending");
+    prep.startedAt = null;
+    prep.currentPhase = null;
+    console.log(
+      `[DPP-GUARD] Stale preparation — auto-retry ${prep.staleRetryCount}/${MAX_DPP_STALE_RETRIES}.`,
+    );
+    await saveDocumentSession(session);
+    return { retried: true, session };
+  }
+
+  prep.status = "failed";
+  prep.failReason = "STALE_RUN";
+  prep.updatedAt = Date.now();
+  console.log(
+    "[DPP-GUARD] Stale preparation exceeded retry limit — marking failed (STALE_RUN).",
+  );
+  await saveDocumentSession(session);
+  return { retried: false, session };
+}
+
 /**
  * @param {object} session
  * @param {{ forceRerun?: boolean }} [options]
@@ -2567,11 +2639,26 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   );
 
   if (status === "failed") {
-    console.log("[DPP-GUARD] Status 'failed' � surfacing error state. Not auto-retrying.");
+    const prep = normalizePreparationState(session?.shared?.preparation);
+    if (prep.failReason === "STALE_RUN" && (Number(prep.staleRetryCount) || 0) < MAX_DPP_STALE_RETRIES) {
+      console.log("[DPP-GUARD] Failed STALE_RUN with retries remaining — allowing re-run.");
+      return { decision: "run" };
+    }
+    console.log("[DPP-GUARD] Status 'failed' — surfacing error state. Not auto-retrying.");
     return { decision: "failed" };
   }
 
   if (status === "running" || status === "pending") {
+    const prep = normalizePreparationState(session?.shared?.preparation);
+    const docId = String(session?.docId || "").trim();
+    if (isDppInFlight(docId)) {
+      console.log("[DPP-GUARD] Skipping DPP re-trigger: pipeline in flight.");
+      return { decision: "waiting" };
+    }
+    if (isPreparationStale(prep, session)) {
+      console.log("[DPP-GUARD] Preparation stale with no in-flight pipeline — allowing re-run.");
+      return { decision: "run" };
+    }
     console.log("[DPP-GUARD] Skipping DPP re-trigger: already running.");
     return { decision: "waiting" };
   }
@@ -2588,24 +2675,6 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   return { decision: "run" };
 }
 
-function getPreparationActivityTs(prep) {
-  if (Number.isFinite(Number(prep?.updatedAt))) return Number(prep.updatedAt);
-  if (Number.isFinite(Number(prep?.startedAt))) return Number(prep.startedAt);
-  return null;
-}
-
-async function markPreparationStaleRun(session) {
-  if (!session.shared) session.shared = {};
-  const prep = normalizePreparationState(session.shared.preparation);
-  session.shared.preparation = prep;
-  prep.status = "failed";
-  prep.failReason = "STALE_RUN";
-  prep.updatedAt = Date.now();
-  console.log("[DPP-GUARD] Stale preparation run detected � marking failed (STALE_RUN).");
-  await saveDocumentSession(session);
-  return session;
-}
-
 /**
  * Poll until inventory guard returns skip or degraded, or failed/run timeout.
  * @param {() => Promise<object|null>} reloadSession
@@ -2614,7 +2683,7 @@ async function markPreparationStaleRun(session) {
  */
 export async function pollUntilConceptInventoryReady(reloadSession, options = {}) {
   const pollMs = options.pollMs ?? 3000;
-  const maxWaitMs = options.maxWaitMs ?? 300000;
+  const maxWaitMs = options.maxWaitMs ?? DPP_STALE_TIMEOUT_MS + 60_000;
   const started = Date.now();
 
   while (Date.now() - started < maxWaitMs) {
@@ -2626,12 +2695,15 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
     const prep = normalizePreparationState(session.shared?.preparation);
     if (
       (prep.status === "running" || prep.status === "pending") &&
-      !meetsConceptInventoryThreshold(session)
+      !meetsConceptInventoryThreshold(session) &&
+      !isDppInFlight(session.docId)
     ) {
-      const activityTs = getPreparationActivityTs(prep);
-      if (activityTs != null && Date.now() - activityTs > DPP_STALE_TIMEOUT_MS) {
-        const failedSession = await markPreparationStaleRun(session);
-        return { decision: "failed", session: failedSession };
+      if (isPreparationStale(prep, session)) {
+        const stale = await handlePreparationStaleRun(session);
+        if (stale.retried) {
+          return { decision: "stale_retry", session: stale.session };
+        }
+        return { decision: "failed", session: stale.session };
       }
     }
 
@@ -2641,6 +2713,9 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
     }
     if (guard.decision === "failed") {
       return { decision: "failed", session };
+    }
+    if (guard.decision === "run") {
+      return { decision: "run", session };
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
@@ -2666,7 +2741,7 @@ export async function runConceptInventoryWithFallback(
 
   const runFallback = async (reason) => {
     progress("Using classic split (fallback)�");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_10");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_11");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -2873,7 +2948,7 @@ export async function packInventoryToBlocks(
   };
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
-    "./api.js?v=20260622_10",
+    "./api.js?v=20260622_11",
   );
 
   progress(`Packing ${requested_n} blocks�`);
@@ -3030,7 +3105,7 @@ export async function twoPhaseConceptSplit(
 
   const runFallback = async () => {
     progress("Using classic split (fallback)�");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_10");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_11");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -3085,7 +3160,7 @@ export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApi
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_10");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_11");
   const text = await deepSeekAuditBlockIndex({
     llmModel: model,
     blockIndexJson: payload,
@@ -3116,7 +3191,7 @@ export async function mergeChunks(
     .trim();
 
   const blockCount = 1 + absorbs.length;
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_10");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_11");
   const mergedChunk = await deepSeekPostMergeChunk({
     llmModel: model,
     keep_id,

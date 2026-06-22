@@ -1,26 +1,26 @@
-import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260622_10";
+import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260622_11";
 import {
   assertLlmKeyPresent,
   getLlmCallingLabel,
   getSessionLlmModel,
-} from "./llm.js?v=20260622_10";
+} from "./llm.js?v=20260622_11";
 import { normalizeTestQuestion, shuffleTestQuestionOptions } from "./shuffle-options.js";
-import { buildMarkdown } from "./export.js?v=20260622_10";
+import { buildMarkdown } from "./export.js?v=20260622_11";
 import {
   LS_REVIEW_CONFIG_PREFIX,
   LS_REVIEW_FLASHCARDS_PREFIX,
   LS_REVIEW_SESSION_MD_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
-} from "./config.js?v=20260622_10";
-import { clampInt, getMissedTestQuestions, getTotalBlocksSafe, isQuestionsStudyMode, state } from "./session.js?v=20260622_10";
+} from "./config.js?v=20260622_11";
+import { clampInt, getMissedTestQuestions, getTotalBlocksSafe, isQuestionsStudyMode, state } from "./session.js?v=20260622_11";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
   renderMarkdown,
   renderMcOptionHtml,
-} from "./markdown.js?v=20260622_10";
-import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_10";
-import { els, showScreen, typesetMath } from "./ui.js?v=20260622_10";
+} from "./markdown.js?v=20260622_11";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_11";
+import { els, showScreen, typesetMath } from "./ui.js?v=20260622_11";
 import { buildReviewQueue, isOnTime, normalizeSmItem, updateSmItem } from "./sm2.js";
 import { getPedagogicalFlags } from "./config/flags.js";
 import { computeWhyThisExplanation } from "./pedagogy/why-this.js";
@@ -42,7 +42,7 @@ import {
   buildMnemonicHintHtml,
   filterSmItemsByMnemonics,
   resolveSmItemConceptIds,
-} from "./mnemonic.js?v=20260622_10";
+} from "./mnemonic.js?v=20260622_11";
 
 let reviewType = "both"; // "test" | "socratic" | "both"
 /** @type {((e: KeyboardEvent) => void) | null} */

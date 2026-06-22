@@ -521,6 +521,7 @@ export function createEmptyPreparationState(fingerprint = "") {
     phaseResults: {},
     errors: [],
     failReason: null,
+    staleRetryCount: 0,
   };
 }
 
@@ -558,6 +559,9 @@ export function normalizePreparationState(raw) {
       : {};
   base.errors = Array.isArray(raw.errors) ? [...raw.errors] : [];
   base.failReason = raw.failReason != null ? String(raw.failReason) : null;
+  base.staleRetryCount = Number.isFinite(Number(raw.staleRetryCount))
+    ? Math.max(0, Math.floor(Number(raw.staleRetryCount)))
+    : 0;
   return base;
 }
 
