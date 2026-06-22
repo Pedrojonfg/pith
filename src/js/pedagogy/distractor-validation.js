@@ -155,7 +155,7 @@ export async function validateDistractorBatch(items, options = {}) {
               DISTRACTOR_VALIDATION_MAX_TOKENS,
               80 * batch.length + 120,
             ),
-            temperature: 0,
+            temperature: 0.1,
           });
           try {
             const { logLlmUsage } = await import("../llm-usage-log.js");

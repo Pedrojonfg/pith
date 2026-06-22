@@ -52,6 +52,6 @@ export async function askSlowReaderIA(session, userQuery, { annotationType } = {
         content: `Text read so far:\n${context.slice(-120000)}\n\nQuestion: ${query}`,
       },
     ],
-    temperature: 0.2,
+    temperature: 0.6,
   });
 }

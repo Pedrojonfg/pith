@@ -266,13 +266,13 @@ export function refreshGuideContext() {
   paintChatHistory(history);
 }
 
-const GUIDE_SIDEBAR_STYLE = `Response style ó this appears in a narrow sidebar chat, not a lecture:
-- Default: short and direct. Most answers fit in 1ñ4 sentences.
+const GUIDE_SIDEBAR_STYLE = `Response style ù this appears in a narrow sidebar chat, not a lecture:
+- Default: short and direct. Most answers fit in 1ù4 sentences.
 - Lead with the answer; skip preamble, restating the question, and block recaps unless essential.
 - Use a brief bullet list (=4 items) only when listing distinct points; avoid nested lists.
 - Expand (up to ~2 short paragraphs) only when the student explicitly asks for depth, examples, or step-by-step explanation, or when a short answer would be misleading for a genuinely multi-part question.
 - Reference block numbers in passing when useful; do not summarize whole blocks.
-- At most one short follow-up question when it deepens thinking ó never a list of questions.`;
+- At most one short follow-up question when it deepens thinking ù never a list of questions.`;
 
 export function buildGuidePrompt(userMessage, currentBlockIndex) {
   const ctx = window.guideContext || {};
@@ -302,7 +302,7 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
       blocksListText: activeSession?.blocks_list_text || "",
     });
     if (excerpt) {
-      documentExcerptSection = `\n\nDOCUMENT EXCERPT (full uploaded material ó definitional lookup):\n${excerpt}`;
+      documentExcerptSection = `\n\nDOCUMENT EXCERPT (full uploaded material ù definitional lookup):\n${excerpt}`;
     }
   } else if (
     fullMaterial &&
@@ -310,7 +310,7 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
     /\b(compare|how does|why does)\b/i.test(safeUser)
   ) {
     documentExcerptSection =
-      "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"You have not studied the block that develops this yet.\" Mention block number only if listed in session context ó do not reveal unread block explanations.";
+      "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"You have not studied the block that develops this yet.\" Mention block number only if listed in session context ù do not reveal unread block explanations.";
   }
 
   const systemPrompt =
@@ -419,7 +419,7 @@ export async function sendGuideMessage(userText, currentBlockIndex) {
       llmModel,
       max_tokens: 512,
       messages,
-      temperature: 0.2,
+      temperature: 0.6,
     });
 
     appendChatMessage("assistant", assistantText, Date.now());
@@ -478,7 +478,7 @@ async function sendGuideMessageSilent(userText, currentBlockIndex, meta) {
     llmModel,
     max_tokens: 512,
     messages,
-    temperature: 0.2,
+    temperature: 0.6,
   });
 
   const assistantMsg = {
