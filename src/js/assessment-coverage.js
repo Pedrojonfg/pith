@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Holistic pre-packing assessment — budget, section coverage plan, merge.
  * @see specs/20260618-holistic-assessment-coverage/
  */
 
-import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260527_1";
+import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260622_5";
 
 function clamp(n, min, max) {
   const x = Number(n);

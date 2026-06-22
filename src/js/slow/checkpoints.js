@@ -1,9 +1,9 @@
-import { parseHeadings } from "./headings.js?v=20260528_1";
-import { getPageSlice, charOffsetToPage } from "./pagination.js?v=20260528_1";
-import { addAnnotation } from "./annotations.js?v=20260528_1";
-import { storeActiveSession } from "../session.js?v=20260527_1";
-import { generateCheckpointQuestion } from "./phase0.js?v=20260528_1";
-import { getStudyLanguage } from "../ui.js?v=20260525_1";
+﻿import { parseHeadings } from "./headings.js?v=20260622_5";
+import { getPageSlice, charOffsetToPage } from "./pagination.js?v=20260622_5";
+import { addAnnotation } from "./annotations.js?v=20260622_5";
+import { storeActiveSession } from "../session.js?v=20260622_5";
+import { generateCheckpointQuestion } from "./phase0.js?v=20260622_5";
+import { getStudyLanguage } from "../ui.js?v=20260622_5";
 
 const CHECKPOINT_DELAY_MS = 10000;
 export const CHECKPOINT_CHIP_LABEL = "[≡ CHECKPOINT · 30 seg]";

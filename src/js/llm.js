@@ -1,8 +1,8 @@
-import {
+﻿import {
   DS_CHAT_COMPLETIONS_URL,
   LS_GEMINI_KEY,
   LS_KEY,
-} from "./config.js?v=20260525_1";
+} from "./config.js?v=20260622_5";
 
 export const LLM_MODEL_DEEPSEEK = "deepseek";
 export const DEFAULT_LLM_MODEL = LLM_MODEL_DEEPSEEK;

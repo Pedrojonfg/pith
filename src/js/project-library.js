@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Project library browser orchestration.
  * @see specs/20260623-study-projects/contracts/project-library-ui.md
  */
@@ -26,8 +26,8 @@ import {
   renameProject,
 } from "./project-store.js";
 import { getPreparationBadgeLabel } from "./document-preparation.js";
-import { exportDocumentSessionMarkdown } from "./export.js?v=20260525_1";
-import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260525_1";
+import { exportDocumentSessionMarkdown } from "./export.js?v=20260622_5";
+import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260622_5";
 
 /** @type {{ currentProjectId: string|null, fromLibraryDocId: string|null, uploadProjectId: string|null }} */
 export const projectLibraryState = {

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Heading detection for Slow Mode scope picker.
  * Offsets are in normalizedTextFull coordinates.
  *
@@ -6,7 +6,7 @@
  * `html_min` tag parsing is retained only for legacy sessions.
  */
 
-import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260609_1";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_5";
 
 const DEFAULT_HEADING_FORMAT = "markdown";
 const MARKDOWN_HEADING = /^(#{1,6})\s+(.+)$/gm;

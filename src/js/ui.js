@@ -1,17 +1,17 @@
-import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
-import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
+﻿import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_5";
+import { getStoredGeminiKey } from "./llm.js?v=20260622_5";
 import { getGoogleBooksApiKey } from "./book-lookup.js";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
-import { renderMarkdown } from "./markdown.js?v=20260525_1";
-import { isOfflineMode } from "./offline.js?v=20260606_1";
+import { renderMarkdown } from "./markdown.js?v=20260622_5";
+import { isOfflineMode } from "./offline.js?v=20260622_5";
 import { MISC_PROJECT_ID } from "./session-types.js";
 import {
   isMnemonicButtonVisiblePref,
   setMnemonicButtonVisiblePref,
   syncMnemonicButtonVisibility,
-} from "./mnemonic.js?v=20260619_1";
+} from "./mnemonic.js?v=20260622_5";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;

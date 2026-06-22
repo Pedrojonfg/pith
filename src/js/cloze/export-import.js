@@ -1,11 +1,11 @@
-import {
+﻿import {
   getValidItems,
   normalizeClozeItem,
   normalizeEpistemicEdge,
   normalizeEpistemicGraph,
   normalizeEpistemicNode,
-} from "./normalize.js?v=20260607_1";
-import { buildExportFrontmatter } from "../export-format.js?v=20260607_1";
+} from "./normalize.js?v=20260622_5";
+import { buildExportFrontmatter } from "../export-format.js?v=20260622_5";
 
 const CLOZE_PACK_RE = /<!--\s*cloze-pack:v1:([A-Za-z0-9+/=]+)\s*-->/;
 

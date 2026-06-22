@@ -1,8 +1,8 @@
-import {
+﻿import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "./llm.js?v=20260525_1";
+} from "./llm.js?v=20260622_5";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);
