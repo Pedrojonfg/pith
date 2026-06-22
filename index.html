@@ -347,62 +347,9 @@
           <div class="card settings-card">
             <button type="button" id="settingsBackBtn" class="create-back-btn">← Back</button>
             <h1>Settings</h1>
-            <p id="settingsOnboardingBanner" class="hint settings-onboarding-banner" hidden>
-              Add your DeepSeek API key to start using Pith.
-            </p>
 
             <h2 class="settings-section-title">Account</h2>
             <button type="button" id="btnSignOut" class="btn-secondary">Sign out</button>
-
-            <div class="divider"></div>
-
-            <h2 class="settings-section-title">API keys</h2>
-            <p class="hint">
-              DeepSeek is required for all AI features. Add a Gemini key for Knowledge Vault semantic embeddings (optional). Keys are stored locally.
-            </p>
-            <form id="apiKeyForm" autocomplete="off">
-              <label for="apiKeyInput">DeepSeek API key</label>
-              <input
-                id="apiKeyInput"
-                name="apiKey"
-                type="password"
-                inputmode="text"
-                spellcheck="false"
-                autocapitalize="none"
-                autocomplete="off"
-                placeholder="sk-…"
-                required
-              />
-              <label for="geminiApiKeyInput" style="margin-top: 12px">Gemini API key (optional, embeddings only)</label>
-              <input
-                id="geminiApiKeyInput"
-                name="geminiApiKey"
-                type="password"
-                inputmode="text"
-                spellcheck="false"
-                autocapitalize="none"
-                autocomplete="off"
-                placeholder="AIza…"
-              />
-              <label for="googleBooksApiKeyInput" style="margin-top: 12px">Google Books API key (optional)</label>
-              <input
-                id="googleBooksApiKeyInput"
-                name="googleBooksApiKey"
-                type="password"
-                inputmode="text"
-                spellcheck="false"
-                autocapitalize="none"
-                autocomplete="off"
-                placeholder="AIza…"
-              />
-              <p class="hint" style="margin-top: 4px">
-                Enables book cover and description fallback when creating sessions from books without a file. Works without it via Open Library and Wikipedia.
-              </p>
-              <div class="row">
-                <button type="submit" class="btn-primary">Save keys</button>
-                <span class="hint" id="apiKeyStatus" role="status"></span>
-              </div>
-            </form>
 
             <div class="divider"></div>
 
@@ -1910,8 +1857,8 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_7";
-      import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260622_7";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_8";
+      import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260622_8";
       initSplash();
 
       function showBootFailure(message) {
@@ -1926,7 +1873,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260622_7");
+        await import("./src/js/main.js?v=20260622_8");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

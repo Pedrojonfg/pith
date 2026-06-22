@@ -4,12 +4,15 @@
  */
 
 import { supabase } from "./supabase-client.js";
-import { LS_GOOGLE_BOOKS_KEY } from "./config.js";
+import { getSupabaseAuthToken } from "./llm.js";
+import { SUPABASE_URL } from "./config/supabase.js";
 import {
   BOOK_LOOKUP_FLAGS as FLAGS,
 } from "./config/flags.js";
 
 export const COVERAGE_LEVELS = Object.freeze({ A: "A", B: "B", C: "C" });
+
+const BOOKS_PROXY_URL = `${SUPABASE_URL}/functions/v1/books-proxy`;
 
 const SUPPORTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -35,22 +38,20 @@ export function buildCacheKey(title, author) {
   return a ? `${t}__${a}` : t;
 }
 
-export function getGoogleBooksApiKey() {
-  try {
-    return String(localStorage.getItem(LS_GOOGLE_BOOKS_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
+/**
+ * @param {Record<string, string>} queryParams
+ */
+async function fetchBooksViaProxy(queryParams) {
+  const token = await getSupabaseAuthToken();
+  if (!token) return null;
 
-export function saveGoogleBooksApiKey(key) {
-  try {
-    const trimmed = String(key || "").trim();
-    if (trimmed) localStorage.setItem(LS_GOOGLE_BOOKS_KEY, trimmed);
-    else localStorage.removeItem(LS_GOOGLE_BOOKS_KEY);
-  } catch {
-    // ignore
-  }
+  const params = new URLSearchParams(queryParams);
+  const res = await fetch(`${BOOKS_PROXY_URL}?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!res.ok) return null;
+  return res.json();
 }
 
 /**
@@ -234,14 +235,9 @@ async function fetchOpenLibrary(title, author) {
  * @param {string} author
  */
 async function fetchGoogleBooks(title, author) {
-  const apiKey = getGoogleBooksApiKey();
-  if (!apiKey) return null;
-  const q = encodeURIComponent(`${title} ${author}`.trim());
-  const res = await fetchWithTimeout(
-    `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&key=${encodeURIComponent(apiKey)}`,
-  );
-  if (!res.ok) return null;
-  const json = await res.json();
+  const q = `${title} ${author}`.trim();
+  const json = await fetchBooksViaProxy({ q, maxResults: "1" });
+  if (!json) return null;
   const item = Array.isArray(json?.items) ? json.items[0] : null;
   const vi = item?.volumeInfo;
   if (!vi) return null;

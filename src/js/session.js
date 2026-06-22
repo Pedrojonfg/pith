@@ -1,7 +1,6 @@
 import {
   LS_ACTIVE_SESSION_KEY,
   LS_BLOCK_INDEX_KEY,
-  LS_KEY,
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSIONS_BY_MODE_KEY,
@@ -38,8 +37,6 @@ import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
   getSessionLlmModel,
-  getStoredGeminiKey,
-  saveGeminiKey,
 } from "./llm.js?v=20260622_7";
 import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_7";
 import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_7";
@@ -70,8 +67,6 @@ export {
   normalizeRecallSlice,
 } from "./recall-slice.js";
 
-export { getStoredGeminiKey, saveGeminiKey };
-
 export const state = {
   studyMode: null,
   originalMaterialText: "",
@@ -99,17 +94,6 @@ export function clampInt(n, min, max, fallback) {
   const x = Math.round(Number(n));
   if (!Number.isFinite(x)) return fallback;
   return Math.min(max, Math.max(min, x));
-}
-
-export function getStoredKey() {
-  const v = localStorage.getItem(LS_KEY);
-  if (!v) return null;
-  const trimmed = v.trim();
-  return trimmed.length ? trimmed : null;
-}
-
-export function saveKey(key) {
-  localStorage.setItem(LS_KEY, key);
 }
 
 export function loadDefaultQuestionConfig() {

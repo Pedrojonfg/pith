@@ -25,7 +25,7 @@ export async function logLlmUsage(row) {
       model: String(row.model || "unknown"),
       input_tokens: Number.isFinite(row.inputTokens) ? row.inputTokens : null,
       output_tokens: Number.isFinite(row.outputTokens) ? row.outputTokens : null,
-      meta: row.meta && typeof row.meta === "object" ? row.meta : null,
+      metadata: row.meta && typeof row.meta === "object" ? row.meta : {},
       created_at: new Date().toISOString(),
     };
     const { error } = await supabase.from("llm_usage_logs").insert(payload);

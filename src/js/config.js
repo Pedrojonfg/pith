@@ -1,7 +1,3 @@
-export const LS_KEY = "ds_api_key";
-export const LS_GEMINI_KEY = "gemini_api_key";
-/** Optional — Google Books metadata fallback for book-enriched nodoc (20260622-book-enriched-nodoc). */
-export const LS_GOOGLE_BOOKS_KEY = "google_books_api_key";
 export const LS_ACTIVE_SESSION_KEY = "active_session";
 export const LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode";
 export const LS_DEFAULT_LLM_MODEL_KEY = "default_llm_model";
@@ -49,9 +45,6 @@ export const MAX_N_TEST = 10;
 /** Holistic pre-packing assessment totals (test + socratic). */
 export const HOLISTIC_ASSESSMENT_MAX = 50;
 export const HOLISTIC_ASSESSMENT_MIN = 8;
-
-export const DS_CHAT_COMPLETIONS_URL =
-  "https://api.deepseek.com/v1/chat/completions";
 
 export const STUDY_LANG_OPTIONS = [
   { value: "English", label: "English" },

@@ -1,13 +1,59 @@
-import {
-  DS_CHAT_COMPLETIONS_URL,
-  LS_GEMINI_KEY,
-  LS_KEY,
-} from "./config.js?v=20260622_7";
+import { SUPABASE_URL } from "./config/supabase.js";
+import { supabase } from "./supabase-client.js";
 
 export const LLM_MODEL_DEEPSEEK = "deepseek";
 export const DEFAULT_LLM_MODEL = LLM_MODEL_DEEPSEEK;
 
-/** Chat always uses DeepSeek. Gemini key is for embeddings only (vault/embeddings.js). */
+const PROXY_URL = `${SUPABASE_URL}/functions/v1/llm-proxy`;
+
+/** Sync cache for legacy getApiKeyForLlmModel() call sites — updated on auth events. */
+let cachedAccessToken = null;
+
+/**
+ * @param {import('@supabase/supabase-js').Session | null} session
+ */
+export function syncPlatformLlmAccessFromSession(session) {
+  cachedAccessToken = session?.access_token ?? null;
+}
+
+/**
+ * @returns {Promise<string|null>}
+ */
+export async function getSupabaseAuthToken() {
+  if (cachedAccessToken) return cachedAccessToken;
+  const { data: { session } } = await supabase.auth.getSession();
+  cachedAccessToken = session?.access_token ?? null;
+  return cachedAccessToken;
+}
+
+/**
+ * @param {{ service: string, endpoint: string, body: object, signal?: AbortSignal }} opts
+ */
+export async function callViaProxy({ service, endpoint, body, signal } = {}) {
+  const token = await getSupabaseAuthToken();
+  if (!token) throw new Error("Not authenticated — cannot call LLM proxy.");
+
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ service, endpoint, body }),
+    signal,
+  });
+
+  if (!res.ok) {
+    const err = await res.text().catch(() => "");
+    const apiErr = new Error(`LLM proxy error ${res.status}: ${err.slice(0, 300)}`);
+    apiErr.status = res.status;
+    throw apiErr;
+  }
+
+  return res.json();
+}
+
+/** Chat always uses DeepSeek. Platform Gemini is for embeddings/vision only. */
 export function normalizeLlmModel(_value) {
   return LLM_MODEL_DEEPSEEK;
 }
@@ -17,47 +63,30 @@ export function getLlmDisplayName(_llmModel) {
 }
 
 export function getLlmCallingLabel(_llmModel) {
-  return "Calling DeepSeek�";
+  return "Calling DeepSeek…";
 }
 
-/** Gemini API key � used only by vault/embeddings.js, not chat. */
-export function getStoredGeminiKey() {
-  try {
-    const v = localStorage.getItem(LS_GEMINI_KEY);
-    if (!v) return null;
-    const trimmed = v.trim();
-    return trimmed.length ? trimmed : null;
-  } catch {
-    return null;
-  }
+export function hasPlatformLlmAccess() {
+  return Boolean(cachedAccessToken);
 }
 
-export function saveGeminiKey(key) {
-  localStorage.setItem(LS_GEMINI_KEY, String(key || "").trim());
-}
-
+/** @deprecated BYOK removed — returns sentinel when authenticated. */
 export function getApiKeyForLlmModel(_llmModel) {
-  try {
-    const v = localStorage.getItem(LS_KEY);
-    if (!v) return null;
-    const trimmed = v.trim();
-    return trimmed.length ? trimmed : null;
-  } catch {
-    return null;
-  }
+  return cachedAccessToken ? "platform" : null;
 }
 
 export function assertLlmKeyPresent(_llmModel) {
-  const key = getApiKeyForLlmModel();
-  if (key) return key;
-  throw new Error("Missing DeepSeek API key. Open Settings to add it.");
+  if (!cachedAccessToken) {
+    throw new Error("Sign in to use AI features.");
+  }
+  return cachedAccessToken;
 }
 
 export function getDefaultLlmModel() {
   return DEFAULT_LLM_MODEL;
 }
 
-/** @deprecated Model selection removed � chat always uses DeepSeek. */
+/** @deprecated Model selection removed — chat always uses DeepSeek. */
 export function saveDefaultLlmModel(_model) {
   // no-op
 }
@@ -72,21 +101,18 @@ export function getSessionLlmModel(_session) {
 
 export function resolveLlmContext({ llmModel } = {}) {
   const id = normalizeLlmModel(llmModel);
-  const apiKey = getApiKeyForLlmModel();
-  if (!apiKey) {
-    throw new Error("Missing DeepSeek API key. Open API setup to add it.");
+  if (!cachedAccessToken) {
+    throw new Error("Sign in to use AI features.");
   }
   return {
     llmModel: id,
-    apiKey,
-    chatCompletionsUrl: DS_CHAT_COMPLETIONS_URL,
     apiModel: "deepseek-chat",
     displayName: "DeepSeek",
   };
 }
 
 /**
- * OpenAI-compatible chat completions via DeepSeek.
+ * OpenAI-compatible chat completions via DeepSeek (platform proxy).
  */
 export async function llmChatCompletions({
   llmModel,
@@ -105,30 +131,12 @@ export async function llmChatCompletions({
   if (max_tokens != null) body.max_tokens = max_tokens;
   if (response_format) body.response_format = response_format;
 
-  const res = await fetch(ctx.chatCompletionsUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${ctx.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+  const data = await callViaProxy({
+    service: "deepseek",
+    endpoint: "/v1/chat/completions",
+    body,
     signal,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    const err = new Error(apiMsg);
-    err.status = res.status;
-    throw err;
-  }
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
@@ -138,7 +146,7 @@ export async function llmChatCompletions({
 }
 
 /**
- * Multimodal chat completions (text + image_url parts) via DeepSeek.
+ * Multimodal chat completions (text + image_url parts) via DeepSeek proxy.
  * @param {object} opts
  */
 export async function llmChatCompletionsMultimodal({
@@ -158,34 +166,59 @@ export async function llmChatCompletionsMultimodal({
   if (max_tokens != null) body.max_tokens = max_tokens;
   if (response_format) body.response_format = response_format;
 
-  const res = await fetch(ctx.chatCompletionsUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${ctx.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+  const data = await callViaProxy({
+    service: "deepseek",
+    endpoint: "/v1/chat/completions",
+    body,
     signal,
   });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // handled below
-  }
-
-  if (!res.ok) {
-    const apiMsg =
-      data?.error?.message || data?.message || `Request failed with status ${res.status}.`;
-    const err = new Error(apiMsg);
-    err.status = res.status;
-    throw err;
-  }
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
     throw new Error("Unexpected API response (missing message content).");
   }
   return content.trim();
+}
+
+/**
+ * Gemini OpenAI-compatible chat via platform proxy (vision, etc.).
+ * @param {object} opts
+ */
+export async function geminiChatCompletions({
+  model,
+  messages,
+  temperature = 0,
+  max_tokens,
+  signal,
+} = {}) {
+  if (!cachedAccessToken) return null;
+
+  const body = { model, messages, temperature };
+  if (max_tokens != null) body.max_tokens = max_tokens;
+
+  const data = await callViaProxy({
+    service: "gemini-chat",
+    endpoint: "/v1beta/openai/chat/completions",
+    body,
+    signal,
+  });
+
+  const content = data?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== "string") {
+    return { status: 200, content: null };
+  }
+  return { status: 200, content: content.trim() };
+}
+
+/**
+ * Gemini native embed via platform proxy.
+ * @param {object} body
+ */
+export async function geminiEmbedContent(body, { signal } = {}) {
+  return callViaProxy({
+    service: "gemini-embed",
+    endpoint: "/v1beta/models/gemini-embedding-001:embedContent",
+    body,
+    signal,
+  });
 }

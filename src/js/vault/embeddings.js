@@ -3,7 +3,7 @@
  * @see specs/20260629-vault-embedding/contracts/embeddings.md
  */
 
-import { getStoredGeminiKey } from "../llm.js";
+import { geminiEmbedContent, getSupabaseAuthToken, hasPlatformLlmAccess } from "../llm.js";
 import {
   getEmbeddingOutputDimensionality,
   isVaultEmbeddingsFlagEnabled,
@@ -15,9 +15,6 @@ import {
 } from "./embedding-persist.js";
 
 export { computeNoveltyScore } from "./embedding-math.js";
-
-const GEMINI_EMBED_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
 
 /** In-memory fallback when Supabase unavailable (tests / offline). */
 const memoryCache = new Map();
@@ -44,7 +41,7 @@ export function buildConceptEmbedText(entry) {
 }
 
 export function isVaultEmbeddingsEnabled() {
-  return isVaultEmbeddingsFlagEnabled() && Boolean(getStoredGeminiKey());
+  return isVaultEmbeddingsFlagEnabled() && hasPlatformLlmAccess();
 }
 
 async function readCache(hash) {
@@ -73,8 +70,8 @@ async function writeCache(row) {
 export async function embedText(text, options = {}) {
   const sourceText = String(text || "").trim();
   if (!sourceText) throw new Error("embedText requires non-empty text");
-  const apiKey = getStoredGeminiKey();
-  if (!apiKey) throw new Error("Missing Gemini API key for embeddings");
+  const token = await getSupabaseAuthToken();
+  if (!token) throw new Error("Sign in to use embeddings");
 
   const sourceTextHash = await hashSourceText(sourceText);
   const cached = await readCache(sourceTextHash);
@@ -82,22 +79,12 @@ export async function embedText(text, options = {}) {
 
   const outputDimensionality = getEmbeddingOutputDimensionality();
   const taskType = options.taskType || "SEMANTIC_SIMILARITY";
-  const url = `${GEMINI_EMBED_URL}?key=${encodeURIComponent(apiKey)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "models/gemini-embedding-001",
-      content: { parts: [{ text: sourceText }] },
-      taskType,
-      outputDimensionality,
-    }),
+  const json = await geminiEmbedContent({
+    model: "models/gemini-embedding-001",
+    content: { parts: [{ text: sourceText }] },
+    taskType,
+    outputDimensionality,
   });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Gemini embed failed (${res.status}): ${body.slice(0, 200)}`);
-  }
-  const json = await res.json();
   const values = json?.embedding?.values;
   if (!Array.isArray(values) || !values.length) {
     throw new Error("Gemini embed returned empty vector");
