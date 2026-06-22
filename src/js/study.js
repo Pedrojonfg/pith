@@ -100,7 +100,7 @@ import {
 } from "./interview/origin.js";
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
-import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete, setPreparationStatus } from "./session-types.js";
 import {
   resolveRsvpInventoryForPack,
   shouldSkipRsvpInventoryLlm,
@@ -439,7 +439,7 @@ export async function startDocumentPreparation(doc, options = {}) {
     console.log("[DPP-GUARD] Force rerun requested — bypassing guard.");
     if (!doc.shared) doc.shared = {};
     doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
-    doc.shared.preparation.status = "pending";
+    setPreparationStatus(doc.shared.preparation, "pending");
     doc.shared.preparation.failReason = null;
     await saveDocumentSession(doc);
   }
