@@ -7,13 +7,9 @@ import {
   sendGuideMessage,
 } from "./guide-chat.js?v=20260622_7";
 import {
-  getStoredKey,
   migrateLegacyActiveSession,
-  saveGeminiKey,
-  getStoredGeminiKey,
   state,
 } from "./session.js?v=20260622_7";
-import { getGoogleBooksApiKey, saveGoogleBooksApiKey } from "./book-lookup.js";
 import {
   closeSettingsScreen,
   closeBlockReadSidebar,
@@ -26,6 +22,7 @@ import {
   toggleBlockReadSidebar,
   toggleSidebar,
 } from "./ui.js?v=20260622_7";
+import { syncPlatformLlmAccessFromSession } from "./llm.js?v=20260622_8";
 import { wireReviewHandlers } from "./review.js?v=20260622_7";
 import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260622_7";
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
@@ -46,12 +43,8 @@ let appBooted = false;
 
 async function openInitialScreen() {
   try {
-    if (getStoredKey()) {
-      await syncVaultUploadResumeBanner();
-      await enterAppHome();
-    } else {
-      showScreen("settings");
-    }
+    await syncVaultUploadResumeBanner();
+    await enterAppHome();
   } catch (err) {
     console.error("Failed to open initial screen:", err);
     showScreen("settings");
@@ -100,10 +93,12 @@ function wireAuthUi() {
   });
 
   supabase.auth.onAuthStateChange(async (event, session) => {
+    syncPlatformLlmAccessFromSession(session);
     if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
       await continueAppBoot();
     }
     if (event === "SIGNED_OUT") {
+      syncPlatformLlmAccessFromSession(null);
       appBooted = false;
       showScreen("auth");
     }
@@ -247,37 +242,8 @@ async function bootstrap() {
     closeSettingsScreen();
   });
 
-  els.apiKeyForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const raw = els.apiKeyInput.value || "";
-    const trimmed = raw.trim();
-    if (!trimmed) {
-      els.apiKeyStatus.textContent = "Please enter a DeepSeek key.";
-      return;
-    }
-    localStorage.setItem("ds_api_key", trimmed);
-    const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
-    if (geminiRaw) saveGeminiKey(geminiRaw);
-    const googleBooksRaw = String(els.googleBooksApiKeyInput?.value || "").trim();
-    saveGoogleBooksApiKey(googleBooksRaw);
-    els.apiKeyStatus.textContent = geminiRaw
-      ? "DeepSeek and Gemini (embeddings) saved."
-      : googleBooksRaw
-        ? "DeepSeek and Google Books saved."
-        : "DeepSeek saved.";
-    await enterAppHome();
-  });
-
-  if (els.geminiApiKeyInput) {
-    const gk = getStoredGeminiKey();
-    if (gk) els.geminiApiKeyInput.value = gk;
-  }
-  if (els.googleBooksApiKeyInput) {
-    const gbk = getGoogleBooksApiKey();
-    if (gbk) els.googleBooksApiKeyInput.value = gbk;
-  }
-
   const authSession = await getSupabaseAuthSession();
+  syncPlatformLlmAccessFromSession(authSession);
   if (!authSession) {
     showScreen("auth");
     dismissSplash(false);

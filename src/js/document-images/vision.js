@@ -3,13 +3,11 @@
  * Image LLM calls route to Gemini (multimodal); never DeepSeek.
  */
 
-import { getStoredGeminiKey } from "../llm.js";
+import { geminiChatCompletions, hasPlatformLlmAccess } from "../llm.js";
 import { logLlmUsage } from "../llm-usage-log.js";
 import { getDocumentImageSignedUrl } from "./storage.js";
 import { EDGE_TYPES } from "../graph/build.js";
 
-const GEMINI_VISION_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
 const GEMINI_VISION_MODEL = "gemini-2.0-flash";
 
 /** Vision JSON: ~8 fields × ~40 tokens */
@@ -31,39 +29,21 @@ async function geminiVisionChat({
   max_tokens = VISION_ANALYSIS_MAX_TOKENS,
   temperature = 0,
 } = {}) {
-  const apiKey = getStoredGeminiKey();
-  if (!apiKey) return null;
+  if (!hasPlatformLlmAccess()) return null;
 
-  const res = await fetch(GEMINI_VISION_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  try {
+    const result = await geminiChatCompletions({
       model: GEMINI_VISION_MODEL,
       messages,
       max_tokens,
       temperature,
-    }),
-  });
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    // handled below
+    });
+    if (!result) return null;
+    return result;
+  } catch (err) {
+    const status = err?.status ?? 500;
+    return { status, content: null };
   }
-
-  if (!res.ok) {
-    return { status: res.status, content: null };
-  }
-
-  const content = data?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== "string") {
-    return { status: res.status, content: null };
-  }
-  return { status: res.status, content: content.trim() };
 }
 
 /**
@@ -174,10 +154,10 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
   );
   if (!pending.length) return { analyzed: 0, failed: 0 };
 
-  if (!getStoredGeminiKey()) {
+  if (!hasPlatformLlmAccess()) {
     if (!_visionKeyWarningShown) {
       console.warn(
-        "[vision] Gemini API key not configured — skipping image analysis for this upload.",
+        "[vision] Sign in required — skipping image analysis for this upload.",
       );
       _visionKeyWarningShown = true;
     }

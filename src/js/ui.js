@@ -1,6 +1,4 @@
-import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_7";
-import { getStoredGeminiKey } from "./llm.js?v=20260622_7";
-import { getGoogleBooksApiKey } from "./book-lookup.js";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_7";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
@@ -351,7 +349,6 @@ function syncGlobalChromeVisibility() {
 export const els = {
   settingsBtn: document.getElementById("settingsBtn"),
   settingsBackBtn: document.getElementById("settingsBackBtn"),
-  settingsOnboardingBanner: document.getElementById("settingsOnboardingBanner"),
   knowledgeVaultLink: document.getElementById("knowledgeVaultLink"),
   knowledgeVaultOverlay: document.getElementById("knowledgeVaultOverlay"),
   knowledgeVaultCloseBtn: document.getElementById("knowledgeVaultCloseBtn"),
@@ -522,12 +519,6 @@ export const els = {
   recallConceptPeek: document.getElementById("recallConceptPeek"),
   recallConceptPeekList: document.getElementById("recallConceptPeekList"),
   recallError: document.getElementById("recallError"),
-
-  apiKeyForm: document.getElementById("apiKeyForm"),
-  apiKeyInput: document.getElementById("apiKeyInput"),
-  geminiApiKeyInput: document.getElementById("geminiApiKeyInput"),
-  googleBooksApiKeyInput: document.getElementById("googleBooksApiKeyInput"),
-  apiKeyStatus: document.getElementById("apiKeyStatus"),
 
   studyProgress: document.getElementById("studyProgress"),
   studyProgressLabel: document.getElementById("studyProgressLabel"),
@@ -1312,22 +1303,6 @@ export function showScreen(which) {
   }
   applyOfflineUiRestrictions();
   syncFloatingChrome();
-
-  if (showSettings) {
-    const hasKey = Boolean(String(localStorage.getItem(LS_KEY) || "").trim());
-    if (els.settingsOnboardingBanner) {
-      els.settingsOnboardingBanner.hidden = hasKey;
-    }
-    els.apiKeyStatus.textContent = "";
-    if (els.geminiApiKeyInput) {
-      const gk = getStoredGeminiKey();
-      els.geminiApiKeyInput.value = gk || "";
-    }
-    if (els.googleBooksApiKeyInput) {
-      els.googleBooksApiKeyInput.value = getGoogleBooksApiKey() || "";
-    }
-    setTimeout(() => els.apiKeyInput?.focus?.(), 0);
-  }
 
   if (showModeSelectScreen) {
     setTimeout(() => {

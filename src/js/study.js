@@ -171,7 +171,6 @@ import {
   getBlockTitleFromList,
   getBlockTitleSafe,
   getBlocksSafe,
-  getStoredKey,
   getTotalBlocksSafe,
   initActiveSessionFromBlocksList,
   loadDefaultQuestionConfig,
