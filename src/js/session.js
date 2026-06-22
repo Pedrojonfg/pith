@@ -53,7 +53,9 @@ import {
   MIN_CONCEPTS_ABSOLUTE,
   MIN_CHARS_PER_CONCEPT,
   minViableConcepts,
+  DPP_STALE_TIMEOUT_MS,
 } from "./config/flags.js";
+import { normalizePreparationState } from "./session-types.js";
 
 /**
  * Call sites patched for DPP recalculation guard (20260622-fix-dpp-recalculation-guard):
@@ -2572,6 +2574,24 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   return { decision: "run" };
 }
 
+function getPreparationActivityTs(prep) {
+  if (Number.isFinite(Number(prep?.updatedAt))) return Number(prep.updatedAt);
+  if (Number.isFinite(Number(prep?.startedAt))) return Number(prep.startedAt);
+  return null;
+}
+
+async function markPreparationStaleRun(session) {
+  if (!session.shared) session.shared = {};
+  const prep = normalizePreparationState(session.shared.preparation);
+  session.shared.preparation = prep;
+  prep.status = "failed";
+  prep.failReason = "STALE_RUN";
+  prep.updatedAt = Date.now();
+  console.log("[DPP-GUARD] Stale preparation run detected — marking failed (STALE_RUN).");
+  await saveDocumentSession(session);
+  return session;
+}
+
 /**
  * Poll until inventory guard returns skip or degraded, or failed/run timeout.
  * @param {() => Promise<object|null>} reloadSession
@@ -2586,6 +2606,16 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
   while (Date.now() - started < maxWaitMs) {
     const session = await reloadSession();
     if (!session) return { decision: "failed", session: null };
+
+    const prep = normalizePreparationState(session.shared?.preparation);
+    if (prep.status === "running" || prep.status === "pending") {
+      const activityTs = getPreparationActivityTs(prep);
+      if (activityTs != null && Date.now() - activityTs > DPP_STALE_TIMEOUT_MS) {
+        const failedSession = await markPreparationStaleRun(session);
+        return { decision: "failed", session: failedSession };
+      }
+    }
+
     const guard = evaluateConceptInventoryGuard(session);
     if (guard.decision === "skip" || guard.decision === "degraded") {
       return { decision: guard.decision, session };

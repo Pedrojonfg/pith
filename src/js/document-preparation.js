@@ -45,6 +45,7 @@ import {
   normalizePreparationState,
   normalizeMarkdownForHash,
   isTier1PreparationComplete,
+  setPreparationStatus,
 } from "./session-types.js";
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
@@ -154,16 +155,16 @@ function resolveFinalStatus(prep, tier1Ok, stopAfterTier) {
   const results = prep.phaseResults || {};
   const failed = Object.values(results).filter((r) => r?.status === "failed");
   if (!tier1Ok) {
-    prep.status = failed.length ? "failed" : "partial";
+    setPreparationStatus(prep, failed.length ? "failed" : "partial");
     return;
   }
   if (stopAfterTier === 1) {
-    prep.status = failed.length ? "partial" : "ready";
+    setPreparationStatus(prep, failed.length ? "partial" : "ready");
     return;
   }
   const tier2Ids = ["T2.1", "T2.2", "T2.3"];
   const tier2Failed = tier2Ids.some((id) => results[id]?.status === "failed");
-  prep.status = tier2Failed || failed.length ? "partial" : "ready";
+  setPreparationStatus(prep, tier2Failed || failed.length ? "partial" : "ready");
 }
 
 async function runPhaseT01(doc, ctx) {
@@ -539,7 +540,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   const fingerprint = computePreparationFingerprint(doc, options);
   const prep = ensurePreparation(doc);
   prep.fingerprint = fingerprint;
-  prep.status = "running";
+  setPreparationStatus(prep, "running");
   prep.startedAt = prep.startedAt || Date.now();
   prep.errors = prep.errors || [];
 
@@ -553,7 +554,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   };
 
   if (isOfflineMode()) {
-    prep.status = "partial";
+    setPreparationStatus(prep, "partial");
     prep.completedAt = Date.now();
     persistDoc(doc);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
@@ -562,7 +563,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   try {
     assertLlmKeyPresent();
   } catch (err) {
-    prep.status = "partial";
+    setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "API key required", at: Date.now() });
     persistDoc(doc);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };

@@ -514,6 +514,7 @@ export function createEmptyPreparationState(fingerprint = "") {
     fingerprint: String(fingerprint || ""),
     startedAt: null,
     completedAt: null,
+    updatedAt: null,
     currentPhase: null,
     currentWave: 0,
     waves: [],
@@ -521,6 +522,18 @@ export function createEmptyPreparationState(fingerprint = "") {
     errors: [],
     failReason: null,
   };
+}
+
+/**
+ * Set preparation.status and bump updatedAt (ms epoch).
+ * @param {object} prep
+ * @param {string} status
+ * @returns {object}
+ */
+export function setPreparationStatus(prep, status) {
+  prep.status = status;
+  prep.updatedAt = Date.now();
+  return prep;
 }
 
 /**
@@ -535,6 +548,7 @@ export function normalizePreparationState(raw) {
   base.fingerprint = String(raw.fingerprint || "");
   base.startedAt = Number.isFinite(Number(raw.startedAt)) ? Number(raw.startedAt) : null;
   base.completedAt = Number.isFinite(Number(raw.completedAt)) ? Number(raw.completedAt) : null;
+  base.updatedAt = Number.isFinite(Number(raw.updatedAt)) ? Number(raw.updatedAt) : null;
   base.currentPhase = raw.currentPhase != null ? String(raw.currentPhase) : null;
   base.currentWave = Number.isFinite(Number(raw.currentWave)) ? Math.floor(Number(raw.currentWave)) : 0;
   base.waves = Array.isArray(raw.waves) ? raw.waves : [];
