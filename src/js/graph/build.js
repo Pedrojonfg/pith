@@ -26,6 +26,7 @@ export const EDGE_TYPES = {
   constitutes: "constitutes",
   contrasts_with: "contrasts_with",
   influences: "influences",
+  exemplifies: "exemplifies",
 };
 
 const KNOWN_EDGE_TYPES = new Set(Object.values(EDGE_TYPES));
