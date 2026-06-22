@@ -6,13 +6,13 @@ import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSIONS_BY_MODE_KEY,
   MAX_N_TEST,
-} from "./config.js?v=20260622_6";
+} from "./config.js?v=20260622_7";
 import {
   getActiveSession as getActiveDocumentSession,
   saveActiveSession as saveDocumentSession,
 } from "./session-store.js";
 import { writeThroughModeSlice } from "./block-store.js";
-import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_6";
+import { syncConceptsFromBlock } from "./dictionary.js?v=20260622_7";
 import {
   deepSeekGenerateBlockBridge,
   deepSeekGenerateBlockJson,
@@ -20,7 +20,7 @@ import {
   generateBlockFromChunk,
   mapBlocksToPages,
   warnQuestionsOnlyCountMismatch,
-} from "./api.js?v=20260622_6";
+} from "./api.js?v=20260622_7";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
 import {
   annotateBlockIndexEntry,
@@ -33,18 +33,18 @@ import {
   replaceCoverageForBlock,
   findSemanticDuplicatePairs,
 } from "./pipeline-levers.js";
-import { extractSneakPeek } from "./sneakPeek.js?v=20260622_6";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260622_7";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
   getSessionLlmModel,
   getStoredGeminiKey,
   saveGeminiKey,
-} from "./llm.js?v=20260622_6";
-import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_6";
-import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_6";
-import { getStudyLanguage } from "./ui.js?v=20260622_6";
-import { isOfflineMode } from "./offline.js?v=20260622_6";
+} from "./llm.js?v=20260622_7";
+import { enforceExplanationParagraphs, buildParagraphFormatOpts } from "./explanationParagraphs.js?v=20260622_7";
+import { shuffleTestQuestionsInList } from "./shuffle-options.js?v=20260622_7";
+import { getStudyLanguage } from "./ui.js?v=20260622_7";
+import { isOfflineMode } from "./offline.js?v=20260622_7";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
 import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
@@ -245,7 +245,7 @@ export function mergeGapLists(synthesis, userEdits) {
   return merged;
 }
 
-/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
+/** R8 ï¿½ raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
 export function adjustQuestionBudgetForGaps(
   n_test,
   n_socratic,
@@ -417,7 +417,7 @@ export function migrateLegacyActiveSession() {
     const legacy = JSON.parse(legacyRaw);
     if (!legacy || typeof legacy !== "object") return;
     const migrated = { rsvp: legacy, slow: null, cloze: null, questions: null, recall: null };
-    // One-time migration write — do not mirror RSVP slices to legacy keys elsewhere.
+    // One-time migration write ï¿½ do not mirror RSVP slices to legacy keys elsewhere.
     localStorage.setItem(LS_SESSIONS_BY_MODE_KEY, JSON.stringify(migrated));
   } catch {
     // ignore corrupt legacy
@@ -450,7 +450,7 @@ export function storeSessionsByMode(data) {
     questions: data?.questions && typeof data.questions === "object" ? data.questions : null,
     recall: data?.recall && typeof data.recall === "object" ? data.recall : null,
   };
-  // Legacy keys are read-only outside migration — DocumentSession is the write target.
+  // Legacy keys are read-only outside migration ï¿½ DocumentSession is the write target.
   return safe;
 }
 
@@ -1162,7 +1162,7 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
     const block = safeMapped[i] && typeof safeMapped[i] === "object" ? safeMapped[i] : {};
     const pct = 20 + Math.round((i / safeMapped.length) * 80);
     const title = String(block.title || `Block ${i + 1}`).trim();
-    updateProgress(pct, "Phase 3 of 3: Generating content", `Block ${i + 1}/${safeMapped.length} — ${title}`);
+    updateProgress(pct, "Phase 3 of 3: Generating content", `Block ${i + 1}/${safeMapped.length} ï¿½ ${title}`);
 
     let chunk = "";
     if (Number(block.startPage) === -1) {
@@ -1231,7 +1231,7 @@ export function parseBlockTitlesFromList(text) {
     if (!Number.isFinite(idx) || idx <= 0) continue;
     const rest = String(m[2] || "").trim();
     if (!rest) continue;
-    const split = rest.split(/\s+(?:—|–|-)\s+/);
+    const split = rest.split(/\s+(?:ï¿½|ï¿½|-)\s+/);
     const title = String(split[0] || rest).trim();
     if (!title) continue;
     map[String(idx)] = title;
@@ -1239,7 +1239,7 @@ export function parseBlockTitlesFromList(text) {
   return map;
 }
 
-/** Each line: `id. title — summary` (summary optional). */
+/** Each line: `id. title ï¿½ summary` (summary optional). */
 export function parseBlocksPlanFromList(text) {
   const raw = String(text || "");
   const lines = raw.split("\n");
@@ -1250,7 +1250,7 @@ export function parseBlocksPlanFromList(text) {
     const id = Number(m[1]);
     const rest = String(m[2] || "").trim();
     if (!Number.isFinite(id) || id <= 0 || !rest) continue;
-    const emMatch = rest.match(/^(.*?)\s+(?:—|–|-)\s+(.*)$/);
+    const emMatch = rest.match(/^(.*?)\s+(?:ï¿½|ï¿½|-)\s+(.*)$/);
     const title = String(emMatch ? emMatch[1] : rest).trim();
     const summary = String(emMatch ? emMatch[2] : "").trim();
     if (!title) continue;
@@ -1631,7 +1631,7 @@ function stripLeadingListMarkers(line) {
 
 function stripTrailingMetadata(line) {
   const raw = String(line || "");
-  const splitMeta = raw.split(/\s+·\s+/);
+  const splitMeta = raw.split(/\s+ï¿½\s+/);
   const noMeta = String(splitMeta[0] || raw);
   const splitTab = noMeta.split("\t");
   return String(splitTab[0] || noMeta).trim();
@@ -2028,7 +2028,7 @@ function sharedConceptIds(blockA, blockB) {
   return shared;
 }
 
-/** Max block-count change allowed in one deterministic dedup pass (±10%, rounded up). */
+/** Max block-count change allowed in one deterministic dedup pass (ï¿½10%, rounded up). */
 export const DEDUP_BLOCK_COUNT_TOLERANCE = 0.1;
 
 /**
@@ -2349,7 +2349,7 @@ export async function runConceptInventoryMapReduce(
     deepSeekMergeConceptInventories,
     INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
     INVENTORY_MAX_PARALLEL_CALLS,
-  } = await import("./api.js?v=20260622_6");
+  } = await import("./api.js?v=20260622_7");
 
   const wordCount =
     Number(splitOpts.wordCount) ||
@@ -2364,7 +2364,7 @@ export async function runConceptInventoryMapReduce(
   const progress = (msg) => {
     if (typeof splitOpts.onProgress === "function" && msg) splitOpts.onProgress(String(msg));
   };
-  progress(`Indexing concepts (${chunks.length} sections)…`);
+  progress(`Indexing concepts (${chunks.length} sections)ï¿½`);
 
   if (chunks.length > INVENTORY_MAX_PARALLEL_CALLS) {
     console.warn(
@@ -2410,7 +2410,7 @@ export async function runConceptInventoryMapReduce(
     throw new Error("All inventory chunks failed.");
   }
 
-  progress("Merging concept inventories…");
+  progress("Merging concept inventoriesï¿½");
   const merged = await deepSeekMergeConceptInventories(partials, splitOpts);
   if (merged.failReason || !Array.isArray(merged.concepts) || !merged.concepts.length) {
     const err = new Error(merged.failReason || "MERGE_TRUNCATED");
@@ -2459,7 +2459,7 @@ export async function runConceptInventory(
   if (!hierarchy?.tree?.length && wordCount > 8000) {
     try {
       const { buildDocumentHierarchy } = await import("./normalization/hierarchy.js");
-      progress("Building document structure…");
+      progress("Building document structureï¿½");
       hierarchy = await buildDocumentHierarchy(materialText, null, { useCache: true });
     } catch (err) {
       console.warn("runConceptInventory: hierarchy build failed, single-pass", err?.message || err);
@@ -2480,8 +2480,8 @@ export async function runConceptInventory(
     };
   }
 
-  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_6");
-  progress("Indexing concepts…");
+  const { deepSeekConceptInventory } = await import("./api.js?v=20260622_7");
+  progress("Indexing conceptsï¿½");
   const result = await deepSeekConceptInventory({
     llmModel: model,
     materialText,
@@ -2561,7 +2561,7 @@ export function isConceptInventoryValid(session) {
  */
 export function evaluateConceptInventoryGuard(session, options = {}) {
   if (options.forceRerun) {
-    console.log("[DPP-GUARD] Force rerun requested — bypassing guard.");
+    console.log("[DPP-GUARD] Force rerun requested ï¿½ bypassing guard.");
     return { decision: "run" };
   }
 
@@ -2583,7 +2583,7 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   );
 
   if (status === "failed") {
-    console.log("[DPP-GUARD] Status 'failed' — surfacing error state. Not auto-retrying.");
+    console.log("[DPP-GUARD] Status 'failed' ï¿½ surfacing error state. Not auto-retrying.");
     return { decision: "failed" };
   }
 
@@ -2617,7 +2617,7 @@ async function markPreparationStaleRun(session) {
   prep.status = "failed";
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
-  console.log("[DPP-GUARD] Stale preparation run detected — marking failed (STALE_RUN).");
+  console.log("[DPP-GUARD] Stale preparation run detected ï¿½ marking failed (STALE_RUN).");
   await saveDocumentSession(session);
   return session;
 }
@@ -2664,7 +2664,7 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
 }
 
 /**
- * Inventory with mono-phase fallback — all entry points should use this.
+ * Inventory with mono-phase fallback ï¿½ all entry points should use this.
  * @returns {Promise<{ kind: 'inventory', inventory: object[], inventoryMode?: string, chunkCount?: number, failedChunks?: string[], concept_count: number, estimatedConceptTarget: number, wordCount: number } | { kind: 'fallback_mono', blockIndex: object[], splitRunMeta: object, inventoryMode: 'fallback_mono' }>}
  */
 export async function runConceptInventoryWithFallback(
@@ -2681,8 +2681,8 @@ export async function runConceptInventoryWithFallback(
   };
 
   const runFallback = async (reason) => {
-    progress("Using classic split (fallback)…");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_6");
+    progress("Using classic split (fallback)ï¿½");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_7");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -2729,7 +2729,7 @@ export async function runConceptInventoryWithFallback(
   }
 }
 
-/** Local pack when LLM output truncates — no network, assigns every concept once. */
+/** Local pack when LLM output truncates ï¿½ no network, assigns every concept once. */
 export function packInventoryDeterministic(inventory, nBlocks, lang = "English", options = {}) {
   const targetN = Math.max(1, Math.floor(Number(nBlocks) || 1));
   let inv = (Array.isArray(inventory) ? inventory : [])
@@ -2889,10 +2889,10 @@ export async function packInventoryToBlocks(
   };
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
-    "./api.js?v=20260622_6",
+    "./api.js?v=20260622_7",
   );
 
-  progress(`Packing ${requested_n} blocks…`);
+  progress(`Packing ${requested_n} blocksï¿½`);
   let blocks;
   let pack_meta;
   let packPipeline = "two_phase";
@@ -2911,7 +2911,7 @@ export async function packInventoryToBlocks(
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);
     console.warn("packInventoryToBlocks: LLM pack failed", packReason);
-    progress("Packing blocks locally…");
+    progress("Packing blocks locallyï¿½");
     const det = packInventoryDeterministic(inventory, requested_n, lang);
     if (det?.blocks?.length) {
       blocks = det.blocks;
@@ -2922,7 +2922,7 @@ export async function packInventoryToBlocks(
       packPipeline = "deterministic_fallback";
     } else {
       console.warn("packInventoryToBlocks: falling back to mono split");
-      progress("Using classic split (fallback)…");
+      progress("Using classic split (fallback)ï¿½");
       const parsed = await deepSeekSplitIntoBlocks({
         llmModel: model,
         nBlocks: requested_n,
@@ -2978,7 +2978,7 @@ export async function packInventoryToBlocks(
 
   blockIndex = blockIndex.map((b) => annotateBlockIndexEntry(b));
 
-  progress("Checking for duplicates…");
+  progress("Checking for duplicatesï¿½");
   let dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });
   const sessionForLevers =
     state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
@@ -3045,8 +3045,8 @@ export async function twoPhaseConceptSplit(
   };
 
   const runFallback = async () => {
-    progress("Using classic split (fallback)…");
-    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_6");
+    progress("Using classic split (fallback)ï¿½");
+    const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260622_7");
     const parsed = await deepSeekSplitIntoBlocks({
       llmModel: model,
       nBlocks: requested_n,
@@ -3101,7 +3101,7 @@ export async function auditBlockIndex(blockIndex, { llmModel, apiKey: _legacyApi
   const lang = String(language || "English").trim() || "English";
 
   const payload = buildAuditPayload(blockIndex);
-  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_6");
+  const { deepSeekAuditBlockIndex } = await import("./api.js?v=20260622_7");
   const text = await deepSeekAuditBlockIndex({
     llmModel: model,
     blockIndexJson: payload,
@@ -3132,7 +3132,7 @@ export async function mergeChunks(
     .trim();
 
   const blockCount = 1 + absorbs.length;
-  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_6");
+  const { deepSeekPostMergeChunk } = await import("./api.js?v=20260622_7");
   const mergedChunk = await deepSeekPostMergeChunk({
     llmModel: model,
     keep_id,
@@ -3273,7 +3273,7 @@ export function blocksListTextFromBlockIndex(arr) {
       const id = Number(b.id);
       const title = String(b.title || "").trim();
       const summary = String(b.summary || "").trim();
-      return `${id}. ${title}${summary ? ` — ${summary}` : ""}`;
+      return `${id}. ${title}${summary ? ` ï¿½ ${summary}` : ""}`;
     });
   return lines.join("\n").trim();
 }
@@ -3438,7 +3438,7 @@ export async function applyAssessmentResults(assessmentResults) {
   return { skipped: false, adjusted, strongBlocks, weakBlocks, session: sessionObj };
 }
 
-/** Stable key for prefetch cache — includes pedagogical profile (research R3). */
+/** Stable key for prefetch cache ï¿½ includes pedagogical profile (research R3). */
 export function buildBlockConfigKey(cfg) {
   const c = cfg && typeof cfg === "object" ? cfg : {};
   const nTest = clampInt(c.n_test, 0, MAX_N_TEST, 2);

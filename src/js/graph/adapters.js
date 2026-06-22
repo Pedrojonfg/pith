@@ -1,6 +1,6 @@
-import { getSortedSessionConcepts } from "../dictionary.js?v=20260622_6";
-import { getActiveSession } from "../session-store.js?v=20260622_6";
-import { getScopeText } from "../slow/reader.js?v=20260622_6";
+import { getSortedSessionConcepts } from "../dictionary.js?v=20260622_7";
+import { getActiveSession } from "../session-store.js?v=20260622_7";
+import { getScopeText } from "../slow/reader.js?v=20260622_7";
 import {
   buildClozeEpistemicGraph,
   buildRsvpMaterialGraph,

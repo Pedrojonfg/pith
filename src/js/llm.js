@@ -2,7 +2,7 @@ import {
   DS_CHAT_COMPLETIONS_URL,
   LS_GEMINI_KEY,
   LS_KEY,
-} from "./config.js?v=20260622_6";
+} from "./config.js?v=20260622_7";
 
 export const LLM_MODEL_DEEPSEEK = "deepseek";
 export const DEFAULT_LLM_MODEL = LLM_MODEL_DEEPSEEK;
@@ -17,10 +17,10 @@ export function getLlmDisplayName(_llmModel) {
 }
 
 export function getLlmCallingLabel(_llmModel) {
-  return "Calling DeepSeek…";
+  return "Calling DeepSeekï¿½";
 }
 
-/** Gemini API key — used only by vault/embeddings.js, not chat. */
+/** Gemini API key ï¿½ used only by vault/embeddings.js, not chat. */
 export function getStoredGeminiKey() {
   try {
     const v = localStorage.getItem(LS_GEMINI_KEY);
@@ -57,7 +57,7 @@ export function getDefaultLlmModel() {
   return DEFAULT_LLM_MODEL;
 }
 
-/** @deprecated Model selection removed — chat always uses DeepSeek. */
+/** @deprecated Model selection removed ï¿½ chat always uses DeepSeek. */
 export function saveDefaultLlmModel(_model) {
   // no-op
 }

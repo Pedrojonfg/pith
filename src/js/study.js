@@ -16,7 +16,7 @@ import {
   normalizeConceptsToVault,
   PREPACKING_DONT_KNOW_ANSWER,
   PREPACKING_ALREADY_KNOW_ANSWER,
-} from "./api.js?v=20260622_6";
+} from "./api.js?v=20260622_7";
 import {
   ASSESSMENT_FLAGS,
   INTERVIEW_MAX_FOLLOWUP_ROUNDS,
@@ -41,7 +41,7 @@ import {
   computeHolisticAssessmentBudget,
   deriveInventoryEdges,
   hashCoveragePlan,
-} from "./assessment-coverage.js?v=20260622_6";
+} from "./assessment-coverage.js?v=20260622_7";
 import {
   assertLlmKeyPresent,
   getApiKeyForLlmModel,
@@ -51,18 +51,18 @@ import {
   llmChatCompletions,
   LLM_MODEL_DEEPSEEK,
   normalizeLlmModel,
-} from "./llm.js?v=20260622_6";
+} from "./llm.js?v=20260622_7";
 import {
   buildDocumentHierarchy,
   buildDeterministicPedagogicalMeta,
   hasMarkdownHeadings,
-} from "./normalization/hierarchy.js?v=20260622_6";
-import { analyzeText } from "./recommendation/analyzer.js?v=20260622_6";
+} from "./normalization/hierarchy.js?v=20260622_7";
+import { analyzeText } from "./recommendation/analyzer.js?v=20260622_7";
 import {
   computeBlockCountRecommendation,
   formatBlockCountReasoning,
-} from "./recommendation/block-count-recommender.js?v=20260622_6";
-import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260622_6";
+} from "./recommendation/block-count-recommender.js?v=20260622_7";
+import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260622_7";
 import {
   buildBlockSplitFingerprint,
   getBlockSplitCache,
@@ -105,11 +105,11 @@ import {
   resolveRsvpInventoryForPack,
   shouldSkipRsvpInventoryLlm,
 } from "./rsvp-shared-consumption.js";
-import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_6";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_7";
 import {
   recordUserOverride,
   updateFlowProgress,
-} from "./recommendation/tracker.js?v=20260622_6";
+} from "./recommendation/tracker.js?v=20260622_7";
 import {
   normalizeTestQuestion,
   shuffleTestQuestionOptions,
@@ -125,29 +125,29 @@ import {
   registerDictionaryChromeSyncHook,
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
-} from "./dictionary.js?v=20260622_6";
-import { extractSneakPeek } from "./sneakPeek.js?v=20260622_6";
-import { MAX_N_TEST } from "./config.js?v=20260622_6";
+} from "./dictionary.js?v=20260622_7";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260622_7";
+import { MAX_N_TEST } from "./config.js?v=20260622_7";
 import {
   exportOfflinePack,
   exportSessionMarkdown,
   exportClozeItemsMarkdown,
   downloadTextFile,
   resolveSessionForExport,
-} from "./export.js?v=20260622_6";
+} from "./export.js?v=20260622_7";
 import { computePersistenceHealth, tryRecoverBlocksFromV1Backup } from "./block-store.js";
 import {
   clearGuideChatStorage,
   refreshGuideContext,
   triggerCommentReply,
-} from "./guide-chat.js?v=20260622_6";
+} from "./guide-chat.js?v=20260622_7";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
   renderMarkdown,
   renderMcOptionHtml,
-} from "./markdown.js?v=20260622_6";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260622_6";
+} from "./markdown.js?v=20260622_7";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260622_7";
 import {
   finishPacedRead,
   isPacedReaderActive,
@@ -156,9 +156,9 @@ import {
   setReadingModePref,
   startPacedReadForText,
   wirePacedReaderHandlers,
-} from "./paced-reader.js?v=20260622_6";
-import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260622_6";
-import { isOfflineMode } from "./offline.js?v=20260622_6";
+} from "./paced-reader.js?v=20260622_7";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260622_7";
+import { isOfflineMode } from "./offline.js?v=20260622_7";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -226,7 +226,7 @@ import {
   setKnowledgeProfile,
   setAssessmentSkipped,
   setPackingIgnoredProfile,
-} from "./session.js?v=20260622_6";
+} from "./session.js?v=20260622_7";
 import { isBoldHeaderLine, warnStructuredHeaderCount } from "./rsvp-section-headers.js";
 import {
   isZeroQuestionBlockTitle,
@@ -258,15 +258,15 @@ import {
   typesetMath,
   updateFullPackProgressUi,
   updateSessionCompleteSummary,
-} from "./ui.js?v=20260622_6";
-import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260622_6";
+} from "./ui.js?v=20260622_7";
+import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260622_7";
 import {
   buildScopeOptions,
   buildEqualLengthSections,
   scopeCharCount,
   SCOPE_CHAR_WARN,
   formatCharCount,
-} from "./slow/headings.js?v=20260622_6";
+} from "./slow/headings.js?v=20260622_7";
 import {
   applyFillableMapMode,
   ensurePhase0UserFields,
@@ -278,10 +278,10 @@ import {
   slugGraphTermId,
   generatePhase0ForScope,
   syncPhase0ConceptsToShared,
-} from "./slow/phase0.js?v=20260622_6";
-import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260622_6";
-import { initPhase3Screen } from "./slow/phase3.js?v=20260622_6";
-import { computeDepthScore } from "./slow/gamification.js?v=20260622_6";
+} from "./slow/phase0.js?v=20260622_7";
+import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260622_7";
+import { initPhase3Screen } from "./slow/phase3.js?v=20260622_7";
+import { computeDepthScore } from "./slow/gamification.js?v=20260622_7";
 import {
   buildGraphSubgraphMarkdown,
   buildRsvpMaterialGraph,
@@ -289,23 +289,23 @@ import {
   mountMaterialGraphScreen,
   renderGraphUnlockButtonHtml,
   wireMaterialGraphScreen,
-} from "./graph/view.js?v=20260622_6";
-import { jumpToAnnotation } from "./slow/sidebar.js?v=20260622_6";
-import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260622_6";
+} from "./graph/view.js?v=20260622_7";
+import { jumpToAnnotation } from "./slow/sidebar.js?v=20260622_7";
+import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260622_7";
 import {
   applyAssessmentPrioritizedOrder,
   enterClozeStudyScreen,
   getActiveClozeConceptIds,
   setClozeStudyCompleteExitHandler,
   wireClozeStudyHandlers,
-} from "./cloze/study.js?v=20260622_6";
-import { parseClozePackFiles } from "./cloze/export-import.js?v=20260622_6";
-import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260622_6";
+} from "./cloze/study.js?v=20260622_7";
+import { parseClozePackFiles } from "./cloze/export-import.js?v=20260622_7";
+import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260622_7";
 import { getActiveRecallConceptIds } from "./recall-study.js";
 import {
   initMnemonicChrome,
   syncMnemonicButtonBadge,
-} from "./mnemonic.js?v=20260622_6";
+} from "./mnemonic.js?v=20260622_7";
 import {
   enterProjectLibrary,
   getUploadDefaultProjectId,
@@ -316,14 +316,14 @@ import {
   setUploadProjectContext,
   wireProjectLibraryHandlers,
 } from "./project-library.js";
-import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260622_6";
+import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260622_7";
 import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
 import { finalizeBlockQuestionAnswer } from "./block-answer-signals.js";
 import { createRecallStudyController } from "./recall-study.js";
 import {
   buildModeSliceFromShared,
   resolveModeEntryState,
-} from "./mode-bootstrap.js?v=20260622_6";
+} from "./mode-bootstrap.js?v=20260622_7";
 import {
   addConceptsToShared,
   computeDocId,
@@ -338,7 +338,7 @@ import {
   setUploadMeta,
   syncAssessmentSignalsToShared,
   updateRecommendation,
-} from "./session-store.js?v=20260622_6";
+} from "./session-store.js?v=20260622_7";
 import {
   findVaultEntryForConceptId,
   getVaultContextForDoc,
@@ -3184,7 +3184,7 @@ async function importClozePacksFromInput() {
   try {
     const result = await parseClozePackFiles(fileList, readFileAsText);
     if (!result.ok) {
-      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" · ") : "";
+      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" ï¿½ ") : "";
       throw new Error(
         detail ||
           (result.reason === "no_valid_items"
@@ -3645,7 +3645,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "×";
+    del.textContent = "ï¿½";
     del.title = "Eliminar pregunta";
     del.addEventListener("click", () => {
       phase0.prequestions.splice(index, 1);
@@ -3782,7 +3782,7 @@ function renderSlowPhase0Concepts(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "×";
+    del.textContent = "ï¿½";
     del.addEventListener("click", () => {
       phase0.conceptsToFind.splice(i, 1);
       renderSlowPhase0Content(session);
@@ -3867,7 +3867,7 @@ function renderSlowPhase0Content(session) {
     renderPhase0ReadonlyBlock(
       host,
       "Examine critically",
-      phase0.criticalExaminePoints.map((p) => `· ${p}`).join("\n"),
+      phase0.criticalExaminePoints.map((p) => `ï¿½ ${p}`).join("\n"),
     );
   }
 }
@@ -4332,7 +4332,7 @@ function renderSplitMergeSummary(splitRunMeta) {
       sub.textContent =
         absorbTitles.length || keepBefore
           ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
-              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
+              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" ï¿½ ")}` : ""
             }`
           : "";
       if (sub.textContent) card.appendChild(sub);
@@ -4872,11 +4872,11 @@ async function loadOfflinePack(text, filename = "") {
   setBlocksReadonlyMode({
     enabled: true,
     bannerText:
-      `${totalBlocks} blocks · Generated ${generatedAt}`
-      + (failedBlocks > 0 ? ` · ${failedBlocks} blocks have no content` : ""),
+      `${totalBlocks} blocks ï¿½ Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` ï¿½ ${failedBlocks} blocks have no content` : ""),
   });
   if (els.confirmBlocksStatus) {
-    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks · Generated ${generatedAt}`;
+    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks ï¿½ Generated ${generatedAt}`;
   }
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
@@ -5167,7 +5167,7 @@ export async function readAndCleanMaterialText(file) {
     detectFormatFromFilename,
     normalizeStudyMaterial,
     UnsupportedFormatError,
-  } = await import("./input-normalization.js?v=20260622_6");
+  } = await import("./input-normalization.js?v=20260622_7");
 
   const detectedFormat = detectFormatFromFilename(file?.name || "");
   if (!detectedFormat) {
@@ -6112,14 +6112,14 @@ function setQuestionProgressUi() {
   const ctx = getActiveQuestionContext();
   const n = Math.max(1, ctx.total);
   const label = isPrePackingAssessmentRunner()
-    ? `Knowledge check · Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
+    ? `Knowledge check ï¿½ Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
     : `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
   if (els.testMeta) {
     if (isPrePackingAssessmentRunner()) {
       els.testMeta.textContent = label;
     } else {
       const totalBlocks = Math.max(1, getTotalBlocksSafe());
-      els.testMeta.textContent = `${label} · Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+      els.testMeta.textContent = `${label} ï¿½ Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
     }
   }
   if (els.socraticQuestionTitle) {
@@ -6137,11 +6137,11 @@ export function syncBlockFidelityBanner(block, blockIndexEntry) {
 
   let message = "";
   if (anchor === "weak") {
-    message = "Anclaje débil al documento ? contrasta con tu PDF.";
+    message = "Anclaje dï¿½bil al documento ? contrasta con tu PDF.";
   } else if (anchor === "proportional_fallback") {
     message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
   } else if (fidelity === "warn") {
-    message = "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
+    message = "Fidelidad reducida: parte del contenido podrï¿½a no reflejar la fuente.";
   }
 
   if (!message) {
@@ -6213,7 +6213,7 @@ function checkPrerequisiteBlockWarning(blockIndex) {
           `Prerequisite block ${prereqBlockIdx + 1} not yet studied before block ${blockIndex + 1}.`,
         );
         if (els.testMeta) {
-          els.testMeta.textContent += " · Prerequisite block not studied yet";
+          els.testMeta.textContent += " ï¿½ Prerequisite block not studied yet";
         }
         return;
       }
@@ -7635,7 +7635,7 @@ function renderPrePackingAssessmentGraph(inventory) {
     blockIndex: [],
     conceptInventory: Array.isArray(inventory) ? inventory : [],
   };
-  host.textContent = `${graph.nodes.length} concepts · ${graph.edges.length} relations`;
+  host.textContent = `${graph.nodes.length} concepts ï¿½ ${graph.edges.length} relations`;
 }
 
 function recordAssessmentResponse(row) {
@@ -8060,7 +8060,7 @@ function renderPrePackingResultsScreen(counts) {
   if (!prePackingFlow) return;
   const { full, partial, none } = counts;
   if (els.prePackingResultsSummary) {
-    els.prePackingResultsSummary.textContent = `Mastered: ${full} · Partial: ${partial} · New: ${none}`;
+    els.prePackingResultsSummary.textContent = `Mastered: ${full} ï¿½ Partial: ${partial} ï¿½ New: ${none}`;
   }
   if (els.prePackingResultsDiff) {
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
@@ -8155,7 +8155,7 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "blocksMaterialGraphBtn" })}
-    <span class="hint">${es ? `${graph.nodes.length} nodos · ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes · ${graph.edges.length} edges`}</span>`;
+    <span class="hint">${es ? `${graph.nodes.length} nodos ï¿½ ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes ï¿½ ${graph.edges.length} edges`}</span>`;
 }
 
 function renderSlowPhase0GraphActions(session) {
@@ -8173,7 +8173,7 @@ function renderSlowPhase0GraphActions(session) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "slowPhase0GraphBtn" })}
-    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} · ${graph.nodes.length} nodes</span>`;
+    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} ï¿½ ${graph.nodes.length} nodes</span>`;
 }
 
 function wireMaterialGraphHandlers() {
