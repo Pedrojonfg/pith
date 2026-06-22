@@ -1,12 +1,12 @@
-ï»¿import { parseHeadings } from "./headings.js?v=20260622_5";
-import { getPageSlice, charOffsetToPage } from "./pagination.js?v=20260622_5";
-import { addAnnotation } from "./annotations.js?v=20260622_5";
-import { storeActiveSession } from "../session.js?v=20260622_5";
-import { generateCheckpointQuestion } from "./phase0.js?v=20260622_5";
-import { getStudyLanguage } from "../ui.js?v=20260622_5";
+import { parseHeadings } from "./headings.js?v=20260622_6";
+import { getPageSlice, charOffsetToPage } from "./pagination.js?v=20260622_6";
+import { addAnnotation } from "./annotations.js?v=20260622_6";
+import { storeActiveSession } from "../session.js?v=20260622_6";
+import { generateCheckpointQuestion } from "./phase0.js?v=20260622_6";
+import { getStudyLanguage } from "../ui.js?v=20260622_6";
 
 const CHECKPOINT_DELAY_MS = 10000;
-export const CHECKPOINT_CHIP_LABEL = "[â‰¡ CHECKPOINT Â· 30 seg]";
+export const CHECKPOINT_CHIP_LABEL = "[= CHECKPOINT · 30 seg]";
 
 /** Section boundaries within scope coordinates. */
 export function buildSectionBoundaries(scopeText, format) {
@@ -139,7 +139,7 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
   dismiss.type = "button";
   dismiss.className = "slow-checkpoint-dismiss";
   dismiss.setAttribute("aria-label", "Dismiss checkpoint");
-  dismiss.textContent = "Ã—";
+  dismiss.textContent = "×";
   const onDismiss = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -153,22 +153,22 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
 
   const questionEl = document.createElement("p");
   questionEl.className = "slow-checkpoint-question";
-  questionEl.textContent = "â€¦";
+  questionEl.textContent = "…";
 
   const input = document.createElement("input");
   input.type = "text";
   input.className = "slow-checkpoint-input";
   const lang = getStudyLanguage() || "English";
-  input.placeholder = /spanish|espaÃ±ol|^es/i.test(lang) ? "Tu respuestaâ€¦" : "Your answerâ€¦";
+  input.placeholder = /spanish|español|^es/i.test(lang) ? "Tu respuesta…" : "Your answer…";
 
   const send = document.createElement("button");
   send.type = "button";
-  send.textContent = "â†’";
+  send.textContent = "?";
   send.addEventListener("click", async () => {
     const text = input.value.trim();
     if (!text) return;
     await addAnnotation(session, {
-      type: "â†’",
+      type: "?",
       charStart: section.charEnd - 1,
       charEnd: section.charEnd,
       userText: text,
@@ -203,7 +203,7 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
     questionEl.textContent = question;
   } catch {
     if (gen !== checkpointGen || checkpointEl.hidden) return;
-    questionEl.textContent = "â€¦";
+    questionEl.textContent = "…";
   }
 }
 

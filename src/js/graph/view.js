@@ -1,6 +1,6 @@
-﻿import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260622_5";
-import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260622_5";
-import { getStudyLanguage } from "../ui.js?v=20260622_5";
+import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260622_6";
+import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260622_6";
+import { getStudyLanguage } from "../ui.js?v=20260622_6";
 import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
 import { pruneOrphanNodes } from "./build.js";
 import { renderGraphCanvas } from "./canvas.js";
@@ -15,7 +15,7 @@ function escapeHtml(text) {
 
 function isSpanishLang(lang) {
   const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
+  return v.startsWith("es") || v.includes("spanish") || v.includes("espa�ol");
 }
 
 export function buildGraphSubgraphMarkdown(graph, lang = "English") {
@@ -84,7 +84,7 @@ export function renderEnrichedGraphHtml(graph, lang = "English") {
         .map((e) => {
           const from = nodeById(graph, e.from);
           const to = nodeById(graph, e.to);
-          return `<li>${escapeHtml(from?.label || e.from)} → ${escapeHtml(to?.label || e.to)} <em>(${escapeHtml(e.type)})</em></li>`;
+          return `<li>${escapeHtml(from?.label || e.from)} ? ${escapeHtml(to?.label || e.to)} <em>(${escapeHtml(e.type)})</em></li>`;
         })
         .join("")}</ul>`
     : `<p class="hint">${escapeHtml(es ? "Sin enlaces." : "No edges.")}</p>`;

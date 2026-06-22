@@ -1,11 +1,11 @@
-ï»¿import {
+import {
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPT_HIGHLIGHTS_BY_BLOCK_KEY,
-} from "./config.js?v=20260622_5";
-import { state, getBlocksSafe } from "./session.js?v=20260622_5";
-import { renderMarkdown } from "./markdown.js?v=20260622_5";
-import { els } from "./ui.js?v=20260622_5";
+} from "./config.js?v=20260622_6";
+import { state, getBlocksSafe } from "./session.js?v=20260622_6";
+import { renderMarkdown } from "./markdown.js?v=20260622_6";
+import { els } from "./ui.js?v=20260622_6";
 
 /** @type {null | (() => void)} */
 let dictionaryChromeSyncHook = null;
@@ -279,7 +279,7 @@ export function getSortedSessionConcepts() {
   return dedupeConcepts([legacy, fromBlocks]);
 }
 
-/** T11 â€” merge enriched-graph user nodes into session_concepts (layer: user). */
+/** T11 — merge enriched-graph user nodes into session_concepts (layer: user). */
 export function mergeEnrichedGraphUserNodes(session, userNodes) {
   const incoming = (Array.isArray(userNodes) ? userNodes : [])
     .filter((n) => n && n.layer === "user")
@@ -307,7 +307,7 @@ export function mergeEnrichedGraphUserNodes(session, userNodes) {
 }
 
 /** Word boundaries for long-press dictionary lookup (letters, digits, accented chars). */
-const WORD_CHAR_RE = /[\p{L}\p{N}'â€™-]/u;
+const WORD_CHAR_RE = /[\p{L}\p{N}'’-]/u;
 
 /** @returns {string} */
 export function extractWordAtOffset(text, offset) {
@@ -505,5 +505,5 @@ export function updateDictionaryButtonVisibility() {
 }
 
 export function renderBetweenBlocksDictionary() {
-  // screenBetweenBlocks removed â€” no-op.
+  // screenBetweenBlocks removed — no-op.
 }

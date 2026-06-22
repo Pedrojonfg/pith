@@ -1,16 +1,16 @@
-ï»¿import { storeActiveSession } from "../session.js?v=20260622_5";
-import { markdownToHtml } from "../markdown.js?v=20260622_5";
+import { storeActiveSession } from "../session.js?v=20260622_6";
+import { markdownToHtml } from "../markdown.js?v=20260622_6";
 import {
   buildConceptSpanIndex,
   selectHighlightSpans,
   wrapPlainTextWithPedagogyMarks,
 } from "../pedagogy/concept-span-index.js";
 import { getPedagogicalFlags } from "../config/flags.js";
-import { els, showScreen } from "../ui.js?v=20260622_5";
-import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260622_5";
-import { matchConceptFindings } from "./gamification.js?v=20260622_5";
-import { fillBlankFromAnnotation } from "./phase0.js?v=20260622_5";
-import { askSlowReaderIA } from "./ai-context.js?v=20260622_5";
+import { els, showScreen } from "../ui.js?v=20260622_6";
+import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260622_6";
+import { matchConceptFindings } from "./gamification.js?v=20260622_6";
+import { fillBlankFromAnnotation } from "./phase0.js?v=20260622_6";
+import { askSlowReaderIA } from "./ai-context.js?v=20260622_6";
 import {
   ANNOTATION_TYPES,
   annotationsOnPage,
@@ -30,9 +30,9 @@ import {
   isIAQueryAnnotation,
   shouldShowSteelManNudge,
   updateAnnotation,
-} from "./annotations.js?v=20260622_5";
-import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260622_5";
-import { initPhase3Screen } from "./phase3.js?v=20260622_5";
+} from "./annotations.js?v=20260622_6";
+import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260622_6";
+import { initPhase3Screen } from "./phase3.js?v=20260622_6";
 import {
   charOffsetToPage,
   closestPageAfterRecompute,
@@ -40,8 +40,8 @@ import {
   getPageCount,
   getPageSlice,
   invalidatePaginationCache,
-} from "./pagination.js?v=20260622_5";
-import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_5";
+} from "./pagination.js?v=20260622_6";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_6";
 import { renderSlowMarkdownWithImages } from "../document-images/render.js";
 import { replacePithImageTokens } from "../document-images/replace-tokens.js";
 import {
@@ -52,7 +52,7 @@ import {
   wireSidebarToggle,
   wireSidebarIAInput,
   setIAReplyViewer,
-} from "./sidebar.js?v=20260622_5";
+} from "./sidebar.js?v=20260622_6";
 
 const LONG_PRESS_MS = 500;
 
@@ -214,9 +214,9 @@ function renderProgress(session) {
   const idx = Number(session?.slow?.currentPageIndex) || 0;
   const indicator = document.getElementById("slowReaderPageIndicator");
   if (indicator) {
-    if (!total) indicator.textContent = "â€”";
-    else if (total === 1) indicator.textContent = "1 pÃ¡gina";
-    else indicator.textContent = `PÃ¡gina ${idx + 1} de ${total}`;
+    if (!total) indicator.textContent = "—";
+    else if (total === 1) indicator.textContent = "1 página";
+    else indicator.textContent = `Página ${idx + 1} de ${total}`;
   }
 }
 
@@ -504,14 +504,14 @@ function ensureAnnotationEditMenu() {
   menu.hidden = true;
   menu.setAttribute("role", "menu");
   menu.innerHTML = `
-    <div class="slow-annotation-edit-actions" role="group" aria-label="Editar anotaciÃ³n">
+    <div class="slow-annotation-edit-actions" role="group" aria-label="Editar anotación">
       <button type="button" class="slow-annotation-edit-btn" data-action="type">Editar tipo</button>
       <button type="button" class="slow-annotation-edit-btn" data-action="text">Editar texto</button>
       <button type="button" class="slow-annotation-edit-btn slow-annotation-edit-btn--danger" data-action="delete">Eliminar</button>
     </div>
     <div class="slow-annotation-edit-types" hidden role="toolbar" aria-label="Cambiar tipo"></div>
     <div class="slow-annotation-edit-text" hidden>
-      <label class="slow-annotation-edit-text-label">Texto de la anotaciÃ³n</label>
+      <label class="slow-annotation-edit-text-label">Texto de la anotación</label>
       <input type="text" class="slow-annotation-edit-text-input" spellcheck="true" />
     </div>
   `;
@@ -632,7 +632,7 @@ function charOffsetFromPoint(pageEl, clientX, clientY, pageSlice) {
 function showDictionaryPopup({ term, definition, rect }) {
   showSlowIAOverlay({
     query: term,
-    reply: definition || "Sin definiciÃ³n en el diccionario de sesiÃ³n.",
+    reply: definition || "Sin definición en el diccionario de sesión.",
   });
 }
 
@@ -657,7 +657,7 @@ async function handleWordLongPress(session, clientX, clientY) {
     return;
   }
 
-  const query = `Â¿QuÃ© significa Â«${word}Â» en este contexto?`;
+  const query = `¿Qué significa «${word}» en este contexto?`;
   showSlowIAOverlay({ query, loading: true });
   try {
     const reply = await askSlowReaderIA(session, query);
@@ -665,7 +665,7 @@ async function handleWordLongPress(session, clientX, clientY) {
   } catch {
     showSlowIAOverlay({
       query,
-      reply: "No se pudo obtener respuesta. IntÃ©ntalo de nuevo.",
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
     });
   }
 }
@@ -764,7 +764,7 @@ function ensureIAOverlay() {
   overlay.setAttribute("aria-labelledby", "slowIAOverlayQuery");
   overlay.innerHTML = `
     <div class="slow-ia-overlay-panel">
-      <button type="button" class="slow-ia-overlay-close" aria-label="Cerrar respuesta IA">Ã—</button>
+      <button type="button" class="slow-ia-overlay-close" aria-label="Cerrar respuesta IA">×</button>
       <p id="slowIAOverlayQuery" class="slow-ia-overlay-query"></p>
       <p class="slow-ia-overlay-reply"></p>
     </div>
@@ -797,7 +797,7 @@ export function showSlowIAOverlay({ query = "", reply = "", loading = false } = 
   const replyEl = overlay.querySelector(".slow-ia-overlay-reply");
   if (queryEl) queryEl.textContent = String(query || "").trim() || "Consulta IA";
   if (replyEl) {
-    replyEl.textContent = loading ? "Pensandoâ€¦" : String(reply || "").trim();
+    replyEl.textContent = loading ? "Pensando…" : String(reply || "").trim();
     replyEl.classList.toggle("slow-ia-overlay-reply--loading", loading);
   }
   overlay.hidden = false;
@@ -808,7 +808,7 @@ export function showSlowIAOverlay({ query = "", reply = "", loading = false } = 
 export function showSlowIAOverlayFromAnnotation(ann) {
   const query =
     ann?.userText ||
-    (ann?.type === "â‡‘" ? "Steel man del fragmento" : "Explica este fragmento");
+    (ann?.type === "?" ? "Steel man del fragmento" : "Explica este fragmento");
   showSlowIAOverlay({ query, reply: ann?.aiReply || "" });
 }
 
@@ -835,8 +835,8 @@ function ensureSteelManNudgeModal() {
   modal.setAttribute("aria-labelledby", "slowSteelManNudgeTitle");
   modal.innerHTML = `
     <div class="slow-steelman-nudge-panel">
-      <p id="slowSteelManNudgeTitle" class="slow-steelman-nudge-title">Â¿Has formulado el mejor argumento del autor?</p>
-      <p class="slow-steelman-nudge-hint">Antes de objetar, conviene articular la versiÃ³n mÃ¡s fuerte del texto (steel man).</p>
+      <p id="slowSteelManNudgeTitle" class="slow-steelman-nudge-title">¿Has formulado el mejor argumento del autor?</p>
+      <p class="slow-steelman-nudge-hint">Antes de objetar, conviene articular la versión más fuerte del texto (steel man).</p>
       <div class="slow-steelman-nudge-actions">
         <button type="button" class="btn btn-primary slow-steelman-nudge-steel">Pedir steel man</button>
         <button type="button" class="btn btn-secondary slow-steelman-nudge-continue">Continuar</button>
@@ -882,11 +882,11 @@ export async function showSteelManNudgeModal(session, ann, { onSteelMan, onConti
   modal.querySelector(".slow-steelman-nudge-steel")?.focus();
 }
 
-async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "â‡‘") {
+async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") {
   if (!session?.slow || !ann) return;
   const queryText =
     userText ||
-    (typeSymbol === "â‡‘" ? "Steel man del fragmento" : "Explica este fragmento");
+    (typeSymbol === "?" ? "Steel man del fragmento" : "Explica este fragmento");
   showSlowIAOverlay({ query: queryText, loading: true });
   try {
     const reply = await askSlowReaderIA(session, userText || "Explica este fragmento", {
@@ -902,14 +902,14 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "â‡‘"
   } catch {
     showSlowIAOverlay({
       query: queryText,
-      reply: "No se pudo obtener respuesta. IntÃ©ntalo de nuevo.",
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
     });
   }
 }
 
 async function requestSteelManForRange(session, offsets, userText = "") {
   if (!session?.slow || !offsets) return null;
-  const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "â‡‘");
+  const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "?");
   if (!steelType) return null;
   const ann = await addAnnotation(session, {
     type: steelType.symbol,
@@ -958,7 +958,7 @@ async function handleSidebarIAQuery(session, queryText) {
   } catch {
     showSlowIAOverlay({
       query: queryText,
-      reply: "No se pudo obtener respuesta. IntÃ©ntalo de nuevo.",
+      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
     });
   }
   session.slow.currentPageIndex = savedPage;
@@ -991,7 +991,7 @@ function showFindingToast(conceptTerm) {
     toast.setAttribute("aria-live", "polite");
     document.body.appendChild(toast);
   }
-  toast.textContent = `âœ¦  HALLAZGO Â· ${conceptTerm}`;
+  toast.textContent = `?  HALLAZGO · ${conceptTerm}`;
   toast.hidden = false;
   clearTimeout(showFindingToast._timer);
   showFindingToast._timer = setTimeout(() => {
@@ -1168,9 +1168,9 @@ function ensureAnnotationMenu() {
     <div class="slow-annotation-types" role="toolbar" aria-label="Annotation types"></div>
     <div class="slow-annotation-note" hidden>
       <label class="slow-annotation-note-label"></label>
-      <input type="text" class="slow-annotation-note-input" placeholder="Nota (opcional) â€” Enter para guardar" spellcheck="true" />
+      <input type="text" class="slow-annotation-note-input" placeholder="Nota (opcional) — Enter para guardar" spellcheck="true" />
     </div>
-    <p class="slow-annotation-hint">Pulsa 1â€“9 para marcar Â· Esc cancelar</p>
+    <p class="slow-annotation-hint">Pulsa 1–9 para marcar · Esc cancelar</p>
   `;
   document.body.appendChild(menu);
   return menu;
@@ -1244,8 +1244,8 @@ function renderAnnotationTypeButtons(session, menu) {
     const more = document.createElement("button");
     more.type = "button";
     more.className = "slow-annotation-type-btn slow-annotation-more-btn";
-    more.textContent = "Â·Â·Â·";
-    more.title = "MÃ¡s tipos";
+    more.textContent = "···";
+    more.title = "Más tipos";
     more.addEventListener("mousedown", (e) => e.preventDefault());
     more.addEventListener("click", () => {
       readerState.menuShowSecondary = true;
@@ -1255,8 +1255,8 @@ function renderAnnotationTypeButtons(session, menu) {
   }
   const hint = menu.querySelector(".slow-annotation-hint");
   if (hint && types.length) {
-    const keys = types.map((t) => t.hotkey).join(" Â· ");
-    hint.textContent = `Pulsa ${keys} para marcar Â· Esc cancelar`;
+    const keys = types.map((t) => t.hotkey).join(" · ");
+    hint.textContent = `Pulsa ${keys} para marcar · Esc cancelar`;
   }
 }
 
@@ -1289,12 +1289,12 @@ function beginAnnotationNote(session, typeDef) {
   if (!notePanel || !label || !input) return;
   label.textContent = `${typeDef.symbol} ${typeDef.label}`;
   input.value = "";
-  if (typeDef.symbol === "ðŸ”—") {
-    input.placeholder = "URL o nota de literatura â€” Enter para guardar";
-  } else if (typeDef.symbol === "âŸ·") {
-    input.placeholder = "Describe la conexiÃ³n â€” Enter para elegir concepto";
+  if (typeDef.symbol === "??") {
+    input.placeholder = "URL o nota de literatura — Enter para guardar";
+  } else if (typeDef.symbol === "?") {
+    input.placeholder = "Describe la conexión — Enter para elegir concepto";
   } else {
-    input.placeholder = "Nota (opcional) â€” Enter para guardar";
+    input.placeholder = "Nota (opcional) — Enter para guardar";
   }
   notePanel.hidden = false;
   positionAnnotationMenu(menu, readerState.pendingSelection.rect);
@@ -1319,14 +1319,14 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
     if (session.slow.fillableMapMode) {
       fillBlankFromAnnotation(session, ann, session.slow.currentPageIndex);
     }
-    if (typeDef.symbol === "ðŸ”—" && userText) {
+    if (typeDef.symbol === "??" && userText) {
       addLiteratureGraphLink(session, ann.id, userText);
       await storeActiveSession(session);
     }
   }
   renderSlowReaderPage(session);
 
-  if (typeDef.symbol === "âŸ·" && ann) {
+  if (typeDef.symbol === "?" && ann) {
     const picked = await showConceptPicker(session, { anchorRect });
     if (picked) {
       addGraphLink(session, ann.id, { termId: picked.termId, relation: userText });
@@ -1335,10 +1335,10 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
     }
   }
 
-  if (typeDef.symbol === "âš‘" || typeDef.symbol === "â‡‘") {
+  if (typeDef.symbol === "?" || typeDef.symbol === "?") {
     await runSteelManIAFlow(session, ann, userText, typeDef.symbol);
   }
-  if (["âŠ˜", "â†¯", "âš "].includes(typeDef.symbol)) {
+  if (["?", "?", "?"].includes(typeDef.symbol)) {
     maybeShowSteelManNudge(session, ann);
   }
 }

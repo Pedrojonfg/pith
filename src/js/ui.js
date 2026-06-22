@@ -1,17 +1,17 @@
-ï»¿import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_5";
-import { getStoredGeminiKey } from "./llm.js?v=20260622_5";
+import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_6";
+import { getStoredGeminiKey } from "./llm.js?v=20260622_6";
 import { getGoogleBooksApiKey } from "./book-lookup.js";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
-import { renderMarkdown } from "./markdown.js?v=20260622_5";
-import { isOfflineMode } from "./offline.js?v=20260622_5";
+import { renderMarkdown } from "./markdown.js?v=20260622_6";
+import { isOfflineMode } from "./offline.js?v=20260622_6";
 import { MISC_PROJECT_ID } from "./session-types.js";
 import {
   isMnemonicButtonVisiblePref,
   setMnemonicButtonVisiblePref,
   syncMnemonicButtonVisibility,
-} from "./mnemonic.js?v=20260622_5";
+} from "./mnemonic.js?v=20260622_6";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;
@@ -33,9 +33,9 @@ export function getCurrentScreenId() {
  * @param {{ timeLabel?: string, blocksLabel?: string, questionsLabel?: string, correctRatePct?: number | null }} summary
  */
 export function updateSessionCompleteSummary(summary = {}) {
-  const timeLabel = String(summary.timeLabel ?? "â€”");
-  const blocksLabel = String(summary.blocksLabel ?? "â€”");
-  const questionsLabel = String(summary.questionsLabel ?? "â€”");
+  const timeLabel = String(summary.timeLabel ?? "—");
+  const blocksLabel = String(summary.blocksLabel ?? "—");
+  const questionsLabel = String(summary.questionsLabel ?? "—");
   if (els.sessionCompleteTime) els.sessionCompleteTime.textContent = timeLabel;
   if (els.sessionCompleteBlocks) els.sessionCompleteBlocks.textContent = blocksLabel;
   if (els.sessionCompleteQuestions) els.sessionCompleteQuestions.textContent = questionsLabel;
@@ -45,7 +45,7 @@ export function updateSessionCompleteSummary(summary = {}) {
   const rate = summary.correctRatePct;
   rateEl.classList.remove("is-good", "is-warn", "is-bad");
   if (rate == null || !Number.isFinite(rate)) {
-    rateEl.textContent = "â€”";
+    rateEl.textContent = "—";
     return;
   }
   const pct = Math.round(rate);
@@ -168,7 +168,7 @@ export function renderBreadcrumb(segments) {
       const sep = document.createElement("span");
       sep.className = "study-breadcrumb-sep";
       sep.setAttribute("aria-hidden", "true");
-      sep.textContent = "â€º";
+      sep.textContent = "›";
       nav.appendChild(sep);
     }
 
@@ -784,7 +784,7 @@ export function showInventoryStatusBanner(message, { id = "inventory-status-bann
     const dismiss = document.createElement("button");
     dismiss.type = "button";
     dismiss.setAttribute("aria-label", "Dismiss");
-    dismiss.textContent = "Ã—";
+    dismiss.textContent = "×";
     dismiss.style.position = "absolute";
     dismiss.style.right = "8px";
     dismiss.style.top = "6px";
@@ -815,7 +815,7 @@ function ensureFullPackCtaSubtitle() {
   subtitle.className = "hint";
   subtitle.style.marginTop = "6px";
   subtitle.style.fontSize = "12px";
-  subtitle.textContent = "Pre-generates all blocks Â· works without internet after";
+  subtitle.textContent = "Pre-generates all blocks · works without internet after";
   els.generateFullPackBtn.insertAdjacentElement("afterend", subtitle);
   els.fullPackCtaSubtitle = subtitle;
   return subtitle;
@@ -883,7 +883,7 @@ export function setFullPackEntryCta(nBlocks) {
   const subtitle = ensureFullPackCtaSubtitle();
   if (subtitle) {
     const n = Math.max(0, Math.floor(Number(nBlocks) || 0));
-    subtitle.textContent = `Pre-generates all ${n} blocks Â· works without internet after`;
+    subtitle.textContent = `Pre-generates all ${n} blocks · works without internet after`;
   }
 }
 
@@ -953,7 +953,7 @@ export function setOfflinePackButtonVisibility(isVisible) {
 }
 
 export function enableUnifiedMaterialUpload() {
-  // Offline pack load removed from create screen â€” no-op.
+  // Offline pack load removed from create screen — no-op.
 }
 
 function ensureOfflineModeBanner() {
@@ -1386,7 +1386,7 @@ export function showScreen(which) {
 
   const anyVisible = document.querySelector('.screen[aria-hidden="false"]');
   if (!anyVisible) {
-    console.warn(`showScreen("${which}"): no visible screen â€” falling back to settings`);
+    console.warn(`showScreen("${which}"): no visible screen — falling back to settings`);
     els.screenSettings?.setAttribute("aria-hidden", "false");
   }
 }

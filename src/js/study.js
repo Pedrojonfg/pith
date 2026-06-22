@@ -1,4 +1,4 @@
-﻿import {
+import {
   deepSeekAuditBlockOverlap,
   deepSeekGenerateBlockJson,
   deepSeekRegenerateBlockQuestions,
@@ -16,7 +16,7 @@
   normalizeConceptsToVault,
   PREPACKING_DONT_KNOW_ANSWER,
   PREPACKING_ALREADY_KNOW_ANSWER,
-} from "./api.js?v=20260622_5";
+} from "./api.js?v=20260622_6";
 import {
   ASSESSMENT_FLAGS,
   INTERVIEW_MAX_FOLLOWUP_ROUNDS,
@@ -41,7 +41,7 @@ import {
   computeHolisticAssessmentBudget,
   deriveInventoryEdges,
   hashCoveragePlan,
-} from "./assessment-coverage.js?v=20260622_5";
+} from "./assessment-coverage.js?v=20260622_6";
 import {
   assertLlmKeyPresent,
   getApiKeyForLlmModel,
@@ -51,18 +51,18 @@ import {
   llmChatCompletions,
   LLM_MODEL_DEEPSEEK,
   normalizeLlmModel,
-} from "./llm.js?v=20260622_5";
+} from "./llm.js?v=20260622_6";
 import {
   buildDocumentHierarchy,
   buildDeterministicPedagogicalMeta,
   hasMarkdownHeadings,
-} from "./normalization/hierarchy.js?v=20260622_5";
-import { analyzeText } from "./recommendation/analyzer.js?v=20260622_5";
+} from "./normalization/hierarchy.js?v=20260622_6";
+import { analyzeText } from "./recommendation/analyzer.js?v=20260622_6";
 import {
   computeBlockCountRecommendation,
   formatBlockCountReasoning,
-} from "./recommendation/block-count-recommender.js?v=20260622_5";
-import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260622_5";
+} from "./recommendation/block-count-recommender.js?v=20260622_6";
+import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260622_6";
 import {
   buildBlockSplitFingerprint,
   getBlockSplitCache,
@@ -105,11 +105,11 @@ import {
   resolveRsvpInventoryForPack,
   shouldSkipRsvpInventoryLlm,
 } from "./rsvp-shared-consumption.js";
-import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_5";
+import { isMcTypingTarget, letterFromMcKey } from "./mc-keyboard.js?v=20260622_6";
 import {
   recordUserOverride,
   updateFlowProgress,
-} from "./recommendation/tracker.js?v=20260622_5";
+} from "./recommendation/tracker.js?v=20260622_6";
 import {
   normalizeTestQuestion,
   shuffleTestQuestionOptions,
@@ -125,29 +125,29 @@ import {
   registerDictionaryChromeSyncHook,
   syncConceptsFromBlock,
   updateDictionaryButtonVisibility,
-} from "./dictionary.js?v=20260622_5";
-import { extractSneakPeek } from "./sneakPeek.js?v=20260622_5";
-import { MAX_N_TEST } from "./config.js?v=20260622_5";
+} from "./dictionary.js?v=20260622_6";
+import { extractSneakPeek } from "./sneakPeek.js?v=20260622_6";
+import { MAX_N_TEST } from "./config.js?v=20260622_6";
 import {
   exportOfflinePack,
   exportSessionMarkdown,
   exportClozeItemsMarkdown,
   downloadTextFile,
   resolveSessionForExport,
-} from "./export.js?v=20260622_5";
+} from "./export.js?v=20260622_6";
 import { computePersistenceHealth, tryRecoverBlocksFromV1Backup } from "./block-store.js";
 import {
   clearGuideChatStorage,
   refreshGuideContext,
   triggerCommentReply,
-} from "./guide-chat.js?v=20260622_5";
+} from "./guide-chat.js?v=20260622_6";
 import {
   clearMarkdownContainer,
   hasMathInHtml,
   renderMarkdown,
   renderMcOptionHtml,
-} from "./markdown.js?v=20260622_5";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260622_5";
+} from "./markdown.js?v=20260622_6";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260622_6";
 import {
   finishPacedRead,
   isPacedReaderActive,
@@ -156,9 +156,9 @@ import {
   setReadingModePref,
   startPacedReadForText,
   wirePacedReaderHandlers,
-} from "./paced-reader.js?v=20260622_5";
-import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260622_5";
-import { isOfflineMode } from "./offline.js?v=20260622_5";
+} from "./paced-reader.js?v=20260622_6";
+import { extractResumePayloadFromMarkdown } from "./resume.js?v=20260622_6";
+import { isOfflineMode } from "./offline.js?v=20260622_6";
 import {
   blocksListTextFromBlockIndex,
   clampInt,
@@ -205,6 +205,7 @@ import {
   isConceptInventoryValid,
   evaluateConceptInventoryGuard,
   pollUntilConceptInventoryReady,
+  repairStuckRunningPreparationIfNeeded,
   applyKnowledgeProfileToBlockIndex,
   twoPhaseConceptSplit,
   state,
@@ -225,7 +226,7 @@ import {
   setKnowledgeProfile,
   setAssessmentSkipped,
   setPackingIgnoredProfile,
-} from "./session.js?v=20260622_5";
+} from "./session.js?v=20260622_6";
 import { isBoldHeaderLine, warnStructuredHeaderCount } from "./rsvp-section-headers.js";
 import {
   isZeroQuestionBlockTitle,
@@ -257,15 +258,15 @@ import {
   typesetMath,
   updateFullPackProgressUi,
   updateSessionCompleteSummary,
-} from "./ui.js?v=20260622_5";
-import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260622_5";
+} from "./ui.js?v=20260622_6";
+import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260622_6";
 import {
   buildScopeOptions,
   buildEqualLengthSections,
   scopeCharCount,
   SCOPE_CHAR_WARN,
   formatCharCount,
-} from "./slow/headings.js?v=20260622_5";
+} from "./slow/headings.js?v=20260622_6";
 import {
   applyFillableMapMode,
   ensurePhase0UserFields,
@@ -277,10 +278,10 @@ import {
   slugGraphTermId,
   generatePhase0ForScope,
   syncPhase0ConceptsToShared,
-} from "./slow/phase0.js?v=20260622_5";
-import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260622_5";
-import { initPhase3Screen } from "./slow/phase3.js?v=20260622_5";
-import { computeDepthScore } from "./slow/gamification.js?v=20260622_5";
+} from "./slow/phase0.js?v=20260622_6";
+import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260622_6";
+import { initPhase3Screen } from "./slow/phase3.js?v=20260622_6";
+import { computeDepthScore } from "./slow/gamification.js?v=20260622_6";
 import {
   buildGraphSubgraphMarkdown,
   buildRsvpMaterialGraph,
@@ -288,23 +289,23 @@ import {
   mountMaterialGraphScreen,
   renderGraphUnlockButtonHtml,
   wireMaterialGraphScreen,
-} from "./graph/view.js?v=20260622_5";
-import { jumpToAnnotation } from "./slow/sidebar.js?v=20260622_5";
-import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260622_5";
+} from "./graph/view.js?v=20260622_6";
+import { jumpToAnnotation } from "./slow/sidebar.js?v=20260622_6";
+import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260622_6";
 import {
   applyAssessmentPrioritizedOrder,
   enterClozeStudyScreen,
   getActiveClozeConceptIds,
   setClozeStudyCompleteExitHandler,
   wireClozeStudyHandlers,
-} from "./cloze/study.js?v=20260622_5";
-import { parseClozePackFiles } from "./cloze/export-import.js?v=20260622_5";
-import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260622_5";
+} from "./cloze/study.js?v=20260622_6";
+import { parseClozePackFiles } from "./cloze/export-import.js?v=20260622_6";
+import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260622_6";
 import { getActiveRecallConceptIds } from "./recall-study.js";
 import {
   initMnemonicChrome,
   syncMnemonicButtonBadge,
-} from "./mnemonic.js?v=20260622_5";
+} from "./mnemonic.js?v=20260622_6";
 import {
   enterProjectLibrary,
   getUploadDefaultProjectId,
@@ -315,14 +316,14 @@ import {
   setUploadProjectContext,
   wireProjectLibraryHandlers,
 } from "./project-library.js";
-import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260622_5";
+import { prioritizeByAssessmentSignals } from "./assessment-signals.js?v=20260622_6";
 import { getDocumentRetrievalModes } from "./mode-taxonomy.js";
 import { finalizeBlockQuestionAnswer } from "./block-answer-signals.js";
 import { createRecallStudyController } from "./recall-study.js";
 import {
   buildModeSliceFromShared,
   resolveModeEntryState,
-} from "./mode-bootstrap.js?v=20260622_5";
+} from "./mode-bootstrap.js?v=20260622_6";
 import {
   addConceptsToShared,
   computeDocId,
@@ -337,7 +338,7 @@ import {
   setUploadMeta,
   syncAssessmentSignalsToShared,
   updateRecommendation,
-} from "./session-store.js?v=20260622_5";
+} from "./session-store.js?v=20260622_6";
 import {
   findVaultEntryForConceptId,
   getVaultContextForDoc,
@@ -436,7 +437,7 @@ export async function startDocumentPreparation(doc, options = {}) {
   if (!doc?.docId) return null;
   const forceRerun = options.forceRerun === true;
   if (forceRerun) {
-    console.log("[DPP-GUARD] Force rerun requested — bypassing guard.");
+    console.log("[DPP-GUARD] Force rerun requested ? bypassing guard.");
     if (!doc.shared) doc.shared = {};
     doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
     setPreparationStatus(doc.shared.preparation, "pending");
@@ -470,7 +471,7 @@ export async function startDocumentPreparation(doc, options = {}) {
 function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
-  return `${label}${wave}…`;
+  return `${label}${wave}?`;
 }
 
 const PREPARATION_FAILED_MSG =
@@ -505,7 +506,7 @@ async function handleRetryPreparationClick() {
     els.generateBlocksError.hidden = true;
     els.generateBlocksError.textContent = "";
   }
-  showDocumentPreparingScreen("Retrying document preparation…");
+  showDocumentPreparingScreen("Retrying document preparation?");
   await startDocumentPreparation(doc, {
     forceRerun: true,
     ...preparationGateOptions((msg) => {
@@ -525,13 +526,14 @@ async function handleRetryPreparationClick() {
 }
 
 async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOpts, statusEl) {
+  doc = await repairStuckRunningPreparationIfNeeded(doc);
   const guard = evaluateConceptInventoryGuard(doc);
   if (guard.decision === "failed") {
     renderPreparationFailedUi(doc);
     throw new Error(PREPARATION_FAILED_MSG);
   }
   if (guard.decision === "waiting") {
-    if (statusEl) statusEl.textContent = "Document preparation in progress…";
+    if (statusEl) statusEl.textContent = "Document preparation in progress?";
     const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
     doc = polled.session || doc;
     const after = evaluateConceptInventoryGuard(doc);
@@ -592,7 +594,7 @@ function refreshCreateSessionInsights(doc) {
   const dupe = related.find((r) => (r?.score ?? 0) >= DOC_SIMILARITY_DUPLICATE_THRESHOLD);
   if (dupe) {
     parts.push(
-      `This looks very similar to "${dupe.title || dupe.docId}" — did you mean to re-upload?`,
+      `This looks very similar to "${dupe.title || dupe.docId}" ? did you mean to re-upload?`,
     );
   }
   if (!parts.length) {
@@ -601,7 +603,7 @@ function refreshCreateSessionInsights(doc) {
     return;
   }
   el.hidden = false;
-  el.textContent = parts.join(" · ");
+  el.textContent = parts.join(" ? ");
 }
 
 function preparationGateOptions(onProgress) {
@@ -613,7 +615,7 @@ function preparationGateOptions(onProgress) {
   };
 }
 
-function showDocumentPreparingScreen(initialLabel = "Processing document…") {
+function showDocumentPreparingScreen(initialLabel = "Processing document?") {
   if (els.reviewGeneratingLabel) {
     els.reviewGeneratingLabel.textContent = initialLabel;
   }
@@ -634,6 +636,7 @@ async function enterModeSelectAfterTier1Gate() {
     return;
   }
 
+  doc = await repairStuckRunningPreparationIfNeeded(doc);
   clearPreparationFailedUi();
   let guard = evaluateConceptInventoryGuard(doc);
   if (guard.decision === "failed") {
@@ -643,7 +646,7 @@ async function enterModeSelectAfterTier1Gate() {
   }
 
   if (guard.decision === "waiting") {
-    showDocumentPreparingScreen("Document preparation in progress…");
+    showDocumentPreparingScreen("Document preparation in progress?");
     const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
     doc = polled.session || doc;
     guard = evaluateConceptInventoryGuard(doc);
@@ -861,7 +864,7 @@ export function resolveFlowPanelViewState(doc) {
  */
 export function formatIntroFlowLine(steps) {
   if (!Array.isArray(steps) || !steps.length) return "";
-  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" â†’ ");
+  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" ? ");
 }
 
 /**
@@ -896,7 +899,7 @@ async function buildRecommendationSubtitle(recommendation, doc = null) {
   const parts = [];
   if (reasoning) parts.push(reasoning);
   if (whyText && whyText !== reasoning) parts.push(whyText);
-  return parts.join(" â€” ");
+  return parts.join(" ? ");
 }
 
 /**
@@ -970,7 +973,7 @@ function clearFlowRecommendFeedback() {
 
 function setFlowRecommendLoading(isLoading) {
   if (els.flowRecommendStatus) {
-    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flowâ€¦" : "";
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow?" : "";
   }
 }
 
@@ -1246,7 +1249,7 @@ function getStudyModeLabel(mode) {
   return "RSVP";
 }
 
-/** QA stub â€” delegates to recall controller when document session exists. */
+/** QA stub ? delegates to recall controller when document session exists. */
 export async function showRecallStudyStub() {
   const doc = await getActiveSession();
   if (doc) {
@@ -1512,7 +1515,7 @@ function renderBookSearchPanel() {
 
   if (els.bookSearchLookupBtn) {
     els.bookSearchLookupBtn.disabled = bookSearchState.searching;
-    els.bookSearchLookupBtn.textContent = bookSearchState.searching ? "Searching…" : "Look up book";
+    els.bookSearchLookupBtn.textContent = bookSearchState.searching ? "Searching?" : "Look up book";
   }
 }
 
@@ -1607,7 +1610,7 @@ function interviewFollowUpErrorMessage(err) {
 
 function showInterviewGeneratingScreen(label) {
   if (els.reviewGeneratingLabel) {
-    els.reviewGeneratingLabel.textContent = String(label || "Working…");
+    els.reviewGeneratingLabel.textContent = String(label || "Working?");
   }
   showScreen("reviewGenerating");
 }
@@ -1653,8 +1656,8 @@ function renderInterviewCaptureUi(doc) {
   if (els.interviewTurnMeta) {
     els.interviewTurnMeta.textContent =
       answered > 0
-        ? `Answered ${answered} · Follow-ups ${followUps}/${INTERVIEW_MAX_FOLLOWUP_ROUNDS}`
-        : "Opening question — no network needed";
+        ? `Answered ${answered} ? Follow-ups ${followUps}/${INTERVIEW_MAX_FOLLOWUP_ROUNDS}`
+        : "Opening question ? no network needed";
   }
   if (els.interviewFinishBtn) {
     els.interviewFinishBtn.hidden = !canFinish;
@@ -1665,7 +1668,7 @@ function renderInterviewCaptureUi(doc) {
   }
   if (els.interviewCaptureStatus && atCap && !canFinish) {
     els.interviewCaptureStatus.textContent =
-      "Round cap reached — answer this question to reach the minimum for synthesis.";
+      "Round cap reached ? answer this question to reach the minimum for synthesis.";
   } else if (els.interviewCaptureStatus && !canFinish && answered > 0) {
     els.interviewCaptureStatus.textContent = `Answer at least ${INTERVIEW_MIN_ANSWERED_TURNS} questions before finishing.`;
   } else if (els.interviewCaptureStatus) {
@@ -1690,7 +1693,7 @@ async function loadNextInterviewQuestion(doc) {
     return doc;
   }
   const runId = ++interviewCaptureState.runId;
-  showInterviewGeneratingScreen("Generating follow-up question…");
+  showInterviewGeneratingScreen("Generating follow-up question?");
   try {
     assertLlmKeyPresent(getSessionLlmModel());
     const { question } = await generateInterviewFollowUp({
@@ -1810,7 +1813,7 @@ async function handleInterviewFinish(fromCap = false) {
   await saveDocumentSession(doc);
 
   const runId = ++interviewCaptureState.runId;
-  showInterviewGeneratingScreen("Structuring your answers…");
+  showInterviewGeneratingScreen("Structuring your answers?");
   try {
     assertLlmKeyPresent(getSessionLlmModel());
     const { doc: updated } = await applyInterviewSynthesis(doc, {
@@ -1822,7 +1825,7 @@ async function handleInterviewFinish(fromCap = false) {
     if (runId !== interviewCaptureState.runId) return;
     await saveDocumentSession(updated);
     if (els.reviewGeneratingLabel) {
-      els.reviewGeneratingLabel.textContent = "Processing document…";
+      els.reviewGeneratingLabel.textContent = "Processing document?";
     }
     const prepared = await ensureTier1Preparation(updated, {
       ...preparationGateOptions((msg) => {
@@ -1840,7 +1843,7 @@ async function handleInterviewFinish(fromCap = false) {
     }
     kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
     if (fromCap && els.interviewCaptureStatus) {
-      els.interviewCaptureStatus.textContent = "Interview complete — round cap reached.";
+      els.interviewCaptureStatus.textContent = "Interview complete ? round cap reached.";
     }
     enterModeSelectScreen();
   } catch (err) {
@@ -1881,7 +1884,7 @@ async function handleCreateSessionStartFilePicked() {
   if (!file) return;
   const runId = ++createSessionStartRunId;
   if (els.createSessionStartStatus) {
-    els.createSessionStartStatus.textContent = "Extracting textâ€¦";
+    els.createSessionStartStatus.textContent = "Extracting text?";
   }
   if (els.createSessionStartContinueBtn) {
     els.createSessionStartContinueBtn.disabled = true;
@@ -1918,7 +1921,7 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartContinueBtn.disabled = false;
     }
     if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Preparing documentâ€¦";
+      els.createSessionStartStatus.textContent = "Preparing document?";
     }
     mountModeSelectBreadcrumb(doc);
     void startDocumentPreparation(doc, {
@@ -1936,7 +1939,7 @@ async function handleCreateSessionStartFilePicked() {
         if (els.createSessionStartStatus) {
           els.createSessionStartStatus.textContent = isTier1PreparationComplete(fresh)
             ? "Document ready. You can continue."
-            : "Preparing document…";
+            : "Preparing document?";
         }
         refreshCreateSessionInsights(fresh);
       })
@@ -2064,7 +2067,7 @@ async function renderVaultKnowledgeFringe() {
 }
 
 /**
- * Inventory-only ingest â€” creates DocumentSession with gray concepts, no mode slices.
+ * Inventory-only ingest ? creates DocumentSession with gray concepts, no mode slices.
  * @param {object} params
  */
 export async function runIngestOnlyPipeline({
@@ -2264,7 +2267,7 @@ async function loadUploadVaultCandidates() {
     els.uploadVaultError.textContent = "";
   }
   if (els.btnUploadVaultRetry) els.btnUploadVaultRetry.hidden = true;
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestionsâ€¦";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestions?";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
 
   const studied = getStudiedConcepts(doc);
@@ -2430,7 +2433,7 @@ async function commitUploadVaultSelections() {
     );
     if (!proceed) return;
   }
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault uploadâ€¦";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault upload?";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
   try {
     const queueRows = selections.map((sel) => ({
@@ -2446,7 +2449,7 @@ async function commitUploadVaultSelections() {
     }));
     createUploadQueue(doc.docId, queueRows);
     if (els.uploadVaultStatus) {
-      els.uploadVaultStatus.textContent = "Uploading to vault in backgroundâ€¦";
+      els.uploadVaultStatus.textContent = "Uploading to vault in background?";
     }
     const sessionForQueue = doc;
     void processUploadQueue(sessionForQueue, ({ done, total, error }) => {
@@ -2672,7 +2675,7 @@ function notifyInventoryRunStatus(invResult) {
   }
   if (Array.isArray(invResult.failedChunks) && invResult.failedChunks.length) {
     showInventoryStatusBanner(
-      "Concept inventory partially recovered â€” some sections could not be processed. Results may be incomplete.",
+      "Concept inventory partially recovered ? some sections could not be processed. Results may be incomplete.",
     );
   }
 }
@@ -2680,7 +2683,7 @@ function notifyInventoryRunStatus(invResult) {
 async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onProgress) {
   let docHierarchy = doc?.shared?.docHierarchy;
   if (docHierarchy?.tree?.length || wordCount <= 8000) return docHierarchy;
-  if (typeof onProgress === "function") onProgress("Building document structureâ€¦");
+  if (typeof onProgress === "function") onProgress("Building document structure?");
   docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
   if (doc?.shared && docHierarchy) {
     doc.shared.docHierarchy = docHierarchy;
@@ -2717,7 +2720,7 @@ function escapeDocLibraryHtml(value) {
 
 function formatDocLibraryDate(ts) {
   const n = Number(ts);
-  if (!Number.isFinite(n) || n <= 0) return "â€”";
+  if (!Number.isFinite(n) || n <= 0) return "?";
   return new Date(n).toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
@@ -3011,12 +3014,12 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.generateBlocksBtn) {
     const bootstrapped = Boolean(state.materialBootstrapActive);
     if (bootstrapped && (isSlow || isCloze)) {
-      els.generateBlocksBtn.textContent = "Continue with loaded material â†’";
+      els.generateBlocksBtn.textContent = "Continue with loaded material ?";
     } else if (isQuestions) {
       els.generateBlocksBtn.textContent = "Generate questions";
     } else {
       els.generateBlocksBtn.textContent =
-        isSlow || isCloze ? "Upload and continue â†’" : "Generate blocks";
+        isSlow || isCloze ? "Upload and continue ?" : "Generate blocks";
     }
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
@@ -3046,7 +3049,7 @@ function updateClozeSessionPanel(session) {
   if (els.clozePipelineProgress) {
     if (generating && cloze.pipelinePhase != null) {
       const phaseNum = Number(cloze.pipelinePhase);
-      els.clozePipelineProgress.textContent = `Generating items â€” Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
+      els.clozePipelineProgress.textContent = `Generating items ? Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
     } else if (ready) {
       els.clozePipelineProgress.textContent = "Items ready.";
     } else if (failed) {
@@ -3177,11 +3180,11 @@ async function importClozePacksFromInput() {
     return;
   }
   if (els.clozeImportBtn) els.clozeImportBtn.disabled = true;
-  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importingâ€¦";
+  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importing?";
   try {
     const result = await parseClozePackFiles(fileList, readFileAsText);
     if (!result.ok) {
-      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" Â· ") : "";
+      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" � ") : "";
       throw new Error(
         detail ||
           (result.reason === "no_valid_items"
@@ -3306,7 +3309,7 @@ async function selectSlowScope(session, opt, listEl) {
     els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
     if (!els.slowScopeLongWarning.hidden) {
       els.slowScopeLongWarning.textContent =
-        "Scope â‰¥ 60k characters â€” Phase 0 will use map-reduce by section.";
+        "Scope ? 60k characters ? Phase 0 will use map-reduce by section.";
     }
   }
   await storeActiveSession(session);
@@ -3387,7 +3390,7 @@ async function renderSlowScopeScreen(session) {
     els.slowScopeHierarchyLoading.hidden = !loading;
     if (loading) {
       els.slowScopeHierarchyLoading.textContent =
-        "Analyzing document structureâ€¦";
+        "Analyzing document structure?";
     }
   }
 
@@ -3514,7 +3517,7 @@ async function renderSlowScopeScreen(session) {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "slow-scope-toggle";
-      toggle.textContent = collapsed ? "â–¶" : "â–¼";
+      toggle.textContent = collapsed ? "?" : "?";
       toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
       toggle.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -3634,7 +3637,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     input.type = "text";
     input.className = "slow-phase0-input";
     input.value = text;
-    input.placeholder = "Pregunta antes de leerâ€¦";
+    input.placeholder = "Pregunta antes de leer?";
     input.addEventListener("input", () => {
       phase0.prequestions[index] = input.value.trim();
       persistPhase0Edits(session);
@@ -3642,7 +3645,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "Ã—";
+    del.textContent = "�";
     del.title = "Eliminar pregunta";
     del.addEventListener("click", () => {
       phase0.prequestions.splice(index, 1);
@@ -3779,7 +3782,7 @@ function renderSlowPhase0Concepts(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "Ã—";
+    del.textContent = "�";
     del.addEventListener("click", () => {
       phase0.conceptsToFind.splice(i, 1);
       renderSlowPhase0Content(session);
@@ -3798,7 +3801,7 @@ function renderSlowPhase0Concepts(session, parent) {
   dictSelect.className = "slow-phase0-select";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Add from dictionaryâ€¦";
+  placeholder.textContent = "Add from dictionary?";
   dictSelect.appendChild(placeholder);
   const dictConcepts = getSortedSessionConcepts();
   for (const c of dictConcepts) {
@@ -3864,7 +3867,7 @@ function renderSlowPhase0Content(session) {
     renderPhase0ReadonlyBlock(
       host,
       "Examine critically",
-      phase0.criticalExaminePoints.map((p) => `Â· ${p}`).join("\n"),
+      phase0.criticalExaminePoints.map((p) => `� ${p}`).join("\n"),
     );
   }
 }
@@ -3896,7 +3899,7 @@ function renderSlowPhase0Screen(session) {
     if (els.slowPhase0Progress) {
       els.slowPhase0Progress.hidden = false;
       if (!els.slowPhase0Progress.textContent) {
-        els.slowPhase0Progress.textContent = "Generating orientationâ€¦";
+        els.slowPhase0Progress.textContent = "Generating orientation?";
       }
     }
     return;
@@ -3967,7 +3970,7 @@ async function runPhase0Generation(session) {
   slow.phase0Error = null;
   if (els.slowPhase0Progress) {
     els.slowPhase0Progress.hidden = false;
-    els.slowPhase0Progress.textContent = "Generating orientationâ€¦";
+    els.slowPhase0Progress.textContent = "Generating orientation?";
   }
   renderSlowPhase0Screen(session);
   await storeActiveSession(session);
@@ -3981,9 +3984,9 @@ async function runPhase0Generation(session) {
         if (!els.slowPhase0Progress) return;
         els.slowPhase0Progress.hidden = false;
         if (phase === "chunk") {
-          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} â€” ${label}`;
+          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} ? ${label}`;
         } else {
-          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientationâ€¦";
+          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientation?";
         }
       },
     });
@@ -4320,7 +4323,7 @@ function renderSplitMergeSummary(splitRunMeta) {
       const keepBefore = String(row?.keep_title_before || "").trim();
       const keepAfter = String(row?.keep_title_after || "").trim();
       const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
-      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} â† absorb ${absorbIds
+      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ? absorb ${absorbIds
         .map((x) => `#${x}`)
         .join(", ")}`;
       const sub = document.createElement("div");
@@ -4329,12 +4332,12 @@ function renderSplitMergeSummary(splitRunMeta) {
       sub.textContent =
         absorbTitles.length || keepBefore
           ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
-              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" Â· ")}` : ""
+              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" � ")}` : ""
             }`
           : "";
       if (sub.textContent) card.appendChild(sub);
     } else {
-      top.textContent = `Keep #${keepId} â† absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
+      top.textContent = `Keep #${keepId} ? absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
     }
 
     const why = document.createElement("div");
@@ -4497,7 +4500,7 @@ function bumpQuestionCount(kind, delta) {
 
 function setGenerateLoading(isLoading) {
   els.generateBlocksBtn.disabled = isLoading;
-  els.generateBlocksBtn.textContent = isLoading ? "Generatingâ€¦" : "Generate blocks";
+  els.generateBlocksBtn.textContent = isLoading ? "Generating?" : "Generate blocks";
 }
 function setGenerateError(message) {
   els.generateBlocksError.hidden = false;
@@ -4782,7 +4785,7 @@ function setOfflinePackError(message) {
 
 function setOfflinePackLoading(isLoading) {
   if (els.offlinePackStatus) {
-    els.offlinePackStatus.textContent = isLoading ? "Readingâ€¦" : "";
+    els.offlinePackStatus.textContent = isLoading ? "Reading?" : "";
   }
 }
 
@@ -4869,11 +4872,11 @@ async function loadOfflinePack(text, filename = "") {
   setBlocksReadonlyMode({
     enabled: true,
     bannerText:
-      `${totalBlocks} blocks Â· Generated ${generatedAt}`
-      + (failedBlocks > 0 ? ` Â· ${failedBlocks} blocks have no content` : ""),
+      `${totalBlocks} blocks � Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` � ${failedBlocks} blocks have no content` : ""),
   });
   if (els.confirmBlocksStatus) {
-    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks Â· Generated ${generatedAt}`;
+    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks � Generated ${generatedAt}`;
   }
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
@@ -4887,7 +4890,7 @@ async function loadOfflinePack(text, filename = "") {
 
 function setConfirmLoading(isLoading) {
   els.confirmBlocksBtn.disabled = isLoading;
-  els.confirmBlocksBtn.textContent = isLoading ? "Savingâ€¦" : "Looks good, start session";
+  els.confirmBlocksBtn.textContent = isLoading ? "Saving?" : "Looks good, start session";
 }
 function setConfirmError(message) {
   els.confirmBlocksError.hidden = false;
@@ -4941,7 +4944,7 @@ async function handleOfflinePackClick() {
     no_session: "No session to export.",
     no_block_content: "Generate block content before downloading offline pack.",
     offline: "Offline pack is not available in offline mode.",
-    download_blocked: "Download blocked â€” try again or check browser settings.",
+    download_blocked: "Download blocked ? try again or check browser settings.",
   };
   const msg = messages[result.error] || "Could not download offline pack.";
   setResumeError(msg);
@@ -4973,8 +4976,8 @@ async function syncPersistenceHealthBanner() {
   const backupBlocks = showPartial ? tryRecoverBlocksFromV1Backup(doc?.modes?.rsvp) : null;
   const message =
     health.lastWriteError === "quota"
-      ? "Study progress may not be fully saved â€” browser storage is full."
-      : "Study progress may not be fully saved â€” block content is missing but dictionary or chat data exists.";
+      ? "Study progress may not be fully saved ? browser storage is full."
+      : "Study progress may not be fully saved ? block content is missing but dictionary or chat data exists.";
 
   for (const { el, textEl, dismissBtn, recoverBtn } of banners) {
     if (!el || !textEl) continue;
@@ -5006,7 +5009,7 @@ async function syncPersistenceHealthBanner() {
         doc.modes.rsvp = slice;
         await saveDocumentSession(doc);
         persistHealthDismissed = true;
-        showExportToast("Imported blocks from backup â€” review before continuing");
+        showExportToast("Imported blocks from backup ? review before continuing");
         syncPersistenceHealthBanner();
         syncExportButtonsEnabled();
       });
@@ -5164,7 +5167,7 @@ export async function readAndCleanMaterialText(file) {
     detectFormatFromFilename,
     normalizeStudyMaterial,
     UnsupportedFormatError,
-  } = await import("./input-normalization.js?v=20260622_5");
+  } = await import("./input-normalization.js?v=20260622_6");
 
   const detectedFormat = detectFormatFromFilename(file?.name || "");
   if (!detectedFormat) {
@@ -5242,7 +5245,7 @@ function computeSessionCompleteSummary() {
   }
 
   const startedAt = Number(session?._meta?.study_started_at);
-  let timeLabel = "â€”";
+  let timeLabel = "?";
   if (Number.isFinite(startedAt) && startedAt > 0) {
     const mins = Math.max(1, Math.round((Date.now() - startedAt) / 60000));
     timeLabel = mins === 1 ? "1 min" : `${mins} min`;
@@ -5431,7 +5434,7 @@ function refreshUiOnPrefetchReady() {
 function sneakPeekLabelText(nextIndex) {
   const name = String(getBlockTitleSafe(nextIndex) || "").trim();
   if (!name) return "What's next";
-  return `What's next â€” ${name}`;
+  return `What's next ? ${name}`;
 }
 
 function renderTransitionSneakPeek(o, finishedIdx) {
@@ -5467,7 +5470,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (!blockReady) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Preparing next blockâ€¦";
+    o.sneakPeekText.textContent = "Preparing next block?";
     return;
   }
 
@@ -5500,7 +5503,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (bridgeGenerating) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Writing transition previewâ€¦";
+    o.sneakPeekText.textContent = "Writing transition preview?";
     return;
   }
 
@@ -5561,7 +5564,7 @@ function getOrCreateTransitionOverlay() {
   sneakPeekText.className = "hint";
   sneakPeekText.style.lineHeight = "1.5";
   sneakPeekText.style.marginBottom = "10px";
-  sneakPeekText.textContent = "Preparing next blockâ€¦";
+  sneakPeekText.textContent = "Preparing next block?";
 
   sneakPeekWrap.appendChild(sneakPeekLabel);
   sneakPeekWrap.appendChild(sneakPeekText);
@@ -5590,7 +5593,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextTestMinus = document.createElement("button");
   nextTestMinus.type = "button";
-  nextTestMinus.textContent = "âˆ’";
+  nextTestMinus.textContent = "?";
   const nextTestValue = document.createElement("div");
   nextTestValue.style.minWidth = "22px";
   nextTestValue.style.textAlign = "center";
@@ -5615,7 +5618,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextSocMinus = document.createElement("button");
   nextSocMinus.type = "button";
-  nextSocMinus.textContent = "âˆ’";
+  nextSocMinus.textContent = "?";
   const nextSocValue = document.createElement("div");
   nextSocValue.style.minWidth = "22px";
   nextSocValue.style.textAlign = "center";
@@ -6038,7 +6041,7 @@ function setSocraticError(message) {
 }
 function setSocraticLoading(isLoading) {
   els.socraticSubmitBtn.disabled = isLoading;
-  els.socraticSubmitBtn.textContent = isLoading ? "Submittingâ€¦" : "Submit";
+  els.socraticSubmitBtn.textContent = isLoading ? "Submitting?" : "Submit";
   els.socraticNextQuestionBtn.disabled = isLoading;
   els.socraticNextBlockBtn.disabled = isLoading;
   els.socraticAnswer.disabled = isLoading;
@@ -6109,14 +6112,14 @@ function setQuestionProgressUi() {
   const ctx = getActiveQuestionContext();
   const n = Math.max(1, ctx.total);
   const label = isPrePackingAssessmentRunner()
-    ? `Knowledge check Â· Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
+    ? `Knowledge check � Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
     : `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
   if (els.testMeta) {
     if (isPrePackingAssessmentRunner()) {
       els.testMeta.textContent = label;
     } else {
       const totalBlocks = Math.max(1, getTotalBlocksSafe());
-      els.testMeta.textContent = `${label} Â· Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+      els.testMeta.textContent = `${label} � Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
     }
   }
   if (els.socraticQuestionTitle) {
@@ -6134,11 +6137,11 @@ export function syncBlockFidelityBanner(block, blockIndexEntry) {
 
   let message = "";
   if (anchor === "weak") {
-    message = "Anclaje dÃ©bil al documento â€” contrasta con tu PDF.";
+    message = "Anclaje d�bil al documento ? contrasta con tu PDF.";
   } else if (anchor === "proportional_fallback") {
     message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
   } else if (fidelity === "warn") {
-    message = "Fidelidad reducida: parte del contenido podrÃ­a no reflejar la fuente.";
+    message = "Fidelidad reducida: parte del contenido podr�a no reflejar la fuente.";
   }
 
   if (!message) {
@@ -6210,7 +6213,7 @@ function checkPrerequisiteBlockWarning(blockIndex) {
           `Prerequisite block ${prereqBlockIdx + 1} not yet studied before block ${blockIndex + 1}.`,
         );
         if (els.testMeta) {
-          els.testMeta.textContent += " Â· Prerequisite block not studied yet";
+          els.testMeta.textContent += " � Prerequisite block not studied yet";
         }
         return;
       }
@@ -6372,7 +6375,7 @@ async function startTestBlock() {
   els.testQaView.hidden = true;
   els.testRsvpView.hidden = false;
   if (els.testRsvpWord) els.testRsvpWord.textContent = "";
-  els.testRsvpStatus.textContent = "Generating blockâ€¦";
+  els.testRsvpStatus.textContent = "Generating block?";
 
   try {
     els.testRsvpSkipBtn.disabled = true;
@@ -6415,7 +6418,7 @@ async function startSocraticBlock() {
 
   try {
     setSocraticLoading(true);
-    els.socraticStatus.textContent = "Generating blockâ€¦";
+    els.socraticStatus.textContent = "Generating block?";
     await ensureBlockGenerated(state.activeBlockIndex);
   } catch (err) {
     setSocraticError(err?.message ? String(err.message) : String(err));
@@ -6628,7 +6631,7 @@ function renderSocraticQuestion() {
 async function startBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
 
-  // 1) triggerPrefetch(N+1) â€” fire and forget
+  // 1) triggerPrefetch(N+1) ? fire and forget
   const total = Math.max(1, getTotalBlocksSafe());
   const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
   const nextIdx = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
@@ -6639,12 +6642,12 @@ async function startBlock(blockIndex) {
     triggerPrefetch(nextIdx, cfg);
   }
 
-  // 2) triggerCommentReply() â€” fire and forget
+  // 2) triggerCommentReply() ? fire and forget
   if (shouldTriggerCommentReply()) {
     triggerCommentReply();
   }
 
-  // 3) showRSVP(N) â€” uses already-generated block data (not prefetch)
+  // 3) showRSVP(N) ? uses already-generated block data (not prefetch)
   state.activeBlockIndex = idx;
   state.activeQuestionIndex = 0;
   if (state.activeSession && typeof state.activeSession === "object") {
@@ -6800,14 +6803,14 @@ async function finishQuestions(blockIndex) {
   }
 
   const setStatusPreparing = () => {
-    o.statusBarText.textContent = "Preparing next blockâ€¦";
+    o.statusBarText.textContent = "Preparing next block?";
     o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
     o.statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
     o.statusBarFill.style.transform = "translateX(-120%)";
     o.statusBarFill.style.width = "40%";
   };
   const setStatusReady = () => {
-    o.statusBarText.textContent = "Ready âœ“";
+    o.statusBarText.textContent = "Ready ?";
     o.statusBarText.style.color = "rgba(34, 197, 94, 0.95)";
     o.statusBarFill.style.animation = "none";
     o.statusBarFill.style.width = "100%";
@@ -6916,7 +6919,7 @@ async function finishQuestions(blockIndex) {
 
     setPrefetchIndicator("generating");
     setStatusPreparing();
-    o.statusBarText.textContent = "Regenerating next blockâ€¦";
+    o.statusBarText.textContent = "Regenerating next block?";
     triggerPrefetch(nextIndex, { ...nextCfg, force: true });
     syncPrefetchUi();
   };
@@ -7009,7 +7012,7 @@ async function finishQuestions(blockIndex) {
         if (mode === "consume_prefetch") {
           data = await getPrefetchedBlock(nextIndex, { configKey: keyOf(nextCfg) });
         } else if (mode === "questions_only") {
-          o.status.textContent = "Regenerating questionsâ€¦";
+          o.status.textContent = "Regenerating questions?";
           if (isQuestionsStudyMode(state.activeSession)) {
             data = await generateQuestionsBlockForIndex(nextIndex, nextCfg);
           } else {
@@ -7023,7 +7026,7 @@ async function finishQuestions(blockIndex) {
           setPrefetchIndicator("ready");
           setStatusReady();
         } else {
-          o.status.textContent = "Regenerating blockâ€¦";
+          o.status.textContent = "Regenerating block?";
           setPrefetchIndicator("generating");
           data = await generateBlockDirect(nextIndex, {
             timeoutMs: 30_000,
@@ -7049,7 +7052,7 @@ async function finishQuestions(blockIndex) {
   o.retryBtn.onclick = async () => {
     o.error.hidden = true;
     o.error.textContent = "";
-    o.status.textContent = "Retryingâ€¦";
+    o.status.textContent = "Retrying?";
     try {
       setPrefetchIndicator("generating");
       const cfg = o.view === "adjust" ? nextCfg : blockDefaults;
@@ -7632,7 +7635,7 @@ function renderPrePackingAssessmentGraph(inventory) {
     blockIndex: [],
     conceptInventory: Array.isArray(inventory) ? inventory : [],
   };
-  host.textContent = `${graph.nodes.length} concepts Â· ${graph.edges.length} relations`;
+  host.textContent = `${graph.nodes.length} concepts � ${graph.edges.length} relations`;
 }
 
 function recordAssessmentResponse(row) {
@@ -7827,7 +7830,7 @@ function renderPrePackingAssessmentQuestion() {
     if (presumed) {
       const badge = document.createElement("span");
       badge.className = "pre-packing-presumed-badge";
-      badge.textContent = "âœ“ Presumed known (override below)";
+      badge.textContent = "? Presumed known (override below)";
       els.prePackingAssessmentQuestion.appendChild(badge);
     }
   }
@@ -7876,7 +7879,7 @@ async function enterPrePackingAssessmentScreen() {
     els.prePackingAssessmentError.textContent = "";
   }
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Loading questionsâ€¦";
+    els.prePackingAssessmentStatus.textContent = "Loading questions?";
   }
   showScreen("prePackingAssessment");
 
@@ -7980,7 +7983,7 @@ async function finishPrePackingAssessment() {
   if (!prePackingFlow) return;
   clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Evaluating responsesâ€¦";
+    els.prePackingAssessmentStatus.textContent = "Evaluating responses?";
   }
   if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = true;
 
@@ -8057,13 +8060,13 @@ function renderPrePackingResultsScreen(counts) {
   if (!prePackingFlow) return;
   const { full, partial, none } = counts;
   if (els.prePackingResultsSummary) {
-    els.prePackingResultsSummary.textContent = `Mastered: ${full} Â· Partial: ${partial} Â· New: ${none}`;
+    els.prePackingResultsSummary.textContent = `Mastered: ${full} � Partial: ${partial} � New: ${none}`;
   }
   if (els.prePackingResultsDiff) {
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
       const n = prePackingFlow.nBlocks;
       els.prePackingResultsDiff.hidden = false;
-      els.prePackingResultsDiff.textContent = `Hasta ${n} â†’ packing with profile (may be fewer blocks)`;
+      els.prePackingResultsDiff.textContent = `Hasta ${n} ? packing with profile (may be fewer blocks)`;
     } else {
       els.prePackingResultsDiff.hidden = true;
     }
@@ -8083,7 +8086,7 @@ async function handlePrePackingAccept() {
   if (!prePackingFlow) return;
   if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Preparing blocksâ€¦";
+    els.prePackingResultsStatus.textContent = "Preparing blocks?";
   }
   try {
     let packed = prePackingFlow.packedResult;
@@ -8098,7 +8101,7 @@ async function handlePrePackingAccept() {
     if (!prePackingFlow) return;
     prePackingFlow.packedResult = packed;
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF && els.prePackingResultsDiff) {
-      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} â†’ ${packed.blockIndex.length}`;
+      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} ? ${packed.blockIndex.length}`;
     }
     stashPrePackingDraftMeta();
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
@@ -8116,7 +8119,7 @@ async function handlePrePackingIgnore() {
   if (!prePackingFlow) return;
   prePackingFlow.packingIgnoredProfile = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Re-packing without profileâ€¦";
+    els.prePackingResultsStatus.textContent = "Re-packing without profile?";
   }
   try {
     prePackingFlow.packingPromise = null;
@@ -8152,7 +8155,7 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "blocksMaterialGraphBtn" })}
-    <span class="hint">${es ? `${graph.nodes.length} nodos Â· ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes Â· ${graph.edges.length} edges`}</span>`;
+    <span class="hint">${es ? `${graph.nodes.length} nodos � ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes � ${graph.edges.length} edges`}</span>`;
 }
 
 function renderSlowPhase0GraphActions(session) {
@@ -8170,7 +8173,7 @@ function renderSlowPhase0GraphActions(session) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "slowPhase0GraphBtn" })}
-    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} Â· ${graph.nodes.length} nodes</span>`;
+    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} � ${graph.nodes.length} nodes</span>`;
 }
 
 function wireMaterialGraphHandlers() {
@@ -8486,7 +8489,7 @@ export async function wireStudyHandlers() {
       els.fileExtractHint.textContent = `Selected: ${String(file.name || "file")} (${formatFileSize(file.size)})`;
       const markerProbe = await file.slice(0, 64 * 1024).text();
       if (String(markerProbe || "").includes("OFFLINE_PACK_V1")) {
-        els.fileExtractHint.textContent = "Loading offline packâ€¦";
+        els.fileExtractHint.textContent = "Loading offline pack?";
         const rawMaterialText = await readFileAsText(file);
         await loadOfflinePack(rawMaterialText, String(file.name || ""));
         return;
@@ -8594,7 +8597,7 @@ export async function wireStudyHandlers() {
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading materialâ€¦";
+      els.generateBlocksStatus.textContent = "Reading material?";
       const resolvedCloze = await resolveMaterialForGenerate();
       if (!resolvedCloze) {
         setGenerateLoading(false);
@@ -8648,7 +8651,7 @@ export async function wireStudyHandlers() {
         return;
       }
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading materialâ€¦";
+      els.generateBlocksStatus.textContent = "Reading material?";
       const resolvedSlow = await resolveMaterialForGenerate();
       if (!resolvedSlow) {
         setGenerateLoading(false);
@@ -8770,7 +8773,7 @@ export async function wireStudyHandlers() {
     }
 
     setGenerateLoading(true);
-    els.generateBlocksStatus.textContent = "Reading materialâ€¦";
+    els.generateBlocksStatus.textContent = "Reading material?";
 
     const resolvedRsvp = await resolveMaterialForGenerate();
     if (!resolvedRsvp) {
@@ -9006,7 +9009,7 @@ export async function wireStudyHandlers() {
 
     if (window.offlineMode === true) {
       setConfirmLoading(true);
-      els.confirmBlocksStatus.textContent = "Loading offline sessionâ€¦";
+      els.confirmBlocksStatus.textContent = "Loading offline session?";
       try {
         const pack = window.offlinePack && typeof window.offlinePack === "object" ? window.offlinePack : null;
         const offlineBlocks = normalizeOfflineBlocks(pack?.blocks);
@@ -9084,7 +9087,7 @@ export async function wireStudyHandlers() {
     }
 
     setConfirmLoading(true);
-    els.confirmBlocksStatus.textContent = "Saving blocks listâ€¦";
+    els.confirmBlocksStatus.textContent = "Saving blocks list?";
 
     try {
       if (!state.lastBlockIndex || !Array.isArray(state.lastBlockIndex)) {
@@ -9359,11 +9362,11 @@ export async function wireStudyHandlers() {
         if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
         if (els.fullPackStudyNowBtn) {
           els.fullPackStudyNowBtn.hidden = false;
-          els.fullPackStudyNowBtn.textContent = "Study now â†’";
+          els.fullPackStudyNowBtn.textContent = "Study now ?";
         }
         if (els.fullPackExitBtn) {
           els.fullPackExitBtn.hidden = false;
-          els.fullPackExitBtn.textContent = "Done â€” study later";
+          els.fullPackExitBtn.textContent = "Done ? study later";
         }
       } catch (err) {
         const msg = err?.message ? String(err.message) : String(err);
@@ -9619,7 +9622,7 @@ export async function wireStudyHandlers() {
   setOnPersistFailure((error) => {
     const msg =
       error === "quota"
-        ? "Could not save blocks â€” browser storage is full."
+        ? "Could not save blocks ? browser storage is full."
         : "Could not save study progress.";
     showExportToast(msg, { variant: "error", durationMs: 5000 });
     syncPersistenceHealthBanner();
@@ -9654,13 +9657,13 @@ export async function wireStudyHandlers() {
 
       const prevText = els.summarySoFarBtn.textContent;
       els.summarySoFarBtn.disabled = true;
-      els.summarySoFarBtn.textContent = "Summarisingâ€¦";
+      els.summarySoFarBtn.textContent = "Summarising?";
 
       if (els.summaryOverlayTitle) {
-        els.summaryOverlayTitle.textContent = `Summary so far (blocks 1â€“${n})`;
+        els.summaryOverlayTitle.textContent = `Summary so far (blocks 1?${n})`;
       }
       if (els.summaryOverlayBody) {
-        els.summaryOverlayBody.textContent = "Summarisingâ€¦";
+        els.summaryOverlayBody.textContent = "Summarising?";
         els.summaryOverlayBody.classList.remove("md-content");
       }
       setSummaryOverlayError("");

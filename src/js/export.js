@@ -1,9 +1,9 @@
-ï»¿import {
+import {
   LS_LAST_EXPORT_STATE_KEY,
   LS_SESSION_CONCEPTS_BY_BLOCK_KEY,
   LS_SESSION_CONCEPTS_KEY,
   LS_REVIEW_SESSION_RESULTS_KEY,
-} from "./config.js?v=20260622_5";
+} from "./config.js?v=20260622_6";
 import {
   buildResumePayload,
   hasGeneratedBlockContent,
@@ -12,14 +12,14 @@ import {
   parseBlockTitlesFromList,
   state,
   ensureSessionResponseState,
-} from "./session.js?v=20260622_5";
+} from "./session.js?v=20260622_6";
 import { getActiveSession as getActiveDocumentSession, getSession } from "./session-store.js";
 import { rehydrateBlocks } from "./block-store.js";
-import { isOfflineMode } from "./offline.js?v=20260622_5";
-import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260622_5";
-import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260622_5";
-import { buildSessionGraph } from "./graph/adapters.js?v=20260622_5";
-import { buildClozeMarkdown } from "./cloze/export-import.js?v=20260622_5";
+import { isOfflineMode } from "./offline.js?v=20260622_6";
+import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260622_6";
+import { buildGraphSubgraphMarkdown } from "./graph/view.js?v=20260622_6";
+import { buildSessionGraph } from "./graph/adapters.js?v=20260622_6";
+import { buildClozeMarkdown } from "./cloze/export-import.js?v=20260622_6";
 import {
   appendSourceOfTruthAndResumeCapsule,
   buildExportFrontmatter,
@@ -30,7 +30,7 @@ import {
   isTestResponseIncorrect,
   resolveSocraticMode,
   resolveStudentSynthesis,
-} from "./export-format.js?v=20260622_5";
+} from "./export-format.js?v=20260622_6";
 
 function sanitizeFilenameStem(name) {
   const raw = String(name || "").trim();
@@ -161,7 +161,7 @@ export function formatAssessmentGapsExportSection(assessmentMeta, { titleMap = {
   const synthesisStatus = String(assessmentMeta.synthesis_status || "").trim();
   if (gapsSource) metaParts.push(`Gaps source: ${gapsSource}`);
   if (synthesisStatus) metaParts.push(`Gap synthesis: ${synthesisStatus}`);
-  if (metaParts.length) lines.push(metaParts.join(" Â· "));
+  if (metaParts.length) lines.push(metaParts.join(" · "));
 
   lines.push("");
   lines.push("### Knowledge gaps by block");
@@ -178,13 +178,13 @@ export function formatAssessmentGapsExportSection(assessmentMeta, { titleMap = {
         : `Block ${blockId}`;
     const weakBlocks = Array.isArray(assessmentMeta.weak_blocks) ? assessmentMeta.weak_blocks : [];
     const blockIsWeak = weakBlocks.some((id) => String(id) === String(blockId));
-    lines.push(`- **Block ${blockId} â€” ${title}**`);
+    lines.push(`- **Block ${blockId} — ${title}**`);
     for (const entry of entries) {
       const label = String(entry?.label || "").trim();
       if (!label) continue;
       const edited = entry?.source === "user" ? " (edited)" : "";
       const priority = defaultGapReviewPriority(entry, { blockIsWeak });
-      lines.push(`  - ${label}${edited} Â· review_priority: ${priority}`);
+      lines.push(`  - ${label}${edited} · review_priority: ${priority}`);
     }
   }
 
@@ -279,7 +279,7 @@ function formatGraphLinks(links) {
     .join(", ");
 }
 
-/** Append enriched (Slow) or material (Fast) graph â€” single graph section with delimiters. */
+/** Append enriched (Slow) or material (Fast) graph — single graph section with delimiters. */
 export async function appendGraphSections(lines, session, lang = "English") {
   const isSlow = session?.studyMode === "slow" && session?.slow;
   const annotations = Array.isArray(session?.slow?.annotations) ? session.slow.annotations : [];
@@ -304,10 +304,10 @@ export async function appendGraphSections(lines, session, lang = "English") {
 
 function appendPhase0Section(lines, phase0) {
   if (!phase0 || typeof phase0 !== "object") return;
-  lines.push("## Phase 0 â€” Orientation");
+  lines.push("## Phase 0 — Orientation");
   lines.push("");
-  lines.push(`**Thesis:** ${String(phase0.thesis || "").trim() || "â€”"}`);
-  lines.push(`**Guide question:** ${String(phase0.guideQuestion || "").trim() || "â€”"}`);
+  lines.push(`**Thesis:** ${String(phase0.thesis || "").trim() || "—"}`);
+  lines.push(`**Guide question:** ${String(phase0.guideQuestion || "").trim() || "—"}`);
   lines.push("");
 
   const prequestions = Array.isArray(phase0.prequestions) ? phase0.prequestions : [];
@@ -327,8 +327,8 @@ function appendPhase0Section(lines, phase0) {
       const id = String(node?.id || "").trim();
       const text = String(node?.text || "").trim();
       const status = String(node?.status || "").trim();
-      const statusSuffix = status ? ` Â· *${status}*` : "";
-      lines.push(`- **${id || "?"}:** ${text || "â€”"}${statusSuffix}`);
+      const statusSuffix = status ? ` · *${status}*` : "";
+      lines.push(`- **${id || "?"}:** ${text || "—"}${statusSuffix}`);
     }
     lines.push("");
   }
@@ -351,7 +351,7 @@ function appendPhase0Section(lines, phase0) {
       const term = String(c?.term || "").trim();
       const usage = String(c?.authorUsage || "").trim();
       if (!term) continue;
-      lines.push(`- **${term}:** ${usage || "â€”"}`);
+      lines.push(`- **${term}:** ${usage || "—"}`);
     }
     lines.push("");
   }
@@ -378,7 +378,7 @@ function appendFindingsSection(lines, findings) {
     const revealed = f?.revealedInPhase1 ? " (revealed in Phase 1)" : "";
     const priority = defaultFindingReviewPriority(f);
     lines.push(
-      `- **${term || "concept"}**${revealed}: ${text || "â€”"} Â· review_priority: ${priority}`,
+      `- **${term || "concept"}**${revealed}: ${text || "—"} · review_priority: ${priority}`,
     );
   }
   lines.push("");
@@ -395,7 +395,7 @@ function appendAnnotationsSection(lines, annotations) {
   }
   for (const a of arr) {
     const type = String(a?.type || "?").trim();
-    const range = `[${a?.charStart ?? "?"}â€“${a?.charEnd ?? "?"}]`;
+    const range = `[${a?.charStart ?? "?"}–${a?.charEnd ?? "?"}]`;
     const userText = String(a?.userText || "").trim();
     const aiReply = String(a?.aiReply || "").trim();
     const links = formatGraphLinks(a?.graphLinks);
@@ -447,10 +447,10 @@ async function buildSlowMarkdown(session) {
   lines.push(buildExportFrontmatter(safe, { mode: "slow" }));
   lines.push("");
   lines.push("# Slow Mode Session");
-  lines.push(`Material: ${safe.materialMeta?.fileName || "â€”"}`);
+  lines.push(`Material: ${safe.materialMeta?.fileName || "—"}`);
   lines.push(`Language: ${lang}`);
-  lines.push(`Scope: ${scope.label || "â€”"} (${scope.charStart ?? 0}â€“${scope.charEnd ?? 0})`);
-  lines.push(`Phase: ${slow.phase || "â€”"}`);
+  lines.push(`Scope: ${scope.label || "—"} (${scope.charStart ?? 0}–${scope.charEnd ?? 0})`);
+  lines.push(`Phase: ${slow.phase || "—"}`);
   lines.push(`Critical mode: ${slow.criticalMode ? "yes" : "no"}`);
   lines.push(`Fillable map mode: ${slow.fillableMapMode ? "yes" : "no"}`);
   lines.push("");
@@ -520,7 +520,7 @@ export async function buildMarkdown(session) {
   const lines = [];
   lines.push(buildExportFrontmatter(safe, { mode: "fast" }));
   lines.push("");
-  lines.push(`# Study Session â€” ${dateStr}`);
+  lines.push(`# Study Session — ${dateStr}`);
   lines.push(
     `Questions per block: ${Number(resumePayload.n_test) || 0} test + ${Number(resumePayload.n_socratic) || 0} socratic`,
   );
@@ -620,7 +620,7 @@ export async function buildMarkdown(session) {
     lines.push("");
     lines.push("## Review results");
     if (reviewedAt || rt) {
-      lines.push(`Last review: ${reviewedAt || "(unknown)"}${rt ? ` â€¢ Type: ${rt}` : ""}`);
+      lines.push(`Last review: ${reviewedAt || "(unknown)"}${rt ? ` • Type: ${rt}` : ""}`);
     } else {
       lines.push("Last review: (unknown)");
     }
@@ -757,7 +757,7 @@ export async function buildMarkdown(session) {
     const startTime = formatHHMM(guideHistory[0]?.timestamp);
     const endTime = formatHHMM(guideHistory[guideHistory.length - 1]?.timestamp);
     lines.push(
-      `Total messages: ${guideHistory.length} | Duration: ${startTime || "?"} â†’ ${endTime || "?"}`,
+      `Total messages: ${guideHistory.length} | Duration: ${startTime || "?"} ? ${endTime || "?"}`,
     );
     lines.push("");
   }
@@ -831,7 +831,7 @@ export function buildOfflinePack(activeSession, blockIndex) {
   };
 
   const lines = [];
-  lines.push(`# Offline Study Pack â€” ${sourceFilename}`);
+  lines.push(`# Offline Study Pack — ${sourceFilename}`);
   lines.push(`Generated: ${generatedAt}`);
   lines.push(
     `Blocks: ${blockCount} | Language: ${language} | Mode: test only | Failed: ${failedBlocks}`,

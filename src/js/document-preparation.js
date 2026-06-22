@@ -119,6 +119,13 @@ async function persistDoc(doc) {
   return doc;
 }
 
+async function finalizePreparationStatus(doc, prep, stopAfterTier) {
+  prep.completedAt = prep.completedAt || Date.now();
+  prep.currentPhase = null;
+  resolveFinalStatus(prep, tier1Complete(doc), stopAfterTier);
+  await persistDoc(doc);
+}
+
 function ensurePreparation(doc) {
   if (!doc.shared) doc.shared = {};
   doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
@@ -556,7 +563,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   if (isOfflineMode()) {
     setPreparationStatus(prep, "partial");
     prep.completedAt = Date.now();
-    persistDoc(doc);
+    await persistDoc(doc);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
   }
 
@@ -565,7 +572,8 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   } catch (err) {
     setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "API key required", at: Date.now() });
-    persistDoc(doc);
+    prep.completedAt = Date.now();
+    await persistDoc(doc);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
   }
 
@@ -573,65 +581,69 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
   const waves = buildWaves(phaseIds);
   prep.waves = waves.map((phaseIdsInWave, i) => ({ wave: i + 1, phaseIds: phaseIdsInWave }));
 
-  for (let wi = 0; wi < waves.length; wi += 1) {
-    const wave = waves[wi];
-    prep.currentWave = wi + 1;
-    const runnable = options.resume !== false
-      ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint))
-      : wave;
+  try {
+    for (let wi = 0; wi < waves.length; wi += 1) {
+      const wave = waves[wi];
+      prep.currentWave = wi + 1;
+      const runnable = options.resume !== false
+        ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint))
+        : wave;
 
-    const results = await Promise.allSettled(
-      runnable.map(async (phaseId) => {
-        options.onProgress?.({
-          phaseId,
-          wave: wi + 1,
-          label: PHASE_LABELS[phaseId] || phaseId,
-          status: "running",
-        });
-        try {
-          const output = await executePhase(doc, phaseId, ctx);
-          if (output && typeof output === "object" && output.skipped) {
-            markPhase(prep, phaseId, "skipped", output.hash || "skipped");
-          } else {
-            markPhase(prep, phaseId, "success", output);
+      const results = await Promise.allSettled(
+        runnable.map(async (phaseId) => {
+          options.onProgress?.({
+            phaseId,
+            wave: wi + 1,
+            label: PHASE_LABELS[phaseId] || phaseId,
+            status: "running",
+          });
+          try {
+            const output = await executePhase(doc, phaseId, ctx);
+            if (output && typeof output === "object" && output.skipped) {
+              markPhase(prep, phaseId, "skipped", output.hash || "skipped");
+            } else {
+              markPhase(prep, phaseId, "success", output);
+            }
+            await persistDoc(doc);
+            options.onProgress?.({
+              phaseId,
+              wave: wi + 1,
+              label: PHASE_LABELS[phaseId] || phaseId,
+              status: output?.skipped ? "skipped" : "success",
+            });
+            return { phaseId, ok: true };
+          } catch (err) {
+            const message = err?.message || String(err);
+            markPhase(prep, phaseId, "failed", null, message);
+            prep.errors.push({ phaseId, message, at: Date.now() });
+            await persistDoc(doc);
+            options.onProgress?.({
+              phaseId,
+              wave: wi + 1,
+              label: PHASE_LABELS[phaseId] || phaseId,
+              status: "failed",
+              error: message,
+            });
+            return { phaseId, ok: false, error: message };
           }
-          persistDoc(doc);
-          options.onProgress?.({
-            phaseId,
-            wave: wi + 1,
-            label: PHASE_LABELS[phaseId] || phaseId,
-            status: output?.skipped ? "skipped" : "success",
-          });
-          return { phaseId, ok: true };
-        } catch (err) {
-          const message = err?.message || String(err);
-          markPhase(prep, phaseId, "failed", null, message);
-          prep.errors.push({ phaseId, message, at: Date.now() });
-          persistDoc(doc);
-          options.onProgress?.({
-            phaseId,
-            wave: wi + 1,
-            label: PHASE_LABELS[phaseId] || phaseId,
-            status: "failed",
-            error: message,
-          });
-          return { phaseId, ok: false, error: message };
-        }
-      }),
-    );
-    void results;
-  }
-
-  for (const id of phaseIds) {
-    if (!prep.phaseResults[id] && phaseSucceeded(prep, id, fingerprint)) {
-      markPhase(prep, id, "skipped", prep.phaseResults[id]?.outputHash);
+        }),
+      );
+      void results;
     }
+
+    for (const id of phaseIds) {
+      if (!prep.phaseResults[id] && phaseSucceeded(prep, id, fingerprint)) {
+        markPhase(prep, id, "skipped", prep.phaseResults[id]?.outputHash);
+      }
+    }
+  } catch (err) {
+    const message = err?.message || String(err);
+    prep.errors.push({ phaseId: "pipeline", message, at: Date.now() });
+    console.warn("[DPP] Pipeline error before final status write:", message);
+  } finally {
+    await finalizePreparationStatus(doc, prep, stopAfterTier);
   }
 
-  prep.completedAt = Date.now();
-  prep.currentPhase = null;
-  resolveFinalStatus(prep, tier1Complete(doc), stopAfterTier);
-  persistDoc(doc);
   return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
 }
 
@@ -719,7 +731,9 @@ export function kickoffTier2PreparationInBackground(doc, options = {}) {
   if (!doc?.docId || !isTier1PreparationComplete(doc)) return;
   const fingerprint = computePreparationFingerprint(doc, options);
   if (!tier2PhasesPending(doc, fingerprint)) return;
-  void runDocumentPreparationPipeline(doc, { ...options, stopAfterTier: 2 });
+  void runDocumentPreparationPipeline(doc, { ...options, stopAfterTier: 2 }).catch((err) => {
+    console.warn("[DPP] Tier 2 background preparation failed:", err?.message || err);
+  });
 }
 
 export function hasPendingTier2Preparation(doc, options = {}) {
