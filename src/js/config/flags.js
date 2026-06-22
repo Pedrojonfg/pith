@@ -162,3 +162,17 @@ export function isNoveltyBiasedPackingEnabled() {
 export function getPedagogicalFlags() {
   return PEDAGOGICAL_FLAGS;
 }
+
+/** Book-enriched nodoc interview (20260622-book-enriched-nodoc). */
+export const BOOK_LOOKUP_FLAGS = Object.freeze({
+  BOOK_LOOKUP_ENABLED: true,
+  MAX_COVER_SIZE_BYTES: 524288,
+  BOOK_LOOKUP_TIMEOUT_MS: 5000,
+  BOOK_TOC_MIN_ENTRIES: 3,
+  BOOK_DESCRIPTION_MIN_CHARS: 100,
+  BOOK_TOC_MAX_OPENING_QUESTIONS: 6,
+});
+
+export function isBookLookupEnabled() {
+  return BOOK_LOOKUP_FLAGS.BOOK_LOOKUP_ENABLED === true;
+}

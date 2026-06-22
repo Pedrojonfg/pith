@@ -28,6 +28,7 @@ export function mergeNormalizationResult(
   newConcepts,
   docTopics,
   docId,
+  bookSource = null,
 ) {
   const map = /** @type {Record<string, string>} */ ({});
   const topic =
@@ -38,6 +39,15 @@ export function mergeNormalizationResult(
   for (const c of Array.isArray(newConcepts) ? newConcepts : []) {
     const id = String(c?.id || c?.canonicalId || "").trim();
     if (id) conceptsById.set(id, c);
+  }
+
+  const bookTitle = bookSource?.title ? String(bookSource.title).trim() : "";
+  const bookAuthor = bookSource?.author ? String(bookSource.author).trim() : "";
+
+  function applyBookSource(entry) {
+    if (!bookTitle) return;
+    entry.source_title = bookTitle;
+    if (bookAuthor) entry.source_author = bookAuthor;
   }
 
   for (const row of Array.isArray(mappings) ? mappings : []) {
@@ -52,6 +62,7 @@ export function mergeNormalizationResult(
       const entry = vault.entries.find((e) => String(e?.id || "") === targetId);
       if (entry) {
         appendSource(entry, docId, conceptId, now);
+        applyBookSource(entry);
         map[conceptId] = targetId;
         continue;
       }
@@ -63,13 +74,14 @@ export function mergeNormalizationResult(
         if (!Array.isArray(entry.aliases)) entry.aliases = [];
         if (title && !entry.aliases.includes(title)) entry.aliases.push(title);
         appendSource(entry, docId, conceptId, now);
+        applyBookSource(entry);
         map[conceptId] = targetId;
         continue;
       }
     }
 
     const entryId = newVaultId();
-    vault.entries.push({
+    const newEntry = {
       id: entryId,
       canonicalTitle: title || conceptId,
       aliases: [],
@@ -90,7 +102,9 @@ export function mergeNormalizationResult(
       observations: [],
       definitions: [],
       facetCoverage: {},
-    });
+    };
+    applyBookSource(newEntry);
+    vault.entries.push(newEntry);
     map[conceptId] = entryId;
   }
 

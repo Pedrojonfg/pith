@@ -25,6 +25,7 @@ import {
   isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
   isAdaptiveProbingEnabled,
+  isBookLookupEnabled,
   saveSourceFidelityStrictPreference,
 } from "./config/flags.js";
 import {
@@ -82,6 +83,7 @@ import {
   DOC_SIMILARITY_RELATED_THRESHOLD,
 } from "./vault/embedding-thresholds.js";
 import { getOpeningQuestions } from "./interview/opening-questions.js";
+import { lookupBook } from "./book-lookup.js";
 import {
   appendTurn,
   canProceedToSynthesis,
@@ -1294,6 +1296,133 @@ const interviewCaptureState = {
   runId: 0,
 };
 
+/** @type {{ panel: 'search'|'confirm'|'levelC', pendingBookMeta: import('./session-types.js').BookMeta|null, searching: boolean }} */
+const bookSearchState = {
+  panel: "search",
+  pendingBookMeta: null,
+  searching: false,
+};
+
+function resetBookSearchState() {
+  bookSearchState.panel = "search";
+  bookSearchState.pendingBookMeta = null;
+  bookSearchState.searching = false;
+}
+
+function setBookSearchError(message) {
+  if (!els.bookSearchError) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    els.bookSearchError.hidden = true;
+    els.bookSearchError.textContent = "";
+    return;
+  }
+  els.bookSearchError.hidden = false;
+  els.bookSearchError.textContent = text;
+}
+
+function renderBookSearchPanel() {
+  const panel = bookSearchState.panel;
+  if (els.bookSearchPanelSearch) els.bookSearchPanelSearch.hidden = panel !== "search";
+  if (els.bookSearchPanelConfirm) els.bookSearchPanelConfirm.hidden = panel !== "confirm";
+  if (els.bookSearchPanelLevelC) els.bookSearchPanelLevelC.hidden = panel !== "levelC";
+
+  const meta = bookSearchState.pendingBookMeta;
+  if (panel === "confirm" && meta) {
+    if (els.bookSearchConfirmTitle) els.bookSearchConfirmTitle.textContent = meta.title;
+    if (els.bookSearchConfirmAuthor) {
+      els.bookSearchConfirmAuthor.textContent = meta.author || "";
+      els.bookSearchConfirmAuthor.hidden = !meta.author;
+    }
+    if (els.bookSearchTocBadge) {
+      els.bookSearchTocBadge.hidden = meta.level !== "A";
+    }
+    if (els.bookSearchCoverImg) {
+      const showCover =
+        meta.coverUrl &&
+        meta.coverUrlVerified &&
+        meta.coverFormatSupported &&
+        meta.coverSizeOk &&
+        !meta.coverLoadFailed;
+      if (showCover) {
+        els.bookSearchCoverImg.hidden = false;
+        els.bookSearchCoverImg.src = meta.coverUrl;
+      } else {
+        els.bookSearchCoverImg.hidden = true;
+        els.bookSearchCoverImg.removeAttribute("src");
+      }
+    }
+  }
+
+  if (els.bookSearchLookupBtn) {
+    els.bookSearchLookupBtn.disabled = bookSearchState.searching;
+    els.bookSearchLookupBtn.textContent = bookSearchState.searching ? "Searching…" : "Look up book";
+  }
+}
+
+export function enterBookSearchScreen() {
+  resetBookSearchState();
+  setBookSearchError("");
+  if (els.bookSearchTitleInput) els.bookSearchTitleInput.value = "";
+  if (els.bookSearchAuthorInput) els.bookSearchAuthorInput.value = "";
+  renderBookSearchPanel();
+  showScreen("bookSearch");
+}
+
+async function handleBookSearchLookup() {
+  setBookSearchError("");
+  const title = String(els.bookSearchTitleInput?.value || "").trim();
+  const author = String(els.bookSearchAuthorInput?.value || "").trim();
+  if (!title) {
+    setBookSearchError("Enter a book title.");
+    return;
+  }
+  bookSearchState.searching = true;
+  renderBookSearchPanel();
+  try {
+    const meta = await lookupBook(title, author);
+    bookSearchState.pendingBookMeta = meta;
+    if (meta.level === "C") {
+      bookSearchState.panel = "levelC";
+    } else {
+      bookSearchState.panel = "confirm";
+    }
+  } catch (err) {
+    setBookSearchError(err?.message || "Book lookup failed. Try again or continue without search.");
+  } finally {
+    bookSearchState.searching = false;
+    renderBookSearchPanel();
+  }
+}
+
+async function proceedToInterviewWithBookMeta(bookMeta) {
+  const sessionTitle =
+    bookMeta?.title ||
+    String(els.interviewSessionNameInput?.value || "").trim() ||
+    "Interview session";
+  if (els.interviewSessionNameInput) {
+    els.interviewSessionNameInput.value = sessionTitle;
+  }
+  const doc = await ensureInterviewSession(sessionTitle, bookMeta);
+  resetBookSearchState();
+  await enterInterviewCaptureScreen(doc);
+}
+
+async function handleBookSearchSkip() {
+  resetBookSearchState();
+  await enterInterviewCaptureScreen();
+}
+
+function handleBookSearchCoverError() {
+  if (bookSearchState.pendingBookMeta) {
+    bookSearchState.pendingBookMeta.coverLoadFailed = true;
+  }
+  if (els.bookSearchCoverImg) {
+    els.bookSearchCoverImg.hidden = true;
+    els.bookSearchCoverImg.removeAttribute("src");
+  }
+}
+
 function setInterviewCaptureError(message) {
   if (!els.interviewCaptureError) return;
   const text = String(message || "").trim();
@@ -1327,7 +1456,7 @@ function showInterviewGeneratingScreen(label) {
   showScreen("reviewGenerating");
 }
 
-async function ensureInterviewSession(sessionTitle) {
+async function ensureInterviewSession(sessionTitle, bookMeta = null) {
   const title = String(sessionTitle || "").trim() || "Interview session";
   const doc = await createSession(INTERVIEW_PLACEHOLDER_MARKDOWN, {
     projectId: getUploadDefaultProjectId(),
@@ -1336,7 +1465,14 @@ async function ensureInterviewSession(sessionTitle) {
     fileName: title,
     originalFormat: "interview",
     uploadedAt: new Date().toISOString(),
+    ...(bookMeta != null ? { bookMeta } : {}),
   });
+  if (bookMeta != null) {
+    doc.shared.uploadMeta = {
+      ...(doc.shared.uploadMeta || {}),
+      bookMeta,
+    };
+  }
   doc.shared.docMeta = {
     ...(doc.shared.docMeta || {}),
     titleInferred: title,
@@ -1391,7 +1527,8 @@ async function loadNextInterviewQuestion(doc) {
   }
   const lang = getStudyLanguage();
   if (transcript.length === 0) {
-    const bank = getOpeningQuestions(lang);
+    const bookMeta = doc?.shared?.uploadMeta?.bookMeta || null;
+    const bank = getOpeningQuestions(lang, bookMeta);
     interviewCaptureState.currentQuestion = bank.questions[bank.defaultIndex] || bank.questions[0] || "";
     interviewCaptureState.questionSource = "fixed";
     return doc;
@@ -1404,6 +1541,7 @@ async function loadNextInterviewQuestion(doc) {
       transcript,
       studyLang: lang,
       llmModel: getSessionLlmModel(),
+      bookMeta: doc?.shared?.uploadMeta?.bookMeta || null,
     });
     if (runId !== interviewCaptureState.runId) return doc;
     interviewCaptureState.currentQuestion = question;
@@ -1419,10 +1557,10 @@ async function loadNextInterviewQuestion(doc) {
   }
 }
 
-export async function enterInterviewCaptureScreen() {
+export async function enterInterviewCaptureScreen(existingDoc = null) {
   interviewCaptureState.runId += 1;
   setInterviewCaptureError("");
-  const existing = await getActiveSession();
+  const existing = existingDoc || (await getActiveSession());
   let doc = existing;
   if (!isInterviewOriginSession(existing) || existing?.shared?.interviewSynthesisComplete) {
     doc = await ensureInterviewSession(els.interviewSessionNameInput?.value || "Interview session");
@@ -1436,8 +1574,9 @@ export async function enterInterviewCaptureScreen() {
   }
   if (els.interviewAnswerInput) els.interviewAnswerInput.value = "";
   const transcript = normalizeInterviewTranscript(doc?.shared?.interviewTranscript);
+  const bookMeta = doc?.shared?.uploadMeta?.bookMeta || null;
   if (!transcript.length) {
-    const bank = getOpeningQuestions(getStudyLanguage());
+    const bank = getOpeningQuestions(getStudyLanguage(), bookMeta);
     interviewCaptureState.currentQuestion = bank.questions[bank.defaultIndex] || bank.questions[0] || "";
     interviewCaptureState.questionSource = "fixed";
   } else if (!interviewCaptureState.currentQuestion) {
@@ -3871,8 +4010,38 @@ function wireDocLibraryHandlers() {
 
   els.createSessionStartBackBtn?.addEventListener("click", () => enterDocLibraryScreen());
   els.createSessionNoFileBtn?.addEventListener("click", () => {
-    void enterInterviewCaptureScreen();
+    if (isBookLookupEnabled()) {
+      enterBookSearchScreen();
+    } else {
+      void enterInterviewCaptureScreen();
+    }
   });
+  els.bookSearchBackBtn?.addEventListener("click", () => enterCreateSessionStartScreen());
+  els.bookSearchSkipBtn?.addEventListener("click", () => {
+    void handleBookSearchSkip();
+  });
+  els.bookSearchLookupBtn?.addEventListener("click", () => {
+    void handleBookSearchLookup();
+  });
+  els.bookSearchConfirmBtn?.addEventListener("click", () => {
+    if (bookSearchState.pendingBookMeta) {
+      void proceedToInterviewWithBookMeta(bookSearchState.pendingBookMeta);
+    }
+  });
+  els.bookSearchRetryBtn?.addEventListener("click", () => {
+    resetBookSearchState();
+    renderBookSearchPanel();
+  });
+  els.bookSearchLevelCContinueBtn?.addEventListener("click", () => {
+    if (bookSearchState.pendingBookMeta) {
+      void proceedToInterviewWithBookMeta(bookSearchState.pendingBookMeta);
+    }
+  });
+  els.bookSearchLevelCRetryBtn?.addEventListener("click", () => {
+    resetBookSearchState();
+    renderBookSearchPanel();
+  });
+  els.bookSearchCoverImg?.addEventListener("error", handleBookSearchCoverError);
   els.createSessionStartFileInput?.addEventListener("change", () => {
     void handleCreateSessionStartFilePicked();
   });

@@ -81,11 +81,23 @@ function normalizeConceptRows(rows) {
 }
 
 /**
- * @param {{ transcript: object[], studyLang: string, llmModel?: string }} params
+ * @param {{ transcript: object[], studyLang: string, llmModel?: string, bookMeta?: import('../session-types.js').BookMeta }} params
  */
-export async function generateInterviewFollowUp({ transcript, studyLang, llmModel }) {
+export async function generateInterviewFollowUp({ transcript, studyLang, llmModel, bookMeta }) {
   const source = concatTranscriptForSource(transcript);
   const language = String(studyLang || "English").trim() || "English";
+  const answeredTurns = Array.isArray(transcript)
+    ? transcript.filter((t) => String(t?.answer || "").trim()).length
+    : 0;
+  const isFirstFollowUp = answeredTurns === 1;
+  let bookContextBlock = "";
+  if (
+    isFirstFollowUp &&
+    bookMeta?.level === "B" &&
+    String(bookMeta.description || "").trim().length > 0
+  ) {
+    bookContextBlock = `\n\nBOOK CONTEXT (do not reveal this text to the user; use it only to generate more specific follow-up questions):\n"""\n${String(bookMeta.description).trim()}\n"""`;
+  }
   const systemPrompt = `You are a Socratic tutor helping a learner articulate what they learned from material they cannot upload (book, lecture, film, conversation).
 
 Rules:
@@ -93,7 +105,7 @@ Rules:
 - Target gaps, unclear claims, missing examples, or real-world application — never generic restatement.
 - Do NOT introduce facts the learner has not mentioned.
 - Write the question in ${language}.
-- Respond ONLY with valid JSON.`;
+- Respond ONLY with valid JSON.${bookContextBlock}`;
 
   const content = await llmChatCompletions({
     llmModel: normalizeLlmModel(llmModel),

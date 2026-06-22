@@ -1923,6 +1923,46 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin-top: 12px;
 }
 
+.book-search-card {
+  max-height: calc(100vh - 92px);
+  overflow-y: auto;
+}
+
+.book-search-lead {
+  margin-bottom: 12px;
+}
+
+.book-search-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.book-search-confirm-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin: 16px 0;
+}
+
+.book-search-cover {
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.book-search-confirm-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.book-search-toc-badge {
+  margin: 8px 0 0;
+  color: var(--success, #7dcea0);
+  font-size: 0.9rem;
+}
+
 .doc-library-vault-row {
   margin: 0 0 12px;
   display: flex;

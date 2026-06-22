@@ -13,6 +13,7 @@ import {
   getStoredGeminiKey,
   state,
 } from "./session.js?v=20260611_2";
+import { getGoogleBooksApiKey, saveGoogleBooksApiKey } from "./book-lookup.js";
 import {
   closeSettingsScreen,
   closeBlockReadSidebar,
@@ -257,15 +258,23 @@ async function bootstrap() {
     localStorage.setItem("ds_api_key", trimmed);
     const geminiRaw = String(els.geminiApiKeyInput?.value || "").trim();
     if (geminiRaw) saveGeminiKey(geminiRaw);
+    const googleBooksRaw = String(els.googleBooksApiKeyInput?.value || "").trim();
+    saveGoogleBooksApiKey(googleBooksRaw);
     els.apiKeyStatus.textContent = geminiRaw
       ? "DeepSeek and Gemini (embeddings) saved."
-      : "DeepSeek saved.";
+      : googleBooksRaw
+        ? "DeepSeek and Google Books saved."
+        : "DeepSeek saved.";
     await enterAppHome();
   });
 
   if (els.geminiApiKeyInput) {
     const gk = getStoredGeminiKey();
     if (gk) els.geminiApiKeyInput.value = gk;
+  }
+  if (els.googleBooksApiKeyInput) {
+    const gbk = getGoogleBooksApiKey();
+    if (gbk) els.googleBooksApiKeyInput.value = gbk;
   }
 
   const authSession = await getSupabaseAuthSession();

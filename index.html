@@ -384,6 +384,20 @@
                 autocomplete="off"
                 placeholder="AIza…"
               />
+              <label for="googleBooksApiKeyInput" style="margin-top: 12px">Google Books API key (optional)</label>
+              <input
+                id="googleBooksApiKeyInput"
+                name="googleBooksApiKey"
+                type="password"
+                inputmode="text"
+                spellcheck="false"
+                autocapitalize="none"
+                autocomplete="off"
+                placeholder="AIza…"
+              />
+              <p class="hint" style="margin-top: 4px">
+                Enables book cover and description fallback when creating sessions from books without a file. Works without it via Open Library and Wikipedia.
+              </p>
               <div class="row">
                 <button type="submit" class="btn-primary">Save keys</button>
                 <span class="hint" id="apiKeyStatus" role="status"></span>
@@ -523,6 +537,75 @@
             <button type="button" id="createSessionNoFileBtn" class="btn-secondary create-session-no-file-btn">
               I don't have a file for this
             </button>
+          </div>
+        </section>
+
+        <section
+          id="screenBookSearch"
+          class="screen book-search-screen"
+          aria-hidden="true"
+          aria-label="Book lookup"
+        >
+          <div class="card book-search-card">
+            <button type="button" id="bookSearchBackBtn" class="create-back-btn">← Back</button>
+            <h1>Is it a book?</h1>
+            <p class="hint book-search-lead">
+              Optional — look up chapter structure to make interview questions more specific.
+            </p>
+
+            <div id="bookSearchPanelSearch">
+              <label for="bookSearchTitleInput">Title</label>
+              <input
+                id="bookSearchTitleInput"
+                name="bookSearchTitleInput"
+                type="text"
+                placeholder="e.g. Sapiens"
+                maxlength="200"
+              />
+              <label for="bookSearchAuthorInput">Author (optional)</label>
+              <input
+                id="bookSearchAuthorInput"
+                name="bookSearchAuthorInput"
+                type="text"
+                placeholder="e.g. Yuval Noah Harari"
+                maxlength="200"
+              />
+              <div id="bookSearchError" class="error" hidden></div>
+              <div class="row book-search-actions">
+                <button type="button" id="bookSearchLookupBtn" class="btn-primary">Look up book</button>
+                <button type="button" id="bookSearchSkipBtn" class="btn-secondary">Continue without search</button>
+              </div>
+            </div>
+
+            <div id="bookSearchPanelConfirm" hidden>
+              <div class="book-search-confirm-row">
+                <img
+                  id="bookSearchCoverImg"
+                  class="book-search-cover"
+                  alt=""
+                  width="64"
+                  height="96"
+                  hidden
+                />
+                <div class="book-search-confirm-meta">
+                  <p id="bookSearchConfirmTitle" class="book-search-confirm-title"></p>
+                  <p id="bookSearchConfirmAuthor" class="hint"></p>
+                  <p id="bookSearchTocBadge" class="book-search-toc-badge" hidden>✓ Table of contents found</p>
+                </div>
+              </div>
+              <div class="row book-search-actions">
+                <button type="button" id="bookSearchConfirmBtn" class="btn-primary">This is the book</button>
+                <button type="button" id="bookSearchRetryBtn" class="btn-secondary">Search again</button>
+              </div>
+            </div>
+
+            <div id="bookSearchPanelLevelC" hidden>
+              <p class="hint">We could not find additional information about this book.</p>
+              <div class="row book-search-actions">
+                <button type="button" id="bookSearchLevelCContinueBtn" class="btn-primary">Continue anyway</button>
+                <button type="button" id="bookSearchLevelCRetryBtn" class="btn-secondary">Search again</button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -1812,7 +1895,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260621_8";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260622_1";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260619_6";
       initSplash();
 
@@ -1828,7 +1911,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260621_8");
+        await import("./src/js/main.js?v=20260622_1");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

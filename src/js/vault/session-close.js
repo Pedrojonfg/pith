@@ -274,7 +274,14 @@ export async function updateVaultFromSession(session, mode) {
       }
     }
 
-    const merged = mergeNormalizationResult(vault, mappings, newConcepts, docTopics, docId);
+    const merged = mergeNormalizationResult(
+      vault,
+      mappings,
+      newConcepts,
+      docTopics,
+      docId,
+      session?.shared?.uploadMeta?.bookMeta || null,
+    );
     normalizationMap = { ...normalizationMap, ...merged };
   }
 

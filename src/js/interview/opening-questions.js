@@ -1,5 +1,7 @@
 /** Static Socratic/Feynman opening questions — zero LLM latency (20260620-nodoc-interview-capture). */
 
+import { BOOK_LOOKUP_FLAGS } from "../config/flags.js";
+
 const BANK = Object.freeze({
   English: [
     "In your own words, what was this material mainly about? Try to compress the core idea into two or three sentences.",
@@ -23,12 +25,50 @@ const BANK = Object.freeze({
   ],
 });
 
+const CHAPTER_TEMPLATES = Object.freeze({
+  English: (chapterTitle) =>
+    `What do you remember from the chapter "${chapterTitle}"? Explain it as if telling someone who has not read it.`,
+  Spanish: (chapterTitle) =>
+    `¿Qué recuerdas del capítulo «${chapterTitle}»? Explícalo como si se lo contaras a alguien que no lo ha leído.`,
+  French: (chapterTitle) =>
+    `Que retenez-vous du chapitre « ${chapterTitle} » ? Expliquez-le comme à quelqu'un qui ne l'a pas lu.`,
+  German: (chapterTitle) =>
+    `Was erinnern Sie sich aus dem Kapitel „${chapterTitle}"? Erklären Sie es, als ob Sie es jemandem erzählen, der es nicht gelesen hat.`,
+});
+
+function shuffleArray(arr) {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
 /**
- * @param {string} [studyLang]
+ * @param {string} studyLang
+ * @param {import('../session-types.js').BookMeta} [bookMeta]
  * @returns {{ questions: string[], defaultIndex: number }}
  */
-export function getOpeningQuestions(studyLang) {
+export function getOpeningQuestions(studyLang, bookMeta) {
   const lang = String(studyLang || "English").trim();
+  if (
+    bookMeta?.level === "A" &&
+    Array.isArray(bookMeta.toc) &&
+    bookMeta.toc.length >= BOOK_LOOKUP_FLAGS.BOOK_TOC_MIN_ENTRIES
+  ) {
+    const templateFn = CHAPTER_TEMPLATES[lang] || CHAPTER_TEMPLATES.English;
+    let chapters = bookMeta.toc
+      .map((c) => String(c?.title || "").trim())
+      .filter(Boolean);
+    chapters = shuffleArray(chapters);
+    const max = BOOK_LOOKUP_FLAGS.BOOK_TOC_MAX_OPENING_QUESTIONS;
+    if (chapters.length > 8) {
+      chapters = chapters.slice(0, max);
+    }
+    const questions = chapters.map((t) => templateFn(t));
+    return { questions, defaultIndex: 0 };
+  }
   const questions = BANK[lang] || BANK.English;
   return { questions: [...questions], defaultIndex: 0 };
 }

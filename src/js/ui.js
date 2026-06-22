@@ -1,5 +1,6 @@
 import { LS_KEY, LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260525_1";
 import { getStoredGeminiKey } from "./llm.js?v=20260525_1";
+import { getGoogleBooksApiKey } from "./book-lookup.js";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
@@ -386,6 +387,24 @@ export const els = {
   createSessionStartInsight: document.getElementById("createSessionStartInsight"),
   createSessionStartContinueBtn: document.getElementById("createSessionStartContinueBtn"),
   createSessionNoFileBtn: document.getElementById("createSessionNoFileBtn"),
+  screenBookSearch: document.getElementById("screenBookSearch"),
+  bookSearchBackBtn: document.getElementById("bookSearchBackBtn"),
+  bookSearchTitleInput: document.getElementById("bookSearchTitleInput"),
+  bookSearchAuthorInput: document.getElementById("bookSearchAuthorInput"),
+  bookSearchError: document.getElementById("bookSearchError"),
+  bookSearchPanelSearch: document.getElementById("bookSearchPanelSearch"),
+  bookSearchPanelConfirm: document.getElementById("bookSearchPanelConfirm"),
+  bookSearchPanelLevelC: document.getElementById("bookSearchPanelLevelC"),
+  bookSearchLookupBtn: document.getElementById("bookSearchLookupBtn"),
+  bookSearchSkipBtn: document.getElementById("bookSearchSkipBtn"),
+  bookSearchConfirmBtn: document.getElementById("bookSearchConfirmBtn"),
+  bookSearchRetryBtn: document.getElementById("bookSearchRetryBtn"),
+  bookSearchLevelCContinueBtn: document.getElementById("bookSearchLevelCContinueBtn"),
+  bookSearchLevelCRetryBtn: document.getElementById("bookSearchLevelCRetryBtn"),
+  bookSearchCoverImg: document.getElementById("bookSearchCoverImg"),
+  bookSearchConfirmTitle: document.getElementById("bookSearchConfirmTitle"),
+  bookSearchConfirmAuthor: document.getElementById("bookSearchConfirmAuthor"),
+  bookSearchTocBadge: document.getElementById("bookSearchTocBadge"),
   screenInterviewCapture: document.getElementById("screenInterviewCapture"),
   interviewCaptureBackBtn: document.getElementById("interviewCaptureBackBtn"),
   interviewSessionNameInput: document.getElementById("interviewSessionNameInput"),
@@ -505,6 +524,7 @@ export const els = {
   apiKeyForm: document.getElementById("apiKeyForm"),
   apiKeyInput: document.getElementById("apiKeyInput"),
   geminiApiKeyInput: document.getElementById("geminiApiKeyInput"),
+  googleBooksApiKeyInput: document.getElementById("googleBooksApiKeyInput"),
   apiKeyStatus: document.getElementById("apiKeyStatus"),
 
   studyProgress: document.getElementById("studyProgress"),
@@ -1211,6 +1231,7 @@ export function showScreen(which) {
   const showVaultBranch = which === "vaultBranch";
   const showUploadToVault = which === "uploadToVaultCandidates";
   const showCreateSessionStart = which === "createSessionStart";
+  const showBookSearch = which === "bookSearch";
   const showInterviewCapture = which === "interviewCapture";
   const showModeSelect = which === "modeSelect";
   const showDocLibrary = which === "docLibrary";
@@ -1245,6 +1266,7 @@ export function showScreen(which) {
   els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
   els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
   els.screenCreateSessionStart?.setAttribute("aria-hidden", String(!showCreateSessionStart));
+  els.screenBookSearch?.setAttribute("aria-hidden", String(!showBookSearch));
   els.screenInterviewCapture?.setAttribute("aria-hidden", String(!showInterviewCapture));
   if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
   els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
@@ -1297,6 +1319,9 @@ export function showScreen(which) {
     if (els.geminiApiKeyInput) {
       const gk = getStoredGeminiKey();
       els.geminiApiKeyInput.value = gk || "";
+    }
+    if (els.googleBooksApiKeyInput) {
+      els.googleBooksApiKeyInput.value = getGoogleBooksApiKey() || "";
     }
     setTimeout(() => els.apiKeyInput?.focus?.(), 0);
   }

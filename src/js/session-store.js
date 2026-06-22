@@ -37,6 +37,7 @@ import {
   validateDocumentSession,
 } from "./session-types.js";
 import { ensureMiscProject } from "./project-store.js";
+import { persistPendingImages } from "./document-images/storage.js";
 
 export {
   computeCanonicalId,
@@ -221,6 +222,11 @@ function migrateSessionV3(session) {
     changed = true;
   }
 
+  if (!Array.isArray(sh.images)) {
+    sh.images = [];
+    changed = true;
+  }
+
   const version = Number(session.schemaVersion) || 2;
   if (version < 3) {
     changed = true;
@@ -296,13 +302,22 @@ function djb2Hex12(str) {
 
 /**
  * @param {string} rawMarkdown
- * @param {{ docId?: string }} [options]
+ * @param {{ docId?: string, projectId?: string, pendingImages?: import("./document-images/storage.js").PendingDocumentImage[] }} [options]
  * @returns {Promise<import('./session-types.js').DocumentSession>}
  */
 export async function createSession(rawMarkdown, options = {}) {
   const markdown = String(rawMarkdown || "");
   const docId = options.docId || (await computeDocId(markdown));
   const now = Date.now();
+  /** @type {import("./session-types.js").DocumentImage[]} */
+  let images = [];
+  if (Array.isArray(options.pendingImages) && options.pendingImages.length) {
+    try {
+      images = await persistPendingImages(docId, options.pendingImages);
+    } catch (err) {
+      console.warn("[session-store] image persist failed", err?.message || err);
+    }
+  }
   const session = {
     docId,
     schemaVersion: 3,
@@ -321,6 +336,7 @@ export async function createSession(rawMarkdown, options = {}) {
       assessmentSignals: [],
       docTopics: [],
       mnemonicDevices: [],
+      images,
       preparation: {
         status: "pending",
         fingerprint: "",
@@ -555,7 +571,7 @@ export async function upsertSmItem(docId, item) {
 
 /**
  * @param {string} docId
- * @param {{ fileName?: string, originalFormat?: string, uploadedAt?: string }|null} meta
+ * @param {{ fileName?: string, originalFormat?: string, uploadedAt?: string, bookMeta?: import('./session-types.js').BookMeta }|null} meta
  */
 export async function setUploadMeta(docId, meta) {
   const session = await getSession(docId);
@@ -567,6 +583,7 @@ export async function setUploadMeta(docId, meta) {
       fileName: String(meta.fileName || ""),
       originalFormat: String(meta.originalFormat || ""),
       uploadedAt: String(meta.uploadedAt || new Date().toISOString()),
+      ...(meta.bookMeta != null ? { bookMeta: meta.bookMeta } : {}),
     };
   }
   await saveActiveSession(session);
