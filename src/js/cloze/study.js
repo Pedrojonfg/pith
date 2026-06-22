@@ -1,13 +1,13 @@
-import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260622_9";
+import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260622_10";
 import { getActiveSession } from "../session-store.js";
 import { mapClozeResultToQuality, registerOrUpdateSmItem } from "../sm2-ingest.js";
 import { promoteFromCloze } from "../concept-registry/ingest.js";
-import { getValidItems } from "./normalize.js?v=20260622_9";
-import { storeActiveSession } from "../session.js?v=20260622_9";
-import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260622_9";
-import { isMcTypingTarget, letterFromMcKey } from "../mc-keyboard.js?v=20260622_9";
+import { getValidItems } from "./normalize.js?v=20260622_10";
+import { storeActiveSession } from "../session.js?v=20260622_10";
+import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260622_10";
+import { isMcTypingTarget, letterFromMcKey } from "../mc-keyboard.js?v=20260622_10";
 import { shuffleInPlace } from "../shuffle-options.js";
-import { els, showScreen } from "../ui.js?v=20260622_9";
+import { els, showScreen } from "../ui.js?v=20260622_10";
 
 const CLOZE_CORRECT_ADVANCE_MS = 250;
 

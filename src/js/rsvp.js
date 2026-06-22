@@ -3,10 +3,10 @@ import {
   LS_RSVP_COMPREHENSION_PAUSE_KEY,
   LS_RSVP_DEFAULT_WPF_KEY,
   LS_RSVP_DEFAULT_WPM_KEY,
-} from "./config.js?v=20260622_9";
-import { clampInt } from "./session.js?v=20260622_9";
-import { stripMarkdownForPlainText } from "./markdown.js?v=20260622_9";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_9";
+} from "./config.js?v=20260622_10";
+import { clampInt } from "./session.js?v=20260622_10";
+import { stripMarkdownForPlainText } from "./markdown.js?v=20260622_10";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_10";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean, afterBoldEnd?: boolean }} RsvpChunk */
 

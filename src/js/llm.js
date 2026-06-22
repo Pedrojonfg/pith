@@ -99,11 +99,12 @@ export function getSessionLlmModel(_session) {
   return DEFAULT_LLM_MODEL;
 }
 
-export function resolveLlmContext({ llmModel } = {}) {
-  const id = normalizeLlmModel(llmModel);
-  if (!cachedAccessToken) {
+export async function resolveLlmContext({ llmModel } = {}) {
+  const token = await getSupabaseAuthToken();
+  if (!token) {
     throw new Error("Sign in to use AI features.");
   }
+  const id = normalizeLlmModel(llmModel);
   return {
     llmModel: id,
     apiModel: "deepseek-chat",
@@ -122,7 +123,7 @@ export async function llmChatCompletions({
   response_format,
   signal,
 } = {}) {
-  const ctx = resolveLlmContext({ llmModel });
+  const ctx = await resolveLlmContext({ llmModel });
   const body = {
     model: ctx.apiModel,
     messages,
@@ -157,7 +158,7 @@ export async function llmChatCompletionsMultimodal({
   response_format,
   signal,
 } = {}) {
-  const ctx = resolveLlmContext({ llmModel });
+  const ctx = await resolveLlmContext({ llmModel });
   const body = {
     model: ctx.apiModel,
     messages,
@@ -191,7 +192,8 @@ export async function geminiChatCompletions({
   max_tokens,
   signal,
 } = {}) {
-  if (!cachedAccessToken) return null;
+  const token = await getSupabaseAuthToken();
+  if (!token) return null;
 
   const body = { model, messages, temperature };
   if (max_tokens != null) body.max_tokens = max_tokens;
