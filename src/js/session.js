@@ -48,7 +48,20 @@ import { isOfflineMode } from "./offline.js?v=20260606_1";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
 import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
-import { isDeterministicFactualQuestionsEnabled } from "./config/flags.js";
+import {
+  isDeterministicFactualQuestionsEnabled,
+  MIN_CONCEPTS_ABSOLUTE,
+  MIN_CHARS_PER_CONCEPT,
+  minViableConcepts,
+} from "./config/flags.js";
+
+/**
+ * Call sites patched for DPP recalculation guard (20260622-fix-dpp-recalculation-guard):
+ * - document-preparation.js runPhaseT12
+ * - study.js enterModeSelectAfterTier1Gate, startDocumentPreparation
+ * - study.js recommendBlockCount, generate-blocks submit
+ * - mode-bootstrap.js resolveModeEntryState
+ */
 export {
   computeInventoryHash,
   createEmptyRecallSlice,
@@ -2397,6 +2410,11 @@ export async function runConceptInventoryMapReduce(
 
   progress("Merging concept inventories…");
   const merged = await deepSeekMergeConceptInventories(partials, splitOpts);
+  if (merged.failReason || !Array.isArray(merged.concepts) || !merged.concepts.length) {
+    const err = new Error(merged.failReason || "MERGE_TRUNCATED");
+    err.code = "CONCEPT_INVENTORY_TRUNCATED";
+    throw err;
+  }
   return {
     inventory: merged.concepts,
     inventoryMode: merged.inventoryMode || "map_reduce",
@@ -2407,7 +2425,7 @@ export async function runConceptInventoryMapReduce(
 
 export async function runConceptInventory(
   material,
-  { llmModel, studyNotes, language, onProgress, docHierarchy, wordCount: wordCountIn } = {},
+  { llmModel, studyNotes, language, onProgress, docHierarchy, wordCount: wordCountIn, charCount: charCountIn } = {},
 ) {
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
   const materialText = String(material || "").trim();
@@ -2419,6 +2437,7 @@ export async function runConceptInventory(
   const pipelineLevers = ensureSessionPipelineLevers(session, strict);
   const wordCount =
     Number(wordCountIn) || materialText.split(/\s+/).filter(Boolean).length;
+  const charCount = Number(charCountIn) || materialText.length;
   const estimatedConceptTarget = computeEstimatedConceptTarget(wordCount, pipelineLevers);
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
@@ -2431,6 +2450,7 @@ export async function runConceptInventory(
     onProgress,
     estimatedConceptTarget,
     wordCount,
+    charCount,
   };
 
   let hierarchy = docHierarchy;
@@ -2479,12 +2499,112 @@ export async function runConceptInventory(
 }
 
 /**
+ * Returns true when shared concept inventory meets DPP viability thresholds.
+ * @param {object} session
+ * @returns {boolean}
+ */
+export function isConceptInventoryValid(session) {
+  const shared = session?.shared;
+  if (!shared) return false;
+
+  const status = shared.preparation?.status;
+  if (status !== "ready" && status !== "partial") return false;
+
+  const inventory = shared.conceptInventory;
+  if (!Array.isArray(inventory) || inventory.length === 0) return false;
+
+  const charCount = shared.docMeta?.charCount ?? 0;
+  const minRequired = Math.max(
+    MIN_CONCEPTS_ABSOLUTE,
+    Math.floor(charCount / MIN_CHARS_PER_CONCEPT),
+  );
+
+  return inventory.length >= minRequired;
+}
+
+/**
+ * @param {object} session
+ * @param {{ forceRerun?: boolean }} [options]
+ * @returns {{ decision: 'skip'|'run'|'failed'|'waiting'|'degraded' }}
+ */
+export function evaluateConceptInventoryGuard(session, options = {}) {
+  if (options.forceRerun) {
+    console.log("[DPP-GUARD] Force rerun requested — bypassing guard.");
+    return { decision: "run" };
+  }
+
+  if (isConceptInventoryValid(session)) {
+    const inv = session.shared.conceptInventory;
+    const charCount = session.shared.docMeta?.charCount ?? 0;
+    console.log(
+      `[DPP-GUARD] isConceptInventoryValid → TRUE (${inv.length} concepts, charCount ${charCount}). Skipping recalculation.`,
+    );
+    return { decision: "skip" };
+  }
+
+  const status = session?.shared?.preparation?.status ?? "undefined";
+  const length = Array.isArray(session?.shared?.conceptInventory)
+    ? session.shared.conceptInventory.length
+    : 0;
+  console.log(
+    `[DPP-GUARD] isConceptInventoryValid → FALSE. Status: ${status}, inventory: ${length} concepts.`,
+  );
+
+  if (status === "failed") {
+    console.log("[DPP-GUARD] Status 'failed' — surfacing error state. Not auto-retrying.");
+    return { decision: "failed" };
+  }
+
+  if (status === "running" || status === "pending") {
+    console.log("[DPP-GUARD] Skipping DPP re-trigger: already running.");
+    return { decision: "waiting" };
+  }
+
+  if (status === "ready" || status === "partial") {
+    const charCount = session?.shared?.docMeta?.charCount ?? 0;
+    const minRequired = minViableConcepts(charCount);
+    console.log(
+      `[DPP-GUARD] Inventory below minimum threshold (${length} < ${minRequired}). Treating as degraded.`,
+    );
+    return { decision: "degraded" };
+  }
+
+  return { decision: "run" };
+}
+
+/**
+ * Poll until inventory guard returns skip or degraded, or failed/run timeout.
+ * @param {() => Promise<object|null>} reloadSession
+ * @param {{ pollMs?: number, maxWaitMs?: number }} [options]
+ * @returns {Promise<{ decision: string, session: object|null }>}
+ */
+export async function pollUntilConceptInventoryReady(reloadSession, options = {}) {
+  const pollMs = options.pollMs ?? 3000;
+  const maxWaitMs = options.maxWaitMs ?? 300000;
+  const started = Date.now();
+
+  while (Date.now() - started < maxWaitMs) {
+    const session = await reloadSession();
+    if (!session) return { decision: "failed", session: null };
+    const guard = evaluateConceptInventoryGuard(session);
+    if (guard.decision === "skip" || guard.decision === "degraded") {
+      return { decision: guard.decision, session };
+    }
+    if (guard.decision === "failed") {
+      return { decision: "failed", session };
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+  return { decision: "waiting", session: await reloadSession() };
+}
+
+/**
  * Inventory with mono-phase fallback — all entry points should use this.
  * @returns {Promise<{ kind: 'inventory', inventory: object[], inventoryMode?: string, chunkCount?: number, failedChunks?: string[], concept_count: number, estimatedConceptTarget: number, wordCount: number } | { kind: 'fallback_mono', blockIndex: object[], splitRunMeta: object, inventoryMode: 'fallback_mono' }>}
  */
 export async function runConceptInventoryWithFallback(
   material,
-  { llmModel, studyNotes, language, onProgress, docHierarchy, nBlocks, wordCount } = {},
+  { llmModel, studyNotes, language, onProgress, docHierarchy, nBlocks, wordCount, charCount } = {},
 ) {
   const materialText = String(material || "").trim();
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
@@ -2531,6 +2651,7 @@ export async function runConceptInventoryWithFallback(
       onProgress,
       docHierarchy,
       wordCount,
+      charCount,
     });
     return { kind: "inventory", ...result };
   } catch (err) {

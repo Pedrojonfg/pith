@@ -1,4 +1,4 @@
-import { hasGeneratedBlockContent, normalizeStudyMode } from "./session.js";
+import { hasGeneratedBlockContent, normalizeStudyMode, isConceptInventoryValid } from "./session.js";
 import { createClozeSession, createSlowSession } from "./study.js";
 import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
 import { getValidItems } from "./cloze/pipeline.js";
@@ -136,7 +136,7 @@ export function resolveModeEntryState(doc, mode) {
         existingSlice: recallSlice,
       };
     }
-    if (hasConceptInventory(doc) || preparationAllowsBootstrap(doc)) {
+    if (isConceptInventoryValid(doc) || hasConceptInventory(doc) || preparationAllowsBootstrap(doc)) {
       return {
         kind: "bootstrap",
         mode: modeKey,
@@ -161,7 +161,7 @@ export function resolveModeEntryState(doc, mode) {
     };
   }
 
-  if (preparationAllowsBootstrap(doc) || hasConceptInventory(doc)) {
+  if (isConceptInventoryValid(doc) || preparationAllowsBootstrap(doc) || hasConceptInventory(doc)) {
     return {
       kind: "bootstrap",
       mode: modeKey,

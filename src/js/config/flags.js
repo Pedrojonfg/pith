@@ -52,6 +52,22 @@ export function isSourceFidelityStrictEnabled() {
   return getSourceFidelityStrictPreference() === true;
 }
 
+/** Minimum concept count floor for viable inventory (20260622-fix-inventory-merge-truncation). */
+export const MIN_CONCEPTS_ABSOLUTE = 5;
+
+/** Chars per expected concept for min-viable scaling (unvalidated placeholder). */
+export const MIN_CHARS_PER_CONCEPT = 5000;
+
+/**
+ * Minimum concepts required before DPP may mark inventory ready.
+ * @param {number} [charCount]
+ * @returns {number}
+ */
+export function minViableConcepts(charCount = 0) {
+  const chars = Math.max(0, Math.floor(Number(charCount) || 0));
+  return Math.max(MIN_CONCEPTS_ABSOLUTE, Math.floor(chars / MIN_CHARS_PER_CONCEPT));
+}
+
 /** Interview capture — max LLM follow-up rounds after fixed opener (20260620-nodoc-interview-capture). */
 export const INTERVIEW_MAX_FOLLOWUP_ROUNDS = 4;
 

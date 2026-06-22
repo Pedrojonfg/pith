@@ -18,7 +18,7 @@ import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js"
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
 import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
-import { runConceptInventoryWithFallback } from "./session.js";
+import { runConceptInventoryWithFallback, isConceptInventoryValid } from "./session.js";
 import { assertLlmKeyPresent } from "./llm.js";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
@@ -27,7 +27,7 @@ import {
   classifyInventoryHeuristic,
   applyBatchClassification,
 } from "./pedagogy/factual-classifier.js";
-import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags } from "./config/flags.js";
+import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags, minViableConcepts } from "./config/flags.js";
 import { runDedupForDocument } from "./concept-registry/dedup-gates.js";
 import {
   filterProposalsWithContradictionCheck,
@@ -197,21 +197,46 @@ async function runPhaseT12(doc, ctx) {
   ) {
     return hashPayload(doc.shared.conceptInventory.length);
   }
+  if (!ctx.forceRerun && isConceptInventoryValid(doc)) {
+    const inv = doc.shared.conceptInventory;
+    const charCount = doc.shared?.docMeta?.charCount ?? 0;
+    console.log(
+      `[DPP-GUARD] isConceptInventoryValid → TRUE (${inv.length} concepts, charCount ${charCount}). Skipping recalculation.`,
+    );
+    return hashPayload(inv.length);
+  }
   const text = getMarkdown(doc);
+  const charCount =
+    Number(doc.shared?.docMeta?.charCount) ||
+    Number(doc.shared?.textMetrics?.charCount) ||
+    text.length;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const prep = ensurePreparation(doc);
   const invResult = await runConceptInventoryWithFallback(text, {
     llmModel: ctx.llmModel,
     language: ctx.language,
     studyNotes: ctx.studyNotes,
     docHierarchy: doc.shared.docHierarchy,
     wordCount,
+    charCount,
     onProgress: (msg) => ctx.onProgress?.({ phaseId: "T1.2", label: msg, status: "running" }),
   });
   if (invResult.kind === "fallback_mono") {
+    doc.shared.conceptInventory = [];
+    prep.failReason = "INVENTORY_MERGE_FAILED";
     throw new Error("Concept inventory unavailable");
   }
   const inventory = invResult.inventory || [];
+  const minRequired = minViableConcepts(charCount);
+  if (inventory.length < minRequired) {
+    doc.shared.conceptInventory = inventory;
+    prep.failReason = inventory.length === 0 ? "INVENTORY_MERGE_FAILED" : "INVENTORY_TOO_SPARSE";
+    throw new Error(
+      `Concept inventory too sparse: ${inventory.length} concepts (minimum ${minRequired})`,
+    );
+  }
   doc.shared.conceptInventory = inventory;
+  prep.failReason = null;
   if (inventory.length && isDeterministicFactualQuestionsEnabled()) {
     const sourceText = getMarkdown(doc);
     const flags = getPedagogicalFlags();
@@ -524,6 +549,7 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
     studyNotes: options.studyNotes || "",
     signal: options.signal,
     onProgress: options.onProgress,
+    forceRerun: options.forceRerun === true,
   };
 
   if (isOfflineMode()) {
@@ -665,6 +691,7 @@ function tier2PhasesPending(doc, fingerprint) {
  */
 export async function ensureTier1Preparation(doc, options = {}) {
   if (!doc?.docId) return null;
+  if (!options.forceRerun && isConceptInventoryValid(doc)) return doc;
   if (isTier1PreparationComplete(doc)) return doc;
 
   const docId = doc.docId;
