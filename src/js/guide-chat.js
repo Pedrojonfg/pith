@@ -1,11 +1,11 @@
-import { LS_ACTIVE_SESSION_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260622_10";
+import { LS_ACTIVE_SESSION_KEY, LS_STUDY_LANG_KEY } from "./config.js?v=20260622_11";
 import {
   assertLlmKeyPresent,
   getActiveSessionLlmModel,
   llmChatCompletions,
-} from "./llm.js?v=20260622_10";
-import { renderMarkdown } from "./markdown.js?v=20260622_10";
-import { isOfflineMode } from "./offline.js?v=20260622_10";
+} from "./llm.js?v=20260622_11";
+import { renderMarkdown } from "./markdown.js?v=20260622_11";
+import { isOfflineMode } from "./offline.js?v=20260622_11";
 import { SOURCE_FIDELITY_RULES } from "./source-fidelity.js";
 import { getBlockChunkFromIndex } from "./session.js";
 

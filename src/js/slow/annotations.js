@@ -1,4 +1,4 @@
-import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260622_10";
+import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260622_11";
 import { addAnnotationToShared, getActiveSession } from "../session-store.js";
 
 /** Annotation types registry — FR-004, FR-013, FR-016 */

@@ -1,4 +1,4 @@
-import { typesetMath } from "./ui.js?v=20260622_10";
+import { typesetMath } from "./ui.js?v=20260622_11";
 
 function escapeHtml(text) {
   return String(text || "")

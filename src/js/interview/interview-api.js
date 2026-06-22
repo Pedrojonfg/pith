@@ -2,7 +2,7 @@
  * LLM calls for interview follow-up and synthesis (20260620-nodoc-interview-capture).
  */
 
-import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_10";
+import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_11";
 import { looksLikeTruncatedModelJson } from "../api.js";
 import { SOURCE_FIDELITY_RULES } from "../source-fidelity.js";
 import { validateInterviewSynthesisFidelity } from "../fidelity-validation.js";

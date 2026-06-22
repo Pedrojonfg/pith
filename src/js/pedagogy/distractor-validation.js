@@ -3,7 +3,7 @@
  * @see specs/20260702-factual-pools/contracts/distractor-validation.md
  */
 
-import { DEFAULT_LLM_MODEL, llmChatCompletions } from "../llm.js?v=20260622_10";
+import { DEFAULT_LLM_MODEL, llmChatCompletions } from "../llm.js?v=20260622_11";
 
 /** ~80 tokens per item (fact + up to 6 candidates + verdict) */
 export const DISTRACTOR_VALIDATION_MAX_TOKENS = 800;
