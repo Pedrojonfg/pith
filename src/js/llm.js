@@ -29,7 +29,14 @@ export async function getSupabaseAuthToken() {
 /**
  * @param {{ service: string, endpoint: string, body: object, signal?: AbortSignal }} opts
  */
-export async function callViaProxy({ service, endpoint, body, signal } = {}) {
+const PROXY_RETRYABLE_STATUSES = new Set([429, 502, 503]);
+const PROXY_MAX_RETRIES = 3;
+const PROXY_RETRY_BASE_MS = 1500;
+
+export async function callViaProxy(
+  { service, endpoint, body, signal } = {},
+  retryAttempt = 0,
+) {
   const token = await getSupabaseAuthToken();
   if (!token) throw new Error("Not authenticated — cannot call LLM proxy.");
 
@@ -44,6 +51,15 @@ export async function callViaProxy({ service, endpoint, body, signal } = {}) {
   });
 
   if (!res.ok) {
+    if (
+      PROXY_RETRYABLE_STATUSES.has(res.status) &&
+      retryAttempt < PROXY_MAX_RETRIES &&
+      !signal?.aborted
+    ) {
+      const delay = PROXY_RETRY_BASE_MS * 2 ** retryAttempt;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return callViaProxy({ service, endpoint, body, signal }, retryAttempt + 1);
+    }
     const err = await res.text().catch(() => "");
     const apiErr = new Error(`LLM proxy error ${res.status}: ${err.slice(0, 300)}`);
     apiErr.status = res.status;

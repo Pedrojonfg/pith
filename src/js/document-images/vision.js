@@ -13,6 +13,10 @@ const GEMINI_VISION_MODEL = "gemini-2.0-flash";
 /** Vision JSON: ~8 fields × ~40 tokens */
 const VISION_ANALYSIS_MAX_TOKENS = 512;
 
+/** Pace Gemini vision calls to avoid upstream 429 bursts after DPP inventory. */
+const VISION_INTER_CALL_DELAY_MS = 500;
+const VISION_429_COOLDOWN_MS = 8000;
+
 /** Suppress duplicate missing-key warnings within one upload vision run. */
 let _visionKeyWarningShown = false;
 
@@ -170,6 +174,7 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
 
   let analyzed = 0;
   let failed = 0;
+  let visionCooldownUntil = 0;
 
   if (!doc.shared.conceptGraph) {
     doc.shared.conceptGraph = { nodes: [], edges: [] };
@@ -180,6 +185,10 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
 
   for (const image of images) {
     if (image.visionStatus === "ready" || image.visionStatus === "skipped") continue;
+    const now = Date.now();
+    if (now < visionCooldownUntil) {
+      await new Promise((resolve) => setTimeout(resolve, visionCooldownUntil - now));
+    }
     ctx.onProgress?.(`Analyzing figure ${image.imageId}…`);
     try {
       const result = await analyzeDocumentImage(image, inventory, {
@@ -190,6 +199,10 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
         image.visionStatus = "failed";
         image.visionDescription = null;
         failed += 1;
+        if (failed >= 2 && analyzed === 0) {
+          visionCooldownUntil = Date.now() + VISION_429_COOLDOWN_MS;
+        }
+        await new Promise((resolve) => setTimeout(resolve, VISION_INTER_CALL_DELAY_MS));
         continue;
       }
       image.visionDescription = result.description || null;
@@ -238,11 +251,13 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
         image.visionStatus = "ready";
       }
       analyzed += 1;
+      await new Promise((resolve) => setTimeout(resolve, VISION_INTER_CALL_DELAY_MS));
     } catch (err) {
       image.visionStatus = "failed";
       image.visionDescription = null;
       failed += 1;
       console.warn("[vision]", image.imageId, err?.message || err);
+      await new Promise((resolve) => setTimeout(resolve, VISION_INTER_CALL_DELAY_MS));
     }
   }
 
