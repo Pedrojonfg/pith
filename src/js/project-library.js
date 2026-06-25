@@ -26,8 +26,8 @@ import {
   renameProject,
 } from "./project-store.js";
 import { getPreparationBadgeLabel } from "./document-preparation.js";
-import { exportDocumentSessionMarkdown } from "./export.js?v=20260622_11";
-import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260622_11";
+import { exportDocumentSessionMarkdown } from "./export.js?v=20260625_02";
+import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260625_02";
 
 /** @type {{ currentProjectId: string|null, fromLibraryDocId: string|null, uploadProjectId: string|null }} */
 export const projectLibraryState = {
@@ -120,7 +120,7 @@ function formatDocLibraryDate(ts) {
 
 function formatDocLibraryModes(modes) {
   const labels = { rsvp: "RSVP", slow: "Slow", cloze: "Cloze", questions: "Questions", recall: "Recall" };
-  return (modes || []).map((m) => labels[m] || m).join(" · ");
+  return (modes || []).map((m) => labels[m] || m).join(" ï¿½ ");
 }
 
 const DOC_LIBRARY_DOWNLOAD_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v11m0 0l4-4m-4 4l-4-4M4 20h16" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -192,7 +192,7 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
         </button>
         <div class="doc-library-row-actions">
           <button type="button" class="btn-secondary doc-library-download-btn" data-download-doc-id="${escapeHtml(doc.docId)}" aria-label="Export session as Markdown" title="Export session as Markdown">${DOC_LIBRARY_DOWNLOAD_ICON}</button>
-          <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to project…</button>
+          <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to projectï¿½</button>
           <button type="button" class="btn-secondary doc-library-delete-btn" data-delete-doc-id="${escapeHtml(doc.docId)}" aria-label="Delete session" title="Delete session">??</button>
         </div>
       </div>`);
@@ -213,7 +213,7 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
       const result = await exportDocumentSessionMarkdown(id);
       if (result.ok) return;
       if (result.error === "download_blocked") {
-        showProjectToast("Download blocked — try again or check browser settings.");
+        showProjectToast("Download blocked ï¿½ try again or check browser settings.");
         return;
       }
       showProjectToast("No session content to export yet.");
@@ -244,7 +244,7 @@ async function promptMoveDocument(docId) {
   const overlay = document.createElement("div");
   overlay.className = "project-move-overlay";
   overlay.innerHTML = `<div class="card project-move-dialog">
-    <h2>Move to project…</h2>
+    <h2>Move to projectï¿½</h2>
     <div id="moveProjectPickerMount"></div>
     <div class="row"><button type="button" id="moveProjectCancel" class="btn-secondary">Cancel</button></div>
   </div>`;

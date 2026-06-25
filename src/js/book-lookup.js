@@ -4,7 +4,7 @@
  */
 
 import { supabase } from "./supabase-client.js";
-import { getSupabaseAuthToken } from "./llm.js?v=20260622_11";
+import { getSupabaseAuthToken } from "./llm.js?v=20260625_02";
 import { SUPABASE_URL } from "./config/supabase.js";
 import {
   BOOK_LOOKUP_FLAGS as FLAGS,

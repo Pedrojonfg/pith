@@ -1,15 +1,15 @@
-import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260622_11";
+import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260625_02";
 import {
   getSourceFidelityStrictPreference,
 } from "./config/flags.js";
-import { renderMarkdown } from "./markdown.js?v=20260622_11";
-import { isOfflineMode } from "./offline.js?v=20260622_11";
+import { renderMarkdown } from "./markdown.js?v=20260625_02";
+import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { MISC_PROJECT_ID } from "./session-types.js";
 import {
   isMnemonicButtonVisiblePref,
   setMnemonicButtonVisiblePref,
   syncMnemonicButtonVisibility,
-} from "./mnemonic.js?v=20260622_11";
+} from "./mnemonic.js?v=20260625_02";
 
 /** @type {null | (() => { title?: string, explanation?: string })} */
 let blockReadContentProvider = null;

@@ -1,5 +1,5 @@
-import { llmChatCompletions } from "../llm.js?v=20260622_11";
-import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260622_11";
+import { llmChatCompletions } from "../llm.js?v=20260625_02";
+import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260625_02";
 import { createSmItem } from "../sm2.js";
 import {
   getValidItems,
@@ -8,14 +8,14 @@ import {
   normalizeEpistemicGraph,
   normalizeSemanticAnalysis,
   parseModelJsonObject,
-} from "./normalize.js?v=20260622_11";
+} from "./normalize.js?v=20260625_02";
 
 const PHASE_LABELS = [
-  "Grafo epistémico",
-  "Análisis semántico",
-  "Ítems base",
+  "Grafo epistï¿½mico",
+  "Anï¿½lisis semï¿½ntico",
+  "ï¿½tems base",
   "Distractores",
-  "QA y calibración",
+  "QA y calibraciï¿½n",
 ];
 
 export { getValidItems, PHASE_LABELS };

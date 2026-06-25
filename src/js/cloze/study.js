@@ -1,13 +1,13 @@
-import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260622_11";
+import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260625_02";
 import { getActiveSession } from "../session-store.js";
 import { mapClozeResultToQuality, registerOrUpdateSmItem } from "../sm2-ingest.js";
 import { promoteFromCloze } from "../concept-registry/ingest.js";
-import { getValidItems } from "./normalize.js?v=20260622_11";
-import { storeActiveSession } from "../session.js?v=20260622_11";
-import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260622_11";
-import { isMcTypingTarget, letterFromMcKey } from "../mc-keyboard.js?v=20260622_11";
+import { getValidItems } from "./normalize.js?v=20260625_02";
+import { storeActiveSession } from "../session.js?v=20260625_02";
+import { markdownToHtml, renderMcOptionHtml } from "../markdown.js?v=20260625_02";
+import { isMcTypingTarget, letterFromMcKey } from "../mc-keyboard.js?v=20260625_02";
 import { shuffleInPlace } from "../shuffle-options.js";
-import { els, showScreen } from "../ui.js?v=20260622_11";
+import { els, showScreen } from "../ui.js?v=20260625_02";
 
 const CLOZE_CORRECT_ADVANCE_MS = 250;
 
@@ -210,7 +210,7 @@ async function handleOptionSelect(session, host, idx) {
 
   if (feedback) {
     feedback.hidden = false;
-    feedback.textContent = `Incorrecto — respuesta: ${item.blank_text}`;
+    feedback.textContent = `Incorrecto ï¿½ respuesta: ${item.blank_text}`;
   }
   if (nextBtn) nextBtn.hidden = false;
   persistProgress(session);
@@ -222,7 +222,7 @@ function renderSummary(session) {
   const host = els.clozeStudyContent;
   if (!host) return;
   host.innerHTML = `
-    <h2>Sesión completada</h2>
+    <h2>Sesiï¿½n completada</h2>
     <p class="hint">${correct} / ${shown} correctas</p>
     <button type="button" id="clozeStudyExitBtn" class="btn-primary">Volver</button>
   `;
@@ -257,7 +257,7 @@ function renderItem(session) {
   answered = false;
 
   if (meta) {
-    meta.textContent = `Ítem ${activeIndex + 1} / ${activeOrder.length} · ${item.difficulty || "medium"}`;
+    meta.textContent = `ï¿½tem ${activeIndex + 1} / ${activeOrder.length} ï¿½ ${item.difficulty || "medium"}`;
   }
 
   const optionsHtml = shuffledOptions

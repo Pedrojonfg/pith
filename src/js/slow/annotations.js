@@ -1,12 +1,12 @@
-import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260622_11";
+import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260625_02";
 import { addAnnotationToShared, getActiveSession } from "../session-store.js";
 
-/** Annotation types registry — FR-004, FR-013, FR-016 */
+/** Annotation types registry ï¿½ FR-004, FR-013, FR-016 */
 
 export const IA_QUERY_TYPE = "ia-query";
 
 export const ANNOTATION_TYPES = [
-  { symbol: "˜", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
+  { symbol: "ï¿½", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
   { symbol: "?", id: "question", tier: "primary", criticalMenu: false, label: "Question", hotkey: "2" },
   { symbol: "?", id: "explain", tier: "primary", criticalMenu: false, label: "Self-explain", hotkey: "3" },
   { symbol: "?", id: "link", tier: "primary", criticalMenu: false, label: "Connection", hotkey: "4" },
@@ -58,7 +58,7 @@ export async function addAnnotation(session, { type, charStart, charEnd, userTex
   const end = Math.min(max, Math.max(start + 1, Math.floor(Number(charEnd) || start + 1)));
   const entry = {
     id: newAnnotationId(),
-    type: String(type || "˜"),
+    type: String(type || "ï¿½"),
     charStart: start,
     charEnd: end,
     userText: String(userText || "").trim(),
@@ -147,7 +147,7 @@ export function annotationsOnPage(annotations, pageSlice) {
 
 /** CSS slug per annotation type for inline highlights (one distinct color each). */
 export const ANNOTATION_HIGHLIGHT_CLASS = {
-  "˜": "approx",
+  "ï¿½": "approx",
   "?": "question",
   "?": "explain",
   "?": "link",
@@ -183,7 +183,7 @@ export function pickPrimaryAnnotation(covering) {
 /**
  * Build nested highlight spans (inner = older, outer = newer) for layered overlap tint.
  * @param {Document} doc
- * @param {Node} contents — text or fragment to wrap
+ * @param {Node} contents ï¿½ text or fragment to wrap
  */
 export function createNestedHighlightSpans(covering, doc, contents) {
   const sorted = [...covering].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
@@ -240,10 +240,10 @@ export function buildAnnotationHighlightSegments(pageSlice, slicePlain, annotati
 export const STEELMAN_NUDGE_TYPES = new Set(["?", "?", "?"]);
 
 /** Prior annotation types that satisfy steel-man prerequisite (T07). */
-export const STEELMAN_PRECURSOR_TYPES = new Set(["?", "˜"]);
+export const STEELMAN_PRECURSOR_TYPES = new Set(["?", "ï¿½"]);
 
 /**
- * True if a ?/˜ annotation with user text exists within ±windowChars of target.
+ * True if a ?/ï¿½ annotation with user text exists within ï¿½windowChars of target.
  */
 export function hasSteelManPrecursorNearby(annotations, targetAnn, windowChars = 500) {
   if (!targetAnn) return false;

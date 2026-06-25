@@ -1,16 +1,16 @@
-import { storeActiveSession } from "../session.js?v=20260622_11";
-import { markdownToHtml } from "../markdown.js?v=20260622_11";
+import { storeActiveSession } from "../session.js?v=20260625_02";
+import { markdownToHtml } from "../markdown.js?v=20260625_02";
 import {
   buildConceptSpanIndex,
   selectHighlightSpans,
   wrapPlainTextWithPedagogyMarks,
 } from "../pedagogy/concept-span-index.js";
 import { getPedagogicalFlags } from "../config/flags.js";
-import { els, showScreen } from "../ui.js?v=20260622_11";
-import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260622_11";
-import { matchConceptFindings } from "./gamification.js?v=20260622_11";
-import { fillBlankFromAnnotation } from "./phase0.js?v=20260622_11";
-import { askSlowReaderIA } from "./ai-context.js?v=20260622_11";
+import { els, showScreen } from "../ui.js?v=20260625_02";
+import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260625_02";
+import { matchConceptFindings } from "./gamification.js?v=20260625_02";
+import { fillBlankFromAnnotation } from "./phase0.js?v=20260625_02";
+import { askSlowReaderIA } from "./ai-context.js?v=20260625_02";
 import {
   ANNOTATION_TYPES,
   annotationsOnPage,
@@ -30,9 +30,9 @@ import {
   isIAQueryAnnotation,
   shouldShowSteelManNudge,
   updateAnnotation,
-} from "./annotations.js?v=20260622_11";
-import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260622_11";
-import { initPhase3Screen } from "./phase3.js?v=20260622_11";
+} from "./annotations.js?v=20260625_02";
+import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260625_02";
+import { initPhase3Screen } from "./phase3.js?v=20260625_02";
 import {
   charOffsetToPage,
   closestPageAfterRecompute,
@@ -40,8 +40,8 @@ import {
   getPageCount,
   getPageSlice,
   invalidatePaginationCache,
-} from "./pagination.js?v=20260622_11";
-import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260622_11";
+} from "./pagination.js?v=20260625_02";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260625_02";
 import { renderSlowMarkdownWithImages } from "../document-images/render.js";
 import { replacePithImageTokens } from "../document-images/replace-tokens.js";
 import {
@@ -52,7 +52,7 @@ import {
   wireSidebarToggle,
   wireSidebarIAInput,
   setIAReplyViewer,
-} from "./sidebar.js?v=20260622_11";
+} from "./sidebar.js?v=20260625_02";
 
 const LONG_PRESS_MS = 500;
 
