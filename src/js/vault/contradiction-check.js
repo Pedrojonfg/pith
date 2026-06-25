@@ -2,7 +2,7 @@
  * R4 — Contradiction detection via LLM for high-similarity pairs.
  */
 
-import { DEFAULT_LLM_MODEL } from "../llm.js?v=20260622_11";
+import { DEFAULT_LLM_MODEL } from "../llm.js?v=20260625_02";
 import { isVaultContradictionCheckEnabled, getMaxContradictionChecksPerDppRun } from "../config/flags.js";
 import { isVaultEmbeddingsEnabled } from "./embeddings.js";
 import { DEDUP_HARD_GATE_THRESHOLD } from "./embedding-thresholds.js";

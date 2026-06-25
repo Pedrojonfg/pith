@@ -3,7 +3,7 @@
  * Image LLM calls route to Gemini (multimodal); never DeepSeek.
  */
 
-import { geminiChatCompletions, hasPlatformLlmAccess } from "../llm.js?v=20260622_11";
+import { geminiChatCompletions, hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
 import { logLlmUsage } from "../llm-usage-log.js";
 import { getDocumentImageSignedUrl } from "./storage.js";
 import { EDGE_TYPES } from "../graph/build.js";

@@ -3,10 +3,10 @@ import {
   LS_RSVP_COMPREHENSION_PAUSE_KEY,
   LS_RSVP_DEFAULT_WPF_KEY,
   LS_RSVP_DEFAULT_WPM_KEY,
-} from "./config.js?v=20260622_11";
-import { clampInt } from "./session.js?v=20260622_11";
-import { stripMarkdownForPlainText } from "./markdown.js?v=20260622_11";
-import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260622_11";
+} from "./config.js?v=20260625_02";
+import { clampInt } from "./session.js?v=20260625_02";
+import { stripMarkdownForPlainText } from "./markdown.js?v=20260625_02";
+import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260625_02";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean, afterBoldEnd?: boolean }} RsvpChunk */
 
@@ -23,7 +23,7 @@ export const rsvpState = {
   playing: true,
   onDone: null,
   countdownActive: false,
-  /** Bumped when starting / finishing RSVP or rebuilding chunks — not on pause/play. */
+  /** Bumped when starting / finishing RSVP or rebuilding chunks ï¿½ not on pause/play. */
   playbackGen: 0,
   comprehensionPauseEnabled: false,
   comprehensionEveryN: 25,
@@ -321,7 +321,7 @@ function wordUnitsThroughChunkIndex(indexInclusive) {
 function updateRsvpProgressUi() {
   const len = rsvpState.chunks.length;
   if (!els.rsvpProgressLabel || !len) {
-    if (els.rsvpProgressLabel) els.rsvpProgressLabel.textContent = "—";
+    if (els.rsvpProgressLabel) els.rsvpProgressLabel.textContent = "ï¿½";
     if (els.rsvpProgressFill) els.rsvpProgressFill.style.width = "0%";
     if (els.rsvpProgressTrack) els.rsvpProgressTrack.setAttribute("aria-valuenow", "0");
     return;
@@ -335,7 +335,7 @@ function updateRsvpProgressUi() {
   const total = totalWordUnitsInBlock();
   const pct = Math.round(((k + 1) / len) * 100);
 
-  els.rsvpProgressLabel.textContent = `~${shown} / ${total} words · flash ${k + 1}/${len}`;
+  els.rsvpProgressLabel.textContent = `~${shown} / ${total} words ï¿½ flash ${k + 1}/${len}`;
   if (els.rsvpProgressFill) els.rsvpProgressFill.style.width = `${pct}%`;
   if (els.rsvpProgressTrack) {
     els.rsvpProgressTrack.setAttribute("aria-valuenow", String(pct));
@@ -451,15 +451,15 @@ function trailingPunctuationKind(word) {
   const w = String(word || "").trimEnd();
   if (!w) return null;
   const last = w[w.length - 1];
-  if (/[.!?…]/.test(last)) return "strong";
+  if (/[.!?ï¿½]/.test(last)) return "strong";
   if (/[,;:]/.test(last)) return "weak";
-  if (last === "—" || last === "–") return "weak";
+  if (last === "ï¿½" || last === "ï¿½") return "weak";
   return null;
 }
 
 /** @param {string} word */
 function looksLikeProperName(word) {
-  const alphaStart = String(word).search(/[a-zA-ZÀ-ÿ]/);
+  const alphaStart = String(word).search(/[a-zA-Zï¿½-ï¿½]/);
   if (alphaStart === -1) return false;
   const alphaWord = String(word)
     .slice(alphaStart)
@@ -521,7 +521,7 @@ function finalPauseMs() {
   return Math.min(1000, Math.max(520, Math.round(b * 1.15)));
 }
 
-/** Letter–hyphen–letter compounds (not numeric ranges like 3-5). */
+/** Letterï¿½hyphenï¿½letter compounds (not numeric ranges like 3-5). */
 const RSVP_HYPHEN_BREAK_RE = /(?<=\p{L})-(?=\p{L})/u;
 
 /**
@@ -599,13 +599,13 @@ function longestWordTokenFromExplanation(explanationText) {
   return String(best).endsWith(" ") ? best : `${best} `;
 }
 
-/** True when a token ends a sentence (. ? ! …), ignoring common abbreviations. */
+/** True when a token ends a sentence (. ? ! ï¿½), ignoring common abbreviations. */
 function isSentenceTerminalWord(word) {
   let w = String(word || "").trim();
   if (!w) return false;
-  if (/^[A-Za-zÀ-ÿ]{1,3}\.$/.test(w)) return false;
-  w = w.replace(/[\s"'«»")\]}]+$/, "");
-  return /(?:\.{3}|[.!?…])(?:['"«»")\]}]*)$/.test(w);
+  if (/^[A-Za-zï¿½-ï¿½]{1,3}\.$/.test(w)) return false;
+  w = w.replace(/[\s"'ï¿½ï¿½")\]}]+$/, "");
+  return /(?:\.{3}|[.!?ï¿½])(?:['"ï¿½ï¿½")\]}]*)$/.test(w);
 }
 
 /** Markdown segment ? plain RSVP text; marks end of each bold span for timing. */

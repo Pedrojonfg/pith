@@ -3,7 +3,7 @@
  * @see specs/20260629-vault-embedding/contracts/embeddings.md
  */
 
-import { geminiEmbedContent, getSupabaseAuthToken, hasPlatformLlmAccess } from "../llm.js?v=20260622_11";
+import { geminiEmbedContent, getSupabaseAuthToken, hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
 import {
   getEmbeddingOutputDimensionality,
   isVaultEmbeddingsFlagEnabled,

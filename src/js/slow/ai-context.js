@@ -1,6 +1,6 @@
-import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260622_11";
-import { getStudyLanguage } from "../ui.js?v=20260622_11";
-import { getScopeText } from "./reader.js?v=20260622_11";
+import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260625_02";
+import { getStudyLanguage } from "../ui.js?v=20260625_02";
+import { getScopeText } from "./reader.js?v=20260625_02";
 
 export function buildIAContext(slow) {
   const text = getScopeText({ slow });
@@ -9,8 +9,8 @@ export function buildIAContext(slow) {
 }
 
 const SIDEBAR_BREVITY =
-  "Default: 1–3 short sentences—answer directly, no preamble, do not re-explain what the reader already saw unless essential. " +
-  "Use up to 4–5 sentences only for multi-idea synthesis or when the user explicitly asks for more detail.";
+  "Default: 1ï¿½3 short sentencesï¿½answer directly, no preamble, do not re-explain what the reader already saw unless essential. " +
+  "Use up to 4ï¿½5 sentences only for multi-idea synthesis or when the user explicitly asks for more detail.";
 
 function buildSlowIASystemPrompt(lang, annotationType) {
   if (annotationType === "?") {

@@ -1,17 +1,17 @@
-import { storeActiveSession } from "../session.js?v=20260622_11";
-import { getSortedSessionConcepts } from "../dictionary.js?v=20260622_11";
-import { ANNOTATION_TYPES } from "./annotations.js?v=20260622_11";
-import { charOffsetToPage } from "./pagination.js?v=20260622_11";
-import { slugGraphTermId } from "./phase0.js?v=20260622_11";
+import { storeActiveSession } from "../session.js?v=20260625_02";
+import { getSortedSessionConcepts } from "../dictionary.js?v=20260625_02";
+import { ANNOTATION_TYPES } from "./annotations.js?v=20260625_02";
+import { charOffsetToPage } from "./pagination.js?v=20260625_02";
+import { slugGraphTermId } from "./phase0.js?v=20260625_02";
 
 const TYPE_LABELS_ES = {
-  "˜": "Paráfrasis",
+  "ï¿½": "Parï¿½frasis",
   "?": "Pregunta",
-  "?": "Autoexplicación",
-  "?": "Conexión",
+  "?": "Autoexplicaciï¿½n",
+  "?": "Conexiï¿½n",
   "?": "Preguntar a IA",
-  "?": "Objeción",
-  "?": "Tensión",
+  "?": "Objeciï¿½n",
+  "?": "Tensiï¿½n",
   "?": "Debilidad",
   "?": "Fortaleza",
   "?": "Steel man",
@@ -44,13 +44,13 @@ export function annotationExcerpt(scopeText, ann, maxLen = 40) {
   const fromScope = String(scopeText || "").slice(ann?.charStart ?? 0, ann?.charEnd ?? 0).trim();
   const raw = fromUser || fromScope;
   if (raw.length <= maxLen) return raw;
-  return `${raw.slice(0, Math.max(0, maxLen - 1))}…`;
+  return `${raw.slice(0, Math.max(0, maxLen - 1))}ï¿½`;
 }
 
 export function groupAnnotationsByType(annotations) {
   const groups = new Map();
   for (const ann of annotations || []) {
-    const type = String(ann?.type || "˜");
+    const type = String(ann?.type || "ï¿½");
     if (!groups.has(type)) groups.set(type, []);
     groups.get(type).push(ann);
   }
@@ -133,7 +133,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   if (!groups.length) {
     const empty = document.createElement("p");
     empty.className = "slow-sidebar-empty";
-    empty.textContent = "Sin anotaciones todavía.";
+    empty.textContent = "Sin anotaciones todavï¿½a.";
     annHost.appendChild(empty);
   } else {
     for (const [type, items] of groups) {
@@ -171,7 +171,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   if (!terms.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin términos todavía.";
+    li.textContent = "Sin tï¿½rminos todavï¿½a.";
     dictHost.appendChild(li);
   } else {
     for (const t of terms) {
@@ -195,7 +195,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   if (!iaQueries.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin consultas todavía.";
+    li.textContent = "Sin consultas todavï¿½a.";
     iaQueriesHost.appendChild(li);
   } else {
     for (const q of iaQueries) {

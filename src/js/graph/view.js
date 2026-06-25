@@ -1,6 +1,6 @@
-import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260622_11";
-import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260622_11";
-import { getStudyLanguage } from "../ui.js?v=20260622_11";
+import { mergeEnrichedGraphUserNodes } from "../dictionary.js?v=20260625_02";
+import { formatGraphEdgeMarkdown } from "../export-format.js?v=20260625_02";
+import { getStudyLanguage } from "../ui.js?v=20260625_02";
 import { buildSessionGraph, buildSlowEnrichedGraph } from "./adapters.js";
 import { pruneOrphanNodes } from "./build.js";
 import { renderGraphCanvas } from "./canvas.js";
@@ -15,7 +15,7 @@ function escapeHtml(text) {
 
 function isSpanishLang(lang) {
   const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
+  return v.startsWith("es") || v.includes("spanish") || v.includes("espaï¿½ol");
 }
 
 export function buildGraphSubgraphMarkdown(graph, lang = "English") {

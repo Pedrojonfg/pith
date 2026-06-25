@@ -1,15 +1,15 @@
-import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260622_11";
+import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260625_02";
 import {
   flattenHierarchy,
   getChunksFromHierarchy,
-} from "../normalization/hierarchy.js?v=20260622_11";
-import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260622_11";
+} from "../normalization/hierarchy.js?v=20260625_02";
+import { parseHeadings, SCOPE_CHAR_WARN } from "./headings.js?v=20260625_02";
 import {
   getActiveSessionLlmModel,
   llmChatCompletions,
   normalizeLlmModel,
-} from "../llm.js?v=20260622_11";
-import { getStudyLanguage } from "../ui.js?v=20260622_11";
+} from "../llm.js?v=20260625_02";
+import { getStudyLanguage } from "../ui.js?v=20260625_02";
 import { addConceptsToShared, getActiveSession } from "../session-store.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
@@ -211,7 +211,7 @@ function buildPhase0SystemPrompt(language, criticalMode) {
   const lang = normalizeString(language) || "English";
   const criticalBlock = criticalMode
     ? `
-6. criticalExaminePoints: array of 2-3 strings ù structural weak points to examine critically (not verdicts on correctness).`
+6. criticalExaminePoints: array of 2-3 strings ÔøΩ structural weak points to examine critically (not verdicts on correctness).`
     : "";
   return `You are a philosophical reading assistant. Analyze the text and produce structured orientation BEFORE the student reads.
 
@@ -223,14 +223,14 @@ Rules:
   LINEAR_ARGUMENT (linear thesis + premises), GENEALOGY (historical evolution of a concept),
   DEBATE (contrasting authors on one problem), DEFINITION (what a concept is/is not),
   CASE_ANALYSIS (concrete case with theoretical frame).
-- thesis: one sentence ù what the author wants the reader to accept (conclusion-oriented, not a summary).
+- thesis: one sentence ÔøΩ what the author wants the reader to accept (conclusion-oriented, not a summary).
 - argumentMap shape depends on textGenre:
-  LINEAR_ARGUMENT ? P1, P2, ù, C with status on premises;
-  GENEALOGY ? G1, G2, ù chronological with required period per node;
-  DEBATE ? D1, D2, ù positions with required author per node;
+  LINEAR_ARGUMENT ? P1, P2, ÔøΩ, C with status on premises;
+  GENEALOGY ? G1, G2, ÔøΩ chronological with required period per node;
+  DEBATE ? D1, D2, ÔøΩ positions with required author per node;
   DEFINITION ? DEF central node + S1, S2 satellites;
   CASE_ANALYSIS ? CASE + M1, M2 theoretical frame nodes.
-- conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } ù technical or redefined concepts.
+- conceptsToFind: exactly 3-5 objects { term, authorUsage, nodeType } ÔøΩ technical or redefined concepts.
   For each node indicate type: [CONCEPT], [PERSON], [WORK], [MOVEMENT], or [EVENT].
   Never create a [PERSON] node for the author of the text you are analyzing.
   If the text contains its own name as a bibliographic reference, ignore it as a node.
@@ -448,7 +448,7 @@ export function buildMapReduceChunks(
       current = { title: b.title, start: b.charStart, end: b.charEnd };
     } else {
       current.end = b.charEnd;
-      current.title = `${current.title} ù ${b.title}`;
+      current.title = `${current.title} ÔøΩ ${b.title}`;
     }
   }
   chunks.push({
@@ -542,7 +542,7 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     scopedHierarchy,
   );
   if (!chunks.length) {
-    throw new Error("Scope text is empty ù cannot generate Phase 0.");
+    throw new Error("Scope text is empty ÔøΩ cannot generate Phase 0.");
   }
 
   const partials = [];
@@ -844,10 +844,10 @@ export function buildCheckpointQuestionTemplate(section, argumentMap, lang = "En
       .slice(0, 3)
       .map((n) => `${n.id}: ${n.text}`)
       .join("; ");
-    return `How does what you read in ù${title}ù connect to the argument map (${nodes})?`;
+    return `How does what you read in ÔøΩ${title}ÔøΩ connect to the argument map (${nodes})?`;
   }
 
-  return `How would you integrate what you read under ù${title}ù with the author's line of argument?`;
+  return `How would you integrate what you read under ÔøΩ${title}ÔøΩ with the author's line of argument?`;
 }
 
 function normalizeCheckpointQuestion(text) {
@@ -896,7 +896,7 @@ export async function generateCheckpointQuestion({
           role: "system",
           content:
             `Generate exactly ONE integration checkpoint question for a slow reading session. ` +
-            `The question must require synthesizing the section text with the Phase 0 argument map ù ` +
+            `The question must require synthesizing the section text with the Phase 0 argument map ÔøΩ ` +
             `NOT factual trivia, NOT "who is the author", NOT "summarize in one sentence". ` +
             `Respond with ONLY the question, no quotes, no numbering. Language: ${studyLang}.`,
         },
