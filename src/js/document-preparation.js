@@ -349,6 +349,16 @@ async function runPhaseT17(doc, ctx) {
   if (!Array.isArray(images) || !images.length) {
     return hashPayload(0);
   }
+  if (!isConceptInventoryValid(doc)) {
+    console.log("[vision] Skipping T1.7 — concept inventory not viable.");
+    for (const image of images) {
+      if (image.visionStatus === "pending") {
+        image.visionStatus = "skipped";
+        image.visionDescription = null;
+      }
+    }
+    return hashPayload("skipped-no-inventory");
+  }
   const pending = images.filter((img) => img.visionStatus === "pending");
   if (!pending.length) {
     return hashPayload(images.map((img) => img.imageId));

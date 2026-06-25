@@ -818,8 +818,8 @@ export const CONCEPT_INVENTORY_MAX_TOKENS = 12288;
 /** Phase 1 map-reduce per-chunk: ~3500 words (~22 concepts � ~200 tok � 4.4k). */
 export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 6144;
 
-/** Phase 1 map-reduce merge: consolidated partials, deduped output. */
-export const CONCEPT_INVENTORY_MERGE_MAX_TOKENS = 8192;
+/** Phase 1 map-reduce merge: consolidated partials, deduped output (~60 concepts × ~200 tok). */
+export const CONCEPT_INVENTORY_MERGE_MAX_TOKENS = 12288;
 
 export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
 export const INVENTORY_TARGET_CHUNK_WORDS = 3500;
@@ -1364,6 +1364,69 @@ export function recoverPartialQuestionArray(rawText) {
   return recovered;
 }
 
+function normalizeConceptTitleKey(title) {
+  return String(title || "")
+    .toLowerCase()
+    .replace(/[''`"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Client-side merge when LLM merge truncates — concat partials in section order, dedupe by title.
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @returns {import('./session.js').ConceptInventoryItem[]}
+ */
+export function mergeConceptInventoriesDeterministic(partials) {
+  const payload = (Array.isArray(partials) ? partials : [])
+    .map((p) => ({
+      label: String(p?.label || "Section"),
+      concepts: Array.isArray(p?.concepts) ? p.concepts : [],
+    }))
+    .filter((p) => p.concepts.length > 0);
+
+  /** @type {Map<string, object>} */
+  const seen = new Map();
+  /** @type {object[]} */
+  const ordered = [];
+
+  for (const partial of payload) {
+    for (const item of partial.concepts) {
+      if (!item || typeof item !== "object") continue;
+      const title = String(item.title || "").trim();
+      const scope = String(item.scope_one_line || item.scope || "").trim();
+      if (!title || !scope) continue;
+      const key = normalizeConceptTitleKey(title);
+      const moduleName = String(item.module || partial.label || "").trim() || partial.label;
+      const existing = seen.get(key);
+      if (existing) {
+        const sp = String(item.source_phrase || "").length;
+        const esp = String(existing.source_phrase || "").length;
+        if (sp > esp) {
+          seen.set(key, { ...item, module: existing.module || moduleName });
+          const idx = ordered.findIndex((c) => normalizeConceptTitleKey(c.title) === key);
+          if (idx >= 0) ordered[idx] = seen.get(key);
+        }
+        continue;
+      }
+      const row = { ...item, module: moduleName };
+      seen.set(key, row);
+      ordered.push(row);
+    }
+  }
+
+  const concepts = ordered.map((c, i) => ({
+    ...c,
+    id: `c${i + 1}`,
+    order: i + 1,
+    prerequisite_ids: [],
+  }));
+
+  return (
+    parseConceptInventoryFromModelResponse(JSON.stringify({ concepts })) || concepts
+  );
+}
+
 export function buildMergeConceptInventoriesPrompt(lang, partialsJson) {
   const language = String(lang || "English").trim() || "English";
   return `You are merging partial concept inventories from sections of one document into a single ordered inventory.
@@ -1405,11 +1468,18 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
   const partialsJson = JSON.stringify(payload);
   const system = buildMergeConceptInventoriesPrompt(lang, partialsJson);
   const MAX_MERGE_ATTEMPTS = 3;
-  const attemptConfigs = [
-    { compact: false, terse: false },
-    { compact: true, terse: false },
-    { compact: true, terse: true },
-  ];
+  const largeDoc = Number(charCount) >= 100_000;
+  const attemptConfigs = largeDoc
+    ? [
+        { compact: true, terse: true },
+        { compact: true, terse: false },
+        { compact: false, terse: false },
+      ]
+    : [
+        { compact: false, terse: false },
+        { compact: true, terse: false },
+        { compact: true, terse: true },
+      ];
 
   function normalizeRecoveredConcepts(recovered) {
     if (!Array.isArray(recovered) || !recovered.length) return [];
@@ -1483,6 +1553,17 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       );
       continue;
     }
+  }
+
+  const deterministic = mergeConceptInventoriesDeterministic(payload);
+  if (Array.isArray(deterministic) && deterministic.length >= minRequired) {
+    console.log(
+      `[inventory-merge] Deterministic fallback: ${deterministic.length} concepts (>= minRequired ${minRequired}).`,
+    );
+    return {
+      concepts: deterministic,
+      inventoryMode: "map_reduce_deterministic",
+    };
   }
 
   console.warn("[inventory-merge] All attempts failed. Marking DPP as failed.");
