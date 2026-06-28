@@ -1964,6 +1964,89 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin: 16px 0 10px;
 }
 
+.create-session-staging {
+  margin-bottom: 12px;
+}
+
+.create-session-staging-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  color: var(--muted, #9aa3b2);
+}
+
+.create-session-file-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.create-session-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.create-session-file-icon {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.create-session-file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-session-file-size {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  color: var(--muted, #9aa3b2);
+}
+
+.create-session-file-remove {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--muted, #9aa3b2);
+  cursor: pointer;
+}
+
+.create-session-file-remove:hover {
+  color: #f87171;
+}
+
+.create-session-add-file-btn {
+  width: 100%;
+}
+
+.slow-scope-file-label {
+  display: block;
+  margin: 8px 0 4px;
+  font-size: 0.9rem;
+}
+
+.slow-scope-file-select {
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+}
+
 .create-session-no-file-btn {
   width: 100%;
 }

@@ -608,6 +608,8 @@ export async function setUploadMeta(docId, meta) {
       originalFormat: String(meta.originalFormat || ""),
       uploadedAt: String(meta.uploadedAt || new Date().toISOString()),
       ...(meta.bookMeta != null ? { bookMeta: meta.bookMeta } : {}),
+      ...(Array.isArray(meta.files) ? { files: meta.files } : {}),
+      ...(meta.sourceMap != null && typeof meta.sourceMap === "object" ? { sourceMap: meta.sourceMap } : {}),
     };
   }
   await saveActiveSession(session);

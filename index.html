@@ -464,13 +464,24 @@
               Upload your material and name the session. We will analyze it before you choose how to study.
             </p>
             <div id="createSessionStartBreadcrumb" class="project-breadcrumb-mount"></div>
-            <label for="createSessionStartFileInput">Material file</label>
-            <input
-              id="createSessionStartFileInput"
-              name="createSessionStartFileInput"
-              type="file"
-              accept=".pdf,.html,.txt,.md"
-            />
+            <div class="create-session-staging">
+              <label class="create-session-staging-label">Study files</label>
+              <ul id="createSessionStartFileList" class="create-session-file-list" hidden></ul>
+              <button
+                type="button"
+                id="createSessionStartAddFileBtn"
+                class="btn-secondary create-session-add-file-btn"
+              >
+                + Add file
+              </button>
+              <input
+                id="createSessionStartFileInput"
+                name="createSessionStartFileInput"
+                type="file"
+                accept=".pdf,.html,.txt,.md"
+                hidden
+              />
+            </div>
             <p id="createSessionStartStatus" class="hint" role="status"></p>
             <p id="createSessionStartInsight" class="hint create-session-insight" hidden></p>
             <label for="createSessionStartNameInput">Session name</label>
@@ -1404,6 +1415,10 @@
             <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
             <div id="slowScopeHierarchyLoading" class="hint" hidden role="status">Analyzing document structure…</div>
             <div id="slowScopeWarningBanner" class="error" hidden role="status"></div>
+            <label id="slowScopeFileLabel" class="slow-scope-file-label" for="slowScopeFileSelect" hidden>
+              Source file
+            </label>
+            <select id="slowScopeFileSelect" class="slow-scope-file-select" hidden aria-label="Source file"></select>
             <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
             <div id="slowScopeLongWarning" class="error" hidden></div>
             <div class="row slow-scope-toolbar">
@@ -1851,7 +1866,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260629_07";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260702_01";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1877,7 +1892,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260629_07");
+        await import("./src/js/main.js?v=20260702_01");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

@@ -4,6 +4,11 @@
 
  */
 
+import {
+  clampRangeToSourceBoundaries,
+  getSourceFileBoundaryCharPositions,
+} from "./source-provenance.js";
+
 
 
 function splitMaterialIntoBlockChunks(text, nBlocks) {
@@ -826,6 +831,18 @@ function assignSingleAlignedChunk(
 
   }
 
+  if (ctx.sourceBoundaries?.length && words[wStart] && words[wEnd - 1]) {
+    const clamped = clampRangeToSourceBoundaries(
+      words[wStart].start,
+      words[wEnd - 1].end,
+      text.length,
+      ctx.sourceBoundaries,
+    );
+    const idx = charRangeToWordIndices(words, clamped.charStart, clamped.charEnd);
+    wStart = idx.wStart;
+    wEnd = Math.max(idx.wStart + 1, idx.wEnd);
+  }
+
 
 
   const chunk = sliceByWordRange(text, wStart, wEnd, words);
@@ -922,6 +939,8 @@ export function assignAlignedChunksSequential(materialText, blockIndex, inventor
 
   const sections = getSectionBoundaries(opts.docHierarchy);
 
+  const sourceBoundaries = getSourceFileBoundaryCharPositions(material);
+
   const proportional = splitMaterialIntoBlockChunks(material, blockCount);
 
   const usedWordRanges = normalizeUsedWordRanges(opts.usedWordRanges);
@@ -947,6 +966,8 @@ export function assignAlignedChunksSequential(materialText, blockIndex, inventor
     step,
 
     sections,
+
+    sourceBoundaries,
 
     proportional,
 
@@ -1062,6 +1083,8 @@ export function assignAlignedChunks(materialText, blockIndex, inventory, opts = 
 
   const sections = getSectionBoundaries(opts.docHierarchy);
 
+  const sourceBoundaries = getSourceFileBoundaryCharPositions(material);
+
   const proportional = splitMaterialIntoBlockChunks(material, blockCount);
 
   const usedWordRanges = normalizeUsedWordRanges(opts.usedWordRanges);
@@ -1081,6 +1104,8 @@ export function assignAlignedChunks(materialText, blockIndex, inventory, opts = 
     step,
 
     sections,
+
+    sourceBoundaries,
 
     proportional,
 

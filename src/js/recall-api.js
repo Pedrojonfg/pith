@@ -3,6 +3,7 @@ import {
   llmChatCompletions,
   normalizeLlmModel,
 } from "./llm.js?v=20260625_02";
+import { resolveSourceFileIdForExcerpt } from "./source-provenance.js";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);
@@ -311,12 +312,18 @@ function normalizeRecallQuestionsWithIdSet(raw, invIds, config = {}) {
       throw new Error(`Recall question ${idx + 1} missing source_chunks.`);
     }
 
+    const materialText = String(config.materialText || "").trim();
+    const sourceFileId = materialText
+      ? resolveSourceFileIdForExcerpt(materialText, sourceChunks[0])
+      : undefined;
+
     out.push({
       id: String(item.id || "").trim() || `rq${idx + 1}`,
       recall_type: recallType,
       question,
       concept_ids: conceptIds,
       source_chunks: sourceChunks,
+      ...(sourceFileId ? { sourceFileId } : {}),
     });
   }
 
@@ -433,7 +440,7 @@ export async function generateRecallQuestions({
 
   return normalizeRecallQuestions(parsed, {
     inventory,
-    config: { ...resolvedConfig, questionCount, types: safeTypes },
+    config: { ...resolvedConfig, questionCount, types: safeTypes, materialText: material },
   });
 }
 
