@@ -134,7 +134,7 @@ import {
   updateDictionaryButtonVisibility,
 } from "./dictionary.js?v=20260625_02";
 import { extractSneakPeek } from "./sneakPeek.js?v=20260625_02";
-import { MAX_N_TEST } from "./config.js?v=20260625_02";
+import { DEFAULT_N_SOCRATIC, DEFAULT_N_TEST, MAX_N_SOCRATIC, MAX_N_TEST } from "./config.js?v=20260625_02";
 import {
   exportOfflinePack,
   exportSessionMarkdown,
@@ -4818,9 +4818,9 @@ function renderQuestionConfigUi() {
 
 function bumpQuestionCount(kind, delta) {
   if (kind === "test") {
-    state.nTest = clampInt(state.nTest + delta, 0, MAX_N_TEST, 2);
+    state.nTest = clampInt(state.nTest + delta, 0, MAX_N_TEST, DEFAULT_N_TEST);
   } else {
-    state.nSocratic = clampInt(state.nSocratic + delta, 0, 3, 1);
+    state.nSocratic = clampInt(state.nSocratic + delta, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
   }
   renderQuestionConfigUi();
 }
@@ -7269,7 +7269,7 @@ async function finishQuestions(blockIndex) {
 
   const bumpNext = (kind, delta) => {
     if (kind === "test") nextCfg.n_test = clampInt(nextCfg.n_test + delta, 0, MAX_N_TEST, blockDefaults.n_test);
-    else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, 3, blockDefaults.n_socratic);
+    else nextCfg.n_socratic = clampInt(nextCfg.n_socratic + delta, 0, MAX_N_SOCRATIC, blockDefaults.n_socratic);
     maybeRegeneratePrefetch();
   };
 
@@ -7665,9 +7665,9 @@ function resetPrePackingFlow() {
 }
 
 function resolvePrePackingQuestionConfig() {
-  let n_test = clampInt(state.nTest, 0, MAX_N_TEST, 2);
-  let n_socratic = clampInt(state.nSocratic, 0, 3, 1);
-  const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
+  let n_test = clampInt(state.nTest, 0, MAX_N_TEST, DEFAULT_N_TEST);
+  let n_socratic = clampInt(state.nSocratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
+  const cap = Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 23));
   while (n_test + n_socratic > cap && n_socratic > 0) n_socratic -= 1;
   while (n_test + n_socratic > cap && n_test > 0) n_test -= 1;
   return { n_test, n_socratic };
@@ -8755,8 +8755,8 @@ export async function wireStudyHandlers() {
     };
   });
   const defaults = loadDefaultQuestionConfig();
-  state.nTest = clampInt(defaults.n_test, 0, MAX_N_TEST, 2);
-  state.nSocratic = clampInt(defaults.n_socratic, 0, 3, 1);
+  state.nTest = clampInt(defaults.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST);
+  state.nSocratic = clampInt(defaults.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
   renderQuestionConfigUi();
 
   syncSourceFidelityStrictUi(state.sourceFidelityStrict === true);
@@ -8797,7 +8797,7 @@ export async function wireStudyHandlers() {
       await storeActiveSession(state.activeSession);
     }
     state.nTest = clampInt(state.activeSession?.n_test, 0, MAX_N_TEST, state.nTest);
-    state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, 3, state.nSocratic);
+    state.nSocratic = clampInt(state.activeSession?.n_socratic, 0, MAX_N_SOCRATIC, state.nSocratic);
     state.activeBlockIndex = Math.max(0, Number(state.activeSession?.current_block_index) || 0);
     const savedQ = state.activeSession?.active_question_index;
     state.activeQuestionIndex =
@@ -9454,7 +9454,7 @@ export async function wireStudyHandlers() {
           includeConnectionQuestions:
             pack?.config?.include_connection_questions != null ? Boolean(pack.config.include_connection_questions) : true,
         });
-        sessionObj.n_test = clampInt(pack?.config?.n_test, 0, MAX_N_TEST, 2);
+        sessionObj.n_test = clampInt(pack?.config?.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST);
         sessionObj.n_socratic = 0;
         sessionObj.language = String(pack?.config?.language || getStudyLanguage()).trim() || "English";
         sessionObj.blocks = offlineBlocks.map((b) => ({
@@ -9596,8 +9596,8 @@ export async function wireStudyHandlers() {
         blocksListText: confirmedBlocksListText,
         includeConnectionQuestions: state.includeConnectionQuestions,
       });
-      sessionObj.n_test = clampInt(state.nTest, 0, MAX_N_TEST, 2);
-      sessionObj.n_socratic = clampInt(state.nSocratic, 0, 3, 1);
+      sessionObj.n_test = clampInt(state.nTest, 0, MAX_N_TEST, DEFAULT_N_TEST);
+      sessionObj.n_socratic = clampInt(state.nSocratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
       if (Array.isArray(sessionObj.blocks)) {
         for (let i = 0; i < sessionObj.blocks.length; i += 1) {
           const b = sessionObj.blocks[i];

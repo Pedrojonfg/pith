@@ -4,6 +4,9 @@ import {
   LS_SESSION_DEFAULT_Q_CONFIG_KEY,
   LS_SESSION_CONCEPTS_KEY,
   LS_SESSIONS_BY_MODE_KEY,
+  DEFAULT_N_SOCRATIC,
+  DEFAULT_N_TEST,
+  MAX_N_SOCRATIC,
   MAX_N_TEST,
 } from "./config.js?v=20260625_02";
 import {
@@ -109,19 +112,19 @@ export function loadDefaultQuestionConfig() {
   try {
     const raw = localStorage.getItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY);
     const obj = raw ? JSON.parse(raw) : null;
-    const n_test = clampInt(obj?.n_test, 0, MAX_N_TEST, 2);
-    const n_socratic = clampInt(obj?.n_socratic, 0, 3, 1);
+    const n_test = clampInt(obj?.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST);
+    const n_socratic = clampInt(obj?.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
     return { n_test, n_socratic };
   } catch {
-    return { n_test: 2, n_socratic: 1 };
+    return { n_test: DEFAULT_N_TEST, n_socratic: DEFAULT_N_SOCRATIC };
   }
 }
 
 export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
   try {
     const safe = {
-      n_test: clampInt(n_test, 0, MAX_N_TEST, 2),
-      n_socratic: clampInt(n_socratic, 0, 3, 1),
+      n_test: clampInt(n_test, 0, MAX_N_TEST, DEFAULT_N_TEST),
+      n_socratic: clampInt(n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC),
     };
     localStorage.setItem(LS_SESSION_DEFAULT_Q_CONFIG_KEY, JSON.stringify(safe));
   } catch {
@@ -238,7 +241,7 @@ export function mergeGapLists(synthesis, userEdits) {
   return merged;
 }
 
-/** R8 — raise n_test/n_socratic when gap count exceeds question budget (max 8 total). */
+/** R8 — raise n_test/n_socratic when gap count exceeds question budget. */
 export function adjustQuestionBudgetForGaps(
   n_test,
   n_socratic,
@@ -247,18 +250,19 @@ export function adjustQuestionBudgetForGaps(
 ) {
   const gaps = Math.max(0, Math.floor(Number(gapCount) || 0));
   let nt = clampInt(n_test, 0, MAX_N_TEST, 0);
-  let ns = clampInt(n_socratic, 0, 3, 0);
+  let ns = clampInt(n_socratic, 0, MAX_N_SOCRATIC, 0);
   const reservedConnectionSlot = reserveConnectionSlot ? 1 : 0;
   const availableForGaps = Math.max(0, nt + ns - reservedConnectionSlot);
   if (gaps <= availableForGaps) return { n_test: nt, n_socratic: ns };
 
-  const targetTotal = Math.min(8, gaps + reservedConnectionSlot);
+  const questionCap = MAX_N_TEST + MAX_N_SOCRATIC;
+  const targetTotal = Math.min(questionCap, gaps + reservedConnectionSlot);
 
-  // Prefer test questions for breadth; socratic is capped at 3 by UI/prompt contract.
+  // Prefer test questions for breadth; socratic is capped by MAX_N_SOCRATIC.
   nt = Math.min(MAX_N_TEST, Math.max(nt, Math.ceil(targetTotal * 0.6)));
   ns = targetTotal - nt;
-  if (ns > 3) {
-    ns = 3;
+  if (ns > MAX_N_SOCRATIC) {
+    ns = MAX_N_SOCRATIC;
     nt = targetTotal - ns;
   }
   if (ns < 0) {
@@ -267,8 +271,8 @@ export function adjustQuestionBudgetForGaps(
   }
 
   // Final safety cap.
-  while (nt + ns > 8 && ns > 0) ns -= 1;
-  while (nt + ns > 8 && nt > 0) nt -= 1;
+  while (nt + ns > questionCap && ns > 0) ns -= 1;
+  while (nt + ns > questionCap && nt > 0) nt -= 1;
   return { n_test: nt, n_socratic: ns };
 }
 
@@ -285,8 +289,8 @@ function resolveBlockTitleForConfig(blockIndex) {
 export function resolveBlockQuestionConfig(blockIndex) {
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const defaults = {
-    n_test: clampInt(session.n_test, 0, MAX_N_TEST, clampInt(state.nTest, 0, MAX_N_TEST, 2)),
-    n_socratic: clampInt(session.n_socratic, 0, 3, clampInt(state.nSocratic, 0, 3, 1)),
+    n_test: clampInt(session.n_test, 0, MAX_N_TEST, clampInt(state.nTest, 0, MAX_N_TEST, DEFAULT_N_TEST)),
+    n_socratic: clampInt(session.n_socratic, 0, MAX_N_SOCRATIC, clampInt(state.nSocratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC)),
     explanation_profile: "thorough",
     gap_focus: [],
     include_connection_questions: session.include_connection_questions !== false,
@@ -310,7 +314,7 @@ export function resolveBlockQuestionConfig(blockIndex) {
     ? defaults
     : {
         n_test: clampInt(cfg.n_test, 0, MAX_N_TEST, defaults.n_test),
-        n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
+        n_socratic: clampInt(cfg.n_socratic, 0, MAX_N_SOCRATIC, defaults.n_socratic),
         explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
         gap_focus: normalizeGapFocus(cfg.gap_focus),
         include_connection_questions:
@@ -816,7 +820,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
-    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    n_socratic: clampInt(n_socratic, 0, MAX_N_SOCRATIC, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
     include_connection_questions: resolved.include_connection_questions,
@@ -874,7 +878,7 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
-    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    n_socratic: clampInt(n_socratic, 0, MAX_N_SOCRATIC, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
     include_connection_questions: resolved.include_connection_questions,
@@ -1035,7 +1039,7 @@ export async function generateQuestionsOnlyForIndex(
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
-    n_socratic: clampInt(n_socratic, 0, 3, resolved.n_socratic),
+    n_socratic: clampInt(n_socratic, 0, MAX_N_SOCRATIC, resolved.n_socratic),
     explanation_profile: resolved.explanation_profile,
     gap_focus: resolved.gap_focus,
   };
@@ -1192,7 +1196,7 @@ export async function generateOfflinePack(blockIndex, htmlText, config = {}) {
     if (!chunk.trim()) chunk = String(block.chunk || "").trim().slice(0, 12000);
 
     const blockConfig = {
-      n_test: clampInt(config.n_test, 0, MAX_N_TEST, 2),
+      n_test: clampInt(config.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST),
       n_socratic: 0,
       llmModel: config.llmModel ?? getSessionLlmModel(state.activeSession),
       include_connection_questions:
@@ -1416,8 +1420,8 @@ export function buildResumePayload(session, { activeBlockIndex, activeQuestionIn
     format_version: RESUME_FORMAT_VERSION,
     exported_at: new Date().toISOString(),
     n_blocks: n,
-    n_test: clampInt(safe.n_test, 0, MAX_N_TEST, 2),
-    n_socratic: clampInt(safe.n_socratic, 0, 3, 1),
+    n_test: clampInt(safe.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST),
+    n_socratic: clampInt(safe.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC),
     current_block_index: clampInt(Number(safe.current_block_index) || 0, 0, n - 1, 0),
     active_block_index: abi,
     active_question_index: aqi,
@@ -1453,9 +1457,9 @@ export function normalizeResumePayload(raw) {
       ? mode === "test"
         ? { n_test: 2, n_socratic: 0 }
         : { n_test: 0, n_socratic: 1 }
-      : { n_test: 2, n_socratic: 1 };
+      : { n_test: DEFAULT_N_TEST, n_socratic: DEFAULT_N_SOCRATIC };
   const n_test = clampInt(raw.n_test, 0, MAX_N_TEST, defaultsFromV1.n_test);
-  const n_socratic = clampInt(raw.n_socratic, 0, 3, defaultsFromV1.n_socratic);
+  const n_socratic = clampInt(raw.n_socratic, 0, MAX_N_SOCRATIC, defaultsFromV1.n_socratic);
 
   let blocksPlan = Array.isArray(raw.blocks_plan) ? raw.blocks_plan : [];
   if (!blocksPlan.length) {
@@ -3683,8 +3687,8 @@ export async function applyAssessmentResults(assessmentResults) {
     "ok",
   );
   const sessionDefaults = {
-    n_test: clampInt(sessionObj.n_test, 0, MAX_N_TEST, 2),
-    n_socratic: clampInt(sessionObj.n_socratic, 0, 3, 1),
+    n_test: clampInt(sessionObj.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST),
+    n_socratic: clampInt(sessionObj.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC),
     explanation_profile: "thorough",
     gap_focus: [],
   };
@@ -3708,7 +3712,7 @@ export async function applyAssessmentResults(assessmentResults) {
         ? mergeThresholdBlockConfig(
             {
               n_test: 1,
-              n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
+              n_socratic: Math.min(MAX_N_SOCRATIC, sessionDefaults.n_socratic + 1),
               gap_focus: [],
               include_connection_questions: includeConnection,
             },
@@ -3726,7 +3730,7 @@ export async function applyAssessmentResults(assessmentResults) {
     } else if (classification === "weak") {
       const bumped = {
         n_test: sessionDefaults.n_test,
-        n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
+        n_socratic: Math.min(MAX_N_SOCRATIC, sessionDefaults.n_socratic + 1),
       };
       const reserveConnectionSlot =
         includeConnection && blockId > 1 && bumped.n_test + bumped.n_socratic > 0;
@@ -3806,8 +3810,8 @@ export async function applyAssessmentResults(assessmentResults) {
 /** Stable key for prefetch cache — includes pedagogical profile (research R3) profile (research R3). */
 export function buildBlockConfigKey(cfg) {
   const c = cfg && typeof cfg === "object" ? cfg : {};
-  const nTest = clampInt(c.n_test, 0, MAX_N_TEST, 2);
-  const nSoc = clampInt(c.n_socratic, 0, 3, 1);
+  const nTest = clampInt(c.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST);
+  const nSoc = clampInt(c.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
   const profile = normalizeExplanationProfile(c.explanation_profile, "thorough");
   const gaps = normalizeGapFocus(c.gap_focus);
   const includeConn = c.include_connection_questions !== false;
@@ -3840,8 +3844,8 @@ export function normalizeBlockJson(data, cfg, blockIndex) {
   if (!Array.isArray(cleaned.questions)) cleaned.questions = [];
   if (!Array.isArray(cleaned.concepts)) cleaned.concepts = [];
   if (!cleaned._config || typeof cleaned._config !== "object") cleaned._config = {};
-  cleaned._config.n_test = clampInt(c.n_test, 0, MAX_N_TEST, 2);
-  cleaned._config.n_socratic = clampInt(c.n_socratic, 0, 3, 1);
+  cleaned._config.n_test = clampInt(c.n_test, 0, MAX_N_TEST, DEFAULT_N_TEST);
+  cleaned._config.n_socratic = clampInt(c.n_socratic, 0, MAX_N_SOCRATIC, DEFAULT_N_SOCRATIC);
   cleaned._config.explanation_profile = normalizeExplanationProfile(
     c.explanation_profile,
     "thorough",
@@ -4079,7 +4083,7 @@ export function triggerPrefetch(blockIndex, opts = {}) {
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(opts.n_test, 0, MAX_N_TEST, resolved.n_test),
-    n_socratic: clampInt(opts.n_socratic, 0, 3, resolved.n_socratic),
+    n_socratic: clampInt(opts.n_socratic, 0, MAX_N_SOCRATIC, resolved.n_socratic),
     include_connection_questions: resolved.include_connection_questions,
     explanation_profile:
       opts.explanation_profile != null

@@ -1,4 +1,4 @@
-import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260629_02";
+import { MAX_N_SOCRATIC, MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260629_02";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled, isSourceFidelityStrictEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
@@ -2652,7 +2652,7 @@ export function buildBlockGenerationSystemPrompt({
   vaultHint = "",
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const nSocratic = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
   const profileRaw = String(explanation_profile || "").trim();
   const profile =
@@ -2809,7 +2809,7 @@ export function buildQuestionsOnlySystemPrompt({
   prevBlockSummaryForConnection = "",
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSocratic = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const nSocratic = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(n_socratic))));
   const totalQuestions = nTest + nSocratic;
   const gaps = formatGapFocusList(gap_focus);
   const blockNo = Number(blockIndex) + 1;
@@ -2903,7 +2903,7 @@ export function warnQuestionsOnlyCountMismatch(responseObj, cfg) {
   if (!responseObj || typeof responseObj !== "object" || !cfg || typeof cfg !== "object") return;
   const questions = Array.isArray(responseObj.questions) ? responseObj.questions : [];
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(cfg.n_test))));
-  const nSoc = Math.max(0, Math.min(3, Math.round(Number(cfg.n_socratic))));
+  const nSoc = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(cfg.n_socratic))));
   const expected = nTest + nSoc;
   if (expected > 0 && questions.length < expected) {
     console.warn(
@@ -3262,7 +3262,7 @@ export async function deepSeekGenerateBlockJson({
   }
 
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
-  const nSoc = Math.max(0, Math.min(3, Math.round(Number(n_socratic))));
+  const nSoc = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(n_socratic))));
   if (nTest + nSoc > 0) {
     const questionsObj = await deepSeekGenerateBlockQuestions({
       llmModel,
@@ -3355,7 +3355,7 @@ export async function generateAllBlocks(blockIndex, config = {}) {
   const total = items.length;
   const results = Array.from({ length: total }, () => null);
   const n_test = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(config.n_test))));
-  const n_socratic = Math.max(0, Math.min(3, Math.round(Number(config.n_socratic))));
+  const n_socratic = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(config.n_socratic))));
   const blocksListText = String(config.blocksListText || "");
   const language = String(config.language || "English");
   const llmModel = resolveLlmModelArg(config.llmModel);
@@ -4238,7 +4238,7 @@ export async function generatePrePackingAssessmentItems({
   if (useLegacy) {
     const cap = Math.max(
       1,
-      Math.floor(Number(maxItems) || ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX || 7),
+      Math.floor(Number(maxItems) || ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX || 23),
     );
     const minimal = inventory.map((c) => ({
       id: String(c?.id || c?.concept_id || "").trim(),
@@ -4290,10 +4290,10 @@ Respond in ${lang}.`;
     : Math.max(0, Math.min(MAX_N_TEST, Math.round(rawTest)));
   const nSocratic = holisticBatch
     ? Math.max(0, Math.min(5, Math.round(rawSocratic)))
-    : Math.max(0, Math.min(3, Math.round(rawSocratic)));
+    : Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(rawSocratic)));
   const cap = holisticBatch
     ? HOLISTIC_ASSESSMENT_MAX
-    : Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 7));
+    : Math.max(1, Math.floor(Number(ASSESSMENT_FLAGS.ASSESSMENT_ITEMS_MAX) || 23));
   if (nTest + nSocratic <= 0) {
     throw new Error("Assessment needs at least one question (n_test + n_socratic).");
   }
