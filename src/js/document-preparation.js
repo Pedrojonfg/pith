@@ -27,7 +27,7 @@ import {
   classifyInventoryHeuristic,
   applyBatchClassification,
 } from "./pedagogy/factual-classifier.js";
-import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags, minViableConcepts } from "./config/flags.js";
+import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags, minViableConcepts, MIN_CONCEPTS_ABSOLUTE } from "./config/flags.js";
 import { runDedupForDocument } from "./concept-registry/dedup-gates.js";
 import {
   filterProposalsWithContradictionCheck,
@@ -246,13 +246,24 @@ async function runPhaseT12(doc, ctx) {
   const minRequired = minViableConcepts(charCount);
   if (inventory.length < minRequired) {
     doc.shared.conceptInventory = inventory;
-    prep.failReason = inventory.length === 0 ? "INVENTORY_MERGE_FAILED" : "INVENTORY_TOO_SPARSE";
-    throw new Error(
-      `Concept inventory too sparse: ${inventory.length} concepts (minimum ${minRequired})`,
-    );
+    if (inventory.length >= MIN_CONCEPTS_ABSOLUTE) {
+      prep.failReason = "INVENTORY_TOO_SPARSE";
+      setPreparationStatus(prep, "partial");
+      console.warn("[document-preparation.runPhaseT12] Degraded inventory:", {
+        docId: doc.docId,
+        conceptCount: inventory.length,
+        minRequired,
+      });
+    } else {
+      prep.failReason = inventory.length === 0 ? "INVENTORY_MERGE_FAILED" : "INVENTORY_TOO_SPARSE";
+      throw new Error(
+        `Concept inventory too sparse: ${inventory.length} concepts (minimum ${minRequired})`,
+      );
+    }
+  } else {
+    doc.shared.conceptInventory = inventory;
+    prep.failReason = null;
   }
-  doc.shared.conceptInventory = inventory;
-  prep.failReason = null;
   if (inventory.length && isDeterministicFactualQuestionsEnabled()) {
     const sourceText = getMarkdown(doc);
     const flags = getPedagogicalFlags();
@@ -662,7 +673,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
                 outputHash: typeof output === "string" ? output.slice(0, 12) : null,
               }); // [debug-enrich]
             }
-            await persistDoc(doc);
             options.onProgress?.({
               phaseId,
               wave: wi + 1,
@@ -680,7 +690,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             }); // [debug-enrich]
             markPhase(prep, phaseId, "failed", null, message);
             prep.errors.push({ phaseId, message, at: Date.now() });
-            await persistDoc(doc);
             options.onProgress?.({
               phaseId,
               wave: wi + 1,
@@ -692,6 +701,8 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
           }
         }),
       );
+      prep.updatedAt = Date.now();
+      await persistDoc(doc);
       void results;
     }
 

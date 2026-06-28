@@ -207,6 +207,7 @@ import {
   evaluateConceptInventoryGuard,
   pollUntilConceptInventoryReady,
   repairStuckRunningPreparationIfNeeded,
+  resolveCreateSessionPrepStatus,
   applyKnowledgeProfileToBlockIndex,
   twoPhaseConceptSplit,
   state,
@@ -481,6 +482,15 @@ export async function startDocumentPreparation(doc, options = {}) {
     errorCount: result?.errors?.length ?? 0,
   }); // [debug-enrich]
   return result?.doc ?? doc;
+}
+
+function notifyPreparationSparseIfNeeded(doc) {
+  const prep = doc?.shared?.preparation;
+  if (prep?.failReason === "INVENTORY_TOO_SPARSE") {
+    showInventoryStatusBanner(
+      "Concept inventory is smaller than ideal for this document length. Study will continue with reduced coverage.",
+    );
+  }
 }
 
 function formatPreparationProgressMessage(msg) {
@@ -2009,14 +2019,13 @@ async function handleCreateSessionStartFilePicked() {
         }
       }),
     })
-      .then(async () => {
+      .then(async (preparedDoc) => {
         if (runId !== createSessionStartRunId) return;
-        const fresh = await getActiveSession();
+        const fresh = preparedDoc || (await getActiveSession());
         if (els.createSessionStartStatus) {
-          els.createSessionStartStatus.textContent = isTier1PreparationComplete(fresh)
-            ? "Document ready. You can continue."
-            : "Preparing document?";
+          els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(fresh);
         }
+        notifyPreparationSparseIfNeeded(fresh);
         refreshCreateSessionInsights(fresh);
       })
       .catch((err) => {
