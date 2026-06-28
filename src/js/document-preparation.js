@@ -51,6 +51,7 @@ import {
   isTier1PreparationComplete,
   setPreparationStatus,
 } from "./session-types.js";
+import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
 const PHASE_DEPS = {
@@ -123,7 +124,7 @@ async function finalizeAndPersist(doc, prep, stopAfterTier) {
   prep.completedAt = prep.completedAt || Date.now();
   prep.currentPhase = null;
   prep.currentWave = null;
-  resolveFinalStatus(prep, tier1Complete(doc), stopAfterTier);
+  resolveFinalStatus(prep, doc, stopAfterTier);
   await persistFinal(doc);
   return doc;
 }
@@ -169,14 +170,10 @@ function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
   });
 }
 
-function tier1Complete(doc) {
-  const inv = doc?.shared?.conceptInventory;
-  return Array.isArray(inv) && inv.length > 0;
-}
-
-function resolveFinalStatus(prep, tier1Ok, stopAfterTier) {
+function resolveFinalStatus(prep, doc, stopAfterTier) {
   const results = prep.phaseResults || {};
   const failed = Object.values(results).filter((r) => r?.status === "failed");
+  const tier1Ok = isTier1PreparationComplete(doc);
   if (!tier1Ok) {
     setPreparationStatus(prep, failed.length ? "failed" : "partial");
     return;
@@ -842,8 +839,7 @@ function tier2PhasesPending(doc, fingerprint) {
  */
 export async function ensureTier1Preparation(doc, options = {}) {
   if (!doc?.docId) return null;
-  if (!options.forceRerun && isConceptInventoryValid(doc)) return doc;
-  if (isTier1PreparationComplete(doc)) return doc;
+  if (!options.forceRerun && isTier1PreparationComplete(doc)) return doc;
 
   const docId = doc.docId;
   let flight = tier1InFlight.get(docId);
@@ -878,6 +874,60 @@ export function hasPendingTier2Preparation(doc, options = {}) {
   if (!doc?.docId || !isTier1PreparationComplete(doc)) return false;
   const fingerprint = computePreparationFingerprint(doc, options);
   return tier2PhasesPending(doc, fingerprint);
+}
+
+/**
+ * Run user/project-specific tier-1 phases after shared cache hydrate.
+ * @param {object} doc
+ * @param {object} [options]
+ */
+export async function runPostCacheUserPhases(doc, options = {}) {
+  if (!doc?.docId || !isTier1PreparationComplete(doc)) return doc;
+  const ctx = {
+    llmModel: options.llmModel,
+    language: options.language || "English",
+    studyNotes: options.studyNotes || "",
+    onProgress: options.onProgress,
+    forceRerun: false,
+  };
+  const prep = ensurePreparation(doc);
+  const fingerprint = computePreparationFingerprint(doc, options);
+  for (const phaseId of USER_SPECIFIC_DPP_PHASES) {
+    if (phaseSucceeded(prep, phaseId, fingerprint)) continue;
+    const runner = PHASE_RUNNERS[phaseId];
+    if (!runner) continue;
+    ctx.onProgress?.({
+      phaseId,
+      label: PHASE_LABELS[phaseId] || phaseId,
+      status: "running",
+    });
+    try {
+      const output = await runner(doc, ctx);
+      if (output && typeof output === "object" && output.skipped) {
+        markPhase(prep, phaseId, "skipped", output.hash || "skipped");
+      } else {
+        markPhase(prep, phaseId, "success", output);
+      }
+      ctx.onProgress?.({
+        phaseId,
+        label: PHASE_LABELS[phaseId] || phaseId,
+        status: "success",
+      });
+    } catch (err) {
+      const message = err?.message || String(err);
+      markPhase(prep, phaseId, "failed", null, message);
+      prep.errors = prep.errors || [];
+      prep.errors.push({ phaseId, message, at: Date.now() });
+      ctx.onProgress?.({
+        phaseId,
+        label: PHASE_LABELS[phaseId] || phaseId,
+        status: "failed",
+        error: message,
+      });
+    }
+  }
+  await persistFinal(doc);
+  return doc;
 }
 
 export { TIER1_PHASES, PHASE_LABELS };

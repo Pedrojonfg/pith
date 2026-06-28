@@ -99,4 +99,10 @@ export async function persistFinal(doc) {
   }
   await saveActiveSession(doc);
   clearDppRun(doc.docId);
+  try {
+    const { upsertSharedDppCache } = await import("./shared-dpp-cache-persist.js");
+    await upsertSharedDppCache(doc.docId, doc);
+  } catch (err) {
+    console.warn("[DPP] shared cache upsert skipped:", err?.message || err);
+  }
 }
