@@ -2741,7 +2741,7 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
     (prep.status === "running" || prep.status === "pending") &&
     hasTier1Artifacts(session)
   ) {
-    const t12 = prep.phaseResults?.T1.2;
+    const t12 = prep.phaseResults?.["T1.2"];
     if (t12?.status === "success" || t12?.status === "skipped") {
       setPreparationStatus(
         prep,
