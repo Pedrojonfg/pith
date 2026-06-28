@@ -2299,6 +2299,35 @@ export function setPackingIgnoredProfile(sessionObj, ignored = true) {
   return sessionObj;
 }
 
+/** Mastery weight for packing: known → deprioritize, unknown → prioritize, unassessed → neutral. */
+export function getMasteryWeight(concept, knowledgeProfile) {
+  if (!knowledgeProfile?.byConceptId) return 0.5;
+  const conceptId = String(concept?.id || concept?.concept_id || "").trim();
+  if (!conceptId) return 0.5;
+  const entry = knowledgeProfile.byConceptId[conceptId];
+  if (!entry || !entry.assessed) return 0.5;
+  return entry.correct ? 0.2 : 0.9;
+}
+
+/** Bridge concept-coverage profile to LLM pack prompt shape. */
+export function knowledgeProfileForPack(knowledgeProfile) {
+  if (!knowledgeProfile || typeof knowledgeProfile !== "object") return null;
+  if (knowledgeProfile.byConceptId && Array.isArray(knowledgeProfile.items)) {
+    return knowledgeProfile;
+  }
+  if (!knowledgeProfile.byConceptId) return knowledgeProfile;
+  const items = [];
+  for (const [concept_id, entry] of Object.entries(knowledgeProfile.byConceptId)) {
+    if (!entry?.assessed) continue;
+    items.push({
+      concept_id,
+      mastery: entry.correct ? "full" : "none",
+      confidence: entry.correct ? 0.85 : 0.2,
+    });
+  }
+  return { ...knowledgeProfile, items };
+}
+
 /** Pack layer invariants for tests and runtime checks. */
 export function validatePackInvariants({
   conceptInventory,
@@ -3047,7 +3076,9 @@ export async function packInventoryToBlocks(
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
   const profile =
-    knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
+    knowledgeProfile && typeof knowledgeProfile === "object"
+      ? knowledgeProfileForPack(knowledgeProfile)
+      : null;
   let resolvedDocTopics = docTopics;
   let vaultSession = null;
   if (!Array.isArray(resolvedDocTopics)) {

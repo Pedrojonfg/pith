@@ -3,7 +3,10 @@
  * @see specs/20260618-holistic-assessment-coverage/
  */
 
-import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260625_02";
+import { HOLISTIC_ASSESSMENT_MAX, HOLISTIC_ASSESSMENT_MIN } from "./config.js?v=20260629_02";
+
+/** Max concepts per assessment LLM call — prevents JSON truncation. @see specs/20260629-assessment-concept-coverage/ */
+export const ASSESSMENT_BATCH_SIZE = 20;
 
 function clamp(n, min, max) {
   const x = Number(n);
@@ -314,4 +317,68 @@ export function filterInventoryForBatch(inventory, conceptIds) {
 export function filterEdgesForBatch(edges, edgeIds) {
   const set = new Set(Array.isArray(edgeIds) ? edgeIds : []);
   return (Array.isArray(edges) ? edges : []).filter((e) => set.has(serializeEdge(e)));
+}
+
+/**
+ * Split inventory into fixed-size concept batches for coverage generation.
+ * @param {object[]} inventory
+ * @param {number} [batchSize]
+ * @returns {object[][]}
+ */
+export function splitInventoryIntoConceptBatches(inventory, batchSize = ASSESSMENT_BATCH_SIZE) {
+  const inv = Array.isArray(inventory) ? inventory : [];
+  const size = Math.max(1, Math.floor(Number(batchSize) || ASSESSMENT_BATCH_SIZE));
+  /** @type {object[][]} */
+  const batches = [];
+  for (let i = 0; i < inv.length; i += size) {
+    batches.push(inv.slice(i, i + size));
+  }
+  return batches;
+}
+
+/**
+ * Lenient validation: drop invalid concept_id, dedupe by concept (keep first).
+ * @param {object[]} questions
+ * @param {object[]} inventory
+ * @returns {object[]}
+ */
+export function validateConceptCoverageQuestions(questions, inventory) {
+  const invIds = new Set(
+    (Array.isArray(inventory) ? inventory : [])
+      .map((c) => getConceptId(c))
+      .filter(Boolean),
+  );
+  const seen = new Set();
+  /** @type {object[]} */
+  const out = [];
+  for (const q of Array.isArray(questions) ? questions : []) {
+    if (!q || typeof q !== "object") continue;
+    if (String(q.type || "").trim().toLowerCase() !== "test") continue;
+    const concept_id = String(q.concept_id || "").trim();
+    if (!concept_id || (invIds.size && !invIds.has(concept_id))) continue;
+    if (seen.has(concept_id)) continue;
+    seen.add(concept_id);
+    out.push(q);
+  }
+  return out;
+}
+
+/**
+ * Merge validated questions into coverage set; returns newly added questions.
+ * @param {object[]} questions
+ * @param {Set<string>} covered
+ * @param {object[]} inventory
+ * @returns {object[]}
+ */
+export function accumulateConceptCoverage(questions, covered, inventory) {
+  const validated = validateConceptCoverageQuestions(questions, inventory);
+  /** @type {object[]} */
+  const added = [];
+  for (const q of validated) {
+    const cid = String(q.concept_id || "").trim();
+    if (!cid || covered.has(cid)) continue;
+    covered.add(cid);
+    added.push(q);
+  }
+  return added;
 }

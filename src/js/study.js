@@ -7708,7 +7708,7 @@ function getCurrentPrefetchConfigKey(flow) {
       qCfg: budget,
       conceptInventory: flow.conceptInventory,
       cleanedText: flow.cleanedText,
-      holisticPlanHash: `${plan?.planHash || hashCoveragePlan(plan)}${adaptiveSuffix}`,
+      holisticPlanHash: `${plan?.planHash || hashCoveragePlan(plan)}${adaptiveSuffix}|cov2`,
     });
   }
   const qCfg = resolvePrePackingQuestionConfig();
@@ -7786,6 +7786,17 @@ function stashPrePackingDraftMeta() {
 }
 
 function countProfileMastery(profile) {
+  if (profile?.byConceptId && typeof profile.byConceptId === "object") {
+    const entries = Object.values(profile.byConceptId);
+    const assessed = entries.filter((e) => e?.assessed);
+    return {
+      full: assessed.filter((e) => e.correct).length,
+      partial: 0,
+      none:
+        assessed.filter((e) => !e.correct).length +
+        entries.filter((e) => !e?.assessed).length,
+    };
+  }
   const threshold = ASSESSMENT_FLAGS.ASSESSMENT_MASTERY_THRESHOLD;
   const items = Array.isArray(profile?.items) ? profile.items : [];
   let full = 0;
@@ -8114,7 +8125,10 @@ async function enterPrePackingAssessmentScreen() {
     );
     if (!prePackingFlow.assessmentItems.length) {
       prePackingFlow.itemsPromise = null;
-      throw new Error("Could not generate assessment items.");
+      console.info("[study] No assessment questions generated — skipping to pack with neutral weights");
+      if (els.prePackingAssessmentStatus) els.prePackingAssessmentStatus.textContent = "";
+      await handlePrePackingSkip();
+      return;
     }
     if (els.prePackingAssessmentStatus) els.prePackingAssessmentStatus.textContent = "";
     renderPrePackingAssessmentQuestion();

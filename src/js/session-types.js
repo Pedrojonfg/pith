@@ -107,6 +107,19 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * Pre-packing knowledge profile keyed by concept coverage.
+ * @typedef {object} ConceptCoverageKnowledgeProfile
+ * @property {Record<string, { assessed: boolean, correct?: boolean }>} byConceptId
+ * @property {number} assessedCount
+ * @property {number} notAssessedCount
+ * @property {number} correctCount
+ * @property {number} generatedAt
+ * @property {string} [assessed_at]
+ * @property {Array<{ concept_id: string, mastery: string, confidence: number }>} [items]
+ * @property {number} [coverage]
+ */
+
+/**
  * @typedef {object} InterviewTurn
  * @property {number} turn
  * @property {string} question
