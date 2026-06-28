@@ -460,15 +460,15 @@ function mergeDetectedBy(existing, incoming) {
 }
 
 /**
- * @param {string} docId
+ * Merge concept rows into an inventory array (pure).
+ * @param {object[]|null|undefined} existingInventory
  * @param {object[]} concepts
+ * @returns {object[]}
  */
-export async function addConceptsToShared(docId, concepts) {
-  const session = await getSession(docId);
-  if (!session) throw new Error("session not found");
+export function mergeConceptsIntoInventory(existingInventory, concepts) {
   const list = Array.isArray(concepts) ? concepts : [];
   const byId = new Map(
-    (session.shared.conceptInventory || []).map((c) => [c.canonicalId, c]),
+    (Array.isArray(existingInventory) ? existingInventory : []).map((c) => [c.canonicalId, c]),
   );
   for (const raw of list) {
     if (!raw || typeof raw !== "object") continue;
@@ -498,8 +498,34 @@ export async function addConceptsToShared(docId, concepts) {
       });
     }
   }
-  session.shared.conceptInventory = [...byId.values()];
-  await saveActiveSession(session);
+  return [...byId.values()];
+}
+
+/**
+ * Mutate shared concept inventory on an in-memory document (no store I/O).
+ * @param {object} doc
+ * @param {object[]} concepts
+ */
+export function addConceptsToShared(doc, concepts) {
+  if (!doc?.shared) throw new Error("session missing shared");
+  doc.shared.conceptInventory = mergeConceptsIntoInventory(
+    doc.shared.conceptInventory,
+    concepts,
+  );
+}
+
+/**
+ * @param {string} docId
+ * @param {object} doc
+ */
+export function setLocalSessionCache(docId, doc) {
+  const id = String(docId || "").trim();
+  if (!id || !doc) return;
+  const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
+  if (activeId === id) {
+    localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
+  }
+  void doc;
 }
 
 /**

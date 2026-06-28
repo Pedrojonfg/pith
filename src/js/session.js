@@ -52,9 +52,9 @@ import {
   minViableConcepts,
   DPP_STALE_TIMEOUT_MS,
   DPP_PENDING_GRACE_MS,
-  MAX_DPP_STALE_RETRIES,
 } from "./config/flags.js";
 import { normalizePreparationState, setPreparationStatus, isTier1PreparationComplete } from "./session-types.js";
+import { isDppRunActiveOnDevice } from "./dpp-persistence.js";
 
 /**
  * Call sites patched for DPP recalculation guard (20260622-fix-dpp-recalculation-guard):
@@ -2550,31 +2550,72 @@ export function meetsConceptInventoryThreshold(session) {
 }
 
 /**
- * Repair sessions stuck at running with a viable inventory (self-heal on load/poll).
+ * True when preparation has been running longer than the stale timeout.
+ * @param {object} prep
+ * @param {object} session
+ * @returns {boolean}
+ */
+export function isStuckPreparationRun(prep, session) {
+  const normalized = normalizePreparationState(prep);
+  if (normalized.status !== "running" && normalized.status !== "pending") return false;
+  const startedAt = Number(normalized.startedAt);
+  if (Number.isFinite(startedAt) && startedAt > 0) {
+    return Date.now() - startedAt > DPP_STALE_TIMEOUT_MS;
+  }
+  return isPreparationStale(normalized, session);
+}
+
+/**
+ * Mark a single session failed when a prior DPP run is stuck on this device.
+ * @param {object} session
+ * @param {{ persist?: boolean }} [options]
+ * @returns {Promise<{ changed: boolean, session: object }>}
+ */
+export async function markStalePreparationSession(session, options = {}) {
+  if (!session?.shared) return { changed: false, session };
+  const prep = normalizePreparationState(session.shared.preparation);
+  session.shared.preparation = prep;
+  if (!isStuckPreparationRun(prep, session)) {
+    return { changed: false, session };
+  }
+  const docId = String(session.docId || "").trim();
+  if (isDppRunActiveOnDevice(docId, prep.runId)) {
+    return { changed: false, session };
+  }
+  prep.status = "failed";
+  prep.failReason = "STALE_RUN";
+  prep.updatedAt = Date.now();
+  prep.completedAt = prep.completedAt || Date.now();
+  console.log("[DPP-GUARD] Marked stale preparation failed (STALE_RUN).", { docId });
+  if (options.persist !== false) {
+    await saveDocumentSession(session);
+  }
+  return { changed: true, session };
+}
+
+/**
+ * Scan sessions for stuck preparation runs (library / mode-select entry).
+ * @param {object[]} sessions
+ * @returns {Promise<object[]>}
+ */
+export async function scanStalePreparationSessions(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const out = [];
+  for (const session of list) {
+    const result = await markStalePreparationSession(session);
+    out.push(result.session);
+  }
+  return out;
+}
+
+/**
+ * @deprecated Use markStalePreparationSession — no longer promotes running→ready.
  * @param {object} session
  * @returns {Promise<object>}
  */
 export async function repairStuckRunningPreparationIfNeeded(session) {
-  if (!session?.shared) return session;
-
-  const prep = normalizePreparationState(session.shared.preparation);
-  if (prep.status !== "running") return session;
-  if (!meetsConceptInventoryThreshold(session)) return session;
-
-  const t12 = prep.phaseResults?.["T1.2"];
-  const t12Done = t12?.status === "success" || t12?.status === "skipped";
-  if (!t12Done) return session;
-
-  const inv = session.shared.conceptInventory;
-  console.log(
-    `[DPP-GUARD] Status stuck at 'running' but inventory is sufficient (${inv.length} concepts). Treating as ready.`,
-  );
-  session.shared.preparation = prep;
-  setPreparationStatus(prep, "ready");
-  prep.failReason = null;
-  prep.completedAt = prep.completedAt || Date.now();
-  await saveDocumentSession(session);
-  return session;
+  const result = await markStalePreparationSession(session);
+  return result.session;
 }
 
 /**
@@ -2650,8 +2691,10 @@ export function isDppInFlight(docId) {
 }
 
 function getPreparationActivityTs(prep) {
-  if (Number.isFinite(Number(prep?.updatedAt))) return Number(prep.updatedAt);
-  if (Number.isFinite(Number(prep?.startedAt))) return Number(prep.startedAt);
+  const updatedAt = Number(prep?.updatedAt);
+  if (Number.isFinite(updatedAt) && updatedAt > 0) return updatedAt;
+  const startedAt = Number(prep?.startedAt);
+  if (Number.isFinite(startedAt) && startedAt > 0) return startedAt;
   return null;
 }
 
@@ -2668,27 +2711,15 @@ async function handlePreparationStaleRun(session) {
   if (!session.shared) session.shared = {};
   const prep = normalizePreparationState(session.shared.preparation);
   session.shared.preparation = prep;
-  const retries = Number(prep.staleRetryCount) || 0;
-
-  if (retries < MAX_DPP_STALE_RETRIES) {
-    prep.staleRetryCount = retries + 1;
-    prep.failReason = "STALE_RUN";
-    setPreparationStatus(prep, "pending");
-    prep.startedAt = null;
-    prep.currentPhase = null;
-    console.log(
-      `[DPP-GUARD] Stale preparation — auto-retry ${prep.staleRetryCount}/${MAX_DPP_STALE_RETRIES}.`,
-    );
-    await saveDocumentSession(session);
-    return { retried: true, session };
+  const docId = String(session?.docId || "").trim();
+  if (isDppRunActiveOnDevice(docId, prep.runId)) {
+    return { retried: false, session };
   }
-
   prep.status = "failed";
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
-  console.log(
-    "[DPP-GUARD] Stale preparation exceeded retry limit — marking failed (STALE_RUN).",
-  );
+  prep.completedAt = prep.completedAt || Date.now();
+  console.log("[DPP-GUARD] Stale preparation — marking failed (STALE_RUN).");
   await saveDocumentSession(session);
   return { retried: false, session };
 }
@@ -2723,9 +2754,9 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
 
   if (status === "failed") {
     const prep = normalizePreparationState(session?.shared?.preparation);
-    if (prep.failReason === "STALE_RUN" && (Number(prep.staleRetryCount) || 0) < MAX_DPP_STALE_RETRIES) {
-      console.log("[DPP-GUARD] Failed STALE_RUN with retries remaining — allowing re-run.");
-      return { decision: "run" };
+    if (prep.failReason === "STALE_RUN") {
+      console.log("[DPP-GUARD] Failed STALE_RUN — user may retry preparation.");
+      return { decision: "failed" };
     }
     console.log("[DPP-GUARD] Status 'failed' — surfacing error state. Not auto-retrying.");
     return { decision: "failed" };
@@ -2765,7 +2796,7 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
  * @returns {Promise<{ decision: string, session: object|null }>}
  */
 export async function pollUntilConceptInventoryReady(reloadSession, options = {}) {
-  const pollMs = options.pollMs ?? 3000;
+  const pollMs = options.pollMs ?? 2000;
   const maxWaitMs = options.maxWaitMs ?? DPP_STALE_TIMEOUT_MS + 60_000;
   const started = Date.now();
 
@@ -2783,9 +2814,6 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
     ) {
       if (isPreparationStale(prep, session)) {
         const stale = await handlePreparationStaleRun(session);
-        if (stale.retried) {
-          return { decision: "stale_retry", session: stale.session };
-        }
         return { decision: "failed", session: stale.session };
       }
     }

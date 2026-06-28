@@ -208,6 +208,7 @@ import {
   pollUntilConceptInventoryReady,
   repairStuckRunningPreparationIfNeeded,
   resolveCreateSessionPrepStatus,
+  markStalePreparationSession,
   applyKnowledgeProfileToBlockIndex,
   twoPhaseConceptSplit,
   state,
@@ -497,6 +498,26 @@ function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
   return `${label}${wave}?`;
+}
+
+const PREP_STATUS_POLL_MS = 2000;
+
+/**
+ * Poll session store for prep status while DPP is running (R8).
+ * @param {string} docId
+ * @param {number} runId
+ */
+async function pollCreateSessionPrepStatus(docId, runId) {
+  while (runId === createSessionStartRunId) {
+    const fresh = await getActiveSession(docId);
+    if (!fresh) break;
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(fresh);
+    }
+    const status = normalizePreparationState(fresh.shared?.preparation).status;
+    if (status !== "running" && status !== "pending") break;
+    await new Promise((resolve) => setTimeout(resolve, PREP_STATUS_POLL_MS));
+  }
 }
 
 const PREPARATION_FAILED_MSG =
@@ -1518,6 +1539,10 @@ export async function enterModeSelectScreen() {
   persistFlowRecommendationProgress();
   resetModeSelectUi();
   resetCreateScreenModeUi();
+  const active = await getActiveSession();
+  if (active) {
+    await markStalePreparationSession(active);
+  }
   renderFlowPanel(await getActiveSession());
   mountModeSelectBreadcrumb(await getActiveSession());
   syncSessionHubActions();
@@ -2010,6 +2035,7 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartStatus.textContent = "Preparing document?";
     }
     mountModeSelectBreadcrumb(doc);
+    void pollCreateSessionPrepStatus(doc.docId, runId);
     void startDocumentPreparation(doc, {
       stopAfterTier: 1,
       ...preparationGateOptions((msg) => {
@@ -2791,7 +2817,10 @@ async function promoteConceptInventoryToShared(inventory, detectedBy = "rsvp") {
       };
     })
     .filter(Boolean);
-  if (concepts.length) await addConceptsToShared(doc.docId, concepts);
+  if (concepts.length) {
+    addConceptsToShared(doc, concepts);
+    await saveDocumentSession(doc);
+  }
 }
 
 async function persistInventoryRunMeta(doc, invResult) {
