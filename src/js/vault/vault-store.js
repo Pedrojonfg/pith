@@ -671,4 +671,16 @@ export function updateVaultReviewItemSm2(itemId, sm2) {
   return item;
 }
 
+import { buildSessionVaultSummary } from "./session-vault-summary.js";
+
+/**
+ * Read-only vault changes for the current study visit (Retrieval Hub summary).
+ * Option B: caller supplies visitStartedAt from resolveStudyVisitStartedAt.
+ * @param {{ session: object, observations: object[], docId: string, visitStartedAt?: number | null }} params
+ */
+export function getSessionVaultChanges(params) {
+  const vault = loadVault();
+  return buildSessionVaultSummary({ ...params, vault });
+}
+
 export { newVaultId, migrateEntryV2, rebuildDependents, SCHEMA_VERSION };

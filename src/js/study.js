@@ -2604,6 +2604,58 @@ function renderRetrievalHubOptions() {
     .join("");
 }
 
+function resetRetrievalHubVaultSummary() {
+  const panel = els.retrievalHubVaultSummary;
+  if (!panel) return;
+  panel.innerHTML = "";
+  panel.hidden = true;
+}
+
+async function renderRetrievalHubVaultSummary(doc) {
+  const panel = els.retrievalHubVaultSummary;
+  if (!panel) return;
+  panel.innerHTML = "";
+  panel.hidden = true;
+  if (retrievalHubContext.entrySource !== "exposure_complete" || !doc?.docId) return;
+
+  panel.hidden = false;
+  try {
+    const [{ collectObservations }, { getSessionVaultChanges }, { resolveStudyVisitStartedAt, renderVaultSummaryHtml }] =
+      await Promise.all([
+        import("./vault/session-close.js"),
+        import("./vault/vault-store.js"),
+        import("./vault/session-vault-summary.js"),
+      ]);
+
+    const docId = String(doc.docId);
+    const [rsvp, questions, cloze, slow] = await Promise.all([
+      loadSessionForMode("rsvp"),
+      loadSessionForMode("questions"),
+      loadSessionForMode("cloze"),
+      loadSessionForMode("slow"),
+    ]);
+
+    const sessionForVault = {
+      ...doc,
+      modes: { rsvp, questions, cloze, slow },
+    };
+
+    const visitStartedAt = resolveStudyVisitStartedAt(sessionForVault, [rsvp, questions, cloze, slow].filter(Boolean));
+    const observations = await collectObservations(sessionForVault, "rsvp", docId);
+    const summary = getSessionVaultChanges({
+      session: doc,
+      observations,
+      docId,
+      visitStartedAt,
+    });
+    panel.innerHTML = renderVaultSummaryHtml(summary);
+  } catch (err) {
+    console.warn("[retrieval-hub] vault summary failed", err);
+    panel.innerHTML = "";
+    panel.hidden = true;
+  }
+}
+
 /**
  * @param {{ docId?: string, entrySource?: string, returnScreen?: string }} [options]
  */
@@ -2630,6 +2682,7 @@ export async function enterRetrievalHub(options = {}) {
         "Upload your material first, then return here to practice retrieval.";
     }
     renderRetrievalHubOptions();
+    resetRetrievalHubVaultSummary();
     showScreen("retrievalHub");
     return;
   }
@@ -2643,7 +2696,9 @@ export async function enterRetrievalHub(options = {}) {
       "Choose how you want to practice retrieval. All options use your loaded material.";
   }
   renderRetrievalHubOptions();
+  resetRetrievalHubVaultSummary();
   showScreen("retrievalHub");
+  void renderRetrievalHubVaultSummary(doc);
 }
 
 function exitRetrievalHub() {
