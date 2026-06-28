@@ -5,6 +5,11 @@
 
 import { normalizeDocumentStructure } from "./normalization/index.js";
 import { protectMarkdownTransform } from "./document-images/tokens.js";
+import {
+  MAX_SOURCE_FILES,
+  assignSourceFileIds,
+  buildSourceFileBreak,
+} from "./source-provenance.js";
 
 export const SUPPORTED_INPUT_FORMATS = Object.freeze(["pdf", "html", "txt", "md"]);
 
@@ -297,4 +302,63 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
       format,
     );
   }
+}
+
+/**
+ * Normalize and concatenate 1–5 study files with source sentinels.
+ * @param {File[]} files
+ */
+export async function normalizeMultipleFiles(files) {
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (!list.length) {
+    throw new NormalizationError("At least one file is required.");
+  }
+  if (list.length > MAX_SOURCE_FILES) {
+    throw new NormalizationError(`Maximum ${MAX_SOURCE_FILES} files per session.`);
+  }
+
+  const fileMetas = assignSourceFileIds(list);
+  const parts = [];
+  const sourceMap = {};
+  const warnings = [];
+  const pendingImages = [];
+
+  for (let i = 0; i < list.length; i += 1) {
+    const file = list[i];
+    const meta = fileMetas[i];
+    const detectedFormat = detectFormatFromFilename(file?.name || "");
+    if (!detectedFormat) {
+      throw new UnsupportedFormatError(
+        `Unsupported file format for "${file?.name || "file"}".`,
+        String(file?.name || "").split(".").pop() || "",
+      );
+    }
+
+    const rawContent =
+      detectedFormat === "pdf" ? await file.arrayBuffer() : await file.text();
+
+    const result = await normalizeStudyMaterial(rawContent, detectedFormat);
+    meta.originalFormat = detectedFormat;
+    sourceMap[i] = meta.fileId;
+
+    if (i > 0) {
+      parts.push(buildSourceFileBreak(meta.fileId));
+    }
+    parts.push(result.normalizedContent);
+    warnings.push(...(result.warnings || []));
+    pendingImages.push(...(result.pendingImages || []));
+  }
+
+  const markdown = parts.join("");
+  if (!String(markdown || "").trim()) {
+    throw new NormalizationError("All files appear empty after normalization.");
+  }
+
+  return {
+    markdown,
+    files: fileMetas,
+    sourceMap,
+    warnings,
+    pendingImages,
+  };
 }

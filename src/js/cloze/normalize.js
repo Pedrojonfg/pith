@@ -203,6 +203,7 @@ export function normalizeClozeItem(raw) {
     qa_notes: raw.qa_notes != null ? String(raw.qa_notes).trim() : undefined,
     times_shown: Number(raw.times_shown) || 0,
     times_correct: Number(raw.times_correct) || 0,
+    ...(raw.sourceFileId != null ? { sourceFileId: String(raw.sourceFileId).trim() } : {}),
   };
 }
 

@@ -81,11 +81,22 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * @typedef {object} SourceFileMeta
+ * @property {string} fileId
+ * @property {string} fileName
+ * @property {string} originalFormat
+ * @property {number} sizeBytes
+ * @property {number} addedAt
+ */
+
+/**
  * @typedef {object} UploadMeta
  * @property {string} fileName
  * @property {string} originalFormat
  * @property {string} uploadedAt
  * @property {BookMeta} [bookMeta]
+ * @property {SourceFileMeta[]} [files]
+ * @property {Record<string, string>} [sourceMap]
  */
 
 /**
@@ -341,6 +352,24 @@ export function validateDocumentSession(session) {
             if (!["A", "B", "C"].includes(String(bm.level || ""))) {
               errors.push("bookMeta.level must be A, B, or C");
             }
+          }
+        }
+        const uploadFiles = sh.uploadMeta.files;
+        if (uploadFiles != null) {
+          if (!Array.isArray(uploadFiles)) {
+            errors.push("shared.uploadMeta.files must be array when present");
+          } else {
+            uploadFiles.forEach((f, i) => {
+              if (!f || typeof f !== "object") {
+                errors.push(`shared.uploadMeta.files[${i}] must be object`);
+                return;
+              }
+              if (typeof f.fileId !== "string") errors.push(`shared.uploadMeta.files[${i}].fileId must be string`);
+              if (typeof f.fileName !== "string") errors.push(`shared.uploadMeta.files[${i}].fileName must be string`);
+              if (typeof f.originalFormat !== "string") {
+                errors.push(`shared.uploadMeta.files[${i}].originalFormat must be string`);
+              }
+            });
           }
         }
       }

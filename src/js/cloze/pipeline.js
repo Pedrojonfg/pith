@@ -9,6 +9,7 @@ import {
   normalizeSemanticAnalysis,
   parseModelJsonObject,
 } from "./normalize.js?v=20260625_02";
+import { resolveSourceFileIdForExcerpt } from "../source-provenance.js";
 
 const PHASE_LABELS = [
   "Grafo epistémico",
@@ -178,7 +179,13 @@ Use _____ as blank placeholder. Reject trivial blanks (articles, prepositions).`
   const edgeItems = (Array.isArray(parsed?.edge_items) ? parsed.edge_items : [])
     .map(normalizeClozeItem)
     .filter(Boolean);
-  return [...nodeItems, ...edgeItems];
+  const material = String(text || "");
+  const annotate = (item) => {
+    if (!item) return item;
+    const fileId = resolveSourceFileIdForExcerpt(material, item.sentence_original || item.sentence_with_blank);
+    return fileId ? { ...item, sourceFileId: fileId } : item;
+  };
+  return [...nodeItems, ...edgeItems].map(annotate);
 }
 
 export async function generateDistractors(items, epistemicGraph, { llmModel, signal } = {}) {

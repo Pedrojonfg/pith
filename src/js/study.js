@@ -103,6 +103,7 @@ import {
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
 import { normalizePreparationState, isTier1PreparationComplete, setPreparationStatus } from "./session-types.js";
+import { MAX_SOURCE_FILES, sliceMarkdownForSourceFile } from "./source-provenance.js";
 import {
   resolveRsvpInventoryForPack,
   shouldSkipRsvpInventoryLlm,
@@ -1564,6 +1565,10 @@ export async function enterModeSelectScreen() {
 }
 
 let createSessionStartRunId = 0;
+/** @type {File[]} */
+let createSessionStagedFiles = [];
+let createSessionNameManuallyEdited = false;
+let createSessionUploadInProgress = false;
 
 /** @type {{ currentQuestion: string, questionSource: 'fixed'|'generated', runId: number }} */
 const interviewCaptureState = {
@@ -1985,64 +1990,153 @@ function guessSessionNameFromFileName(fileName) {
   return raw.replace(/\.[^/.]+$/, "").trim() || "Untitled session";
 }
 
-async function applySessionTitleToActiveDoc(title) {
-  const doc = await getActiveSession();
-  const safeTitle = String(title || "").trim();
-  if (!doc || !safeTitle) return;
-  doc.shared.docMeta = {
-    ...(doc.shared.docMeta || {}),
-    titleInferred: safeTitle,
-  };
-  await saveDocumentSession(doc);
+function formatStagingFileSize(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function handleCreateSessionStartFilePicked() {
-  const file = els.createSessionStartFileInput?.files?.[0];
+function updateCreateSessionContinueState(doc = null) {
+  const title = String(els.createSessionStartNameInput?.value || "").trim();
+  const hasName = title.length > 0;
+  const btn = els.createSessionStartContinueBtn;
+  if (!btn) return;
+  if (createSessionUploadInProgress) {
+    btn.disabled = true;
+    return;
+  }
+  if (doc?.docId) {
+    btn.disabled = !hasName || !isTier1PreparationComplete(doc);
+    return;
+  }
+  btn.disabled = !hasName || createSessionStagedFiles.length < 1;
+}
+
+function renderCreateSessionStagingUi() {
+  const listEl = els.createSessionStartFileList;
+  const addBtn = els.createSessionStartAddFileBtn;
+  if (!listEl || !addBtn) return;
+
+  const files = createSessionStagedFiles;
+  listEl.innerHTML = "";
+  listEl.hidden = files.length === 0;
+
+  files.forEach((file, index) => {
+    const li = document.createElement("li");
+    li.className = "create-session-file-row";
+
+    const icon = document.createElement("span");
+    icon.className = "create-session-file-icon";
+    icon.textContent = "📄";
+    icon.setAttribute("aria-hidden", "true");
+
+    const name = document.createElement("span");
+    name.className = "create-session-file-name";
+    name.textContent = String(file?.name || "file");
+
+    const size = document.createElement("span");
+    size.className = "create-session-file-size";
+    size.textContent = formatStagingFileSize(file?.size);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "create-session-file-remove";
+    removeBtn.textContent = "✕";
+    removeBtn.setAttribute("aria-label", `Remove ${file?.name || "file"}`);
+    removeBtn.addEventListener("click", () => {
+      createSessionStagedFiles.splice(index, 1);
+      renderCreateSessionStagingUi();
+      void getActiveSession().then((doc) => updateCreateSessionContinueState(doc));
+    });
+
+    li.append(icon, name, size, removeBtn);
+    listEl.appendChild(li);
+  });
+
+  const atMax = files.length >= MAX_SOURCE_FILES;
+  addBtn.hidden = atMax;
+  addBtn.textContent = files.length ? "+ Add another file" : "+ Add file";
+  if (atMax) {
+    addBtn.setAttribute("aria-disabled", "true");
+  } else {
+    addBtn.removeAttribute("aria-disabled");
+  }
+
+  void getActiveSession().then((doc) => updateCreateSessionContinueState(doc));
+}
+
+function handleCreateSessionStartFilePicked() {
+  const input = els.createSessionStartFileInput;
+  const file = input?.files?.[0];
   if (!file) return;
+  if (createSessionStagedFiles.length >= MAX_SOURCE_FILES) return;
+
+  createSessionStagedFiles.push(file);
+  if (input) input.value = "";
+
+  if (!createSessionNameManuallyEdited) {
+    const suggested = guessSessionNameFromFileName(
+      createSessionStagedFiles[0]?.name || file.name,
+    );
+    if (els.createSessionStartNameInput) {
+      els.createSessionStartNameInput.disabled = false;
+      els.createSessionStartNameInput.value = suggested;
+    }
+  }
+
+  if (els.createSessionStartStatus) {
+    els.createSessionStartStatus.textContent =
+      createSessionStagedFiles.length === 1
+        ? "1 file staged. Add more or continue."
+        : `${createSessionStagedFiles.length} files staged.`;
+  }
+
+  renderCreateSessionStagingUi();
+}
+
+async function processCreateSessionStagedUpload(title) {
+  const files = [...createSessionStagedFiles];
+  if (!files.length) return;
+
   const runId = ++createSessionStartRunId;
+  createSessionUploadInProgress = true;
+  updateCreateSessionContinueState();
+
   if (els.createSessionStartStatus) {
     els.createSessionStartStatus.textContent = "Extracting text…";
   }
-  if (els.createSessionStartContinueBtn) {
-    els.createSessionStartContinueBtn.disabled = true;
-  }
-  if (els.createSessionStartNameInput) {
-    els.createSessionStartNameInput.disabled = true;
-  }
+  if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = true;
+
   try {
-    const { cleanedText, originalFormat, pendingImages } = await readAndCleanMaterialText(file);
+    const { normalizeMultipleFiles } = await import("./input-normalization.js?v=20260625_02");
+    const result = await normalizeMultipleFiles(files);
+    const cleanedText = result.markdown;
     if (!String(cleanedText || "").trim()) {
-      throw new Error("The file appears to be empty.");
+      throw new Error("The files appear to be empty.");
     }
-    console.info("[study.handleCreateSessionStartFilePicked] Material ready:", {
-      fileName: file.name,
-      originalFormat,
-      wordCount: countWords(cleanedText),
-      pendingImages: pendingImages?.length || 0,
-    }); // [debug-enrich]
+
     if (runId !== createSessionStartRunId) return;
-    const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
-    const suggestedTitle = guessSessionNameFromFileName(file.name);
+
+    const doc = await ensureDocumentSessionForUpload(cleanedText, {
+      pendingImages: result.pendingImages,
+    });
     await setUploadMeta(doc.docId, {
-      fileName: String(file.name || ""),
-      originalFormat: String(originalFormat || ""),
+      fileName: result.files[0]?.fileName || files[0]?.name || "",
+      originalFormat: result.files[0]?.originalFormat || "",
       uploadedAt: new Date().toISOString(),
+      files: result.files,
+      sourceMap: result.sourceMap,
     });
     doc.shared.docMeta = {
       ...(doc.shared.docMeta || {}),
-      titleInferred: suggestedTitle,
+      titleInferred: title,
     };
     await saveDocumentSession(doc);
     state.lastCleanedMaterialText = cleanedText;
     state.lastCleanedMaterialWordCount = countWords(cleanedText);
-    state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
-    if (els.createSessionStartNameInput) {
-      els.createSessionStartNameInput.disabled = false;
-      els.createSessionStartNameInput.value = suggestedTitle;
-    }
-    if (els.createSessionStartContinueBtn) {
-      els.createSessionStartContinueBtn.disabled = false;
-    }
+    state.lastUploadedFileNames = result.files.map((f) => f.fileName).filter(Boolean);
+
     if (els.createSessionStartStatus) {
       els.createSessionStartStatus.textContent = "Preparing document…";
     }
@@ -2065,6 +2159,7 @@ async function handleCreateSessionStartFilePicked() {
         }
         notifyPreparationSparseIfNeeded(fresh);
         refreshCreateSessionInsights(fresh);
+        updateCreateSessionContinueState(fresh);
       })
       .catch((err) => {
         if (runId !== createSessionStartRunId) return;
@@ -2075,32 +2170,73 @@ async function handleCreateSessionStartFilePicked() {
               ? String(err.message)
               : "Preparation incomplete. Sign in and try again, or tap Continue to retry.";
         }
+      })
+      .finally(() => {
+        createSessionUploadInProgress = false;
+        if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = false;
+        void getActiveSession().then((fresh) => updateCreateSessionContinueState(fresh));
       });
   } catch (err) {
+    createSessionUploadInProgress = false;
+    if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = false;
     if (runId !== createSessionStartRunId) return;
     if (els.createSessionStartStatus) {
       els.createSessionStartStatus.textContent = err?.message
         ? String(err.message)
-        : "Could not process this file.";
+        : "Could not process these files.";
     }
+    updateCreateSessionContinueState();
   }
+}
+
+async function applySessionTitleToActiveDoc(title) {
+  const doc = await getActiveSession();
+  const safeTitle = String(title || "").trim();
+  if (!doc || !safeTitle) return;
+  doc.shared.docMeta = {
+    ...(doc.shared.docMeta || {}),
+    titleInferred: safeTitle,
+  };
+  await saveDocumentSession(doc);
 }
 
 async function handleCreateSessionStartContinue() {
   const doc = await getActiveSession();
-  if (!doc?.docId) {
+  const title = String(els.createSessionStartNameInput?.value || "").trim();
+  if (!title) {
     if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Upload a file before continuing.";
+      els.createSessionStartStatus.textContent = "Enter a session name before continuing.";
     }
     return;
   }
-  const title = String(els.createSessionStartNameInput?.value || "").trim();
-  await applySessionTitleToActiveDoc(title || "Untitled session");
-  await enterModeSelectAfterTier1Gate();
+
+  if (doc?.docId) {
+    if (isTier1PreparationComplete(doc)) {
+      await applySessionTitleToActiveDoc(title);
+      await enterModeSelectAfterTier1Gate();
+      return;
+    }
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(doc);
+    }
+    return;
+  }
+
+  if (!createSessionStagedFiles.length) {
+    if (els.createSessionStartStatus) {
+      els.createSessionStartStatus.textContent = "Add at least one file before continuing.";
+    }
+    return;
+  }
+
+  await processCreateSessionStagedUpload(title);
 }
 
 export async function enterCreateSessionStartScreen() {
   createSessionStartRunId += 1;
+  createSessionStagedFiles = [];
+  createSessionNameManuallyEdited = false;
+  createSessionUploadInProgress = false;
   if (els.createSessionStartFileInput) {
     els.createSessionStartFileInput.value = "";
   }
@@ -2108,15 +2244,14 @@ export async function enterCreateSessionStartScreen() {
   const defaultName = doc?.shared?.docMeta?.titleInferred || "";
   if (els.createSessionStartNameInput) {
     els.createSessionStartNameInput.value = defaultName;
-    els.createSessionStartNameInput.disabled = !doc;
+    els.createSessionStartNameInput.disabled = false;
   }
-  if (els.createSessionStartContinueBtn) {
-    els.createSessionStartContinueBtn.disabled = !doc;
-  }
+  renderCreateSessionStagingUi();
+  updateCreateSessionContinueState(doc || null);
   if (els.createSessionStartStatus) {
     els.createSessionStartStatus.textContent = doc
-      ? "Document loaded. Update session name and continue."
-      : "Upload your material to start.";
+      ? resolveCreateSessionPrepStatus(doc)
+      : "Add your study files, name the session, then continue.";
   }
   refreshCreateSessionInsights(doc || null);
   mountModeSelectBreadcrumb(doc || null);
@@ -3514,7 +3649,50 @@ async function renderSlowScopeScreen(session) {
     }
   }
 
-  const options = buildScopeOptions(slow.normalizedTextFull, slow.normalizedFormat, {
+  const uploadFiles = Array.isArray(session?.shared?.uploadMeta?.files)
+    ? session.shared.uploadMeta.files
+    : [];
+  const multiFile = uploadFiles.length > 1;
+  const fileLabel = els.slowScopeFileLabel;
+  const fileSelect = els.slowScopeFileSelect;
+  if (fileLabel) fileLabel.hidden = !multiFile;
+  if (fileSelect) {
+    fileSelect.hidden = !multiFile;
+    if (multiFile) {
+      const selectedId =
+        String(slow.selectedSourceFileId || uploadFiles[0]?.fileId || "").trim() ||
+        uploadFiles[0]?.fileId;
+      if (!slow.selectedSourceFileId) slow.selectedSourceFileId = selectedId;
+      fileSelect.innerHTML = "";
+      for (const f of uploadFiles) {
+        const opt = document.createElement("option");
+        opt.value = f.fileId;
+        opt.textContent = f.fileName;
+        if (f.fileId === selectedId) opt.selected = true;
+        fileSelect.appendChild(opt);
+      }
+      if (!fileSelect._wired) {
+        fileSelect._wired = true;
+        fileSelect.addEventListener("change", async () => {
+          const s = state.activeSession;
+          if (!s?.slow) return;
+          s.slow.selectedSourceFileId = String(fileSelect.value || "").trim();
+          s.slow.readingScope = null;
+          await storeActiveSession(s);
+          renderSlowScopeScreen(s);
+        });
+      }
+    }
+  }
+
+  const scopeMarkdown = multiFile
+    ? sliceMarkdownForSourceFile(
+        slow.normalizedTextFull,
+        slow.selectedSourceFileId || uploadFiles[0]?.fileId,
+      )
+    : slow.normalizedTextFull;
+
+  const options = buildScopeOptions(scopeMarkdown, slow.normalizedFormat, {
     headingOverrides: slow.headingOverrides || [],
     fallbackSections: slow.fallbackSections || undefined,
     docHierarchy: session.docHierarchy,
@@ -3556,7 +3734,15 @@ async function renderSlowScopeScreen(session) {
       els.slowScopeAutoSplitBtn.addEventListener("click", async () => {
         const s = state.activeSession;
         if (!s?.slow) return;
-        s.slow.fallbackSections = buildEqualLengthSections(s.slow.normalizedTextFull, {
+        const files = Array.isArray(s?.shared?.uploadMeta?.files) ? s.shared.uploadMeta.files : [];
+        const splitText =
+          files.length > 1
+            ? sliceMarkdownForSourceFile(
+                s.slow.normalizedTextFull,
+                s.slow.selectedSourceFileId || files[0]?.fileId,
+              )
+            : s.slow.normalizedTextFull;
+        s.slow.fallbackSections = buildEqualLengthSections(splitText, {
           targetChunkSize: 5000,
           labelPrefix: "Section",
         });
@@ -4322,10 +4508,17 @@ function wireDocLibraryHandlers() {
   });
   els.bookSearchCoverImg?.addEventListener("error", handleBookSearchCoverError);
   els.createSessionStartFileInput?.addEventListener("change", () => {
-    void handleCreateSessionStartFilePicked();
+    handleCreateSessionStartFilePicked();
+  });
+  els.createSessionStartAddFileBtn?.addEventListener("click", () => {
+    els.createSessionStartFileInput?.click();
+  });
+  els.createSessionStartNameInput?.addEventListener("input", () => {
+    createSessionNameManuallyEdited = true;
+    void getActiveSession().then((doc) => updateCreateSessionContinueState(doc));
   });
   els.createSessionStartContinueBtn?.addEventListener("click", () => {
-    handleCreateSessionStartContinue();
+    void handleCreateSessionStartContinue();
   });
   els.interviewCaptureBackBtn?.addEventListener("click", () => enterCreateSessionStartScreen());
   els.interviewSubmitAnswerBtn?.addEventListener("click", () => {

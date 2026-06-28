@@ -21,6 +21,7 @@ import {
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260625_02";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
+import { annotateBlocksWithSourceFileIds } from "./source-provenance.js";
 import {
   annotateBlockIndexEntry,
   buildQuestionScopeContext,
@@ -2896,9 +2897,10 @@ export async function runConceptInventoryWithFallback(
     });
     let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
     if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
-    const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
+    let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
       docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
     });
+    blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
     return {
       kind: "fallback_mono",
       blockIndex,
@@ -3159,9 +3161,10 @@ export async function packInventoryToBlocks(
       });
       let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
       if (!fallbackBlocks?.length) throw packErr;
-      const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, fallbackBlocks, inventory, {
+      let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, fallbackBlocks, inventory, {
         docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
       });
+      blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
       return {
         blockIndex,
         conceptInventory: inventory,
@@ -3202,6 +3205,8 @@ export async function packInventoryToBlocks(
   let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, enriched, inventory, {
     docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
   });
+
+  blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
 
   blockIndex = blockIndex.map((b) => annotateBlockIndexEntry(b));
 
@@ -3302,9 +3307,10 @@ export async function twoPhaseConceptSplit(
     });
     let normalized = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
     if (!normalized?.length) throw new Error("Fallback block split returned no blocks.");
-    const { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
+    let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, normalized, [], {
       docHierarchy: resolveDocHierarchyForAlignment(),
     });
+    blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
     return {
       blockIndex,
       splitRunMeta: {
