@@ -90,7 +90,7 @@ export async function generateDedupCandidatesForConcept(concept, options = {}) {
 
   const embedding = await embedText(text, {
     conceptId: concept.id,
-    projectId: projectId && projectId !== "misc" ? projectId : null,
+    projectId: projectId || null,
   });
 
   const nearest = await findNearestConcepts(embedding, {

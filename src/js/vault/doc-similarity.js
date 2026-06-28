@@ -10,7 +10,6 @@ import {
 } from "./embedding-thresholds.js";
 import { upsertDocumentSimilarity, fetchDocumentSimilaritiesForDoc } from "./embedding-persist.js";
 import { getAllSessions } from "../session-store.js";
-import { MISC_PROJECT_ID } from "../session-types.js";
 
 /**
  * @param {object} doc
@@ -68,7 +67,7 @@ async function embedBatchSafe(texts, projectId) {
     out.push(
       await embedText(text, {
         scopeType: "document",
-        projectId: projectId && projectId !== MISC_PROJECT_ID ? projectId : null,
+        projectId: projectId || null,
       }),
     );
   }
@@ -83,9 +82,9 @@ export async function runDocumentSimilarityForProject(doc) {
     return { status: "skipped" };
   }
 
-  const projectId = String(doc?.projectId || MISC_PROJECT_ID).trim();
-  if (!projectId || projectId === MISC_PROJECT_ID) {
-    return { status: "skipped", reason: "misc_project" };
+  const projectId = String(doc?.projectId || "").trim();
+  if (!projectId) {
+    return { status: "skipped", reason: "no_project" };
   }
 
   const sessions = await getAllSessions();

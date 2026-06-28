@@ -14,14 +14,13 @@ import {
   computeDocId,
   getAllSessions,
   loadProjectStore,
-  backfillMissingProjectIds,
+  cleanupMiscProjectAssignments,
   saveActiveSession,
   saveProjectStore,
   setActiveSession,
   validateDocumentSession,
 } from "./session-store.js";
-import { computeCanonicalId, inferDocMeta, MISC_PROJECT_ID } from "./session-types.js";
-import { ensureMiscProject } from "./project-store.js";
+import { computeCanonicalId, inferDocMeta } from "./session-types.js";
 import { parseSessionsByModeRaw } from "./session.js";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 
@@ -173,7 +172,6 @@ async function buildDocumentSessionFromV1(slots) {
   const session = {
     docId,
     schemaVersion: 2,
-    projectId: MISC_PROJECT_ID,
     createdAt: now,
     updatedAt: now,
     shared: {
@@ -278,25 +276,20 @@ export async function detectAndMigrateV1() {
 }
 
 /**
- * Idempotent project store + session.projectId backfill.
+ * Idempotent project store cleanup (remove legacy misc project).
  * @see specs/20260623-study-projects/contracts/project-migration.md
  */
 export async function migrateProjects() {
-  let storeChanged = false;
-
   let store = loadProjectStore();
   if (!store || store.schemaVersion !== 1 || !Array.isArray(store.projects)) {
-    store = ensureMiscProject({ schemaVersion: 1, projects: [] });
-    storeChanged = true;
-  } else {
-    const before = JSON.stringify(store);
-    store = ensureMiscProject(store);
-    if (JSON.stringify(store) !== before) storeChanged = true;
+    store = { schemaVersion: 1, projects: [] };
   }
+  const before = JSON.stringify(store);
+  store.projects = (store.projects || []).filter((p) => p?.id !== "misc");
 
-  const sessionsChanged = await backfillMissingProjectIds();
+  const sessionsChanged = await cleanupMiscProjectAssignments();
 
-  if (storeChanged || sessionsChanged) {
+  if (JSON.stringify(store) !== before || sessionsChanged) {
     saveProjectStore(store);
   }
 }

@@ -13,9 +13,9 @@ import { getAuthUserId } from "../session-persist-supabase.js";
 export async function persistProbeGraphWarnings(warnings, ctx) {
   const userId = await getAuthUserId();
   if (!userId || !Array.isArray(warnings) || !warnings.length) return;
-  const projectId = String(ctx?.projectId || "misc").trim() || "misc";
+  const projectId = String(ctx?.projectId || "").trim();
   const docId = String(ctx?.docId || "").trim();
-  if (!docId) return;
+  if (!docId || !projectId) return;
 
   const rows = warnings.map((w) => ({
     user_id: userId,
@@ -39,8 +39,8 @@ export async function persistProbeGraphWarnings(warnings, ctx) {
  */
 export async function loadProjectBeliefs(projectId) {
   const userId = await getAuthUserId();
-  const pid = String(projectId || "misc").trim() || "misc";
-  if (!userId) return {};
+  const pid = String(projectId || "").trim();
+  if (!userId || !pid) return {};
 
   const { data, error } = await supabase
     .from("vault_belief_state")
@@ -74,8 +74,8 @@ export async function loadProjectBeliefs(projectId) {
  */
 export async function mergeSessionBeliefs(projectId, sessionState) {
   const userId = await getAuthUserId();
-  const pid = String(projectId || "misc").trim() || "misc";
-  if (!userId || !sessionState || typeof sessionState !== "object") return;
+  const pid = String(projectId || "").trim();
+  if (!userId || !pid || !sessionState || typeof sessionState !== "object") return;
 
   const existing = await loadProjectBeliefs(pid);
   /** @type {object[]} */

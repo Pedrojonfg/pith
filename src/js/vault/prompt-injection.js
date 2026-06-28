@@ -2,7 +2,6 @@
 
 import { getAncestorChain } from "../project-store.js";
 import { getAllSessions, getProjectStore } from "../session-store.js";
-import { MISC_PROJECT_ID } from "../session-types.js";
 import { getCurrentMastery, getMasteryLabel } from "./mastery-model.js";
 import { getActiveMisconceptions } from "./misconceptions.js";
 import { getEntriesByTopic } from "./vault-store.js";
@@ -36,8 +35,8 @@ async function buildDocIdToProjectIdMap() {
   const map = new Map();
   const sessions = await getAllSessions();
   for (const session of sessions) {
-    if (!session?.docId) continue;
-    map.set(session.docId, String(session.projectId || MISC_PROJECT_ID));
+    if (!session?.docId || !session.projectId) continue;
+    map.set(session.docId, String(session.projectId));
   }
   return map;
 }
@@ -52,9 +51,9 @@ export function getVaultContextForDoc(session) {
     : Array.isArray(session)
       ? session
       : [];
-  const projectId = String(session?.projectId || MISC_PROJECT_ID);
+  const projectId = String(session?.projectId || "").trim();
   const store = getProjectStore();
-  const ancestorIds = getAncestorChain(store, projectId).map((p) => p.id);
+  const ancestorIds = projectId ? getAncestorChain(store, projectId).map((p) => p.id) : [];
   const docIdToProjectId = buildDocIdToProjectIdMap();
   const topicEntries = getEntriesByTopic(docTopics);
   const scored = topicEntries.map((entry) => ({

@@ -1500,7 +1500,7 @@ function buildVaultPresumedKnownMap(conceptInventory, docOrTopics) {
   const doc =
     docOrTopics && typeof docOrTopics === "object" && !Array.isArray(docOrTopics)
       ? docOrTopics
-      : { projectId: "misc", shared: { docTopics: Array.isArray(docOrTopics) ? docOrTopics : [] } };
+      : { shared: { docTopics: Array.isArray(docOrTopics) ? docOrTopics : [] } };
   const scored = getVaultContextForDoc(doc);
   const entries = scored.map((s) => s.entry);
   if (!entries.length) return {};
@@ -8212,9 +8212,11 @@ async function finishPrePackingAssessment() {
   if (doc && prePackingFlow.adaptiveProbing?.beliefState) {
     doc.shared.knowledgeBeliefState = { ...prePackingFlow.adaptiveProbing.beliefState };
     await saveDocumentSession(doc);
-    mergeSessionBeliefs(doc.projectId || getUploadDefaultProjectId(), doc.shared.knowledgeBeliefState).catch(
-      (err) => console.warn("[adaptive-probing] merge beliefs", err?.message || err),
-    );
+    if (doc.projectId) {
+      mergeSessionBeliefs(doc.projectId, doc.shared.knowledgeBeliefState).catch(
+        (err) => console.warn("[adaptive-probing] merge beliefs", err?.message || err),
+      );
+    }
   }
 
   if (ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING && profile) {
