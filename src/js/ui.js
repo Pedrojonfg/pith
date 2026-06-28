@@ -709,6 +709,7 @@ export const els = {
   rsvpProgressFill: document.getElementById("rsvpProgressFill"),
   rsvpProgressLabel: document.getElementById("rsvpProgressLabel"),
   rsvpWpm: document.getElementById("rsvpWpm"),
+  rsvpWpmRecommendedMarker: document.getElementById("rsvpWpmRecommendedMarker"),
   rsvpWpmLabel: document.getElementById("rsvpWpmLabel"),
   rsvpWpfButtons: Array.from(document.querySelectorAll("[data-wpf]")),
   rsvpComprehensionPause: document.getElementById("rsvpComprehensionPause"),

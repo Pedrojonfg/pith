@@ -1020,6 +1020,41 @@ input[type="range"] {
   color: var(--muted);
   font-size: 13px;
 }
+.rsvp-wpm-slider-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 8rem;
+  max-width: 14rem;
+}
+.rsvp-wpm-slider-wrap input[type="range"] {
+  width: 100%;
+  display: block;
+}
+.rsvp-wpm-recommended-marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 1;
+}
+.rsvp-wpm-recommended-tick {
+  width: 2px;
+  height: 12px;
+  background: var(--accent);
+  opacity: 0.85;
+  border-radius: 1px;
+}
+.rsvp-wpm-recommended-label {
+  font-size: 9px;
+  line-height: 1.1;
+  color: var(--accent);
+  opacity: 0.9;
+  white-space: nowrap;
+  margin-top: 1px;
+}
 body.rsvp-active {
   overflow: hidden;
 }

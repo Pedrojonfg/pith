@@ -7,6 +7,7 @@ import {
 import { clampInt } from "./session.js?v=20260625_02";
 import { stripMarkdownForPlainText } from "./markdown.js?v=20260625_02";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260625_02";
+import { readWpmBase } from "./rsvp/wpm-calibration.js?v=20260625_02";
 
 /** @typedef {{ type: "text"|"math", content: string, preRenderedHtml?: string, paragraphStart?: boolean, afterBoldEnd?: boolean }} RsvpChunk */
 
@@ -1088,6 +1089,22 @@ function syncComprehensionFromUi() {
   persistRsvpComprehensionSettings();
 }
 
+function syncRsvpWpmRecommendedMarker() {
+  const slider = els.rsvpWpm;
+  const marker = els.rsvpWpmRecommendedMarker;
+  if (!slider || !marker) return;
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+  const lo = Number.isFinite(min) ? min : 100;
+  const hi = Number.isFinite(max) ? max : 1000;
+  const base = readWpmBase();
+  const span = Math.max(hi - lo, 1);
+  const pct = ((base - lo) / span) * 100;
+  marker.style.left = `${Math.min(100, Math.max(0, pct))}%`;
+  marker.hidden = false;
+  marker.removeAttribute("hidden");
+}
+
 export function loadRsvpDefaultsFromStorage() {
   const storedWpm = localStorage.getItem(LS_RSVP_DEFAULT_WPM_KEY);
   const storedWpf = localStorage.getItem(LS_RSVP_DEFAULT_WPF_KEY);
@@ -1098,6 +1115,7 @@ export function loadRsvpDefaultsFromStorage() {
   els.rsvpWpm.value = String(wpm);
   els.rsvpWpmLabel.textContent = String(wpm);
   setWpfUi(wpf);
+  syncRsvpWpmRecommendedMarker();
   loadRsvpComprehensionFromStorage();
 }
 
@@ -1329,6 +1347,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   hideSidebar();
   setRsvpOverlayActive(true);
   syncRsvpFocusMode();
+  syncRsvpWpmRecommendedMarker();
   ensureRsvpContainer();
   syncRsvpBlockTitleUi();
 
