@@ -30,6 +30,8 @@ export const rsvpState = {
   /** Word-units shown since last comprehension pause. */
   wordsSinceComprehensionPause: 0,
   currentBlockTitle: "",
+  /** Optional per-block cap (threshold gateway blocks). */
+  wpmCap: null,
 };
 
 const LS_RSVP_CONTAINER_SIZE_KEY = "rsvp_container_size";
@@ -288,6 +290,12 @@ export function setRsvpBlockTitle(title) {
   syncRsvpBlockTitleUi();
 }
 
+/** @param {number|null|undefined} cap */
+export function setRsvpWpmCap(cap) {
+  const n = Number(cap);
+  rsvpState.wpmCap = Number.isFinite(n) && n > 0 ? n : null;
+}
+
 function isRsvpOverlayOpen() {
   return els.rsvpOverlay?.getAttribute("aria-hidden") === "false";
 }
@@ -389,8 +397,15 @@ const rsvpGraphemeSegmenter =
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
 
-function durationMsBaseTextChunk() {
+function effectiveRsvpWpm() {
   const wpm = Math.max(1, Number(rsvpState.wpm) || 500);
+  const cap = Number(rsvpState.wpmCap);
+  if (Number.isFinite(cap) && cap > 0) return Math.min(wpm, cap);
+  return wpm;
+}
+
+function durationMsBaseTextChunk() {
+  const wpm = effectiveRsvpWpm();
   const wpf = Math.max(1, Number(rsvpState.wordsPerFlash) || 1);
   return Math.max(20, Math.round((60000 * wpf) / wpm));
 }

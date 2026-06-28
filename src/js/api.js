@@ -1,5 +1,5 @@
 import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260629_02";
-import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
+import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled, isSourceFidelityStrictEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
   SOURCE_FIDELITY_RULES,
@@ -15,6 +15,13 @@ import {
 } from "./explanationParagraphs.js?v=20260625_02";
 import { deriveBlockType } from "./pipeline-levers.js";
 import { EXPLANATION_RSVP_STRUCTURED_HEADERS } from "./rsvp-section-headers.js";
+import {
+  RECALL_QUESTION_GENERATIVE_RULES,
+  RECALL_TUTOR_GENERATIVE_RULES,
+  REVIEW_SOCRATIC_GENERATIVE_RULES,
+  SOCRATIC_STEM_GENERATIVE_RULES,
+  SOCRATIC_TUTOR_GENERATIVE_RULES,
+} from "./pedagogy/generative-pedagogy.js";
 import {
   getActiveSessionLlmModel,
   getApiKeyForLlmModel,
@@ -690,6 +697,8 @@ Structure your reply in two parts (use these exact headings, in the same languag
 **Suggested answer**
 - After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
 - It must stand alone as the answer a strong student would give; do not merely repeat the critique.
+
+${SOCRATIC_TUTOR_GENERATIVE_RULES}
 
 Be concise overall. Respond in the same language as the question and student answer.`.replace(
     "{block.title}",
@@ -1628,7 +1637,54 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
   return { concepts: [], failReason: "MERGE_TRUNCATED" };
 }
 
-export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null, vaultContextBlock = "" } = {}) {
+/** ~15 ids × ~40 tok + schema; batched once per document. */
+export const THRESHOLD_CLASSIFY_MAX_TOKENS = 2048;
+
+/**
+ * LLM refine threshold gateway concept ids from heuristic candidates.
+ * @see specs/20260703-threshold-generative-pedagogy/contracts/threshold-tagging.md
+ */
+export async function classifyThresholdConceptsLLM({
+  candidates,
+  targetCount,
+  lang,
+  llmModel,
+}) {
+  const pool = Array.isArray(candidates) ? candidates : [];
+  const n = Math.max(1, Math.floor(Number(targetCount) || 1));
+  const language = String(lang || "English").trim() || "English";
+  if (!pool.length) return { threshold_ids: [] };
+
+  const systemPrompt = `You identify threshold (gateway) concepts in a course inventory.
+Threshold concepts are transformative foundations: once understood, they reorganize how the rest of the subject fits together.
+Select approximately ${n} concept ids (±1) from the candidates. Prefer concepts many others depend on and that are troublesome to grasp.
+Return ONLY JSON: {"threshold_ids":["id1","id2"]}
+Respond in ${language}.`;
+
+  const userPrompt = `Candidates (id, label, heuristicScore):\n${JSON.stringify(pool)}`;
+
+  try {
+    const raw = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(llmModel),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_tokens: THRESHOLD_CLASSIFY_MAX_TOKENS,
+    });
+    const parsed = parseModelJsonObject(raw);
+    const ids = Array.isArray(parsed?.threshold_ids)
+      ? parsed.threshold_ids.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    return { threshold_ids: ids.length ? ids : pool.slice(0, n).map((c) => c.id).filter(Boolean) };
+  } catch {
+    return { threshold_ids: pool.slice(0, n).map((c) => c.id).filter(Boolean) };
+  }
+}
+
+export function buildConceptPackPrompt(n, lang, inventoryJson, { knowledgeProfile = null, vaultContextBlock = "", thresholdConceptIds = [] } = {}) {
   const targetN = Math.max(1, Math.floor(Number(n) || 1));
   const language = String(lang || "English").trim() || "English";
   const inventory = String(inventoryJson || "[]");
@@ -1647,6 +1703,12 @@ Do NOT filter concepts out of the inventory JSON — only omit dominated dedicat
 Knowledge profile:
 ${JSON.stringify(knowledgeProfile)}`
     : "";
+  const thresholdIds = Array.isArray(thresholdConceptIds)
+    ? thresholdConceptIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  const thresholdBlock = thresholdIds.length
+    ? `\n7. Threshold (gateway) concept ids: ${JSON.stringify(thresholdIds)}. Blocks covering these MUST appear before dependent application blocks. Do not merge threshold concepts into compressed recap-only blocks.`
+    : "";
 
   return `You are packaging a concept inventory into study blocks for RSVP reading.
 
@@ -1659,7 +1721,7 @@ Rules:
 3. Never assign the same concept_id to two blocks.
 4. If distinct concepts + overview + vocab blocks exceed N: merge related/adjacent concepts until you have at most ${targetN} blocks. Record merges in pack_meta.merges.
 5. If fewer than N blocks are justified: set pack_meta.final_block_count to the actual count (no padding).
-6. Every block: summary (max 1 short sentence), signature (3-6 short terms), chunk "" (always empty). Keep total JSON compact.${profileBlock}
+6. Every block: summary (max 1 short sentence), signature (3-6 short terms), chunk "" (always empty). Keep total JSON compact.${profileBlock}${thresholdBlock}
 
 Output JSON only:
 {"blocks":[{"id":1,"title":"Overview: ...","summary":"...","signature":["term1"],"concept_ids":[],"chunk":""}],"pack_meta":{"target_n":${targetN},"final_block_count":12,"merges":[{"concept_ids":["c5","c6"],"block_title":"..."}]}}
@@ -1762,6 +1824,10 @@ export async function deepSeekPackConceptsToBlocks({
   const inventoryJson = JSON.stringify(slimInventoryForPack(inventory));
   const profile =
     knowledgeProfile && typeof knowledgeProfile === "object" ? knowledgeProfile : null;
+  const thresholdConceptIds = (Array.isArray(inventory) ? inventory : [])
+    .filter((c) => c?.isThreshold === true)
+    .map((c) => String(c?.id || c?.canonicalId || "").trim())
+    .filter(Boolean);
 
   let vaultContextBlock = "";
   const sessionForVault =
@@ -1788,6 +1854,7 @@ export async function deepSeekPackConceptsToBlocks({
         content: buildConceptPackPrompt(n, lang, inventoryJson, {
           knowledgeProfile: profile,
           vaultContextBlock,
+          thresholdConceptIds,
         }),
       },
     ];
@@ -2173,6 +2240,29 @@ WRITING RULES (non-negotiable):
 - Do NOT contradict or replace source definitions; paraphrase short sentences. No 80-word sentences, no undefined vocabulary.
 - Total length: 200-300 words maximum. Dense but scannable at speed.`;
 
+function buildExplanationRsvpThreshold(allowSyntheticExamples) {
+  const exampleRule = allowSyntheticExamples
+    ? `- You MAY add ONE short pedagogical example that illustrates the core idea even if not verbatim in the source, provided it does not contradict source definitions.`
+    : `- Example — ONLY from the source chunk; if none exists, use a minimal concrete scenario strictly implied by the source (no invented domain facts).`;
+  return `Threshold (foundational gateway) RSVP block. The student CANNOT re-read. This concept unlocks later material—teach it carefully.
+
+CONTENT STRUCTURE (mandatory drafting order—never expose step names in output):
+1. Hook — why this gateway concept matters for everything that follows.
+2. Core definition — 2-4 sentences preserving the author's technical sense.
+3. Technical layer — formal terms as the source presents them.
+4. Example — ${allowSyntheticExamples ? "one clear pedagogical example (source or consistent illustration)." : "from source when available."}
+5. Contrast — common confusion or opposition IF the source mentions it.
+6. Connection — how this enables the next ideas in the course arc.
+
+OUTPUT FORMAT: same as standard RSVP (continuous prose, blank line between paragraphs, max 15 words per sentence, no section labels).
+
+WRITING RULES: same non-negotiable RSVP rules as thorough blocks (short sentences, one idea per sentence, define before use).
+
+${exampleRule}
+- Include a second miniature application or consequence sentence when it clarifies the principle.
+- Total length: 320-450 words maximum.`;
+}
+
 const EXPLANATION_RELATIONAL_COMPRESSED = `Relational RSVP recap when the student already knows related concepts. CANNOT re-read. Target ~40% of a standard block word budget (roughly 80–120 words).
 
 Focus ONLY on how this concept relates to concepts already covered in prior blocks. Compress non-relational content aggressively.
@@ -2464,11 +2554,13 @@ export function buildBlockGenerationSystemPrompt({
   const totalQuestions = nTest + nSocratic;
   const profileRaw = String(explanation_profile || "").trim();
   const profile =
-    profileRaw === "brief_deep"
-      ? "brief_deep"
-      : profileRaw === "relational_compressed"
-        ? "relational_compressed"
-        : "thorough";
+    profileRaw === "threshold_expanded"
+      ? "threshold_expanded"
+      : profileRaw === "brief_deep"
+        ? "brief_deep"
+        : profileRaw === "relational_compressed"
+          ? "relational_compressed"
+          : "thorough";
   const isVocabularyBlock = /^Key terms:/i.test(String(blockTitle || "").trim());
   const gaps = formatGapFocusList(gap_focus);
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, profile);
@@ -2488,13 +2580,15 @@ export function buildBlockGenerationSystemPrompt({
     deriveBlockType(blockTitle) === "development" && profile === "thorough";
   const explanationSection = isVocabularyBlock
     ? `${explanationPreamble}${EXPLANATION_VOCABULARY_BLOCK}\n${sourceStructure}\n${paragraphRule}`
-    : profile === "brief_deep"
-      ? `${explanationPreamble}${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
-      : profile === "relational_compressed"
-        ? `${explanationPreamble}${EXPLANATION_RELATIONAL_COMPRESSED}\n${sourceStructure}\n${paragraphRule}`
-        : useStructuredHeaders
-          ? `${explanationPreamble}${EXPLANATION_RSVP_STRUCTURED_HEADERS}\n${sourceStructure}\n${paragraphRule}`
-          : `${explanationPreamble}${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
+    : profile === "threshold_expanded"
+      ? `${explanationPreamble}${buildExplanationRsvpThreshold(!strictMode && !isSourceFidelityStrictEnabled())}\n${sourceStructure}\n${paragraphRule}`
+      : profile === "brief_deep"
+        ? `${explanationPreamble}${EXPLANATION_BRIEF_DEEP}\n${sourceStructure}\n${paragraphRule}`
+        : profile === "relational_compressed"
+          ? `${explanationPreamble}${EXPLANATION_RELATIONAL_COMPRESSED}\n${sourceStructure}\n${paragraphRule}`
+          : useStructuredHeaders
+            ? `${explanationPreamble}${EXPLANATION_RSVP_STRUCTURED_HEADERS}\n${sourceStructure}\n${paragraphRule}`
+            : `${explanationPreamble}${EXPLANATION_RSVP_THOROUGH}\n${sourceStructure}\n${paragraphRule}`;
   const connectionSlotReserved = requireConnection && totalQuestions > 0 ? 1 : 0;
   const gapSlots = Math.max(0, totalQuestions - connectionSlotReserved);
 
@@ -2529,6 +2623,7 @@ Test questions: 4 options (A/B/C/D), one correct answer, and high-value feedback
 ${MC_OPTION_PARITY_RULES}
 ${TEST_FEEDBACK_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
+${SOCRATIC_STEM_GENERATIVE_RULES}
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 ${connectionSection}
@@ -2653,6 +2748,7 @@ Test questions: 4 options (A/B/C/D), one correct answer, and high-value feedback
 ${MC_OPTION_PARITY_RULES}
 ${TEST_FEEDBACK_RULES}
 Socratic questions: open-ended, no options, no correct answer field.
+${SOCRATIC_STEM_GENERATIVE_RULES}
 Order: all test questions first, then all socratic questions.
 If n_test=0 or n_socratic=0, omit that type entirely.
 ${connectionSection}
@@ -3239,7 +3335,7 @@ Rules:
 
 Now generate the review:
 Prioritize: key terms, dates, names, cause-effect relationships, and concepts that are easy to confuse.
-${testParity}${QUESTION_CAUSAL_RULES}
+${type === "socratic" || type === "both" ? `\n${REVIEW_SOCRATIC_GENERATIVE_RULES}\n` : ""}${testParity}${QUESTION_CAUSAL_RULES}
 Return ONLY valid JSON array:
 [{type, question, options?, answer?, feedback?}]
 No preamble, no backticks.`
@@ -4382,6 +4478,8 @@ Structure your reply in two parts (use these exact headings, in the same languag
 **Suggested answer**
 - After the critique, write a complete model answer to the question that incorporates your corrections and missing points.
 - It must stand alone as the answer a strong student would give; do not merely repeat the critique.
+
+${SOCRATIC_TUTOR_GENERATIVE_RULES}
 
 Be concise overall. Respond in the same language as the question and student answer.`;
   const userPrompt = `Session context:\n${sessionContent}\n\nQuestion: ${question}\nStudent answer: ${studentAnswer}`;

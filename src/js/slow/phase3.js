@@ -13,6 +13,7 @@ import {
   loadSlowFlashcards,
 } from "../review.js?v=20260625_02";
 import { getActiveSession } from "../session-store.js";
+import { SLOW_PHASE3_GENERATIVE_RULES } from "../pedagogy/generative-pedagogy.js";
 import { registerOrUpdateSmItem } from "../sm2-ingest.js";
 import {
   PROXIMITY,
@@ -413,6 +414,7 @@ export async function generateRetrievalByType(session, annotations, { llmCall = 
           content:
             `Generate one retrieval question per annotation as JSON array {annotationId, question}. ` +
             `Follow the per-type rules exactly. For type "?" use the user's note verbatim. ` +
+            `${SLOW_PHASE3_GENERATIVE_RULES} ` +
             `Respond entirely in ${lang}. Return ONLY JSON.`,
         },
         {
@@ -471,7 +473,7 @@ export async function generateDevilsAdvocateQuestions(
             `Generate exactly one inverse devil's advocate question per critical annotation as JSON array ` +
             `{annotationId, question}. Each question must be Socratic: ask the reader to formulate the ` +
             `author's best defense or reply BEFORE evaluating the text. Types: ⊘ unjustified premise, ` +
-            `↯ inference gap, ⚠ fallacy. Respond entirely in ${lang}. Return ONLY JSON.`,
+            `↯ inference gap, ⚠ fallacy. ${SLOW_PHASE3_GENERATIVE_RULES} Respond entirely in ${lang}. Return ONLY JSON.`,
         },
         {
           role: "user",

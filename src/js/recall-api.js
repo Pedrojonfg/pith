@@ -4,6 +4,7 @@ import {
   normalizeLlmModel,
 } from "./llm.js?v=20260625_02";
 import { resolveSourceFileIdForExcerpt } from "./source-provenance.js";
+import { RECALL_QUESTION_GENERATIVE_RULES, RECALL_TUTOR_GENERATIVE_RULES } from "./pedagogy/generative-pedagogy.js";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);
@@ -210,6 +211,7 @@ Rules:
 - Each question MUST include source_chunks: 1+ verbatim or lightly trimmed excerpts from the source material (non-empty strings).
 - Questions must require integration beyond a single definition.
 - Use stable ids rq1, rq2, … in order.
+${RECALL_QUESTION_GENERATIVE_RULES}
 Return a single JSON object:
 {"questions":[{"id":"rq1","recall_type":"synthesis","question":"...","concept_ids":["c1"],"source_chunks":["excerpt from source"]}]}
 Respond entirely in ${lang}.
@@ -487,6 +489,7 @@ Return ONLY JSON:
 {"critique":"...","suggested_answer":"...","quality":"strong|adequate|partial|insufficient"}
 Critique must acknowledge strengths and name gaps or inaccuracies with concept references.
 Suggested answer must be a complete model answer grounded in the source excerpt (not generic).
+${RECALL_TUTOR_GENERATIVE_RULES}
 Respond in ${language}.`;
 
   const userPrompt = `Question: ${String(question || "").trim()}
