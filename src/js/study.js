@@ -156,6 +156,12 @@ import {
 } from "./markdown.js?v=20260625_02";
 import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setRsvpWpmCap, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260625_02";
 import {
+  applySessionWpmCalibration,
+  ensureSessionStartWpm,
+  recordBlockRsvpWpm,
+  shouldCalibrateStudyMode,
+} from "./rsvp/wpm-calibration.js?v=20260625_02";
+import {
   finishPacedRead,
   isPacedReaderActive,
   isPacedReaderPreferred,
@@ -5602,10 +5608,27 @@ function showSessionComplete() {
   } catch {
     // ignore concept commit errors
   }
+  void maybeApplyRsvpWpmCalibration();
   persistFlowRecommendationProgress();
   syncOfflinePackButtonVisibility();
   updateSessionCompleteSummary(computeSessionCompleteSummary());
   showScreen("complete");
+}
+
+function maybeApplyRsvpWpmCalibration() {
+  const session = state.activeSession;
+  if (!session || !shouldCalibrateStudyMode(session.studyMode || state.studyMode)) return;
+  void (async () => {
+    try {
+      const doc = await getActiveSession();
+      const inventory = Array.isArray(doc?.shared?.conceptInventory)
+        ? doc.shared.conceptInventory
+        : [];
+      applySessionWpmCalibration(session, inventory);
+    } catch {
+      // silent — calibration must not block navigation
+    }
+  })();
 }
 
 function isBlockSkippedInStudySequence(entry) {
@@ -6641,7 +6664,17 @@ function beginRsvpForCurrentBlock({ onDone }) {
   setRsvpBlockTitle(getBlockTitleSafe(state.activeBlockIndex));
   const rsvpCfg = resolveBlockQuestionConfig(state.activeBlockIndex);
   setRsvpWpmCap(rsvpCfg?.rsvp_wpm_cap);
-  startRsvpForText(block.explanation || "", onDone);
+  if (state.activeSession) {
+    ensureSessionStartWpm(state.activeSession, rsvpState.wpm);
+  }
+  const blockIdx = state.activeBlockIndex;
+  const wrappedOnDone = () => {
+    if (state.activeSession) {
+      recordBlockRsvpWpm(state.activeSession, blockIdx, rsvpState.wpm);
+    }
+    if (typeof onDone === "function") onDone();
+  };
+  startRsvpForText(block.explanation || "", wrappedOnDone);
 }
 
 function beginPacedReadForCurrentBlock({ onDone }) {

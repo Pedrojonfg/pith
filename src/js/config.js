@@ -8,6 +8,8 @@ export const LS_STUDY_LANG_KEY = "study_lang";
 export const LS_STUDY_NOTES_KEY = "study_notes";
 export const LS_BLOCK_INDEX_KEY = "block_index";
 export const LS_RSVP_DEFAULT_WPM_KEY = "rsvp_default_wpm";
+/** Adaptive RSVP recommended WPM base (marker on slider; separate from session default). */
+export const LS_RSVP_WPM_BASE_KEY = "pith_rsvp_wpm_base";
 export const LS_RSVP_DEFAULT_WPF_KEY = "rsvp_default_wpf";
 export const LS_RSVP_COMPREHENSION_PAUSE_KEY = "rsvp_comprehension_pause";
 export const LS_RSVP_COMPREHENSION_EVERY_KEY = "rsvp_comprehension_every";
