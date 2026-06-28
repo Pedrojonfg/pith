@@ -7,7 +7,7 @@ export const ASSESSMENT_FLAGS = Object.freeze({
   ASSESSMENT_BEFORE_PACKING: true,
   ASSESSMENT_USE_QUESTIONS_UI: true,
   /** Safety ceiling only; count driven by n_test + n_socratic. */
-  ASSESSMENT_ITEMS_MAX: 7,
+  ASSESSMENT_ITEMS_MAX: 23,
   ASSESSMENT_MASTERY_THRESHOLD: 0.85,
   ASSESSMENT_SHOW_DIFF: true,
   ASSESSMENT_PARALLEL_PACKING: true,

@@ -41,8 +41,15 @@ export const BLOCKS_INLINE_THRESHOLD = 200 * 1024;
 /** Externalize rawMarkdown when serialized session exceeds this size (bytes). */
 export const DOC_SESSION_SIZE_THRESHOLD = 400 * 1024;
 
+/** Default RSVP session question counts (MCQ + socratic). */
+export const DEFAULT_N_TEST = 10;
+export const DEFAULT_N_SOCRATIC = 0;
+
 /** Maximum test (MCQ) questions per study block. */
-export const MAX_N_TEST = 10;
+export const MAX_N_TEST = 15;
+
+/** Maximum socratic questions per study block. */
+export const MAX_N_SOCRATIC = 8;
 
 /** Holistic pre-packing assessment totals (test + socratic). */
 export const HOLISTIC_ASSESSMENT_MAX = 50;
