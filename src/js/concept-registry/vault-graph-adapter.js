@@ -16,7 +16,7 @@ export async function buildVaultGraph({ focusedDocId = null, projectId = null } 
   const edges = [];
   const nodeIds = new Set();
 
-  const projectDocIds = resolveProjectDocIds(projectId);
+  const projectDocIds = normalizeProjectDocIds(await resolveProjectDocIds(projectId));
   let concepts = getAllConcepts();
   if (projectDocIds) {
     concepts = concepts.filter((c) =>
@@ -57,6 +57,12 @@ export async function buildVaultGraph({ focusedDocId = null, projectId = null } 
   addExplicitLinkEdges(edges, concepts, nodeIds);
 
   return { nodes, edges };
+}
+
+/** @param {Set<string>|Iterable<string>|null|undefined} value */
+function normalizeProjectDocIds(value) {
+  if (value == null) return null;
+  return value instanceof Set ? value : new Set(value ?? []);
 }
 
 async function resolveProjectDocIds(projectId) {
