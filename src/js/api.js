@@ -944,13 +944,25 @@ export function looksLikeTruncatedModelJson(text) {
 }
 
 async function callLlmSplit({ llmModel, messages, useJsonObjectMode, max_tokens }) {
-  return llmChatCompletions({
+  console.debug("[api.callLlmSplit] Request:", {
+    llmModel,
+    messageCount: messages?.length || 0,
+    useJsonObjectMode: Boolean(useJsonObjectMode),
+    max_tokens: max_tokens ?? null,
+  }); // [debug-enrich]
+  const content = await llmChatCompletions({
     llmModel,
     messages,
     temperature: 0.1,
     max_tokens,
     response_format: useJsonObjectMode ? { type: "json_object" } : undefined,
   });
+  console.debug("[api.callLlmSplit] Response:", {
+    llmModel,
+    charLength: String(content || "").length,
+    truncated: looksLikeTruncatedModelJson(content),
+  }); // [debug-enrich]
+  return content;
 }
 
 export async function deepSeekSplitIntoBlocks({
@@ -1168,6 +1180,14 @@ export async function callConceptInventoryLlm({
 
   let lastRaw = "";
   for (const attempt of attempts) {
+    console.debug("[api.callConceptInventoryLlm] Attempt:", {
+      compact: attempt.compact,
+      terse: attempt.terse,
+      useJsonObjectMode: attempt.useJsonObjectMode,
+      max_tokens,
+      chunkLabel: chunkLabel || null,
+      estimatedConceptTarget,
+    }); // [debug-enrich]
     try {
       lastRaw = await callLlmSplit({
         llmModel: model,
@@ -1190,15 +1210,29 @@ export async function callConceptInventoryLlm({
 
     const concepts = parseConceptInventoryFromModelResponse(lastRaw);
     if (Array.isArray(concepts) && concepts.length) {
+      console.info("[api.callConceptInventoryLlm] Parsed:", {
+        conceptCount: concepts.length,
+        inventoryMode: attempt.terse ? "terse" : "full",
+        responseChars: lastRaw.length,
+      }); // [debug-enrich]
       return {
         concepts,
         inventoryMode: attempt.terse ? "terse" : "full",
       };
     }
-    console.warn("Concept inventory: parse failed, trying next attempt�", lastRaw.slice(0, 400));
+    console.warn("[api.callConceptInventoryLlm] Parse failed, next attempt:", {
+      attempt: { compact: attempt.compact, terse: attempt.terse, useJsonObjectMode: attempt.useJsonObjectMode },
+      responseChars: lastRaw.length,
+      truncated: looksLikeTruncatedModelJson(lastRaw),
+      tail: lastRaw.slice(-120),
+    }); // [debug-enrich]
   }
 
-  console.warn("Concept inventory: all parse attempts failed:", lastRaw.slice(0, 800));
+  console.error("[api.callConceptInventoryLlm] All attempts failed:", {
+    responseChars: lastRaw.length,
+    truncated: looksLikeTruncatedModelJson(lastRaw),
+    tail: lastRaw.slice(-200),
+  }); // [debug-enrich]
   throwConceptInventoryParseError(lastRaw);
 }
 
@@ -1759,7 +1793,20 @@ export async function deepSeekPackConceptsToBlocks({
 
   let lastRaw = "";
   let lastTruncated = false;
+  console.info("[api.deepSeekPackConceptsToBlocks] Start:", {
+    nBlocks: n,
+    inventorySize: Array.isArray(inventory) ? inventory.length : 0,
+    inventoryJsonChars: inventoryJson.length,
+    hasKnowledgeProfile: Boolean(profile),
+    hasVaultContext: Boolean(vaultContextBlock),
+  }); // [debug-enrich]
   for (const attempt of attempts) {
+    console.debug("[api.deepSeekPackConceptsToBlocks] Attempt:", {
+      compact: attempt.compact,
+      terse: attempt.terse,
+      useJsonObjectMode: attempt.useJsonObjectMode,
+      max_tokens: CONCEPT_PACK_MAX_TOKENS,
+    }); // [debug-enrich]
     const splitOpts = {
       llmModel: model,
       messages: buildMessages(attempt.compact, attempt.terse),
@@ -1779,12 +1826,25 @@ export async function deepSeekPackConceptsToBlocks({
     lastTruncated = looksLikeTruncatedModelJson(lastRaw);
     const packed = parseConceptPackFromModelResponse(lastRaw, { targetN: n });
     if (packed?.blocks?.length) {
+      console.info("[api.deepSeekPackConceptsToBlocks] Parsed:", {
+        blockCount: packed.blocks.length,
+        responseChars: lastRaw.length,
+        truncated: lastTruncated,
+      }); // [debug-enrich]
       return packed;
     }
-    console.warn("Concept pack: parse failed, trying next attempt�", lastRaw.slice(0, 400));
+    console.warn("[api.deepSeekPackConceptsToBlocks] Parse failed, next attempt:", {
+      responseChars: lastRaw.length,
+      truncated: lastTruncated,
+      tail: lastRaw.slice(-120),
+    }); // [debug-enrich]
   }
 
-  console.warn("Concept pack: all parse attempts failed:", lastRaw.slice(0, 800));
+  console.error("[api.deepSeekPackConceptsToBlocks] All attempts failed:", {
+    responseChars: lastRaw.length,
+    truncated: lastTruncated,
+    tail: lastRaw.slice(-200),
+  }); // [debug-enrich]
   if (lastTruncated) {
     throw new Error(
       "Model response was cut off before finishing the block pack. Try again, or lower the block count slightly.",
@@ -3761,6 +3821,14 @@ export async function generatePrePackingAssessmentItems({
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
   if (!inventory.length) throw new Error("Missing concept inventory.");
   const lang = String(language || "English").trim() || "English";
+  console.debug("[api.generatePrePackingAssessmentItems] Start:", {
+    inventorySize: inventory.length,
+    n_test,
+    n_socratic,
+    holisticBatch: Boolean(holisticBatch),
+    coverageBatchId: coverageBatchId || null,
+    materialChars: String(materialText ?? "").length,
+  }); // [debug-enrich]
   const edgeList = Array.isArray(edges) ? edges : [];
   const useLegacy =
     legacyMcq === true || (!isAssessmentQuestionsUiEnabled() && legacyMcq !== false);
@@ -3906,6 +3974,13 @@ Respond in ${lang}.`;
   const tagged = coverageBatchId
     ? normalized.map((q) => ({ ...q, coverage_batch: coverageBatchId }))
     : normalized;
+  console.info("[api.generatePrePackingAssessmentItems] Done:", {
+    questionCount: tagged.length,
+    n_test: nTest,
+    n_socratic: nSocratic,
+    holisticBatch: Boolean(holisticBatch),
+    coverageBatchId: coverageBatchId || null,
+  }); // [debug-enrich]
   return shuffleTestQuestionsInList(tagged);
 }
 
@@ -3929,6 +4004,12 @@ export async function generateHolisticPrePackingAssessmentItems({
   const material = String(materialText ?? "").trim();
   if (!material) throw new Error("Missing material text for assessment generation.");
 
+  console.info("[api.generateHolisticPrePackingAssessmentItems] Start:", {
+    inventorySize: inventory.length,
+    materialChars: material.length,
+    hasPlan: Boolean(planIn),
+  }); // [debug-enrich]
+
   const edgeList =
     Array.isArray(edges) && edges.length
       ? edges
@@ -3946,8 +4027,19 @@ export async function generateHolisticPrePackingAssessmentItems({
       budget,
     });
   if (!plan?.batches?.length) {
+    console.error("[api.generateHolisticPrePackingAssessmentItems] Empty coverage plan:", {
+      inventorySize: inventory.length,
+      chunkCount: chunks?.length || 0,
+      budget,
+    }); // [debug-enrich]
     throw new Error("Could not build holistic assessment coverage plan.");
   }
+
+  console.debug("[api.generateHolisticPrePackingAssessmentItems] Plan:", {
+    batchCount: plan.batches.length,
+    planHash: plan.planHash || null,
+    budget,
+  }); // [debug-enrich]
 
   const batches = plan.batches;
   const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
@@ -4010,6 +4102,11 @@ export async function generateHolisticPrePackingAssessmentItems({
     const batchResults = await runHolisticBatches();
     const mergeResult = tryMergeHolisticAssessmentQuestions(batchResults, plan);
     if (mergeResult.ok) {
+      console.info("[api.generateHolisticPrePackingAssessmentItems] Merge success:", {
+        attempt,
+        questionCount: mergeResult.questions.length,
+        testCount: mergeResult.testCount,
+      }); // [debug-enrich]
       return shuffleTestQuestionsInList(mergeResult.questions);
     }
 

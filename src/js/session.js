@@ -2341,11 +2341,27 @@ export async function runConceptInventoryMapReduce(
     Number(splitOpts.wordCount) ||
     materialText.split(/\s+/).filter(Boolean).length;
   if (wordCount <= INVENTORY_MAP_REDUCE_WORD_THRESHOLD || !docHierarchy?.tree?.length) {
+    console.debug("[session.runConceptInventoryMapReduce] Skipped — below threshold or no hierarchy:", {
+      wordCount,
+      threshold: INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
+      hasHierarchy: Boolean(docHierarchy?.tree?.length),
+    }); // [debug-enrich]
     return null;
   }
 
   const chunks = buildInventoryChunks(docHierarchy, materialText);
-  if (!chunks || chunks.length < 2) return null;
+  if (!chunks || chunks.length < 2) {
+    console.debug("[session.runConceptInventoryMapReduce] Skipped — insufficient chunks:", {
+      chunkCount: chunks?.length || 0,
+    }); // [debug-enrich]
+    return null;
+  }
+
+  console.info("[session.runConceptInventoryMapReduce] Start:", {
+    wordCount,
+    chunkCount: chunks.length,
+    parallelCap: INVENTORY_MAX_PARALLEL_CALLS,
+  }); // [debug-enrich]
 
   const progress = (msg) => {
     if (typeof splitOpts.onProgress === "function" && msg) splitOpts.onProgress(String(msg));
@@ -2393,12 +2409,21 @@ export async function runConceptInventoryMapReduce(
   }
 
   if (!partials.length) {
+    console.error("[session.runConceptInventoryMapReduce] All chunks failed:", {
+      chunkCount: chunks.length,
+      failedChunks,
+    }); // [debug-enrich]
     throw new Error("All inventory chunks failed.");
   }
 
   progress("Merging concept inventories�");
   const merged = await deepSeekMergeConceptInventories(partials, splitOpts);
   if (merged.failReason || !Array.isArray(merged.concepts) || !merged.concepts.length) {
+    console.error("[session.runConceptInventoryMapReduce] Merge failed:", {
+      failReason: merged.failReason,
+      partialCount: partials.length,
+      mergedConceptCount: merged.concepts?.length || 0,
+    }); // [debug-enrich]
     const err = new Error(merged.failReason || "MERGE_TRUNCATED");
     err.code = "CONCEPT_INVENTORY_TRUNCATED";
     throw err;
@@ -2419,6 +2444,12 @@ export async function runConceptInventory(
   const materialText = String(material || "").trim();
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
+  console.debug("[session.runConceptInventory] Start:", {
+    charCount: materialText.length,
+    wordCountIn,
+    hasDocHierarchy: Boolean(docHierarchy?.tree?.length),
+    llmModel: model,
+  }); // [debug-enrich]
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const strict =
     String(session._meta?.source_fidelity_mode || "").trim().toLowerCase() === "strict";
@@ -2455,6 +2486,12 @@ export async function runConceptInventory(
 
   const mapResult = await runConceptInventoryMapReduce(materialText, hierarchy, splitOpts);
   if (mapResult) {
+    console.info("[session.runConceptInventory] Map-reduce complete:", {
+      conceptCount: mapResult.inventory.length,
+      inventoryMode: mapResult.inventoryMode,
+      chunkCount: mapResult.chunkCount,
+      failedChunks: mapResult.failedChunks,
+    }); // [debug-enrich]
     return {
       inventory: mapResult.inventory,
       inventoryMode: mapResult.inventoryMode,
@@ -2476,6 +2513,12 @@ export async function runConceptInventory(
     estimatedConceptTarget,
     wordCount,
   });
+
+  console.info("[session.runConceptInventory] Single-pass complete:", {
+    conceptCount: result.concepts.length,
+    inventoryMode: result.inventoryMode || "full",
+    estimatedConceptTarget,
+  }); // [debug-enrich]
 
   return {
     inventory: result.concepts,
@@ -2740,6 +2783,11 @@ export async function runConceptInventoryWithFallback(
   };
 
   const runFallback = async (reason) => {
+    console.warn("[session.runConceptInventoryWithFallback] Falling back to mono split:", {
+      reason,
+      requested_n,
+      charCount: materialText.length,
+    }); // [debug-enrich]
     progress("Using classic split (fallback)�");
     const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260625_02");
     const parsed = await deepSeekSplitIntoBlocks({
@@ -2768,6 +2816,11 @@ export async function runConceptInventoryWithFallback(
   };
 
   try {
+    console.debug("[session.runConceptInventoryWithFallback] Start:", {
+      charCount: materialText.length,
+      requested_n,
+      hasDocHierarchy: Boolean(docHierarchy?.tree?.length),
+    }); // [debug-enrich]
     const result = await runConceptInventory(materialText, {
       llmModel: model,
       studyNotes: notes,
@@ -2780,10 +2833,11 @@ export async function runConceptInventoryWithFallback(
     return { kind: "inventory", ...result };
   } catch (err) {
     const truncated = err?.code === "CONCEPT_INVENTORY_TRUNCATED";
-    console.warn(
-      "runConceptInventoryWithFallback: falling back to mono split",
-      truncated ? "(truncated)" : err?.message || err,
-    );
+    console.warn("[session.runConceptInventoryWithFallback] Inventory failed:", {
+      truncated,
+      code: err?.code,
+      message: err?.message || String(err),
+    }); // [debug-enrich]
     return runFallback(truncated ? "truncated" : "parse_error");
   }
 }
@@ -2947,6 +3001,14 @@ export async function packInventoryToBlocks(
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
+  console.info("[session.packInventoryToBlocks] Start:", {
+    requested_n,
+    inventorySize: Array.isArray(inventory) ? inventory.length : 0,
+    materialChars: materialText.length,
+    hasKnowledgeProfile: Boolean(profile),
+    hasDocHierarchy: Boolean(docHierarchy || resolveDocHierarchyForAlignment()),
+  }); // [debug-enrich]
+
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
     "./api.js?v=20260625_02",
   );
@@ -2969,7 +3031,11 @@ export async function packInventoryToBlocks(
     }));
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);
-    console.warn("packInventoryToBlocks: LLM pack failed", packReason);
+    console.warn("[session.packInventoryToBlocks] LLM pack failed:", {
+      reason: packReason,
+      requested_n,
+      inventorySize: inventory?.length || 0,
+    }); // [debug-enrich]
     progress("Packing blocks locally�");
     const det = packInventoryDeterministic(inventory, requested_n, lang);
     if (det?.blocks?.length) {
@@ -2979,8 +3045,11 @@ export async function packInventoryToBlocks(
         pack_fallback_reason: packReason,
       };
       packPipeline = "deterministic_fallback";
+      console.info("[session.packInventoryToBlocks] Using deterministic fallback:", {
+        blockCount: blocks?.length || 0,
+      }); // [debug-enrich]
     } else {
-      console.warn("packInventoryToBlocks: falling back to mono split");
+      console.warn("[session.packInventoryToBlocks] Deterministic fallback empty — mono split"); // [debug-enrich]
       progress("Using classic split (fallback)�");
       const parsed = await deepSeekSplitIntoBlocks({
         llmModel: model,
@@ -3079,8 +3148,22 @@ export async function packInventoryToBlocks(
     splitRunMeta,
   });
   if (!invariant.ok) {
-    console.warn("packInventoryToBlocks invariant:", invariant.errors.join("; "));
+    console.warn("[session.packInventoryToBlocks] Invariant violations:", {
+      errors: invariant.errors,
+      requested_n,
+      final_n: dedupResult.blockIndex.length,
+      concept_count,
+      pipeline: packPipeline,
+    }); // [debug-enrich]
   }
+
+  console.info("[session.packInventoryToBlocks] Done:", {
+    pipeline: packPipeline,
+    requested_n,
+    final_n: dedupResult.blockIndex.length,
+    concept_count,
+    dedup_merged_count: dedupResult.merged_count,
+  }); // [debug-enrich]
 
   return {
     blockIndex: dedupResult.blockIndex,
@@ -3102,6 +3185,11 @@ export async function twoPhaseConceptSplit(
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
+
+  console.debug("[session.twoPhaseConceptSplit] Start:", {
+    requested_n,
+    materialChars: materialText.length,
+  }); // [debug-enrich]
 
   const runFallback = async () => {
     progress("Using classic split (fallback)�");
@@ -3137,6 +3225,9 @@ export async function twoPhaseConceptSplit(
       nBlocks: requested_n,
     });
     if (invResult.kind === "fallback_mono") {
+      console.info("[session.twoPhaseConceptSplit] Inventory fallback_mono:", {
+        blockCount: invResult.blockIndex?.length || 0,
+      }); // [debug-enrich]
       return {
         blockIndex: invResult.blockIndex,
         splitRunMeta: invResult.splitRunMeta,
@@ -3149,7 +3240,10 @@ export async function twoPhaseConceptSplit(
       onProgress,
     });
   } catch (err) {
-    console.warn("twoPhaseConceptSplit: falling back to mono split", err?.message || err);
+    console.error("[session.twoPhaseConceptSplit] Failed — mono split fallback:", {
+      message: err?.message || String(err),
+      stack: err?.stack,
+    }); // [debug-enrich]
     return runFallback();
   }
 }

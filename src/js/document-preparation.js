@@ -229,6 +229,14 @@ async function runPhaseT12(doc, ctx) {
     charCount,
     onProgress: (msg) => ctx.onProgress?.({ phaseId: "T1.2", label: msg, status: "running" }),
   });
+  console.debug("[document-preparation.runPhaseT12] Inventory result:", {
+    docId: doc.docId,
+    kind: invResult.kind,
+    conceptCount: invResult.kind === "inventory" ? invResult.inventory?.length : 0,
+    inventoryMode: invResult.inventoryMode,
+    chunkCount: invResult.chunkCount,
+    failedChunks: invResult.failedChunks,
+  }); // [debug-enrich]
   if (invResult.kind === "fallback_mono") {
     doc.shared.conceptInventory = [];
     prep.failReason = "INVENTORY_MERGE_FAILED";
@@ -564,6 +572,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   if (!doc?.docId) throw new Error("DPP requires docId");
   const stopAfterTier = options.stopAfterTier ?? 2;
   const fingerprint = computePreparationFingerprint(doc, options);
+  console.info("[document-preparation.runDocumentPreparationPipeline] Start:", {
+    docId: doc.docId,
+    stopAfterTier,
+    forceRerun: options.forceRerun === true,
+    fingerprint: fingerprint.slice(0, 12),
+    charCount: String(doc?.shared?.rawMarkdown || "").length,
+    priorStatus: doc?.shared?.preparation?.status,
+  }); // [debug-enrich]
   const prep = ensurePreparation(doc);
   prep.fingerprint = fingerprint;
   setPreparationStatus(prep, "running");
@@ -581,6 +597,9 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   };
 
   if (isOfflineMode()) {
+    console.warn("[document-preparation.runDocumentPreparationPipeline] Offline — stopping after Tier 0", {
+      docId: doc.docId,
+    }); // [debug-enrich]
     setPreparationStatus(prep, "partial");
     prep.completedAt = Date.now();
     await persistDoc(doc);
@@ -591,6 +610,10 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     const token = await getSupabaseAuthToken();
     if (!token) throw new Error("Sign in to use AI features.");
   } catch (err) {
+    console.warn("[document-preparation.runDocumentPreparationPipeline] Auth unavailable — partial prep only:", {
+      docId: doc.docId,
+      message: err?.message || String(err),
+    }); // [debug-enrich]
     setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "Sign in required", at: Date.now() });
     prep.completedAt = Date.now();
@@ -609,9 +632,17 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
       const runnable = options.resume !== false
         ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint))
         : wave;
+      console.debug("[document-preparation.runDocumentPreparationPipeline] Wave start:", {
+        docId: doc.docId,
+        wave: wi + 1,
+        totalWaves: waves.length,
+        runnablePhases: runnable,
+        skippedPhases: wave.filter((id) => !runnable.includes(id)),
+      }); // [debug-enrich]
 
       const results = await Promise.allSettled(
         runnable.map(async (phaseId) => {
+          console.debug("[document-preparation.executePhase] Start:", { docId: doc.docId, phaseId }); // [debug-enrich]
           options.onProgress?.({
             phaseId,
             wave: wi + 1,
@@ -622,8 +653,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             const output = await executePhase(doc, phaseId, ctx);
             if (output && typeof output === "object" && output.skipped) {
               markPhase(prep, phaseId, "skipped", output.hash || "skipped");
+              console.info("[document-preparation.executePhase] Skipped:", { docId: doc.docId, phaseId }); // [debug-enrich]
             } else {
               markPhase(prep, phaseId, "success", output);
+              console.info("[document-preparation.executePhase] Success:", {
+                docId: doc.docId,
+                phaseId,
+                outputHash: typeof output === "string" ? output.slice(0, 12) : null,
+              }); // [debug-enrich]
             }
             await persistDoc(doc);
             options.onProgress?.({
@@ -635,6 +672,12 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             return { phaseId, ok: true };
           } catch (err) {
             const message = err?.message || String(err);
+            console.error("[document-preparation.executePhase] Failed:", {
+              docId: doc.docId,
+              phaseId,
+              message,
+              stack: err?.stack,
+            }); // [debug-enrich]
             markPhase(prep, phaseId, "failed", null, message);
             prep.errors.push({ phaseId, message, at: Date.now() });
             await persistDoc(doc);
@@ -660,9 +703,23 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   } catch (err) {
     const message = err?.message || String(err);
     prep.errors.push({ phaseId: "pipeline", message, at: Date.now() });
-    console.warn("[DPP] Pipeline error before final status write:", message);
+    console.error("[document-preparation.runDocumentPreparationPipeline] Pipeline error before final status:", {
+      docId: doc.docId,
+      message,
+      stack: err?.stack,
+    }); // [debug-enrich]
   } finally {
     await finalizePreparationStatus(doc, prep, stopAfterTier);
+    console.info("[document-preparation.runDocumentPreparationPipeline] Finished:", {
+      docId: doc.docId,
+      status: prep.status,
+      failReason: prep.failReason || null,
+      errorCount: prep.errors?.length || 0,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+      phaseSummary: Object.fromEntries(
+        Object.entries(prep.phaseResults || {}).map(([id, r]) => [id, r?.status]),
+      ),
+    }); // [debug-enrich]
   }
 
   return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };

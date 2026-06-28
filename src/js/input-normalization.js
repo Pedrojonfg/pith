@@ -226,6 +226,11 @@ export async function extractPdfPlainText(buffer) {
  */
 export async function normalizeStudyMaterial(rawContent, detectedFormat) {
   const format = String(detectedFormat || "").toLowerCase();
+  const inputBytes =
+    rawContent instanceof ArrayBuffer
+      ? rawContent.byteLength
+      : String(rawContent || "").length;
+  console.debug("[input-normalization.normalizeStudyMaterial] Start:", { format, inputBytes }); // [debug-enrich]
   if (!SUPPORTED_INPUT_FORMATS.includes(format)) {
     throw new UnsupportedFormatError(
       `Unsupported file format. Use one of: ${SUPPORTED_INPUT_FORMATS.join(", ")}.`,
@@ -257,6 +262,17 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
 
     const warnings = [...(pipeline.structure?.warnings || [])];
 
+    console.info("[input-normalization.normalizeStudyMaterial] Done:", {
+      format,
+      charCount: normalizedContent.length,
+      headingCount: pipeline.structure?.headingCount ?? 0,
+      confidence: pipeline.structure?.confidence ?? "low",
+      warningCount: warnings.length,
+      warnings: warnings.slice(0, 5),
+      pendingImages: (pipeline.pendingImages || []).length,
+      hasFallbackSections: Boolean(pipeline.fallbackSections),
+    }); // [debug-enrich]
+
     return {
       normalizedFormat: "markdown",
       normalizedContent,
@@ -271,6 +287,11 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
     };
   } catch (err) {
     if (err instanceof NormalizationError || err instanceof UnsupportedFormatError) throw err;
+    console.error("[input-normalization.normalizeStudyMaterial] Failed:", {
+      format,
+      message: err?.message || String(err),
+      stack: err?.stack,
+    }); // [debug-enrich]
     throw new NormalizationError(
       err?.message ? String(err.message) : "Failed to normalize study material.",
       format,

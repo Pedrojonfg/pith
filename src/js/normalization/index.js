@@ -103,7 +103,14 @@ async function extractBlocks(rawContent, format) {
  */
 export async function normalizeDocumentStructure({ rawContent, format }) {
   const fmt = String(format || "").toLowerCase();
+  console.debug("[normalization.normalizeDocumentStructure] Start:", { format: fmt }); // [debug-enrich]
   const { blocks: rawBlocks, pageHeights, doc, pendingImages = [] } = await extractBlocks(rawContent, fmt);
+  console.debug("[normalization.normalizeDocumentStructure] Blocks extracted:", {
+    format: fmt,
+    rawBlockCount: rawBlocks.length,
+    pageCount: pageHeights.length,
+    pendingImages: pendingImages.length,
+  }); // [debug-enrich]
 
   let outline = [];
   if (doc) {
@@ -175,6 +182,17 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     artifactsRemoved: stripResult.artifactsRemoved,
     warnings,
   });
+
+  console.info("[normalization.normalizeDocumentStructure] Done:", {
+    format: fmt,
+    charCount: totalChars,
+    headingCount: headingsWithOffsets.length,
+    confidence,
+    artifactsRemoved: stripResult.artifactsRemoved,
+    warningCount: warnings.length,
+    warnings: warnings.slice(0, 5),
+    hasFallbackSections: Boolean(fallbackSections),
+  }); // [debug-enrich]
 
   return {
     blocks: stripResult.blocks,
