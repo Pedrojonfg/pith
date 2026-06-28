@@ -27,7 +27,8 @@ import {
   classifyInventoryHeuristic,
   applyBatchClassification,
 } from "./pedagogy/factual-classifier.js";
-import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags, minViableConcepts, MIN_CONCEPTS_ABSOLUTE } from "./config/flags.js";
+import { tagThresholdConceptsInInventory } from "./pedagogy/threshold-concepts.js";
+import { isDeterministicFactualQuestionsEnabled, getPedagogicalFlags, minViableConcepts, MIN_CONCEPTS_ABSOLUTE, isThresholdConceptsEnabled } from "./config/flags.js";
 import { runDedupForDocument } from "./concept-registry/dedup-gates.js";
 import {
   filterProposalsWithContradictionCheck,
@@ -212,12 +213,21 @@ async function runPhaseT11(doc, ctx) {
   return hashPayload(hierarchy);
 }
 
+async function ensureThresholdTagsOnInventory(doc, ctx) {
+  if (!isThresholdConceptsEnabled() || !doc?.shared?.conceptInventory?.length) return;
+  doc.shared.conceptInventory = await tagThresholdConceptsInInventory(
+    doc.shared.conceptInventory,
+    { llmModel: ctx.llmModel, lang: ctx.language || "English" },
+  );
+}
+
 async function runPhaseT12(doc, ctx) {
   if (
     doc.shared?.interviewSynthesisComplete === true &&
     Array.isArray(doc.shared.conceptInventory) &&
     doc.shared.conceptInventory.length > 0
   ) {
+    await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(doc.shared.conceptInventory.length);
   }
   if (!ctx.forceRerun && isConceptInventoryValid(doc)) {
@@ -226,6 +236,7 @@ async function runPhaseT12(doc, ctx) {
     console.log(
       `[DPP-GUARD] isConceptInventoryValid → TRUE (${inv.length} concepts, charCount ${charCount}). Skipping recalculation.`,
     );
+    await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(inv.length);
   }
   const text = getMarkdown(doc);
@@ -292,6 +303,9 @@ async function runPhaseT12(doc, ctx) {
       if (!entry.questionClass) entry.questionClass = "conceptual";
     }
     void ambiguous;
+  }
+  if (isThresholdConceptsEnabled() && doc.shared.conceptInventory?.length) {
+    await ensureThresholdTagsOnInventory(doc, ctx);
   }
   return hashPayload(inventory.map((c) => c.canonicalId || c.id));
 }

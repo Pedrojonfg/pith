@@ -4,6 +4,7 @@
  */
 
 import { isComprehensionGateEnabled } from "../config/flags.js";
+import { isThresholdConcept } from "./threshold-concepts.js";
 
 /**
  * @param {object} conceptEntry
@@ -76,7 +77,11 @@ export function applyComprehensionSignal(conceptEntry, signal, quality = 0) {
   let confirmed = conceptEntry.comprehensionConfirmed === true;
   if (signal === "recall") {
     const q = String(quality);
-    if (q === "partial" || q === "adequate" || q === "strong" || quality >= 2) {
+    if (isThresholdConcept(conceptEntry)) {
+      if (q === "adequate" || q === "strong" || quality >= 3) {
+        confirmed = true;
+      }
+    } else if (q === "partial" || q === "adequate" || q === "strong" || quality >= 2) {
       confirmed = true;
     }
   }

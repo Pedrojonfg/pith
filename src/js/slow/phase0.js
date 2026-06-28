@@ -11,6 +11,7 @@ import {
 } from "../llm.js?v=20260625_02";
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
 import { addConceptsToShared, getActiveSession, saveActiveSession } from "../session-store.js";
+import { SLOW_PHASE0_GENERATIVE_RULES } from "../pedagogy/generative-pedagogy.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
 export const PHASE0_MAX_CHUNK_CHARS = 50000;
@@ -236,6 +237,7 @@ Rules:
   If the text contains its own name as a bibliographic reference, ignore it as a node.
   If several concepts share the same structural role, group them in one node with includes: [...].
 - guideQuestion: one open question the text answers (broad enough to avoid tunnel vision, specific enough to orient reading).${criticalBlock}
+${SLOW_PHASE0_GENERATIVE_RULES}
 
 JSON schema:
 {

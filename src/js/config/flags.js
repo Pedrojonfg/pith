@@ -189,7 +189,18 @@ export const PEDAGOGICAL_FLAGS = Object.freeze({
   NOVELTY_BLEND_WEIGHT: 0.15,
   /** Heuristic confidence below this triggers batched LLM classification. */
   FACTUAL_CLASSIFIER_LLM_THRESHOLD: 0.55,
+  /** Threshold concepts (20260703-threshold-generative-pedagogy). */
+  THRESHOLD_CONCEPTS_ENABLED: true,
+  THRESHOLD_TARGET_FRACTION: 0.12,
+  THRESHOLD_LLM_CONFIRM_ENABLED: true,
+  THRESHOLD_BORDERLINE_LOW: 0.35,
+  THRESHOLD_BORDERLINE_HIGH: 0.65,
+  THRESHOLD_RSVP_WPM_CAP: 250,
 });
+
+export function isThresholdConceptsEnabled() {
+  return PEDAGOGICAL_FLAGS.THRESHOLD_CONCEPTS_ENABLED !== false;
+}
 
 export function isDeterministicFactualQuestionsEnabled() {
   return PEDAGOGICAL_FLAGS.DETERMINISTIC_FACTUAL_QUESTIONS_ENABLED === true;

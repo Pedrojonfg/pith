@@ -45,9 +45,15 @@ import { getStudyLanguage } from "./ui.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
+import {
+  blockIsThreshold,
+  mergeThresholdBlockConfig,
+  sortBlockIndexForThresholds,
+} from "./pedagogy/threshold-concepts.js";
 import { buildFactualBlockQuestions } from "./pedagogy/factual-block-questions.js";
 import {
   isDeterministicFactualQuestionsEnabled,
+  isThresholdConceptsEnabled,
   MIN_CONCEPTS_ABSOLUTE,
   MIN_CHARS_PER_CONCEPT,
   minViableConcepts,
@@ -123,7 +129,7 @@ export function storeDefaultQuestionConfig({ n_test, n_socratic }) {
   }
 }
 
-const EXPLANATION_PROFILES = new Set(["thorough", "brief_deep", "relational_compressed"]);
+const EXPLANATION_PROFILES = new Set(["thorough", "brief_deep", "relational_compressed", "threshold_expanded"]);
 const GAPS_SOURCES = new Set(["synthesis", "user", "merged", "none"]);
 const SYNTHESIS_STATUSES = new Set(["ok", "timeout", "error", "skipped"]);
 
@@ -300,15 +306,28 @@ export function resolveBlockQuestionConfig(blockIndex) {
   const blocks = Array.isArray(session.blocks) ? session.blocks : [];
   const b = blocks[blockIndex];
   const cfg = b && typeof b === "object" && b._config && typeof b._config === "object" ? b._config : null;
-  if (!cfg) return defaults;
-  return {
-    n_test: clampInt(cfg.n_test, 0, MAX_N_TEST, defaults.n_test),
-    n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
-    explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
-    gap_focus: normalizeGapFocus(cfg.gap_focus),
-    include_connection_questions:
-      cfg.include_connection_questions != null ? Boolean(cfg.include_connection_questions) : defaults.include_connection_questions,
-  };
+  const base = !cfg
+    ? defaults
+    : {
+        n_test: clampInt(cfg.n_test, 0, MAX_N_TEST, defaults.n_test),
+        n_socratic: clampInt(cfg.n_socratic, 0, 3, defaults.n_socratic),
+        explanation_profile: normalizeExplanationProfile(cfg.explanation_profile, defaults.explanation_profile),
+        gap_focus: normalizeGapFocus(cfg.gap_focus),
+        include_connection_questions:
+          cfg.include_connection_questions != null
+            ? Boolean(cfg.include_connection_questions)
+            : defaults.include_connection_questions,
+        ...(Number.isFinite(Number(cfg.rsvp_wpm_cap)) ? { rsvp_wpm_cap: Number(cfg.rsvp_wpm_cap) } : {}),
+      };
+
+  if (isThresholdConceptsEnabled()) {
+    const inv = resolveSessionConceptInventory(session);
+    const entry = getBlockIndexEntry(blockIndex);
+    if (blockIsThreshold(entry, inv)) {
+      return mergeThresholdBlockConfig(base, true);
+    }
+  }
+  return base;
 }
 
 export { buildQuestionScopeContext };
@@ -753,6 +772,12 @@ export function warnBlockGenerationProfileMismatch(blockObj, cfg) {
   const profile = String(cfg.explanation_profile || "thorough");
   const gaps = Array.isArray(cfg.gap_focus) ? cfg.gap_focus : [];
   const questions = Array.isArray(blockObj.questions) ? blockObj.questions : [];
+  if (profile === "threshold_expanded") {
+    const wc = countExplanationWords(blockObj.explanation);
+    if (wc > 0 && (wc < 280 || wc > 480)) {
+      console.warn(`Block generation: threshold_expanded explanation has ${wc} words (expected 320-450).`);
+    }
+  }
   if (profile === "brief_deep") {
     const wc = countExplanationWords(blockObj.explanation);
     if (wc > 0 && (wc < 60 || wc > 140)) {
@@ -3269,8 +3294,12 @@ export async function packInventoryToBlocks(
     dedup_merged_count: dedupResult.merged_count,
   }); // [debug-enrich]
 
+  const sortedBlockIndex = isThresholdConceptsEnabled()
+    ? sortBlockIndexForThresholds(dedupResult.blockIndex, inventory)
+    : dedupResult.blockIndex;
+
   return {
-    blockIndex: dedupResult.blockIndex,
+    blockIndex: sortedBlockIndex,
     conceptInventory: inventory,
     splitRunMeta,
   };
@@ -3625,15 +3654,28 @@ export async function applyAssessmentResults(assessmentResults) {
     const blockId = Number(blockIndex[i]?.id || i + 1);
     const classification = String(perBlock[String(blockId)]?.classification || "").trim();
     const gap_focus = gapLabelsForBlock(gapsByBlock, blockId);
+    const inv = resolveSessionConceptInventory(sessionObj);
+    const indexEntry = blockIndex[i];
+    const isThBlock = isThresholdConceptsEnabled() && blockIsThreshold(indexEntry, inv);
 
     if (classification === "strong") {
-      blk._config = {
-        n_test: 1,
-        n_socratic: 0,
-        explanation_profile: "brief_deep",
-        gap_focus: [],
-        include_connection_questions: includeConnection,
-      };
+      blk._config = isThBlock
+        ? mergeThresholdBlockConfig(
+            {
+              n_test: 1,
+              n_socratic: Math.min(3, sessionDefaults.n_socratic + 1),
+              gap_focus: [],
+              include_connection_questions: includeConnection,
+            },
+            true,
+          )
+        : {
+            n_test: 1,
+            n_socratic: 0,
+            explanation_profile: "brief_deep",
+            gap_focus: [],
+            include_connection_questions: includeConnection,
+          };
       strongBlocks.push(blockId);
       adjusted = true;
     } else if (classification === "weak") {
@@ -3649,23 +3691,43 @@ export async function applyAssessmentResults(assessmentResults) {
         gap_focus.length,
         reserveConnectionSlot,
       );
-      blk._config = {
-        n_test: budget.n_test,
-        n_socratic: budget.n_socratic,
-        explanation_profile: "thorough",
-        gap_focus,
-        include_connection_questions: includeConnection,
-      };
+      blk._config = isThBlock
+        ? mergeThresholdBlockConfig(
+            {
+              n_test: budget.n_test,
+              n_socratic: budget.n_socratic,
+              gap_focus,
+              include_connection_questions: includeConnection,
+            },
+            true,
+          )
+        : {
+            n_test: budget.n_test,
+            n_socratic: budget.n_socratic,
+            explanation_profile: "thorough",
+            gap_focus,
+            include_connection_questions: includeConnection,
+          };
       weakBlocks.push(blockId);
       adjusted = true;
     } else {
-      blk._config = {
-        n_test: sessionDefaults.n_test,
-        n_socratic: sessionDefaults.n_socratic,
-        explanation_profile: "thorough",
-        gap_focus,
-        include_connection_questions: includeConnection,
-      };
+      blk._config = isThBlock
+        ? mergeThresholdBlockConfig(
+            {
+              n_test: sessionDefaults.n_test,
+              n_socratic: sessionDefaults.n_socratic,
+              gap_focus,
+              include_connection_questions: includeConnection,
+            },
+            true,
+          )
+        : {
+            n_test: sessionDefaults.n_test,
+            n_socratic: sessionDefaults.n_socratic,
+            explanation_profile: "thorough",
+            gap_focus,
+            include_connection_questions: includeConnection,
+          };
     }
     blocks[i] = blk;
   }

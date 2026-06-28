@@ -150,7 +150,7 @@ import {
   renderMarkdown,
   renderMcOptionHtml,
 } from "./markdown.js?v=20260625_02";
-import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260625_02";
+import { cancelRsvpTimer, finishRsvp, loadRsvpDefaultsFromStorage, persistRsvpDefaults, rsvpState, setRsvpBlockTitle, setRsvpOverlayActive, setRsvpPlayState, setRsvpWpmCap, setWordsPerFlash, startRsvpForText, wireRsvpHandlers } from "./rsvp.js?v=20260625_02";
 import {
   finishPacedRead,
   isPacedReaderActive,
@@ -6630,6 +6630,8 @@ function beginRsvpForCurrentBlock({ onDone }) {
   }
   setBlockReadSidebarAvailable(false);
   setRsvpBlockTitle(getBlockTitleSafe(state.activeBlockIndex));
+  const rsvpCfg = resolveBlockQuestionConfig(state.activeBlockIndex);
+  setRsvpWpmCap(rsvpCfg?.rsvp_wpm_cap);
   startRsvpForText(block.explanation || "", onDone);
 }
 
