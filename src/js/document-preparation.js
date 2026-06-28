@@ -34,12 +34,7 @@ import {
   resetContradictionCheckBudget,
 } from "./vault/contradiction-check.js";
 import { runDocumentSimilarityForProject } from "./vault/doc-similarity.js";
-import {
-  getSession,
-  saveActiveSession,
-  addConceptsToShared,
-  updateRecommendation,
-} from "./session-store.js";
+import { getSession, saveActiveSession } from "./session-store.js";
 import {
   createEmptyPreparationState,
   normalizePreparationState,
@@ -114,16 +109,14 @@ function getMarkdown(doc) {
   return String(doc?.shared?.rawMarkdown || "").trim();
 }
 
-async function persistDoc(doc) {
-  await saveActiveSession(doc);
-  return doc;
-}
-
-async function finalizePreparationStatus(doc, prep, stopAfterTier) {
+/** Sole DPP persistence entry point — no phase or wave may call this except pipeline exit. */
+async function persistPipelineResult(doc, prep, stopAfterTier) {
   prep.completedAt = prep.completedAt || Date.now();
   prep.currentPhase = null;
+  prep.currentWave = null;
   resolveFinalStatus(prep, tier1Complete(doc), stopAfterTier);
-  await persistDoc(doc);
+  await saveActiveSession(doc);
+  return doc;
 }
 
 function ensurePreparation(doc) {
@@ -278,17 +271,6 @@ async function runPhaseT12(doc, ctx) {
     }
     void ambiguous;
   }
-  if (inventory.length) {
-    await addConceptsToShared(
-      doc.docId,
-      inventory.map((c) => ({
-        label: c.label || c.term,
-        definition: c.definition || c.authorUsage || "",
-        canonicalId: c.canonicalId || c.id,
-        detectedBy: "dpp",
-      })),
-    );
-  }
   return hashPayload(inventory.map((c) => c.canonicalId || c.id));
 }
 
@@ -337,7 +319,6 @@ async function runPhaseT15(doc, ctx) {
   const method = hierarchy?.method === "llm" ? "llm_meta" : "deterministic";
   const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, { method });
   doc.shared.modeRecommendation = recommendation;
-  await updateRecommendation(doc.docId, recommendation);
   return hashPayload(recommendation.primaryFlow);
 }
 
@@ -354,12 +335,11 @@ async function runPhaseT16(doc) {
         sourceDocId: doc.docId,
         inventoryEntryId: entryId,
       });
-      backfillGlobalConceptIds(doc, conceptId, entryId);
+      await backfillGlobalConceptIds(doc, conceptId, entryId, { persist: false });
     } catch (err) {
       console.warn("[dpp] vault link failed", name, err?.message || err);
     }
   }
-  persistDoc(doc);
   return hashPayload(inventory.map((c) => c.globalConceptId || c.canonicalId));
 }
 
@@ -408,7 +388,6 @@ async function runPhaseT18(doc, ctx) {
     });
     doc.shared.mergeProposals = filtered.map((p) => ({ ...p, status: "pending" }));
   }
-  persistDoc(doc);
   return hashPayload({
     novelty: (doc.shared.conceptInventory || []).map((c) => [c.canonicalId, c.noveltyScore]),
     proposals: doc.shared?.mergeProposals?.length ?? 0,
@@ -423,7 +402,6 @@ async function runPhaseT19(doc) {
   if (sim.status === "skipped") {
     return { skipped: true, hash: sim.reason || "doc_similarity_skipped" };
   }
-  persistDoc(doc);
   return hashPayload({ pairs: sim.pairs ?? 0 });
 }
 
@@ -596,7 +574,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   setPreparationStatus(prep, "running");
   prep.startedAt = prep.startedAt || Date.now();
   prep.errors = prep.errors || [];
-  await persistDoc(doc);
 
   const ctx = {
     llmModel: options.llmModel,
@@ -611,9 +588,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     console.warn("[document-preparation.runDocumentPreparationPipeline] Offline — stopping after Tier 0", {
       docId: doc.docId,
     }); // [debug-enrich]
-    setPreparationStatus(prep, "partial");
-    prep.completedAt = Date.now();
-    await persistDoc(doc);
+    await persistPipelineResult(doc, prep, stopAfterTier);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
   }
 
@@ -627,8 +602,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     }); // [debug-enrich]
     setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "Sign in required", at: Date.now() });
-    prep.completedAt = Date.now();
-    await persistDoc(doc);
+    await persistPipelineResult(doc, prep, stopAfterTier);
     return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
   }
 
@@ -702,7 +676,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
         }),
       );
       prep.updatedAt = Date.now();
-      await persistDoc(doc);
       void results;
     }
 
@@ -720,7 +693,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
       stack: err?.stack,
     }); // [debug-enrich]
   } finally {
-    await finalizePreparationStatus(doc, prep, stopAfterTier);
+    await persistPipelineResult(doc, prep, stopAfterTier);
     console.info("[document-preparation.runDocumentPreparationPipeline] Finished:", {
       docId: doc.docId,
       status: prep.status,

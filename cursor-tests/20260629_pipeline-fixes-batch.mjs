@@ -111,13 +111,17 @@ const mapStart = dppSource.indexOf("runnable.map(async (phaseId)");
 const mapEnd = dppSource.indexOf("}),", mapStart);
 const mapperSection = mapStart >= 0 ? dppSource.slice(mapStart, mapEnd) : "";
 assert(
-  mapStart >= 0 && !mapperSection.includes("await persistDoc(doc)"),
-  "no persistDoc inside parallel phase mapper",
+  mapStart >= 0 && !mapperSection.includes("saveActiveSession"),
+  "no saveActiveSession inside parallel phase mapper",
+);
+const persistCalls = (dppSource.match(/saveActiveSession\(/g) || []).length;
+assert(
+  persistCalls === 1 && dppSource.includes("async function persistPipelineResult"),
+  "exactly one saveActiveSession via persistPipelineResult",
 );
 assert(
-  dppSource.includes("prep.updatedAt = Date.now()") &&
-    dppSource.includes("await persistDoc(doc)"),
-  "persistDoc after wave settles",
+  !dppSource.includes("persistDoc("),
+  "no legacy persistDoc calls",
 );
 
 assert(
