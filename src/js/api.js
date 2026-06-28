@@ -1767,7 +1767,7 @@ export async function deepSeekPackConceptsToBlocks({
   const sessionForVault =
     vaultSession ||
     (Array.isArray(docTopics) && docTopics.length
-      ? { projectId: "misc", shared: { docTopics } }
+      ? { shared: { docTopics } }
       : null);
   if (sessionForVault?.shared?.docTopics?.length) {
     try {
@@ -2843,7 +2843,7 @@ export async function deepSeekGenerateBlockExplanation({
   const sessionForVault =
     vaultSession ||
     (Array.isArray(docTopics) && docTopics.length
-      ? { projectId: "misc", shared: { docTopics } }
+      ? { shared: { docTopics } }
       : null);
   if (Array.isArray(conceptIds) && conceptIds.length && sessionForVault?.shared?.docTopics?.length) {
     try {

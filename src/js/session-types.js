@@ -21,13 +21,10 @@
  * @property {2} schemaVersion
  * @property {number} createdAt
  * @property {number} updatedAt
- * @property {string} [projectId] Study project assignment; required after migration, default {@link MISC_PROJECT_ID}
+ * @property {string} [projectId] Optional study project assignment
  * @property {object} shared
  * @property {object} modes
  */
-
-/** Default catch-all project id; always present after migration. */
-export const MISC_PROJECT_ID = "misc";
 
 /** localStorage key for ProjectStore. */
 export const PROJECT_STORE_KEY = "mylearning_projects";

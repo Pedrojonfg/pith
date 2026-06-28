@@ -30,13 +30,11 @@ import { normalizeRecallSlice } from "./recall-slice.js";
 import {
   computeCanonicalId,
   inferDocMeta,
-  MISC_PROJECT_ID,
   normalizeConceptLabel,
   normalizeMarkdownForHash,
   PROJECT_STORE_SCHEMA,
   validateDocumentSession,
 } from "./session-types.js";
-import { ensureMiscProject } from "./project-store.js";
 import { persistPendingImages } from "./document-images/storage.js";
 
 export {
@@ -321,7 +319,7 @@ export async function createSession(rawMarkdown, options = {}) {
   const session = {
     docId,
     schemaVersion: 3,
-    projectId: options.projectId || MISC_PROJECT_ID,
+    ...(options.projectId ? { projectId: String(options.projectId) } : {}),
     createdAt: now,
     updatedAt: now,
     shared: {
@@ -724,12 +722,10 @@ export function saveProjectStore(store) {
  */
 export function getProjectStore() {
   const loaded = loadProjectStore();
-  const store = ensureMiscProject(
-    loaded && loaded.schemaVersion === PROJECT_STORE_SCHEMA
-      ? loaded
-      : { schemaVersion: PROJECT_STORE_SCHEMA, projects: [] },
-  );
-  return store;
+  if (loaded && loaded.schemaVersion === PROJECT_STORE_SCHEMA && Array.isArray(loaded.projects)) {
+    return loaded;
+  }
+  return { schemaVersion: PROJECT_STORE_SCHEMA, projects: [] };
 }
 
 /**
@@ -737,18 +733,18 @@ export function getProjectStore() {
  * @param {import("./session-types.js").ProjectStore} store
  */
 export function persistProjectStore(store) {
-  saveProjectStore(ensureMiscProject(store));
+  saveProjectStore(store);
 }
 
-/** Backfill projectId on all persisted sessions missing it. @returns {Promise<boolean>} whether any session changed */
-export async function backfillMissingProjectIds() {
+/** Strip legacy misc assignments from persisted sessions. @returns {Promise<boolean>} whether any session changed */
+export async function cleanupMiscProjectAssignments() {
   const rows = await readSessionRows();
   let changed = false;
   for (const row of rows) {
     const session = row.session_data;
     if (!session || typeof session !== "object") continue;
-    if (!session.projectId) {
-      session.projectId = MISC_PROJECT_ID;
+    if (session.projectId === "misc") {
+      delete session.projectId;
       changed = true;
       await upsertSessionRow(
         await getAuthUserId(),

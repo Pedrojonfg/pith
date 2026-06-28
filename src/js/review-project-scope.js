@@ -7,7 +7,6 @@ import { normalizeVaultReviewItemForQueue } from "./vault/vault-curation.js";
 import { loadVault } from "./vault/vault-store.js";
 import { getDescendantIds } from "./project-store.js";
 import { getAllSessions, getProjectStore, getSession } from "./session-store.js";
-import { MISC_PROJECT_ID } from "./session-types.js";
 import { normalizeSmItem } from "./sm2.js";
 
 /**
@@ -41,7 +40,7 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
   );
 
   const smPoolItems = sessions
-    .filter((s) => scopeIds.has(String(s?.projectId || MISC_PROJECT_ID)))
+    .filter((s) => s?.projectId && scopeIds.has(String(s.projectId)))
     .flatMap((session) =>
       (session.shared?.smItems || []).map((raw) => ({
         ...normalizeSmItem({ ...raw, docId: session.docId }),
@@ -53,7 +52,7 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
   for (const item of vault.reviewItems || []) {
     const origin = await getSession(item?.sourceDocId);
     if (!origin) continue;
-    if (!scopeIds.has(String(origin?.projectId || MISC_PROJECT_ID))) continue;
+    if (!origin?.projectId || !scopeIds.has(String(origin.projectId))) continue;
     const normalized = normalizeVaultReviewItemForQueue(item);
     if (normalized) vaultPoolItems.push(normalized);
   }

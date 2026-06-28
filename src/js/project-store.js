@@ -3,8 +3,6 @@
  * @see specs/20260623-study-projects/contracts/project-store-api.md
  */
 
-import { MISC_PROJECT_ID } from "./session-types.js";
-
 export const PROJECT_ERROR_CYCLE = "Cannot move a project into its own subproject";
 export const PROJECT_ERROR_DELETE_BLOCKED =
   "Move subprojects and documents out before deleting";
@@ -122,10 +120,10 @@ export function getSessionsByProject(store, sessions, projectId, opts = {}) {
   const list = Array.isArray(sessions) ? sessions : [];
   const includeDescendants = opts.includeDescendants === true;
   if (!includeDescendants) {
-    return list.filter((s) => String(s?.projectId || MISC_PROJECT_ID) === pid);
+    return list.filter((s) => String(s?.projectId || "") === pid);
   }
   const scope = new Set(getDescendantIds(store, pid, { includeSelf: true }));
-  return list.filter((s) => scope.has(String(s?.projectId || MISC_PROJECT_ID)));
+  return list.filter((s) => scope.has(String(s?.projectId || "")));
 }
 
 /**
@@ -181,7 +179,6 @@ export function renameProject(store, id, newName) {
 export function moveProject(store, id, newParentId) {
   const project = getProject(store, id);
   if (!project) return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
-  if (project.id === MISC_PROJECT_ID) return { ok: true };
   const nextParent = newParentId == null ? null : String(newParentId).trim();
   if (nextParent === project.parentId) return { ok: true };
   if (nextParent != null && !getProject(store, nextParent)) {
@@ -205,7 +202,6 @@ export function moveProject(store, id, newParentId) {
 export function deleteProject(store, id, sessions) {
   const project = getProject(store, id);
   if (!project) return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
-  if (project.id === MISC_PROJECT_ID) return { ok: true };
   if (getChildren(store, id).length > 0) {
     return { ok: false, error: PROJECT_ERROR_DELETE_BLOCKED };
   }
@@ -232,26 +228,4 @@ export function assignSessionToProject(session, projectId, store) {
     return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
   }
   return { ok: true, session: { ...session, projectId: pid, updatedAt: nowMs() } };
-}
-
-/**
- * @param {import("./session-types.js").ProjectStore|null|undefined} store
- * @returns {import("./session-types.js").ProjectStore}
- */
-export function ensureMiscProject(store) {
-  const base =
-    store && typeof store === "object" && Array.isArray(store.projects)
-      ? store
-      : { schemaVersion: 1, projects: [] };
-  if (!getProject(base, MISC_PROJECT_ID)) {
-    const ts = nowMs();
-    base.projects.push({
-      id: MISC_PROJECT_ID,
-      name: "Misc",
-      parentId: null,
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  }
-  return base;
 }

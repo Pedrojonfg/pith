@@ -19,7 +19,7 @@ import { findNearestConcepts } from "./embedding-persist.js";
  */
 export function getProjectScopeIds(projectId) {
   const pid = String(projectId || "").trim();
-  if (!pid || pid === "misc") return [];
+  if (!pid) return [];
   const store = getProjectStore();
   return getAncestorChain(store, pid).map((p) => p.id);
 }
@@ -52,7 +52,7 @@ export async function scoreConceptNovelty(doc) {
     return { status: "success", scored: 0 };
   }
 
-  const projectId = String(doc?.projectId || "misc").trim();
+  const projectId = String(doc?.projectId || "").trim();
   const projectIds = getProjectScopeIds(projectId);
 
   const unresolved = inventory.filter((entry) => {
@@ -83,7 +83,7 @@ export async function scoreConceptNovelty(doc) {
     try {
       const embedding = await embedText(text, {
         conceptId,
-        projectId: projectId !== "misc" ? projectId : null,
+        projectId: projectId || null,
         scopeType: "concept",
       });
       const nearest = await findNearestConcepts(embedding, {

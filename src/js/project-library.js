@@ -12,7 +12,6 @@ import {
   persistProjectStore,
   saveActiveSession,
 } from "./session-store.js";
-import { MISC_PROJECT_ID } from "./session-types.js";
 import {
   assignSessionToProject,
   createProject,
@@ -54,7 +53,7 @@ function showProjectToast(message) {
 export function getUploadDefaultProjectId() {
   if (projectLibraryState.uploadProjectId) return projectLibraryState.uploadProjectId;
   if (projectLibraryState.currentProjectId) return projectLibraryState.currentProjectId;
-  return MISC_PROJECT_ID;
+  return null;
 }
 
 export function setUploadProjectContext(projectId) {
@@ -161,7 +160,7 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
   const store = getProjectStore();
   const sessions = await scanStalePreparationSessions(
     (await getAllSessions()).filter(
-      (s) => String(s?.projectId || MISC_PROJECT_ID) === String(projectId),
+      (s) => String(s?.projectId || "") === String(projectId),
     ),
   );
   if (!sessions.length) {
@@ -255,7 +254,7 @@ async function promptMoveDocument(docId) {
   const mount = overlay.querySelector("#moveProjectPickerMount");
   mount?.appendChild(
     renderProjectPicker(store, {
-      selectedId: session.projectId || MISC_PROJECT_ID,
+      selectedId: session.projectId || undefined,
       onSelect: async (projectId) => {
         const result = assignSessionToProject(session, projectId, store);
         if (!result.ok) {
@@ -364,9 +363,7 @@ export function enterProjectLibrary(options = {}) {
   } else if (options.reset !== false) {
     projectLibraryState.currentProjectId = null;
   }
-  setUploadProjectContext(
-    projectLibraryState.currentProjectId || MISC_PROJECT_ID,
-  );
+  setUploadProjectContext(projectLibraryState.currentProjectId || null);
   renderProjectLibraryView();
 }
 
@@ -405,9 +402,11 @@ export function mountModeSelectBreadcrumb(doc) {
   mount.innerHTML = "";
   if (!doc) return;
   const store = getProjectStore();
-  const projectId = doc.projectId || MISC_PROJECT_ID;
-  const project = getProject(store, projectId);
-  const segments = [{ label: "Library", onClick: () => enterProjectLibrary({ projectId }) }];
+  const projectId = doc.projectId;
+  const project = projectId ? getProject(store, projectId) : null;
+  const segments = [
+    { label: "Library", onClick: () => enterProjectLibrary({ projectId: projectId || null }) },
+  ];
   if (project) {
     segments.push({ label: project.name || "Subject" });
   }

@@ -5,7 +5,6 @@ import {
 } from "./config/flags.js";
 import { renderMarkdown } from "./markdown.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
-import { MISC_PROJECT_ID } from "./session-types.js";
 import {
   isMnemonicButtonVisiblePref,
   setMnemonicButtonVisiblePref,
@@ -210,7 +209,7 @@ export function renderProjectPicker(store, { selectedId, onSelect } = {}) {
   root.setAttribute("aria-label", "Project");
 
   const rows = flattenProjectsForPicker(store);
-  const effectiveSelected = selectedId || MISC_PROJECT_ID;
+  const effectiveSelected = selectedId || null;
 
   const renderRow = (project, depth) => {
     const btn = document.createElement("button");
@@ -234,9 +233,7 @@ export function renderProjectPicker(store, { selectedId, onSelect } = {}) {
 
     const labelEl = document.createElement("span");
     labelEl.className = "project-picker-label";
-    labelEl.textContent =
-      project.name ||
-      (project.id === MISC_PROJECT_ID ? "Misc" : String(project.id));
+    labelEl.textContent = project.name || String(project.id);
     btn.appendChild(labelEl);
 
     btn.addEventListener("click", () => {
@@ -246,10 +243,10 @@ export function renderProjectPicker(store, { selectedId, onSelect } = {}) {
   };
 
   if (rows.length === 0) {
-    renderRow(
-      { id: MISC_PROJECT_ID, name: "Misc", parentId: null, createdAt: 0, updatedAt: 0 },
-      0,
-    );
+    const empty = document.createElement("p");
+    empty.className = "project-picker-empty hint";
+    empty.textContent = "No projects yet. Create one from the library.";
+    root.appendChild(empty);
     return root;
   }
 
