@@ -19,7 +19,7 @@ import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js"
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
 import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
-import { runConceptInventoryWithFallback, isConceptInventoryValid, runDedupedDppFlight } from "./session.js";
+import { runConceptInventoryWithFallback, isConceptInventoryValid, runDedupedDppFlight, meetsConceptInventoryThreshold, repairStuckRunningPreparationIfNeeded } from "./session.js";
 import { getSupabaseAuthToken } from "./llm.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
@@ -44,6 +44,8 @@ import {
   persistCheckpoint,
   persistFinal,
   registerDppRun,
+  commitPreparedDocToStore,
+  hydrateCallerDocFromPrepared,
 } from "./dpp-persistence.js";
 import {
   createEmptyPreparationState,
@@ -384,8 +386,8 @@ async function runPhaseT17(doc, ctx) {
   if (!Array.isArray(images) || !images.length) {
     return hashPayload(0);
   }
-  if (!isConceptInventoryValid(doc)) {
-    console.log("[vision] Skipping T1.7 — concept inventory not viable.");
+  if (!meetsConceptInventoryThreshold(doc)) {
+    console.log("[vision] Skipping T1.7 — concept inventory below viability threshold.");
     for (const image of images) {
       if (image.visionStatus === "pending") {
         image.visionStatus = "skipped";
@@ -856,7 +858,11 @@ export async function ensureTier1Preparation(doc, options = {}) {
     tier1InFlight.set(docId, flight);
   }
   const result = await flight;
-  return result?.doc ?? doc;
+  const prepared = result?.doc ?? doc;
+  let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
+  reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
+  hydrateCallerDocFromPrepared(doc, reconciled);
+  return reconciled;
 }
 
 /**

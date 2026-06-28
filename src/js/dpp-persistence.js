@@ -123,6 +123,52 @@ export function isPreparedDocAheadOfStore(prepared, store) {
 }
 
 /**
+ * @param {object} preparedDoc
+ * @param {object|null|undefined} storeDoc
+ * @returns {boolean}
+ */
+export function shouldCommitPreparedDoc(preparedDoc, storeDoc) {
+  if (!preparedDoc?.shared) return false;
+  if (!storeDoc?.shared) return true;
+  if (isPreparedDocAheadOfStore(preparedDoc, storeDoc)) return true;
+  const prepStatus = String(preparedDoc.shared.preparation?.status || "pending");
+  const storeStatus = String(storeDoc.shared.preparation?.status || "pending");
+  return (
+    TERMINAL_PREP_STATUSES.has(prepStatus) && IN_PROGRESS_PREP_STATUSES.has(storeStatus)
+  );
+}
+
+/** Tier-1 shared fields written by DPP onto the in-memory clone. */
+const PREPARED_SHARED_SYNC_KEYS = [
+  "preparation",
+  "conceptInventory",
+  "blockRecommendation",
+  "modeRecommendation",
+  "docHierarchy",
+  "textMetrics",
+  "conceptGraph",
+  "docTopics",
+  "relatedDocuments",
+];
+
+/**
+ * Copy pipeline outputs from the working clone onto the caller's session object.
+ * @param {object} callerDoc
+ * @param {object} preparedDoc
+ * @returns {object}
+ */
+export function hydrateCallerDocFromPrepared(callerDoc, preparedDoc) {
+  if (!callerDoc?.shared || !preparedDoc?.shared) return callerDoc;
+  if (callerDoc.docId !== preparedDoc.docId) return callerDoc;
+  for (const key of PREPARED_SHARED_SYNC_KEYS) {
+    if (key in preparedDoc.shared) {
+      callerDoc.shared[key] = preparedDoc.shared[key];
+    }
+  }
+  return callerDoc;
+}
+
+/**
  * Ensure store reflects the pipeline's in-memory conclusion when store is behind.
  * @param {object} preparedDoc
  * @returns {Promise<object|null>}
@@ -130,11 +176,11 @@ export function isPreparedDocAheadOfStore(prepared, store) {
 export async function commitPreparedDocToStore(preparedDoc) {
   if (!preparedDoc?.docId) return null;
   const current = await getSession(preparedDoc.docId);
-  if (!current || isPreparedDocAheadOfStore(preparedDoc, current)) {
+  if (shouldCommitPreparedDoc(preparedDoc, current)) {
     await saveActiveSession(preparedDoc);
     return (await getSession(preparedDoc.docId)) ?? preparedDoc;
   }
-  return current;
+  return current ?? preparedDoc;
 }
 
 /**
@@ -163,7 +209,15 @@ export async function persistFinal(doc) {
 
   const current = await getSession(docId);
   const storeRunId = current?.shared?.preparation?.runId;
-  if (storeRunId && runId && storeRunId !== runId && !isPreparedDocAheadOfStore(doc, current)) {
+  const prepStatus = String(doc?.shared?.preparation?.status || "pending");
+  const forceTerminalWrite = TERMINAL_PREP_STATUSES.has(prepStatus);
+  if (
+    storeRunId &&
+    runId &&
+    storeRunId !== runId &&
+    !isPreparedDocAheadOfStore(doc, current) &&
+    !forceTerminalWrite
+  ) {
     console.warn("[DPP] stale run, skipping final write (store runId mismatch)", {
       runId,
       storeRunId,
