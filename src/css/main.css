@@ -335,23 +335,77 @@ select:focus {
   outline: none;
 }
 
-.blocks-tools {
+.blocks-screen.screen[aria-hidden="false"] {
   display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--chrome-top-reserve, 60px) - var(--space-6, 24px));
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.blocks-screen-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.blocks-screen-header {
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.blocks-screen-header h1 {
+  margin-bottom: 8px;
+}
+
+.blocks-screen-lead {
+  margin: 0 0 14px;
+}
+
+.blocks-readonly-banner {
+  margin-top: 10px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.blocks-screen-footer {
+  flex: 0 0 auto;
+  padding-top: 12px;
+  max-width: 100%;
+}
+
+.blocks-screen-actions {
+  margin-top: 0;
+}
+
+.blocks-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
-  flex-wrap: wrap;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 720px) {
+  .blocks-tools {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 
 .blocks-tools #blocksFilterInput {
-  flex: 1 1 260px;
-  min-width: 220px;
+  width: 100%;
+  min-width: 0;
 }
 
 .blocks-tools-actions {
-  display: inline-flex;
-  gap: 10px;
-  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
 }
 
 .row {
@@ -567,6 +621,13 @@ textarea:focus {
 .blocks-editor {
   display: grid;
   gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 
 .block-item {
@@ -574,6 +635,8 @@ textarea:focus {
   border-radius: var(--radius-lg);
   background: var(--bg-surface);
   overflow: clip;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .block-summary {
@@ -584,6 +647,8 @@ textarea:focus {
   padding: 10px 12px;
   cursor: pointer;
   user-select: none;
+  min-width: 0;
+  max-width: 100%;
 }
 .block-summary::-webkit-details-marker {
   display: none;
@@ -608,6 +673,8 @@ textarea:focus {
 }
 
 .block-title-preview {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   color: rgba(255, 255, 255, 0.92);
@@ -618,6 +685,8 @@ textarea:focus {
 
 .block-body {
   padding: 12px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .block-body input[type="text"] {

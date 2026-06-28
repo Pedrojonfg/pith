@@ -1003,48 +1003,58 @@
 
         <section
           id="screenBlocksList"
-          class="screen"
+          class="screen blocks-screen"
           aria-hidden="true"
           aria-label="Blocks list"
         >
-          <div class="card">
-            <h1>Blocks (edit if needed)</h1>
-            <p>
-              Review the block titles and summaries. You can edit them freely before
-              starting the session.
-            </p>
-            <div class="blocks-tools" aria-label="Blocks tools">
-              <input
-                id="blocksFilterInput"
-                type="text"
-                inputmode="text"
-                autocomplete="off"
-                spellcheck="true"
-                placeholder="Filter blocks (title or summary)…"
-                aria-label="Filter blocks"
-              />
-              <div class="blocks-tools-actions" aria-label="Blocks tool actions">
-                <button type="button" id="blocksExpandAllBtn">Expand all</button>
-                <button type="button" id="blocksCollapseAllBtn">Collapse all</button>
-                <button type="button" id="blocksClearFilterBtn">Clear</button>
+          <div class="card blocks-screen-inner">
+            <header class="blocks-screen-header">
+              <h1>Blocks (edit if needed)</h1>
+              <p class="blocks-screen-lead">
+                Review the block titles and summaries. You can edit them freely before
+                starting the session.
+              </p>
+              <div class="blocks-tools" aria-label="Blocks tools">
+                <input
+                  id="blocksFilterInput"
+                  type="text"
+                  inputmode="text"
+                  autocomplete="off"
+                  spellcheck="true"
+                  placeholder="Filter blocks (title or summary)…"
+                  aria-label="Filter blocks"
+                />
+                <div class="blocks-tools-actions" aria-label="Blocks tool actions">
+                  <button type="button" id="blocksExpandAllBtn" class="btn-small">
+                    Expand all
+                  </button>
+                  <button type="button" id="blocksCollapseAllBtn" class="btn-small">
+                    Collapse all
+                  </button>
+                  <button type="button" id="blocksClearFilterBtn" class="btn-small">
+                    Clear
+                  </button>
+                </div>
               </div>
-            </div>
-            <div
-              id="blocksReadonlyBanner"
-              class="hint"
-              hidden
-              style="margin-top: 10px; color: var(--accent); font-weight: 600"
-            ></div>
+              <div
+                id="blocksReadonlyBanner"
+                class="hint blocks-readonly-banner"
+                hidden
+              ></div>
+            </header>
+
             <div id="blocksListEditor" class="blocks-editor" aria-label="Blocks editor"></div>
 
-            <div id="blocksGraphActions" class="blocks-graph-actions" hidden></div>
-            <div class="row">
-              <button type="button" id="confirmBlocksBtn" class="btn-primary">
-                Looks good, start session
-              </button>
-              <span class="hint" id="confirmBlocksStatus" role="status"></span>
-            </div>
-            <div id="confirmBlocksError" class="error" hidden></div>
+            <footer class="blocks-screen-footer">
+              <div id="blocksGraphActions" class="blocks-graph-actions" hidden></div>
+              <div class="row blocks-screen-actions">
+                <button type="button" id="confirmBlocksBtn" class="btn-primary">
+                  Looks good, start session
+                </button>
+                <span class="hint" id="confirmBlocksStatus" role="status"></span>
+              </div>
+              <div id="confirmBlocksError" class="error" hidden></div>
+            </footer>
           </div>
         </section>
 
@@ -1865,7 +1875,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260629_02";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260629_03";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1891,7 +1901,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260629_02");
+        await import("./src/js/main.js?v=20260629_03");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
