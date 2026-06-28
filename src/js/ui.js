@@ -1214,6 +1214,14 @@ function resolveModeSelectScreenEl() {
   return el;
 }
 
+function setScreenAriaHidden(el, visible) {
+  if (!el) return;
+  if (!visible && el.contains(document.activeElement)) {
+    document.body.focus();
+  }
+  el.setAttribute("aria-hidden", String(!visible));
+}
+
 export function showScreen(which) {
   if (which === "setup") which = "settings";
   currentScreenId = which;
@@ -1252,45 +1260,39 @@ export function showScreen(which) {
   const showRecall = which === "recall";
   const showStudyProgress = showSocratic || showTest;
 
-  els.screenSettings?.setAttribute("aria-hidden", String(!showSettings));
-  els.screenAuth?.setAttribute("aria-hidden", String(!showAuth));
-  els.screenAppHome?.setAttribute("aria-hidden", String(!showAppHome));
-  els.screenVaultBranch?.setAttribute("aria-hidden", String(!showVaultBranch));
-  els.screenUploadToVaultCandidates?.setAttribute("aria-hidden", String(!showUploadToVault));
-  els.screenCreateSessionStart?.setAttribute("aria-hidden", String(!showCreateSessionStart));
-  els.screenBookSearch?.setAttribute("aria-hidden", String(!showBookSearch));
-  els.screenInterviewCapture?.setAttribute("aria-hidden", String(!showInterviewCapture));
-  if (modeSelectEl) modeSelectEl.setAttribute("aria-hidden", String(!showModeSelectScreen));
-  els.screenDocLibrary?.setAttribute("aria-hidden", String(!showDocLibrary));
-  els.screenRetrievalHub?.setAttribute("aria-hidden", String(!showRetrievalHub));
-  els.screenPlaceholder.setAttribute("aria-hidden", String(!showCreate));
-  els.screenPrePackingAssessment?.setAttribute(
-    "aria-hidden",
-    String(!showPrePackingAssessment),
-  );
-  els.screenPrePackingResults?.setAttribute("aria-hidden", String(!showPrePackingResults));
-  els.screenBlocksList.setAttribute("aria-hidden", String(!showBlocks));
-  els.screenSessionReady.setAttribute("aria-hidden", String(!showReady));
-  els.screenFullPackGenerating.setAttribute("aria-hidden", String(!showFullPackGenerating));
-  els.screenSocratic.setAttribute("aria-hidden", String(!showSocratic));
-  els.screenTest.setAttribute("aria-hidden", String(!showTest));
-  els.screenComplete.setAttribute("aria-hidden", String(!showComplete));
-  els.screenReviewConfig.setAttribute("aria-hidden", String(!showReviewConfig));
-  els.screenReviewGenerating.setAttribute(
-    "aria-hidden",
-    String(!showReviewGenerating),
-  );
-  els.screenReview.setAttribute("aria-hidden", String(!showReview));
-  els.screenReviewSummary.setAttribute("aria-hidden", String(!showReviewSummary));
-  els.screenSlowScope?.setAttribute("aria-hidden", String(!showSlowScope));
-  els.screenSlowPhase0?.setAttribute("aria-hidden", String(!showSlowPhase0));
-  els.screenSlowReader?.setAttribute("aria-hidden", String(!showSlowReader));
-  els.screenSlowPhase3?.setAttribute("aria-hidden", String(!showSlowPhase3));
-  els.screenSlowGraph?.setAttribute("aria-hidden", String(!showSlowGraph));
-  els.screenClozeStudy?.setAttribute("aria-hidden", String(!showClozeStudy));
-  els.screenRecall?.setAttribute("aria-hidden", String(!showRecall));
+  setScreenAriaHidden(els.screenSettings, showSettings);
+  setScreenAriaHidden(els.screenAuth, showAuth);
+  setScreenAriaHidden(els.screenAppHome, showAppHome);
+  setScreenAriaHidden(els.screenVaultBranch, showVaultBranch);
+  setScreenAriaHidden(els.screenUploadToVaultCandidates, showUploadToVault);
+  setScreenAriaHidden(els.screenCreateSessionStart, showCreateSessionStart);
+  setScreenAriaHidden(els.screenBookSearch, showBookSearch);
+  setScreenAriaHidden(els.screenInterviewCapture, showInterviewCapture);
+  setScreenAriaHidden(modeSelectEl, showModeSelectScreen);
+  setScreenAriaHidden(els.screenDocLibrary, showDocLibrary);
+  setScreenAriaHidden(els.screenRetrievalHub, showRetrievalHub);
+  setScreenAriaHidden(els.screenPlaceholder, showCreate);
+  setScreenAriaHidden(els.screenPrePackingAssessment, showPrePackingAssessment);
+  setScreenAriaHidden(els.screenPrePackingResults, showPrePackingResults);
+  setScreenAriaHidden(els.screenBlocksList, showBlocks);
+  setScreenAriaHidden(els.screenSessionReady, showReady);
+  setScreenAriaHidden(els.screenFullPackGenerating, showFullPackGenerating);
+  setScreenAriaHidden(els.screenSocratic, showSocratic);
+  setScreenAriaHidden(els.screenTest, showTest);
+  setScreenAriaHidden(els.screenComplete, showComplete);
+  setScreenAriaHidden(els.screenReviewConfig, showReviewConfig);
+  setScreenAriaHidden(els.screenReviewGenerating, showReviewGenerating);
+  setScreenAriaHidden(els.screenReview, showReview);
+  setScreenAriaHidden(els.screenReviewSummary, showReviewSummary);
+  setScreenAriaHidden(els.screenSlowScope, showSlowScope);
+  setScreenAriaHidden(els.screenSlowPhase0, showSlowPhase0);
+  setScreenAriaHidden(els.screenSlowReader, showSlowReader);
+  setScreenAriaHidden(els.screenSlowPhase3, showSlowPhase3);
+  setScreenAriaHidden(els.screenSlowGraph, showSlowGraph);
+  setScreenAriaHidden(els.screenClozeStudy, showClozeStudy);
+  setScreenAriaHidden(els.screenRecall, showRecall);
 
-  els.studyProgress.setAttribute("aria-hidden", String(!showStudyProgress));
+  setScreenAriaHidden(els.studyProgress, showStudyProgress);
   document.body.classList.toggle("study-active", showStudyProgress);
   document.body.classList.toggle("slow-reader-active", showSlowReader);
   document.body.classList.toggle("recall-active", showRecall);
