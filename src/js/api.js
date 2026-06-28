@@ -1,4 +1,4 @@
-import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260625_02";
+import { MAX_N_TEST, HOLISTIC_ASSESSMENT_MAX } from "./config.js?v=20260629_02";
 import { ASSESSMENT_FLAGS, isAssessmentQuestionsUiEnabled } from "./config/flags.js";
 import { validateBlockFidelity } from "./fidelity-validation.js";
 import {
@@ -28,13 +28,17 @@ import {
 } from "./shuffle-options.js";
 import { renderCoverageManifestForPrompt } from "./coverage-manifest.js";
 import {
+  ASSESSMENT_BATCH_SIZE,
+  accumulateConceptCoverage,
   buildAssessmentCoveragePlan,
   computeHolisticAssessmentBudget,
   deriveInventoryEdges,
   filterEdgesForBatch,
   filterInventoryForBatch,
-  tryMergeHolisticAssessmentQuestions,
-} from "./assessment-coverage.js?v=20260625_02";
+  getConceptId,
+  splitInventoryIntoConceptBatches,
+  validateConceptCoverageQuestions,
+} from "./assessment-coverage.js?v=20260629_02";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -3288,7 +3292,10 @@ const PREPACKING_ASSESSMENT_JSON_SCHEMA = `{
   }]
 }`;
 
-/** Per-batch holistic assessment JSON (~15 test + 3 socratic � ~450 tokens). */
+/** Per-batch concept-coverage assessment (~20 MCQs × ~250 tokens). @see specs/20260629-assessment-concept-coverage/ */
+const ASSESSMENT_CONCEPT_COVERAGE_BATCH_MAX_TOKENS = 6000;
+
+/** Per-batch holistic assessment JSON (~15 test + 3 socratic). */
 const HOLISTIC_ASSESSMENT_BATCH_MAX_TOKENS = 8000;
 
 function truncateMaterialExcerpt(text, maxChars = 12000) {
@@ -3393,7 +3400,7 @@ export function normalizePrePackingAssessmentQuestions(
   const nSocratic = Math.max(0, Math.min(socCeiling, Math.round(Number(n_socratic))));
   const arr = unwrapPrePackingQuestions(raw);
   if (!Array.isArray(arr) || !arr.length) {
-    throw new Error("Assessment questions array is empty.");
+    return [];
   }
 
   const invIds = inventoryIdSet(inventory);
@@ -3471,11 +3478,6 @@ export function normalizePrePackingAssessmentQuestions(
 
   const testCount = out.filter((q) => q.type === "test").length;
   const socCount = out.filter((q) => q.type === "socratic").length;
-  if (testCount < nTest || socCount < nSocratic) {
-    throw new Error(
-      `Assessment question count mismatch: expected at least ${nTest} test + ${nSocratic} socratic, got ${testCount} test + ${socCount} socratic.`,
-    );
-  }
 
   if (testCount > nTest || socCount > nSocratic) {
     const tests = out.filter((q) => q.type === "test").slice(0, nTest);
@@ -3778,6 +3780,188 @@ function computeAssessmentCoverage(inventory, items) {
   return Math.min(100, Math.max(0, Math.round((assessed.size / invIds.size) * 100)));
 }
 
+/**
+ * Build per-concept knowledge profile from assessment responses.
+ * @see specs/20260629-assessment-concept-coverage/ R5
+ * @returns {object | null}
+ */
+export function buildConceptCoverageKnowledgeProfile(questions, responses, conceptInventory) {
+  const inv = Array.isArray(conceptInventory) ? conceptInventory : [];
+  if (!inv.length) return null;
+
+  /** @type {Record<string, { assessed: boolean, correct?: boolean }>} */
+  const byConceptId = {};
+  for (const concept of inv) {
+    const id = getConceptId(concept);
+    if (id) byConceptId[id] = { assessed: false };
+  }
+
+  const responseByItem = new Map();
+  for (const r of Array.isArray(responses) ? responses : []) {
+    if (!r || typeof r !== "object") continue;
+    const itemId = String(r.item_id || "").trim();
+    if (itemId) responseByItem.set(itemId, String(r.answer ?? r.userAnswer ?? "").trim());
+  }
+
+  for (const q of Array.isArray(questions) ? questions : []) {
+    const conceptId = String(q?.concept_id || "").trim();
+    if (!conceptId || !byConceptId[conceptId]) continue;
+    const itemId = String(q?.item_id || "").trim();
+    const response = responseByItem.get(itemId);
+    if (response === undefined) continue;
+    if (isDontKnowAnswer(response)) {
+      byConceptId[conceptId] = { assessed: true, correct: false };
+      continue;
+    }
+    const chosen = extractTestAnswerLetter(response);
+    const correct = String(q.answer || "").trim().toUpperCase();
+    byConceptId[conceptId] = {
+      assessed: true,
+      correct: Boolean(chosen && correct && chosen === correct),
+    };
+  }
+
+  const assessedEntries = Object.values(byConceptId).filter((v) => v.assessed);
+  /** @type {{ concept_id: string, mastery: string, confidence: number }[]} */
+  const profileItems = [];
+  for (const [concept_id, entry] of Object.entries(byConceptId)) {
+    if (!entry.assessed) continue;
+    profileItems.push({
+      concept_id,
+      mastery: entry.correct ? "full" : "none",
+      confidence: entry.correct ? 0.85 : 0.2,
+    });
+  }
+
+  return {
+    byConceptId,
+    assessedCount: assessedEntries.length,
+    notAssessedCount: inv.length - assessedEntries.length,
+    correctCount: assessedEntries.filter((v) => v.correct).length,
+    generatedAt: Date.now(),
+    assessed_at: new Date().toISOString(),
+    coverage: computeAssessmentCoverage(inv, questions),
+    items: profileItems,
+  };
+}
+
+function buildConceptCoverageBatchPrompt(language, concepts, materialExcerpt) {
+  const lang = String(language || "English").trim() || "English";
+  const list = (Array.isArray(concepts) ? concepts : [])
+    .map((c) => ({
+      concept_id: getConceptId(c),
+      label: String(c?.label || c?.title || "").trim(),
+      definition: String(c?.definition || c?.scope_one_line || "").trim(),
+    }))
+    .filter((c) => c.concept_id);
+
+  return `Given the following concepts from the document, generate exactly one multiple-choice question per concept.
+Each question must include the concept's concept_id field matching the inventory id.
+
+Return a single JSON object: {"questions":[...]} where each question has:
+- type: "test"
+- concept_id: string (required — inventory id)
+- item_id: string (unique, e.g. "cov_c14")
+- question: string (stem)
+- options: { "A": string, "B": string, "C": string, "D": string }
+- answer: string (A|B|C|D)
+- feedback: string
+
+Generate exactly ${list.length} test question(s), one per concept. No socratic questions.
+${MC_OPTION_PARITY_RULES}
+${TEST_FEEDBACK_RULES}
+Respond entirely in ${lang}.
+Return ONLY valid JSON. No preamble.
+
+Concepts:
+${JSON.stringify(list)}
+
+Source excerpt:
+${truncateMaterialExcerpt(materialExcerpt, 12000)}`;
+}
+
+/**
+ * One LLM call: one MCQ per concept in the batch (max ASSESSMENT_BATCH_SIZE).
+ * @returns {Promise<object[]>}
+ */
+async function generateConceptCoverageBatch({
+  concepts,
+  materialText,
+  llmModel,
+  language,
+}) {
+  const batch = Array.isArray(concepts) ? concepts : [];
+  if (!batch.length) return [];
+
+  const model = resolveLlmModelArg(llmModel);
+  const lang = String(language || "English").trim() || "English";
+  const material = String(materialText ?? "").trim();
+
+  const systemPrompt = buildConceptCoverageBatchPrompt(lang, batch, material);
+
+  const content = await llmChatCompletions({
+    llmModel: model,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      {
+        role: "user",
+        content: JSON.stringify({
+          task: "Generate one MCQ per concept in the batch.",
+          concept_count: batch.length,
+        }),
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: ASSESSMENT_CONCEPT_COVERAGE_BATCH_MAX_TOKENS,
+  });
+
+  let parsed = parseModelJsonValue(content);
+  if (!parsed) {
+    const recovered = recoverPartialQuestionArray(content);
+    if (recovered.length) {
+      console.log(
+        `[assessment] Concept-coverage partial recovery: ${recovered.length} question(s).`,
+      );
+      parsed = { questions: recovered };
+    }
+  }
+  if (!parsed) return [];
+
+  let normalized;
+  try {
+    normalized = normalizePrePackingAssessmentQuestions(parsed, {
+      n_test: batch.length,
+      n_socratic: 0,
+      inventory: batch,
+      maxTest: batch.length,
+      maxSocratic: 0,
+    });
+  } catch (err) {
+    const recovered = recoverPartialQuestionArray(content);
+    if (!recovered.length) {
+      console.warn("[assessment] Concept-coverage batch parse failed:", err?.message || err);
+      return [];
+    }
+    try {
+      normalized = normalizePrePackingAssessmentQuestions(
+        { questions: recovered },
+        {
+          n_test: batch.length,
+          n_socratic: 0,
+          inventory: batch,
+          maxTest: batch.length,
+          maxSocratic: 0,
+        },
+      );
+    } catch {
+      return validateConceptCoverageQuestions(recovered, batch);
+    }
+  }
+
+  return validateConceptCoverageQuestions(normalized, batch);
+}
+
 function isDontKnowAnswer(answer) {
   const a = String(answer || "").trim();
   return PREPACKING_DONT_KNOW_ALIASES.has(a);
@@ -4005,143 +4189,84 @@ Respond in ${lang}.`;
 }
 
 /**
- * Map-reduce holistic assessment across document sections.
- * @see specs/20260618-holistic-assessment-coverage/
+ * Concept-coverage holistic assessment — one MCQ per concept, batched by 20.
+ * @see specs/20260629-assessment-concept-coverage/
  */
 export async function generateHolisticPrePackingAssessmentItems({
   conceptInventory,
-  edges,
   materialText,
-  docHierarchy,
-  conceptGraph,
-  plan: planIn,
   onProgress,
   llmModel,
   language,
 }) {
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
-  if (!inventory.length) throw new Error("Missing concept inventory.");
+  if (!inventory.length) return [];
   const material = String(materialText ?? "").trim();
-  if (!material) throw new Error("Missing material text for assessment generation.");
+  if (!material) return [];
 
   console.info("[api.generateHolisticPrePackingAssessmentItems] Start:", {
     inventorySize: inventory.length,
     materialChars: material.length,
-    hasPlan: Boolean(planIn),
-  }); // [debug-enrich]
+    batchSize: ASSESSMENT_BATCH_SIZE,
+  });
 
-  const edgeList =
-    Array.isArray(edges) && edges.length
-      ? edges
-      : deriveInventoryEdges(inventory, conceptGraph);
+  const covered = new Set();
+  /** @type {object[]} */
+  const allQuestions = [];
+  const parallelLimit = INVENTORY_MAX_PARALLEL_CALLS;
+  const MAX_RETRY_ROUNDS = 2;
 
-  const budget = computeHolisticAssessmentBudget(inventory, edgeList);
-  const chunks = buildInventoryChunks(docHierarchy, material);
-  const plan =
-    planIn ||
-    buildAssessmentCoveragePlan({
-      inventory,
-      edges: edgeList,
-      inventoryChunks: chunks,
-      rawMarkdown: material,
-      budget,
-    });
-  if (!plan?.batches?.length) {
-    console.error("[api.generateHolisticPrePackingAssessmentItems] Empty coverage plan:", {
-      inventorySize: inventory.length,
-      chunkCount: chunks?.length || 0,
-      budget,
-    }); // [debug-enrich]
-    throw new Error("Could not build holistic assessment coverage plan.");
-  }
+  async function runConceptBatches(concepts, label) {
+    const batches = splitInventoryIntoConceptBatches(concepts, ASSESSMENT_BATCH_SIZE);
+    if (!batches.length) return;
 
-  console.debug("[api.generateHolisticPrePackingAssessmentItems] Plan:", {
-    batchCount: plan.batches.length,
-    planHash: plan.planHash || null,
-    budget,
-  }); // [debug-enrich]
+    for (let i = 0; i < batches.length; i += parallelLimit) {
+      const slice = batches.slice(i, i + parallelLimit);
+      const batchStart = i + 1;
+      const batchEnd = Math.min(i + slice.length, batches.length);
+      if (typeof onProgress === "function") {
+        onProgress(`Generating questions ${batchStart}–${batchEnd}/${batches.length} (${label})…`);
+      }
 
-  const batches = plan.batches;
-  const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
-  const MAX_MERGE_ATTEMPTS = 4;
-  const MERGE_RETRY_DELAY_MS = 15000;
-
-  async function runHolisticBatches() {
-    /** @type {object[][]} */
-    const batchResults = [];
-    /** @type {Error[]} */
-    const batchErrors = [];
-
-    for (let i = 0; i < batches.length; i += batchSize) {
-    const slice = batches.slice(i, i + batchSize);
-    const batchNum = i + 1;
-    const totalBatches = batches.length;
-    if (typeof onProgress === "function") {
-      onProgress(`Generating questions ${batchNum}�${Math.min(i + slice.length, totalBatches)}/${totalBatches}�`);
-    }
-
-    const sliceResults = await Promise.all(
-      slice.map(async (batch) => {
-        const scopedInventory = filterInventoryForBatch(inventory, batch.conceptIds);
-        const scopedEdges = filterEdgesForBatch(edgeList, batch.edgeIds);
-        if (!scopedInventory.length) return [];
-        try {
-          return await generatePrePackingAssessmentItems({
-            conceptInventory: scopedInventory,
-            edges: scopedEdges,
-            materialText: batch.materialText || material,
-            n_test: batch.n_test,
-            n_socratic: batch.n_socratic,
-            edgeTestQuota: batch.edgeTestQuota,
-            llmModel,
-            language,
-            holisticBatch: true,
-            materialMaxChars: 24000,
-            coverageBatchId: batch.batchId,
-          });
-        } catch (err) {
-          console.error("[assessment] Error:", err);
-          batchErrors.push(err instanceof Error ? err : new Error(String(err?.message || err)));
-          return [];
-        }
-      }),
-    );
-    batchResults.push(...sliceResults);
-    }
-
-    const flat = batchResults.flat();
-    if (!flat.length && batchErrors.length) {
-      throw batchErrors[0];
-    }
-
-    return batchResults;
-  }
-
-  let lastMergeError = null;
-  for (let attempt = 1; attempt <= MAX_MERGE_ATTEMPTS; attempt += 1) {
-    const batchResults = await runHolisticBatches();
-    const mergeResult = tryMergeHolisticAssessmentQuestions(batchResults, plan);
-    if (mergeResult.ok) {
-      console.info("[api.generateHolisticPrePackingAssessmentItems] Merge success:", {
-        attempt,
-        questionCount: mergeResult.questions.length,
-        testCount: mergeResult.testCount,
-      }); // [debug-enrich]
-      return shuffleTestQuestionsInList(mergeResult.questions);
-    }
-
-    lastMergeError = new Error(
-      `Holistic assessment merge: expected at least ${mergeResult.minTest} test questions, got ${mergeResult.testCount}.`,
-    );
-    if (attempt < MAX_MERGE_ATTEMPTS) {
-      console.log(
-        `[assessment] Merge attempt ${attempt}/${MAX_MERGE_ATTEMPTS} — got ${mergeResult.testCount} questions, need at least ${mergeResult.minTest}. Retrying in ${MERGE_RETRY_DELAY_MS / 1000}s…`,
+      const results = await Promise.all(
+        slice.map(async (batch) => {
+          try {
+            return await generateConceptCoverageBatch({
+              concepts: batch,
+              materialText: material,
+              llmModel,
+              language,
+            });
+          } catch (err) {
+            console.error("[assessment] Concept-coverage batch error:", err);
+            return [];
+          }
+        }),
       );
-      await sleep(MERGE_RETRY_DELAY_MS);
+
+      for (const qs of results) {
+        const added = accumulateConceptCoverage(qs, covered, inventory);
+        allQuestions.push(...added);
+      }
     }
   }
 
-  throw lastMergeError || new Error("Holistic assessment merge failed after all retry attempts.");
+  await runConceptBatches(inventory, "initial");
+
+  for (let retry = 0; retry < MAX_RETRY_ROUNDS; retry += 1) {
+    const uncovered = inventory.filter((c) => !covered.has(getConceptId(c)));
+    if (!uncovered.length) break;
+    console.info("[assessment] Retry round", retry + 1, "— uncovered:", uncovered.length);
+    await runConceptBatches(uncovered, `retry-${retry + 1}`);
+  }
+
+  console.info("[api.generateHolisticPrePackingAssessmentItems] Done:", {
+    questionCount: allQuestions.length,
+    coveredCount: covered.size,
+    inventorySize: inventory.length,
+  });
+
+  return shuffleTestQuestionsInList(allQuestions);
 }
 
 export async function evaluatePrePackingAssessmentResponses({
@@ -4197,6 +4322,18 @@ Respond in ${lang}.`;
       console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
       return null;
     }
+  }
+
+  const conceptCoverageMode =
+    inventory.length > 0 &&
+    qs.every((q) => {
+      const type = String(q?.type || "").trim().toLowerCase();
+      return type === "test" && String(q?.concept_id || "").trim();
+    }) &&
+    !qs.some((q) => String(q?.type || "").trim().toLowerCase() === "socratic");
+
+  if (conceptCoverageMode) {
+    return buildConceptCoverageKnowledgeProfile(qs, resp, inventory);
   }
 
   try {
