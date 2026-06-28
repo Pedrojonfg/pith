@@ -2463,6 +2463,7 @@ export async function runConceptInventoryMapReduce(
         `[session.runConceptInventoryMapReduce] Bisecting chunk after truncation (${chunk.label}, depth ${depth})`,
       );
     }
+    const halves = splitInventoryChunkForBisect(chunk);
     if (!halves) {
       throw new Error(`Inventory chunk failed and could not bisect: ${chunk.label}`);
     }
@@ -2839,11 +2840,11 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     return { decision: "run" };
   }
 
-  if (isConceptInventoryValid(session)) {
+  if (isTier1PreparationComplete(session)) {
     const inv = session.shared.conceptInventory;
     const charCount = session.shared.docMeta?.charCount ?? 0;
     console.log(
-      `[DPP-GUARD] isConceptInventoryValid ? TRUE (${inv.length} concepts, charCount ${charCount}). Skipping recalculation.`,
+      `[DPP-GUARD] isTier1PreparationComplete → TRUE (${inv?.length ?? 0} concepts, charCount ${charCount}). Skipping recalculation.`,
     );
     return { decision: "skip" };
   }
