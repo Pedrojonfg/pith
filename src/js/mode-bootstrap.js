@@ -23,16 +23,42 @@ function preparationAllowsBootstrap(doc) {
 }
 
 /**
+ * @param {object | null | undefined} slice
+ * @returns {boolean}
+ */
+function hasReadyClozeItems(slice) {
+  const cloze = slice?.cloze;
+  if (!cloze || typeof cloze !== "object") return false;
+  if (String(cloze.pipelineStatus || "") !== "ready") return false;
+  return getValidItems(cloze.items || []).length > 0;
+}
+
+/**
+ * Keep an existing cloze slice when it already has generated items or pipeline progress.
+ * @param {object | null | undefined} slice
+ * @returns {boolean}
+ */
+function shouldPreserveClozeSlice(slice) {
+  if (!slice || typeof slice !== "object") return false;
+  if (hasReadyClozeItems(slice)) return true;
+  const cloze = slice.cloze;
+  if (!cloze || typeof cloze !== "object") return false;
+  const validCount = getValidItems(cloze.items || []).length;
+  if (validCount > 0) return true;
+  const status = String(cloze.pipelineStatus || "");
+  if (status === "generating" || /^phase\d$/.test(status)) return true;
+  if (status === "failed" && (cloze.items?.length || cloze.epistemicGraph || cloze.analysis)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * @param {import('./session-types.js').DocumentSession | null | undefined} doc
  * @returns {boolean}
  */
 function hasPrepReadyCloze(doc) {
-  const cloze = doc?.modes?.cloze?.cloze;
-  if (!cloze) return false;
-  if (String(cloze.pipelineStatus || "") === "ready") {
-    return getValidItems(cloze.items || []).length > 0;
-  }
-  return false;
+  return hasReadyClozeItems(doc?.modes?.cloze);
 }
 
 /**
@@ -64,6 +90,7 @@ function isSliceResumable(slice, slot) {
     return String(slice.slow?.phase || "").trim().length > 0;
   }
   if (slot === "cloze") {
+    if (hasReadyClozeItems(slice) || shouldPreserveClozeSlice(slice)) return true;
     const text = slice.cloze?.normalizedText;
     return typeof text === "string" && text.length > 0;
   }
@@ -210,8 +237,9 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
   }
 
   if (slot === "cloze") {
-    if (doc.modes?.cloze && hasPrepReadyCloze(doc)) {
-      return JSON.parse(JSON.stringify(doc.modes.cloze));
+    const existing = doc.modes?.cloze;
+    if (existing && shouldPreserveClozeSlice(existing)) {
+      return JSON.parse(JSON.stringify(existing));
     }
     const slice = createClozeSession(common);
     if (doc.shared?.conceptGraph?.nodes?.length) {

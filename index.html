@@ -896,30 +896,6 @@
             </div>
 
             <div class="create-collapsibles create-collapsibles--shared">
-            <details id="clozeImportSection" class="form-collapsible" hidden>
-              <summary>Import cloze items</summary>
-              <div class="form-collapsible-body">
-                <p class="subtle form-collapsible-intro">
-                  Upload one or more <strong>.md</strong> files exported from Cloze Detection.
-                  They will be merged into a single study session.
-                </p>
-                <label for="clozeImportInput">Item files (.md)</label>
-                <input
-                  id="clozeImportInput"
-                  name="clozeImport"
-                  type="file"
-                  accept=".md,.markdown,.txt,text/markdown"
-                  multiple
-                />
-                <div class="hint" id="clozeImportHint" aria-live="polite"></div>
-                <div class="row">
-                  <button type="button" id="clozeImportBtn" class="btn-primary">Import and prepare session</button>
-                  <span class="hint" id="clozeImportStatus" role="status"></span>
-                </div>
-                <div id="clozeImportError" class="error" hidden></div>
-              </div>
-            </details>
-
             </div>
 
             <div id="generateBlocksFooter" class="create-primary-actions" hidden>
@@ -1875,7 +1851,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260629_04";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260629_05";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1901,7 +1877,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260629_04");
+        await import("./src/js/main.js?v=20260629_05");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

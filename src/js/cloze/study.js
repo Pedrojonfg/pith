@@ -1,5 +1,5 @@
 import { prioritizeByAssessmentSignals } from "../assessment-signals.js?v=20260625_02";
-import { getActiveSession } from "../session-store.js";
+import { getActiveSession, saveActiveSession } from "../session-store.js";
 import { mapClozeResultToQuality, registerOrUpdateSmItem } from "../sm2-ingest.js";
 import { promoteFromCloze } from "../concept-registry/ingest.js";
 import { getValidItems } from "./normalize.js?v=20260625_02";
@@ -93,6 +93,11 @@ async function persistProgress(session) {
   cloze.studyOrder = activeOrder.slice();
   cloze.studyStats = { correct, shown };
   await storeActiveSession(session);
+  const doc = await getActiveSession();
+  if (doc?.docId && doc.modes) {
+    doc.modes.cloze = session;
+    await saveActiveSession(doc);
+  }
 }
 
 function clearAdvanceTimer() {
@@ -295,7 +300,7 @@ export async function enterClozeStudyScreen(session, doc = null) {
 
   if (!Array.isArray(session.cloze.studyOrder) || !session.cloze.studyOrder.length) {
     applyAssessmentPrioritizedOrder(session, doc);
-    await storeActiveSession(session);
+    await persistProgress(session);
   }
 
   activeOrder = buildStudyOrder(session);
