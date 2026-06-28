@@ -34,7 +34,15 @@ import {
   resetContradictionCheckBudget,
 } from "./vault/contradiction-check.js";
 import { runDocumentSimilarityForProject } from "./vault/doc-similarity.js";
-import { getSession, saveActiveSession } from "./session-store.js";
+import { getSession } from "./session-store.js";
+import {
+  clearDppRun,
+  deepCloneSession,
+  generateRunId,
+  persistCheckpoint,
+  persistFinal,
+  registerDppRun,
+} from "./dpp-persistence.js";
 import {
   createEmptyPreparationState,
   normalizePreparationState,
@@ -109,15 +117,17 @@ function getMarkdown(doc) {
   return String(doc?.shared?.rawMarkdown || "").trim();
 }
 
-/** Sole DPP persistence entry point — no phase or wave may call this except pipeline exit. */
-async function persistPipelineResult(doc, prep, stopAfterTier) {
+/** Finalize preparation status and persist — sole exit write for a DPP run. */
+async function finalizeAndPersist(doc, prep, stopAfterTier) {
   prep.completedAt = prep.completedAt || Date.now();
   prep.currentPhase = null;
   prep.currentWave = null;
   resolveFinalStatus(prep, tier1Complete(doc), stopAfterTier);
-  await saveActiveSession(doc);
+  await persistFinal(doc);
   return doc;
 }
+
+const CHECKPOINT_PHASES = new Set(["T1.1", "T1.2"]);
 
 function ensurePreparation(doc) {
   if (!doc.shared) doc.shared = {};
@@ -144,6 +154,18 @@ function markPhase(prep, phaseId, status, outputHash, error) {
     error: error ? String(error) : undefined,
   };
   prep.currentPhase = phaseId;
+}
+
+function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
+  const tier1Ids = phasesForStopTier(Math.min(stopAfterTier, 1));
+  return tier1Ids.every((id) => {
+    const row = prep.phaseResults?.[id];
+    return (
+      row?.status === "success" ||
+      row?.status === "skipped" ||
+      phaseSucceeded(prep, id, fingerprint)
+    );
+  });
 }
 
 function tier1Complete(doc) {
@@ -559,21 +581,31 @@ export async function runDocumentPreparationPipeline(doc, options = {}) {
 
 async function runDocumentPreparationPipelineInner(doc, options = {}) {
   if (!doc?.docId) throw new Error("DPP requires docId");
+  const workingDoc = deepCloneSession(doc);
   const stopAfterTier = options.stopAfterTier ?? 2;
-  const fingerprint = computePreparationFingerprint(doc, options);
+  const fingerprint = computePreparationFingerprint(workingDoc, options);
   console.info("[document-preparation.runDocumentPreparationPipeline] Start:", {
-    docId: doc.docId,
+    docId: workingDoc.docId,
     stopAfterTier,
     forceRerun: options.forceRerun === true,
     fingerprint: fingerprint.slice(0, 12),
-    charCount: String(doc?.shared?.rawMarkdown || "").length,
-    priorStatus: doc?.shared?.preparation?.status,
+    charCount: String(workingDoc?.shared?.rawMarkdown || "").length,
+    priorStatus: workingDoc?.shared?.preparation?.status,
   }); // [debug-enrich]
-  const prep = ensurePreparation(doc);
+  const prep = ensurePreparation(workingDoc);
   prep.fingerprint = fingerprint;
+  prep.runId = generateRunId();
   setPreparationStatus(prep, "running");
-  prep.startedAt = prep.startedAt || Date.now();
+  prep.startedAt = Date.now();
   prep.errors = prep.errors || [];
+  registerDppRun(workingDoc.docId, prep.runId);
+
+  try {
+    await persistCheckpoint(workingDoc);
+  } catch (err) {
+    clearDppRun(workingDoc.docId);
+    throw err;
+  }
 
   const ctx = {
     llmModel: options.llmModel,
@@ -586,10 +618,15 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
 
   if (isOfflineMode()) {
     console.warn("[document-preparation.runDocumentPreparationPipeline] Offline — stopping after Tier 0", {
-      docId: doc.docId,
+      docId: workingDoc.docId,
     }); // [debug-enrich]
-    await persistPipelineResult(doc, prep, stopAfterTier);
-    return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
+    await finalizeAndPersist(workingDoc, prep, stopAfterTier);
+    return {
+      doc: workingDoc,
+      status: prep.status,
+      phaseResults: prep.phaseResults,
+      errors: prep.errors,
+    };
   }
 
   try {
@@ -597,18 +634,24 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     if (!token) throw new Error("Sign in to use AI features.");
   } catch (err) {
     console.warn("[document-preparation.runDocumentPreparationPipeline] Auth unavailable — partial prep only:", {
-      docId: doc.docId,
+      docId: workingDoc.docId,
       message: err?.message || String(err),
     }); // [debug-enrich]
     setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "Sign in required", at: Date.now() });
-    await persistPipelineResult(doc, prep, stopAfterTier);
-    return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
+    await finalizeAndPersist(workingDoc, prep, stopAfterTier);
+    return {
+      doc: workingDoc,
+      status: prep.status,
+      phaseResults: prep.phaseResults,
+      errors: prep.errors,
+    };
   }
 
   const phaseIds = phasesForStopTier(stopAfterTier);
   const waves = buildWaves(phaseIds);
   prep.waves = waves.map((phaseIdsInWave, i) => ({ wave: i + 1, phaseIds: phaseIdsInWave }));
+  let tier1CheckpointDone = false;
 
   try {
     for (let wi = 0; wi < waves.length; wi += 1) {
@@ -618,7 +661,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
         ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint))
         : wave;
       console.debug("[document-preparation.runDocumentPreparationPipeline] Wave start:", {
-        docId: doc.docId,
+        docId: workingDoc.docId,
         wave: wi + 1,
         totalWaves: waves.length,
         runnablePhases: runnable,
@@ -627,7 +670,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
 
       const results = await Promise.allSettled(
         runnable.map(async (phaseId) => {
-          console.debug("[document-preparation.executePhase] Start:", { docId: doc.docId, phaseId }); // [debug-enrich]
+          console.debug("[document-preparation.executePhase] Start:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
           options.onProgress?.({
             phaseId,
             wave: wi + 1,
@@ -635,14 +678,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             status: "running",
           });
           try {
-            const output = await executePhase(doc, phaseId, ctx);
+            const output = await executePhase(workingDoc, phaseId, ctx);
             if (output && typeof output === "object" && output.skipped) {
               markPhase(prep, phaseId, "skipped", output.hash || "skipped");
-              console.info("[document-preparation.executePhase] Skipped:", { docId: doc.docId, phaseId }); // [debug-enrich]
+              console.info("[document-preparation.executePhase] Skipped:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
             } else {
               markPhase(prep, phaseId, "success", output);
               console.info("[document-preparation.executePhase] Success:", {
-                docId: doc.docId,
+                docId: workingDoc.docId,
                 phaseId,
                 outputHash: typeof output === "string" ? output.slice(0, 12) : null,
               }); // [debug-enrich]
@@ -657,7 +700,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
           } catch (err) {
             const message = err?.message || String(err);
             console.error("[document-preparation.executePhase] Failed:", {
-              docId: doc.docId,
+              docId: workingDoc.docId,
               phaseId,
               message,
               stack: err?.stack,
@@ -676,6 +719,20 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
         }),
       );
       prep.updatedAt = Date.now();
+
+      for (let ri = 0; ri < runnable.length; ri += 1) {
+        const settled = results[ri];
+        const phaseId = runnable[ri];
+        if (settled.status === "fulfilled" && settled.value?.ok && CHECKPOINT_PHASES.has(phaseId)) {
+          await persistCheckpoint(workingDoc);
+        }
+      }
+
+      if (!tier1CheckpointDone && allTier1PhasesComplete(prep, fingerprint, stopAfterTier)) {
+        await persistCheckpoint(workingDoc);
+        tier1CheckpointDone = true;
+      }
+
       void results;
     }
 
@@ -688,25 +745,30 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     const message = err?.message || String(err);
     prep.errors.push({ phaseId: "pipeline", message, at: Date.now() });
     console.error("[document-preparation.runDocumentPreparationPipeline] Pipeline error before final status:", {
-      docId: doc.docId,
+      docId: workingDoc.docId,
       message,
       stack: err?.stack,
     }); // [debug-enrich]
   } finally {
-    await persistPipelineResult(doc, prep, stopAfterTier);
+    await finalizeAndPersist(workingDoc, prep, stopAfterTier);
     console.info("[document-preparation.runDocumentPreparationPipeline] Finished:", {
-      docId: doc.docId,
+      docId: workingDoc.docId,
       status: prep.status,
       failReason: prep.failReason || null,
       errorCount: prep.errors?.length || 0,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+      conceptCount: workingDoc?.shared?.conceptInventory?.length ?? 0,
       phaseSummary: Object.fromEntries(
         Object.entries(prep.phaseResults || {}).map(([id, r]) => [id, r?.status]),
       ),
     }); // [debug-enrich]
   }
 
-  return { doc, status: prep.status, phaseResults: prep.phaseResults, errors: prep.errors };
+  return {
+    doc: workingDoc,
+    status: prep.status,
+    phaseResults: prep.phaseResults,
+    errors: prep.errors,
+  };
 }
 
 /**

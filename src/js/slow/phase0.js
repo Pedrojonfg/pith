@@ -10,7 +10,7 @@ import {
   normalizeLlmModel,
 } from "../llm.js?v=20260625_02";
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
-import { addConceptsToShared, getActiveSession } from "../session-store.js";
+import { addConceptsToShared, getActiveSession, saveActiveSession } from "../session-store.js";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
 export const PHASE0_MAX_CHUNK_CHARS = 50000;
@@ -624,7 +624,8 @@ export async function syncPhase0ConceptsToShared(phase0) {
     .filter((c) => c.label);
   if (!concepts.length) return;
   try {
-    await addConceptsToShared(doc.docId, concepts);
+    addConceptsToShared(doc, concepts);
+    await saveActiveSession(doc);
   } catch (err) {
     console.warn("[phase0] shared concepts dual-write failed", err);
   }

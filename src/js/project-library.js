@@ -26,6 +26,7 @@ import {
   renameProject,
 } from "./project-store.js";
 import { getPreparationBadgeLabel } from "./document-preparation.js";
+import { scanStalePreparationSessions } from "./session.js";
 import { exportDocumentSessionMarkdown } from "./export.js?v=20260625_02";
 import { els, renderBreadcrumb, renderProjectPicker } from "./ui.js?v=20260625_02";
 
@@ -158,8 +159,10 @@ function renderProjectRows(store, parentId, container, onOpenProject) {
 async function renderDocumentRows(projectId, container, onOpenDoc) {
   if (!container) return;
   const store = getProjectStore();
-  const sessions = (await getAllSessions()).filter(
-    (s) => String(s?.projectId || MISC_PROJECT_ID) === String(projectId),
+  const sessions = await scanStalePreparationSessions(
+    (await getAllSessions()).filter(
+      (s) => String(s?.projectId || MISC_PROJECT_ID) === String(projectId),
+    ),
   );
   if (!sessions.length) {
     container.innerHTML = projectId
