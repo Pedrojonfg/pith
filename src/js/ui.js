@@ -445,6 +445,7 @@ export const els = {
   screenRetrievalHub: document.getElementById("screenRetrievalHub"),
   retrievalHubTitle: document.getElementById("retrievalHubTitle"),
   retrievalHubLead: document.getElementById("retrievalHubLead"),
+  retrievalHubVaultSummary: document.getElementById("retrievalHubVaultSummary"),
   retrievalHubOptions: document.getElementById("retrievalHubOptions"),
   retrievalHubBackBtn: document.getElementById("retrievalHubBackBtn"),
   btnVaultReview: document.getElementById("btnVaultReview"),
