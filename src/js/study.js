@@ -802,7 +802,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     }
   }
 
-  if (!isTier1PreparationComplete(doc) && !isConceptInventoryValid(doc)) {
+  if (!isTier1PreparationComplete(doc)) {
     showDocumentPreparingScreen();
     doc = await ensureTier1Preparation(doc, {
       ...preparationGateOptions((msg) => {
@@ -811,7 +811,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
         }
       }),
     });
-    if (!isTier1PreparationComplete(doc) && !isConceptInventoryValid(doc)) {
+    if (!isTier1PreparationComplete(doc)) {
       const afterGuard = evaluateConceptInventoryGuard(doc);
       if (afterGuard.decision === "failed") {
         renderPreparationFailedUi(doc);

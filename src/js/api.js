@@ -828,14 +828,14 @@ export const CONCEPT_PACK_MAX_TOKENS = 8192;
 /** Phase 1 single-pass: =8k words (~54 concepts — ~200 tok — 10.8k). */
 export const CONCEPT_INVENTORY_MAX_TOKENS = 12288;
 
-/** Phase 1 map-reduce per-chunk: ~3500 words (~22 concepts — ~200 tok — 4.4k). */
-export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 6144;
+/** Phase 1 map-reduce per-chunk: ~2500 words (~16 concepts × ~250 tok verbose — ~4k). */
+export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 8192;
 
 /** Phase 1 map-reduce merge: consolidated partials, deduped output (~60 concepts × ~200 tok). */
 export const CONCEPT_INVENTORY_MERGE_MAX_TOKENS = 12288;
 
 export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
-export const INVENTORY_TARGET_CHUNK_WORDS = 3500;
+export const INVENTORY_TARGET_CHUNK_WORDS = 2500;
 export const INVENTORY_MAX_PARALLEL_CALLS = 8;
 
 /** Char-window fallback slice when hierarchy cannot split (20260705-dpp-inventory-llm-optimization). */
@@ -1618,12 +1618,16 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
   }
 
   const treeMerged = mergeConceptInventoriesDeterministicTree(payload);
+  const rawConceptCount = payload.reduce((n, p) => n + p.concepts.length, 0);
+  // Single-partial merge: deterministic title-key dedupe is enough. Map-reduce (2+ partials)
+  // always needs LLM merge — count ≥ minRequired does not imply semantic dedup (FR-006 revised).
   if (
     Array.isArray(treeMerged) &&
     treeMerged.length >= minRequired &&
-    mergePolish !== true
+    mergePolish !== true &&
+    payload.length < 2
   ) {
-    console.info("[inventory-merge] Deterministic tree accepted:", {
+    console.info("[inventory-merge] Deterministic tree accepted (single partial):", {
       conceptCount: treeMerged.length,
       minRequired,
       partialCount: payload.length,
@@ -1632,6 +1636,14 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       concepts: treeMerged,
       inventoryMode: "map_reduce_deterministic",
     };
+  }
+  if (payload.length >= 2) {
+    console.info("[inventory-merge] Map-reduce merge — running LLM dedup:", {
+      partialCount: payload.length,
+      rawConceptCount,
+      deterministicCount: treeMerged?.length ?? 0,
+      minRequired,
+    });
   }
 
   const partialsJson = JSON.stringify(payload);
