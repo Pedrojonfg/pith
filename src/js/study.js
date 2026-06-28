@@ -4425,7 +4425,8 @@ let splitMergeSummaryEls = null;
 
 function ensureSplitMergeSummaryEls() {
   if (splitMergeSummaryEls) return splitMergeSummaryEls;
-  const host = els.screenBlocksList;
+  const host =
+    els.screenBlocksList?.querySelector(".blocks-screen-inner") || els.screenBlocksList;
   if (!host) return null;
 
   const wrap = document.createElement("div");
