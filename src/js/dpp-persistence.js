@@ -8,6 +8,9 @@ import { getSession, saveActiveSession } from "./session-store.js";
 /** @type {Map<string, string>} docId → active runId on this device */
 const activeDppRunByDocId = new Map();
 
+const TERMINAL_PREP_STATUSES = new Set(["ready", "partial", "failed", "legacy"]);
+const IN_PROGRESS_PREP_STATUSES = new Set(["pending", "running"]);
+
 /**
  * @param {object} session
  * @returns {object}
@@ -77,6 +80,57 @@ export function getActiveDppRunId(docId) {
 }
 
 /**
+ * True when the in-memory prepared doc is strictly ahead of what is in store.
+ * @param {object} prepared
+ * @param {object} store
+ * @returns {boolean}
+ */
+export function isPreparedDocAheadOfStore(prepared, store) {
+  if (!prepared?.shared) return false;
+  if (!store?.shared) return true;
+
+  const prepInv = Array.isArray(prepared.shared.conceptInventory)
+    ? prepared.shared.conceptInventory.length
+    : 0;
+  const storeInv = Array.isArray(store.shared.conceptInventory)
+    ? store.shared.conceptInventory.length
+    : 0;
+  if (prepInv > storeInv) return true;
+
+  const prepStatus = String(prepared.shared.preparation?.status || "pending");
+  const storeStatus = String(store.shared.preparation?.status || "pending");
+
+  if (
+    TERMINAL_PREP_STATUSES.has(prepStatus) &&
+    IN_PROGRESS_PREP_STATUSES.has(storeStatus) &&
+    prepInv >= storeInv
+  ) {
+    return true;
+  }
+
+  const prepRunId = prepared.shared.preparation?.runId;
+  const storeRunId = store.shared.preparation?.runId;
+  if (prepRunId && prepRunId === storeRunId && prepStatus !== storeStatus) return true;
+
+  return false;
+}
+
+/**
+ * Ensure store reflects the pipeline's in-memory conclusion when store is behind.
+ * @param {object} preparedDoc
+ * @returns {Promise<object|null>}
+ */
+export async function commitPreparedDocToStore(preparedDoc) {
+  if (!preparedDoc?.docId) return null;
+  const current = await getSession(preparedDoc.docId);
+  if (!current || isPreparedDocAheadOfStore(preparedDoc, current)) {
+    await saveActiveSession(preparedDoc);
+    return (await getSession(preparedDoc.docId)) ?? preparedDoc;
+  }
+  return current;
+}
+
+/**
  * @param {object} doc
  */
 export async function persistCheckpoint(doc) {
@@ -86,23 +140,44 @@ export async function persistCheckpoint(doc) {
 
 /**
  * @param {object} doc
+ * @returns {Promise<boolean>} whether the final write was applied
  */
 export async function persistFinal(doc) {
   if (!doc?.docId) throw new Error("persistFinal requires docId");
   const runId = doc?.shared?.preparation?.runId;
-  const current = await getSession(doc.docId);
-  const storeRunId = current?.shared?.preparation?.runId;
-  if (storeRunId && runId && storeRunId !== runId) {
+  const docId = doc.docId;
+  const activeOnDevice = getActiveDppRunId(docId);
+
+  if (activeOnDevice && runId && activeOnDevice !== runId) {
     console.warn("[DPP] stale run, skipping final write", runId);
-    clearDppRun(doc.docId);
-    return;
+    clearDppRun(docId);
+    return false;
   }
+
+  const current = await getSession(docId);
+  const storeRunId = current?.shared?.preparation?.runId;
+  if (storeRunId && runId && storeRunId !== runId && !isPreparedDocAheadOfStore(doc, current)) {
+    console.warn("[DPP] stale run, skipping final write (store runId mismatch)", {
+      runId,
+      storeRunId,
+    });
+    clearDppRun(docId);
+    return false;
+  }
+  if (storeRunId && runId && storeRunId !== runId && isPreparedDocAheadOfStore(doc, current)) {
+    console.warn("[DPP] store runId mismatch but prepared doc is ahead — forcing final write", {
+      runId,
+      storeRunId,
+    });
+  }
+
   await saveActiveSession(doc);
-  clearDppRun(doc.docId);
+  clearDppRun(docId);
   try {
     const { upsertSharedDppCache } = await import("./shared-dpp-cache-persist.js");
-    await upsertSharedDppCache(doc.docId, doc);
+    await upsertSharedDppCache(docId, doc);
   } catch (err) {
     console.warn("[DPP] shared cache upsert skipped:", err?.message || err);
   }
+  return true;
 }
