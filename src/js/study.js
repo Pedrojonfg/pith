@@ -26,6 +26,8 @@ import {
   isPrePackingAssessmentEnabled,
   isAdaptiveProbingEnabled,
   isBookLookupEnabled,
+  getAssessmentBeforePackingPreference,
+  saveAssessmentBeforePackingPreference,
   saveSourceFidelityStrictPreference,
 } from "./config/flags.js";
 import {
@@ -3038,7 +3040,12 @@ function setGenerateBlocksFormHidden(hidden) {
 function shouldRunPrePackingAssessment() {
   if (!isPrePackingAssessmentEnabled()) return false;
   if (isOfflineMode()) return false;
-  return els.rsvpRunAssessment?.checked !== false;
+  return els.rsvpRunAssessment?.checked === true;
+}
+
+function syncRsvpAssessmentToggleFromPreference() {
+  if (!els.rsvpRunAssessment) return;
+  els.rsvpRunAssessment.checked = getAssessmentBeforePackingPreference();
 }
 
 function updateCreateScreenModeVisibility(mode) {
@@ -3054,8 +3061,9 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isRsvp;
   if (els.rsvpCommentsGroup) els.rsvpCommentsGroup.hidden = !showComments;
   if (els.rsvpAssessmentOption) {
-    els.rsvpAssessmentOption.hidden = !isRsvp || isOfflineMode() || !isPrePackingAssessmentEnabled();
+    els.rsvpAssessmentOption.hidden = !isRsvp || isOfflineMode();
   }
+  if (isRsvp) syncRsvpAssessmentToggleFromPreference();
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
@@ -4286,6 +4294,10 @@ function wireStudyModeSelector() {
     const pressed = els.criticalModeToggleBtn.getAttribute("aria-pressed") === "true";
     const next = !pressed;
     els.criticalModeToggleBtn.setAttribute("aria-pressed", String(next));
+  });
+
+  els.rsvpRunAssessment?.addEventListener("change", () => {
+    saveAssessmentBeforePackingPreference(els.rsvpRunAssessment.checked === true);
   });
 }
 

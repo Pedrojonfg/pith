@@ -616,6 +616,7 @@ export const els = {
   sessionReadyMeta: document.getElementById("sessionReadyMeta"),
   studyFileInputRow: document.getElementById("studyFileInputRow"),
   rsvpOfflinePackRow: document.getElementById("rsvpOfflinePackRow"),
+  rsvpAssessmentOption: document.getElementById("rsvpAssessmentOption"),
   rsvpRunAssessment: document.getElementById("rsvpRunAssessment"),
   rsvpCommentsGroup: document.getElementById("rsvpCommentsGroup"),
   createBackToModesBtn: document.getElementById("createBackToModesBtn"),
