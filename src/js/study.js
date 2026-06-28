@@ -106,7 +106,7 @@ import {
 } from "./interview/origin.js";
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
-import { normalizePreparationState, isTier1PreparationComplete, setPreparationStatus } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, setPreparationStatus } from "./session-types.js";
 import { MAX_SOURCE_FILES, sliceMarkdownForSourceFile } from "./source-provenance.js";
 import {
   resolveRsvpInventoryForPack,
@@ -526,7 +526,24 @@ export async function startDocumentPreparation(doc, options = {}) {
     },
   });
   const prepared = result?.doc ?? doc;
-  const reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
+  let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
+  const preparedStatus = prepared?.shared?.preparation?.status;
+  const reconciledStatus = reconciled?.shared?.preparation?.status;
+  if (
+    preparedStatus &&
+    preparedStatus !== "running" &&
+    preparedStatus !== "pending" &&
+    (reconciledStatus === "running" || reconciledStatus === "pending") &&
+    hasTier1Artifacts(prepared)
+  ) {
+    console.warn("[study.startDocumentPreparation] Reconcile returned stale in-progress status — force persist.", {
+      docId: prepared.docId,
+      preparedStatus,
+      reconciledStatus,
+    });
+    await saveDocumentSession(prepared);
+    reconciled = (await getSession(prepared.docId)) ?? prepared;
+  }
   console.info("[study.startDocumentPreparation] Finished:", {
     docId: doc.docId,
     runId,
