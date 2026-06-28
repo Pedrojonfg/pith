@@ -302,7 +302,6 @@ import {
   setClozeStudyCompleteExitHandler,
   wireClozeStudyHandlers,
 } from "./cloze/study.js?v=20260625_02";
-import { parseClozePackFiles } from "./cloze/export-import.js?v=20260625_02";
 import { startReviewFromSessionBlocks, runVaultSm2ReviewSession, getCurrentSm2ReviewConceptIds } from "./review.js?v=20260625_02";
 import { getActiveRecallConceptIds } from "./recall-study.js";
 import {
@@ -1246,6 +1245,19 @@ export async function persistModeSliceToDocument(doc, mode, slice) {
   const slot = normalizeStudyMode(mode);
   doc.modes[slot] = slice;
   await saveDocumentSession(doc);
+}
+
+/** Persist cloze mode slice to the active document session (items + study progress). */
+export async function persistClozeModeSlice(session) {
+  if (!session || session.studyMode !== "cloze") return;
+  state.activeSession = session;
+  state.studyMode = "cloze";
+  await storeActiveSession(session);
+  const doc = await getActiveSession();
+  if (doc?.docId && doc.modes) {
+    doc.modes.cloze = session;
+    await saveDocumentSession(doc);
+  }
 }
 
 export function createClozeSession({
@@ -3003,7 +3015,7 @@ function setMaterialBootstrapUi(active, doc) {
  * @param {string} mode
  * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
  */
-export function applyModeEntry(doc, mode, options = {}) {
+export async function applyModeEntry(doc, mode, options = {}) {
   const resolution = resolveModeEntryState(doc, mode);
   const normalized = normalizeStudyMode(mode);
   if (resolution.kind === "resume") {
@@ -3028,7 +3040,7 @@ export function applyModeEntry(doc, mode, options = {}) {
   }
   if (resolution.kind === "bootstrap" && doc) {
     const slice = buildModeSliceFromShared(doc, mode, options);
-    persistModeSliceToDocument(doc, mode, slice);
+    await persistModeSliceToDocument(doc, mode, slice);
     return { action: "bootstrap", mode: normalized, slice };
   }
   return { action: "upload_required", mode: normalized, slice: null };
@@ -3092,7 +3104,7 @@ export async function enterModeWithContinuity(mode) {
 
   applyFlowRecommendationOnEnterMode(normalized);
   const doc = await getActiveSession();
-  const entry = applyModeEntry(doc, normalized, {
+  const entry = await applyModeEntry(doc, normalized, {
     llmModel: getSessionLlmModel(),
     language: getStudyLanguage(),
   });
@@ -3185,7 +3197,6 @@ function updateCreateScreenModeVisibility(mode) {
   }
   if (isRsvp) syncRsvpAssessmentToggleFromPreference();
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
-  if (els.clozeImportSection) els.clozeImportSection.hidden = !isCloze;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   else void maybeAutoRecommendBlockCount();
@@ -3301,7 +3312,7 @@ async function runClozeGeneration(session) {
   session.cloze.pipelineError = null;
   session.cloze.pipelinePhase = 0;
   updateClozeSessionPanel(session);
-  await storeActiveSession(session);
+  await persistClozeModeSlice(session);
 
   try {
     const result = await runClozePipelinePhases(session.cloze.normalizedText, session, {
@@ -3312,7 +3323,7 @@ async function runClozeGeneration(session) {
         if (partial.analysis) session.cloze.analysis = partial.analysis;
         if (partial.items) session.cloze.items = partial.items;
         updateClozeSessionPanel(session);
-        await storeActiveSession(session);
+        await persistClozeModeSlice(session);
       },
     });
 
@@ -3331,84 +3342,15 @@ async function runClozeGeneration(session) {
     };
     applyAssessmentPrioritizedOrder(session, await getActiveSession());
     updateClozeSessionPanel(session);
-    await storeActiveSession(session);
+    await persistClozeModeSlice(session);
   } catch (err) {
     session.cloze.pipelineStatus = "failed";
     session.cloze.pipelineError = err?.message ? String(err.message) : String(err);
     updateClozeSessionPanel(session);
-    await storeActiveSession(session);
+    await persistClozeModeSlice(session);
   } finally {
     clozePipelineRunning = false;
   }
-}
-
-function setClozeImportError(msg) {
-  if (!els.clozeImportError) return;
-  const text = String(msg || "").trim();
-  els.clozeImportError.hidden = !text;
-  els.clozeImportError.textContent = text;
-}
-
-async function importClozePacksFromInput() {
-  clearClozeImportError();
-  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "";
-  const fileList = els.clozeImportInput?.files ? Array.from(els.clozeImportInput.files) : [];
-  if (!fileList.length) {
-    setClozeImportError("Choose at least one exported .md cloze pack file.");
-    return;
-  }
-  if (els.clozeImportBtn) els.clozeImportBtn.disabled = true;
-  if (els.clozeImportStatus) els.clozeImportStatus.textContent = "Importing?";
-  try {
-    const result = await parseClozePackFiles(fileList, readFileAsText);
-    if (!result.ok) {
-      const detail = Array.isArray(result.errors) && result.errors.length ? result.errors.join(" � ") : "";
-      throw new Error(
-        detail ||
-          (result.reason === "no_valid_items"
-            ? "No valid items in the selected files."
-            : "Could not import any cloze pack."),
-      );
-    }
-    const sessionObj = result.session;
-    state.activeSession = sessionObj;
-    state.studyMode = "cloze";
-    await storeActiveSession(sessionObj);
-    setGenerateBlocksFormHidden(true);
-    updateClozeSessionPanel(sessionObj);
-    showCreateScreen();
-    const warn =
-      Array.isArray(result.errors) && result.errors.length
-        ? ` (${result.errors.length} file(s) skipped)`
-        : "";
-    if (els.clozeImportStatus) {
-      els.clozeImportStatus.textContent = `${result.validCount} items from ${result.packCount} pack(s)${warn}`;
-    }
-  } catch (err) {
-    setClozeImportError(err?.message ? String(err.message) : String(err));
-    if (els.clozeImportStatus) els.clozeImportStatus.textContent = "";
-  } finally {
-    if (els.clozeImportBtn) els.clozeImportBtn.disabled = false;
-  }
-}
-
-function clearClozeImportError() {
-  setClozeImportError("");
-}
-
-function wireClozeImportHandlers() {
-  els.clozeImportInput?.addEventListener("change", () => {
-    clearClozeImportError();
-    const fileList = els.clozeImportInput?.files ? Array.from(els.clozeImportInput.files) : [];
-    if (els.clozeImportHint) {
-      els.clozeImportHint.textContent = fileList.length
-        ? `${fileList.length} archivo(s): ${fileList.map((f) => f.name).join(", ")}`
-        : "";
-    }
-  });
-  els.clozeImportBtn?.addEventListener("click", () => {
-    void importClozePacksFromInput();
-  });
 }
 
 function mountClozeGraph(session) {
@@ -8579,7 +8521,6 @@ export async function wireStudyHandlers() {
   wireMaterialGraphHandlers();
   wireClozeStudyHandlers();
   setClozeStudyCompleteExitHandler(() => enterModeSelectScreen());
-  wireClozeImportHandlers();
   els.clozeGenerateBtn?.addEventListener("click", () => {
     const session = state.activeSession;
     if (session?.studyMode === "cloze") void runClozeGeneration(session);
@@ -8874,7 +8815,7 @@ export async function wireStudyHandlers() {
           llmModel,
           language: getStudyLanguage(),
         });
-        persistModeSliceToDocument(doc, "cloze", sessionObj);
+        await persistModeSliceToDocument(doc, "cloze", sessionObj);
         state.activeSession = sessionObj;
         await storeActiveSession(sessionObj);
         setGenerateBlocksFormHidden(true);
