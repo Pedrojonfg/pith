@@ -71,7 +71,7 @@ function wireAuthUi() {
   els.btnSignInGoogle?.addEventListener("click", async () => {
     if (els.authStatus) {
       els.authStatus.hidden = false;
-      els.authStatus.textContent = "Redirecting to Google�";
+      els.authStatus.textContent = "Redirecting to Google…";
     }
     try {
       await signInWithGoogle();

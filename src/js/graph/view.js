@@ -15,7 +15,7 @@ function escapeHtml(text) {
 
 function isSpanishLang(lang) {
   const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("espa�ol");
+  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
 }
 
 export function buildGraphSubgraphMarkdown(graph, lang = "English") {

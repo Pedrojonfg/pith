@@ -32,7 +32,7 @@ function buildItemSection(item, index) {
   const safe = normalizeClozeItem(item);
   if (!safe) return [];
   const lines = [];
-  lines.push(`### ${safe.id} � ${safe.item_type} � ${safe.difficulty}`);
+  lines.push(`### ${safe.id} · ${safe.item_type} · ${safe.difficulty}`);
   lines.push("");
   lines.push(safe.sentence_with_blank);
   lines.push("");
@@ -77,7 +77,7 @@ export function buildClozeMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   const valid = getValidItems(safe.cloze?.items || []);
   const lang = String(safe.language || "English").trim() || "English";
-  const fileName = String(safe.materialMeta?.fileName || "�").trim() || "�";
+  const fileName = String(safe.materialMeta?.fileName || "—").trim() || "—";
   const lines = [];
 
   const frontmatterSession = {

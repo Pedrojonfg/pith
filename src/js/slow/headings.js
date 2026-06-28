@@ -183,7 +183,7 @@ export function applyHeadingOverrides(headings, overrides) {
  */
 export function buildEqualLengthSections(text, opts = {}) {
   const target = opts.targetChunkSize ?? 5000;
-  const prefix = opts.labelPrefix ?? "Secci�n";
+  const prefix = opts.labelPrefix ?? "Sección";
   const raw = String(text || "");
   const len = raw.length;
   if (!len) return [];

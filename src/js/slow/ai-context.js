@@ -9,8 +9,8 @@ export function buildIAContext(slow) {
 }
 
 const SIDEBAR_BREVITY =
-  "Default: 1�3 short sentences�answer directly, no preamble, do not re-explain what the reader already saw unless essential. " +
-  "Use up to 4�5 sentences only for multi-idea synthesis or when the user explicitly asks for more detail.";
+  "Default: 1–3 short sentences—answer directly, no preamble, do not re-explain what the reader already saw unless essential. " +
+  "Use up to 4–5 sentences only for multi-idea synthesis or when the user explicitly asks for more detail.";
 
 function buildSlowIASystemPrompt(lang, annotationType) {
   if (annotationType === "?") {

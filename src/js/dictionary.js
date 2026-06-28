@@ -279,7 +279,7 @@ export function getSortedSessionConcepts() {
   return dedupeConcepts([legacy, fromBlocks]);
 }
 
-/** T11 � merge enriched-graph user nodes into session_concepts (layer: user). */
+/** T11 — merge enriched-graph user nodes into session_concepts (layer: user) user nodes into session_concepts (layer: user). */
 export function mergeEnrichedGraphUserNodes(session, userNodes) {
   const incoming = (Array.isArray(userNodes) ? userNodes : [])
     .filter((n) => n && n.layer === "user")
@@ -307,7 +307,7 @@ export function mergeEnrichedGraphUserNodes(session, userNodes) {
 }
 
 /** Word boundaries for long-press dictionary lookup (letters, digits, accented chars). */
-const WORD_CHAR_RE = /[\p{L}\p{N}'�-]/u;
+const WORD_CHAR_RE = /[\p{L}\p{N}'\u2019-]/u;
 
 /** @returns {string} */
 export function extractWordAtOffset(text, offset) {
@@ -505,5 +505,5 @@ export function updateDictionaryButtonVisibility() {
 }
 
 export function renderBetweenBlocksDictionary() {
-  // screenBetweenBlocks removed � no-op.
+  // screenBetweenBlocks removed — no-op.
 }
