@@ -1,3 +1,4 @@
+import { isPwaStandalone } from "./pwa-install.js";
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260625_02";
 import {
   getSourceFidelityStrictPreference,
@@ -342,7 +343,11 @@ function syncGlobalChromeVisibility() {
   }
   const installBtn = document.getElementById("installPwaBtn");
   if (installBtn) {
-    installBtn.hidden = !INSTALL_PWA_SCREENS.has(screenId);
+    if (isPwaStandalone(window)) {
+      installBtn.hidden = true;
+    } else {
+      installBtn.hidden = !INSTALL_PWA_SCREENS.has(screenId);
+    }
   }
 }
 

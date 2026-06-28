@@ -1,5 +1,13 @@
 /** PWA install prompt capture and fallback UX when beforeinstallprompt is unavailable. */
 
+/** True when the app is running as an installed PWA (standalone display mode). */
+export function isPwaStandalone(window = globalThis) {
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches === true ||
+    window.navigator?.standalone === true
+  );
+}
+
 export function getInstallHelpMessage(nav = globalThis.navigator) {
   const ua = nav?.userAgent || "";
   const isIos =

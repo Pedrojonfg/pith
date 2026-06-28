@@ -28,6 +28,7 @@ import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadR
 import { wireVaultDebugUi } from "./vault/debug-ui.js";
 import {
   readStashedInstallPrompt,
+  isPwaStandalone,
   showInstallHelpToast,
 } from "./pwa-install.js";
 import { dismissSplash } from "./splash.js?v=20260625_02";
@@ -137,9 +138,7 @@ async function bootstrap() {
   const installPwaBtn = document.getElementById("installPwaBtn");
   let installPromptEvent = readStashedInstallPrompt(window);
   let installPromptUsed = false;
-  const isStandalone =
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
-    window.navigator.standalone === true;
+  const isStandalone = isPwaStandalone(window);
 
   const syncInstallButton = () => {
     if (!installPwaBtn || isStandalone) return;
