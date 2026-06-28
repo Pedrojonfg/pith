@@ -54,7 +54,7 @@ import {
   DPP_PENDING_GRACE_MS,
   MAX_DPP_STALE_RETRIES,
 } from "./config/flags.js";
-import { normalizePreparationState, setPreparationStatus } from "./session-types.js";
+import { normalizePreparationState, setPreparationStatus, isTier1PreparationComplete } from "./session-types.js";
 
 /**
  * Call sites patched for DPP recalculation guard (20260622-fix-dpp-recalculation-guard):
@@ -2331,6 +2331,7 @@ export async function runConceptInventoryMapReduce(
 ) {
   const {
     buildInventoryChunks,
+    buildCharFallbackInventoryChunks,
     deepSeekConceptInventoryChunk,
     deepSeekMergeConceptInventories,
     INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
@@ -2349,10 +2350,13 @@ export async function runConceptInventoryMapReduce(
     return null;
   }
 
-  const chunks = buildInventoryChunks(docHierarchy, materialText);
+  const chunks =
+    buildInventoryChunks(docHierarchy, materialText) ||
+    buildCharFallbackInventoryChunks(materialText, splitOpts.charCount);
   if (!chunks || chunks.length < 2) {
     console.debug("[session.runConceptInventoryMapReduce] Skipped — insufficient chunks:", {
       chunkCount: chunks?.length || 0,
+      charFallback: !docHierarchy?.tree?.length,
     }); // [debug-enrich]
     return null;
   }
@@ -2557,6 +2561,10 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
   if (prep.status !== "running") return session;
   if (!meetsConceptInventoryThreshold(session)) return session;
 
+  const t12 = prep.phaseResults?.["T1.2"];
+  const t12Done = t12?.status === "success" || t12?.status === "skipped";
+  if (!t12Done) return session;
+
   const inv = session.shared.conceptInventory;
   console.log(
     `[DPP-GUARD] Status stuck at 'running' but inventory is sufficient (${inv.length} concepts). Treating as ready.`,
@@ -2579,8 +2587,40 @@ export function isConceptInventoryValid(session) {
 
   const status = session?.shared?.preparation?.status;
   if (status === "ready" || status === "partial") return true;
-  if (status === "running") return true;
+  if (status === "legacy") return true;
   return false;
+}
+
+/**
+ * User-facing create-session status from preparation state.
+ * @param {object | null | undefined} doc
+ * @returns {string}
+ */
+export function resolveCreateSessionPrepStatus(doc) {
+  const prep = normalizePreparationState(doc?.shared?.preparation);
+  const inv = doc?.shared?.conceptInventory;
+  const hasInv = Array.isArray(inv) && inv.length > 0;
+  if (prep.status === "failed") {
+    if (prep.failReason === "INVENTORY_TOO_SPARSE" && hasInv) {
+      return "Document ready with reduced concept coverage. You can continue.";
+    }
+    const errMsg = prep.errors?.[prep.errors.length - 1]?.message;
+    return errMsg
+      ? String(errMsg)
+      : "Document preparation failed. Try again or tap Continue.";
+  }
+  if (prep.status === "ready" || prep.status === "partial") {
+    if (hasInv || isTier1PreparationComplete(doc)) {
+      return prep.failReason === "INVENTORY_TOO_SPARSE"
+        ? "Document ready with reduced concept coverage. You can continue."
+        : "Document ready. You can continue.";
+    }
+  }
+  if (isTier1PreparationComplete(doc)) return "Document ready. You can continue.";
+  if (prep.status === "running" || prep.status === "pending") {
+    return "Preparing document…";
+  }
+  return "Preparing document…";
 }
 
 /** @type {Map<string, Promise<unknown>>} */

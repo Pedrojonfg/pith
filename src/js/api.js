@@ -900,6 +900,26 @@ export function buildInventoryChunks(docHierarchy, rawMarkdown) {
   return chunks;
 }
 
+/** Char-window chunks when hierarchy cannot split (large docs, flat structure). */
+export function buildCharFallbackInventoryChunks(rawMarkdown, charCount = 0) {
+  const material = String(rawMarkdown || "");
+  const chars = Math.max(0, Number(charCount) || material.length);
+  if (chars < 50000) return null;
+  const SLICE_CHARS = 12000;
+  /** @type {{ label: string, text: string, wordCount: number }[]} */
+  const chunks = [];
+  for (let start = 0; start < material.length; start += SLICE_CHARS) {
+    const text = material.slice(start, start + SLICE_CHARS).trim();
+    if (!text) continue;
+    chunks.push({
+      label: `Part ${chunks.length + 1}`,
+      text,
+      wordCount: countInventoryWords(text),
+    });
+  }
+  return chunks.length >= 2 ? chunks : null;
+}
+
 export function throwConceptInventoryParseError(lastRaw) {
   if (looksLikeTruncatedModelJson(lastRaw)) {
     const err = new Error("concept_inventory_truncated");
