@@ -22,6 +22,7 @@ import {
   setPrerequisites,
   updateEntryTitle,
 } from "./vault-store.js";
+import { buildStudyTrailRows } from "./study-trail.js";
 
 let selectedEntryId = null;
 let topicFilter = "all";
@@ -698,6 +699,77 @@ export function renderDetail(host, entry) {
     ${resolvedRows ? `<h4>Resolved misconceptions</h4><ul class="vault-misc-list vault-misc-resolved">${resolvedRows}</ul>` : ""}
     <h4>Recent observations</h4>
     <ul class="vault-obs-list">${obs.length ? obs.map((o) => `<li>${escapeHtml(o.type)} (${o.rawSignal >= 0 ? "+" : ""}${o.rawSignal}) · ${formatRelativeTime(o.timestamp)}</li>`).join("") : "<li>None</li>"}</ul>`;
+  appendStudyTrailSection(detail, entry);
+}
+
+/**
+ * @param {HTMLElement} detail
+ * @param {object} entry
+ */
+function appendStudyTrailSection(detail, entry) {
+  detail.querySelector(".vault-study-trail")?.remove();
+
+  const observations = Array.isArray(entry?.observations) ? entry.observations : [];
+  const total = observations.length;
+
+  const details = document.createElement("details");
+  details.className = "vault-study-trail";
+
+  const summary = document.createElement("summary");
+  summary.className = "vault-study-trail-summary";
+  const title = document.createElement("span");
+  title.className = "vault-study-trail-title";
+  title.textContent = "Study trail";
+  summary.appendChild(title);
+  const count = document.createElement("span");
+  count.className = "vault-study-trail-count hint";
+  count.textContent = total === 1 ? "1 event" : `${total} events`;
+  summary.appendChild(count);
+  details.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "vault-study-trail-body";
+  details.appendChild(body);
+
+  let rendered = false;
+  details.addEventListener("toggle", () => {
+    if (!details.open || rendered) return;
+    rendered = true;
+    renderStudyTrailBody(body, observations);
+  });
+
+  detail.appendChild(details);
+}
+
+/**
+ * @param {HTMLElement} host
+ * @param {object[]} observations
+ */
+function renderStudyTrailBody(host, observations) {
+  host.textContent = "";
+  const { rows, total, overflow } = buildStudyTrailRows(observations);
+  if (!total) {
+    host.innerHTML =
+      '<p class="vault-study-trail-empty">No study history yet for this concept.</p>';
+    return;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "vault-trail-list";
+  for (const row of rows) {
+    const li = document.createElement("li");
+    li.className = "vault-trail-row";
+    li.innerHTML = `<span class="vault-trail-mode-icon">${row.iconHtml}</span><span class="vault-trail-mode-label">${escapeHtml(row.modeLabel)}</span><span class="vault-trail-badge ${row.badgeClass}">${escapeHtml(row.resultLabel)}</span><span class="vault-trail-time hint">${escapeHtml(row.relativeTime)}</span>`;
+    list.appendChild(li);
+  }
+  host.appendChild(list);
+
+  if (overflow > 0) {
+    const footer = document.createElement("p");
+    footer.className = "vault-study-trail-more hint";
+    footer.textContent = `… and ${overflow} more earlier event${overflow === 1 ? "" : "s"}`;
+    host.appendChild(footer);
+  }
 }
 
 export function handleClear(host) {

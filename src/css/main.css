@@ -3078,6 +3078,133 @@ body.vault-overlay-open #screenApiSetup {
   font-size: 0.85rem;
 }
 
+.vault-study-trail {
+  margin-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--text, #111) 8%, transparent);
+  padding-top: 10px;
+}
+
+.vault-study-trail-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  user-select: none;
+}
+
+.vault-study-trail-summary::-webkit-details-marker {
+  display: none;
+}
+
+.vault-study-trail-summary::before {
+  content: "▸";
+  margin-right: 6px;
+  color: var(--text-muted, #64748b);
+  font-size: 0.75rem;
+}
+
+.vault-study-trail[open] .vault-study-trail-summary::before {
+  content: "▾";
+}
+
+.vault-study-trail-count {
+  font-weight: 400;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.vault-study-trail-body {
+  margin-top: 8px;
+}
+
+.vault-study-trail-empty {
+  margin: 8px 0 4px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-muted, #64748b);
+}
+
+.vault-trail-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vault-trail-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 0.85rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--text, #111) 6%, transparent);
+}
+
+.vault-trail-row:last-child {
+  border-bottom: none;
+}
+
+.vault-trail-mode-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted, #64748b);
+}
+
+.vault-trail-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.vault-trail-mode-label {
+  font-weight: 500;
+}
+
+.vault-trail-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.vault-trail-badge--correct {
+  color: var(--success, #1dc990);
+  background: var(--success-muted, rgba(29, 201, 144, 0.12));
+}
+
+.vault-trail-badge--incorrect {
+  color: var(--error, #f0584a);
+  background: var(--error-muted, rgba(240, 88, 74, 0.12));
+}
+
+.vault-trail-badge--accent {
+  color: var(--accent, #18c4aa);
+  background: var(--accent-muted, rgba(24, 196, 170, 0.12));
+}
+
+.vault-trail-badge--neutral {
+  color: var(--text-muted, #64748b);
+  background: color-mix(in srgb, var(--text, #111) 6%, transparent);
+}
+
+.vault-trail-time {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.vault-study-trail-more {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  text-align: center;
+}
+
 .vault-empty {
   margin: 8px 0 16px;
 }
