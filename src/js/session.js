@@ -2391,7 +2391,11 @@ export async function runConceptInventoryMapReduce(
     deepSeekMergeConceptInventories,
     INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
     INVENTORY_MAX_PARALLEL_CALLS,
+    INVENTORY_CHUNK_BISECT_MAX_DEPTH,
+    isInventoryChunkTruncationError,
+    splitInventoryChunkForBisect,
   } = await import("./api.js?v=20260625_02");
+  const { buildDocumentHierarchyWithLlm } = await import("./hierarchy-llm.js");
 
   const wordCount =
     Number(splitOpts.wordCount) ||
@@ -2434,6 +2438,47 @@ export async function runConceptInventoryMapReduce(
   }
 
   const batchSize = INVENTORY_MAX_PARALLEL_CALLS;
+
+  /**
+   * @param {{ label: string, text: string, wordCount: number }} chunk
+   * @param {number} [depth]
+   */
+  async function extractChunkWithBisect(chunk, depth = 0) {
+    try {
+      const result = await deepSeekConceptInventoryChunk(chunk, {
+        ...splitOpts,
+        totalWordCount: wordCount,
+      });
+      if (result?.concepts?.length) return result;
+      if (depth >= INVENTORY_CHUNK_BISECT_MAX_DEPTH) return result;
+    } catch (err) {
+      if (!isInventoryChunkTruncationError(err) || depth >= INVENTORY_CHUNK_BISECT_MAX_DEPTH) {
+        throw err;
+      }
+      console.warn(
+        `[session.runConceptInventoryMapReduce] Bisecting chunk after truncation (${chunk.label}, depth ${depth})`,
+      );
+    }
+    if (!halves) {
+      throw new Error(`Inventory chunk failed and could not bisect: ${chunk.label}`);
+    }
+    const settled = await Promise.allSettled(
+      halves.map((half) => extractChunkWithBisect(half, depth + 1)),
+    );
+    /** @type {object[]} */
+    const concepts = [];
+    for (const result of settled) {
+      if (result.status === "fulfilled" && Array.isArray(result.value?.concepts)) {
+        concepts.push(...result.value.concepts);
+      }
+    }
+    if (!concepts.length) {
+      const reason = settled.find((r) => r.status === "rejected");
+      throw reason?.reason || new Error(`Bisect failed for chunk: ${chunk.label}`);
+    }
+    return { concepts };
+  }
+
   /** @type {{ label: string, concepts: object[] }[]} */
   const partials = [];
   /** @type {string[]} */
@@ -2442,12 +2487,7 @@ export async function runConceptInventoryMapReduce(
   for (let i = 0; i < chunks.length; i += batchSize) {
     const batch = chunks.slice(i, i + batchSize);
     const settled = await Promise.allSettled(
-      batch.map((chunk) =>
-        deepSeekConceptInventoryChunk(chunk, {
-          ...splitOpts,
-          totalWordCount: wordCount,
-        }),
-      ),
+      batch.map((chunk) => extractChunkWithBisect(chunk)),
     );
     settled.forEach((result, idx) => {
       const chunk = batch[idx];
@@ -2534,9 +2574,11 @@ export async function runConceptInventory(
   let hierarchy = docHierarchy;
   if (!hierarchy?.tree?.length && wordCount > 8000) {
     try {
-      const { buildDocumentHierarchy } = await import("./normalization/hierarchy.js");
       progress("Building document structure…");
-      hierarchy = await buildDocumentHierarchy(materialText, null, { useCache: true });
+      hierarchy = await buildDocumentHierarchyWithLlm(materialText, {
+        useCache: true,
+        llmModel: model,
+      });
     } catch (err) {
       console.warn("runConceptInventory: hierarchy build failed, single-pass", err?.message || err);
       hierarchy = null;

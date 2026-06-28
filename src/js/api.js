@@ -838,6 +838,12 @@ export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
 export const INVENTORY_TARGET_CHUNK_WORDS = 3500;
 export const INVENTORY_MAX_PARALLEL_CALLS = 8;
 
+/** Char-window fallback slice when hierarchy cannot split (20260705-dpp-inventory-llm-optimization). */
+export const INVENTORY_CHAR_FALLBACK_SLICE_CHARS = 24000;
+
+/** Max bisect depth per chunk on truncation (each level halves slice size). */
+export const INVENTORY_CHUNK_BISECT_MAX_DEPTH = 2;
+
 export function countInventoryWords(text) {
   return String(text || "").split(/\s+/).filter(Boolean).length;
 }
@@ -918,7 +924,7 @@ export function buildCharFallbackInventoryChunks(rawMarkdown, charCount = 0) {
   const material = String(rawMarkdown || "");
   const chars = Math.max(0, Number(charCount) || material.length);
   if (chars < 50000) return null;
-  const SLICE_CHARS = 12000;
+  const SLICE_CHARS = INVENTORY_CHAR_FALLBACK_SLICE_CHARS;
   /** @type {{ label: string, text: string, wordCount: number }[]} */
   const chunks = [];
   for (let start = 0; start < material.length; start += SLICE_CHARS) {
@@ -1494,6 +1500,84 @@ export function mergeConceptInventoriesDeterministic(partials) {
   );
 }
 
+/**
+ * Pairwise deterministic reduce — avoids monolithic LLM merge on large partial sets.
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @returns {import('./session.js').ConceptInventoryItem[]}
+ */
+export function mergeConceptInventoriesDeterministicTree(partials) {
+  const payload = (Array.isArray(partials) ? partials : [])
+    .map((p) => ({
+      label: String(p?.label || "Section"),
+      concepts: Array.isArray(p?.concepts) ? p.concepts : [],
+    }))
+    .filter((p) => p.concepts.length > 0);
+
+  if (!payload.length) return [];
+  if (payload.length === 1) {
+    return mergeConceptInventoriesDeterministic(payload);
+  }
+
+  /** @type {{ label: string, concepts: object[] }[]} */
+  let level = payload;
+  while (level.length > 1) {
+    /** @type {{ label: string, concepts: object[] }[]} */
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const left = level[i];
+      const right = level[i + 1];
+      if (!right) {
+        next.push(left);
+        continue;
+      }
+      const merged = mergeConceptInventoriesDeterministic([left, right]);
+      next.push({
+        label: `${left.label} + ${right.label}`,
+        concepts: merged,
+      });
+    }
+    level = next;
+  }
+  return level[0]?.concepts?.length
+    ? level[0].concepts
+    : mergeConceptInventoriesDeterministic(level);
+}
+
+/**
+ * True when a per-chunk inventory call failed due to output truncation.
+ * @param {unknown} err
+ */
+export function isInventoryChunkTruncationError(err) {
+  const code = String(/** @type {Error} */ (err)?.code || "");
+  if (code === "CONCEPT_INVENTORY_TRUNCATED") return true;
+  const msg = String(/** @type {Error} */ (err)?.message || err || "");
+  return /truncat/i.test(msg) || msg === "concept_inventory_truncated";
+}
+
+/**
+ * Split an inventory chunk near midpoint paragraph boundary for bisect retry.
+ * @param {{ label?: string, text?: string, wordCount?: number }} chunk
+ * @returns {{ label: string, text: string, wordCount: number }[] | null}
+ */
+export function splitInventoryChunkForBisect(chunk) {
+  const text = String(chunk?.text || "");
+  if (text.length < 2000) return null;
+  const mid = Math.floor(text.length / 2);
+  let splitAt = text.lastIndexOf("\n\n", mid);
+  if (splitAt < text.length * 0.25) {
+    splitAt = text.indexOf("\n\n", mid);
+  }
+  if (splitAt < 0) splitAt = mid;
+  const left = text.slice(0, splitAt).trim();
+  const right = text.slice(splitAt).trim();
+  if (!left || !right) return null;
+  const baseLabel = String(chunk?.label || "Section");
+  return [
+    { label: `${baseLabel} (1/2)`, text: left, wordCount: countInventoryWords(left) },
+    { label: `${baseLabel} (2/2)`, text: right, wordCount: countInventoryWords(right) },
+  ];
+}
+
 export function buildMergeConceptInventoriesPrompt(lang, partialsJson) {
   const language = String(lang || "English").trim() || "English";
   return `You are merging partial concept inventories from sections of one document into a single ordered inventory.
@@ -1518,7 +1602,7 @@ Respond entirely in ${language}.`;
 }
 
 export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) {
-  const { llmModel, language, charCount } = splitOpts;
+  const { llmModel, language, charCount, mergePolish } = splitOpts;
   const { minViableConcepts } = await import("./config/flags.js");
   const model = resolveLlmModelArg(llmModel);
   const lang = String(language || "English").trim() || "English";
@@ -1532,6 +1616,24 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
   if (!payload.length) {
     throw new Error("No partial inventories to merge.");
   }
+
+  const treeMerged = mergeConceptInventoriesDeterministicTree(payload);
+  if (
+    Array.isArray(treeMerged) &&
+    treeMerged.length >= minRequired &&
+    mergePolish !== true
+  ) {
+    console.info("[inventory-merge] Deterministic tree accepted:", {
+      conceptCount: treeMerged.length,
+      minRequired,
+      partialCount: payload.length,
+    });
+    return {
+      concepts: treeMerged,
+      inventoryMode: "map_reduce_deterministic",
+    };
+  }
+
   const partialsJson = JSON.stringify(payload);
   const system = buildMergeConceptInventoriesPrompt(lang, partialsJson);
   const MAX_MERGE_ATTEMPTS = 3;

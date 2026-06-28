@@ -6,6 +6,7 @@
 import { analyzeText } from "./recommendation/analyzer.js";
 import { computeBlockCountRecommendation } from "./recommendation/block-count-recommender.js";
 import { buildDocumentHierarchy, buildDeterministicPedagogicalMeta } from "./normalization/hierarchy.js";
+import { buildDocumentHierarchyWithLlm } from "./hierarchy-llm.js";
 import { computeModeRecommendation } from "./recommendation/recommender.js";
 import {
   generateEpistemicGraph,
@@ -201,9 +202,10 @@ async function runPhaseT02(doc, ctx) {
 
 async function runPhaseT11(doc, ctx) {
   const text = getMarkdown(doc);
-  const hierarchy = await buildDocumentHierarchy(text, null, {
+  const hierarchy = await buildDocumentHierarchyWithLlm(text, {
     useCache: true,
     llmModel: ctx.llmModel,
+    signal: ctx.signal,
   });
   doc.shared.docHierarchy = hierarchy;
   doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
