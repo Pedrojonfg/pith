@@ -2711,6 +2711,9 @@ export function resolveCreateSessionPrepStatus(doc) {
         ? "Document ready with reduced concept coverage. You can continue."
         : "Document ready. You can continue.";
     }
+    if (hasInv) {
+      return "Finishing preparation…";
+    }
   }
   if (isTier1PreparationComplete(doc)) return "Document ready. You can continue.";
   if (prep.status === "running" || prep.status === "pending") {

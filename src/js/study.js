@@ -518,26 +518,6 @@ function formatPreparationProgressMessage(msg) {
   return `${label}${wave}?`;
 }
 
-const PREP_STATUS_POLL_MS = 2000;
-
-/**
- * Poll session store for prep status while DPP is running (R8).
- * @param {string} docId
- * @param {number} runId
- */
-async function pollCreateSessionPrepStatus(docId, runId) {
-  while (runId === createSessionStartRunId) {
-    const fresh = await getActiveSession(docId);
-    if (!fresh) break;
-    if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(fresh);
-    }
-    const status = normalizePreparationState(fresh.shared?.preparation).status;
-    if (status !== "running" && status !== "pending") break;
-    await new Promise((resolve) => setTimeout(resolve, PREP_STATUS_POLL_MS));
-  }
-}
-
 const PREPARATION_FAILED_MSG =
   "Document preparation failed. The concept analysis could not complete. You can retry preparation or continue with limited functionality.";
 
@@ -2122,13 +2102,12 @@ async function processCreateSessionStagedUpload(title) {
   if (!files.length) return;
 
   const runId = ++createSessionStartRunId;
+  // Commit upload intent: staged files are consumed; user stays on processing screen until done.
+  createSessionStagedFiles = [];
+  renderCreateSessionStagingUi();
   createSessionUploadInProgress = true;
   updateCreateSessionContinueState();
-
-  if (els.createSessionStartStatus) {
-    els.createSessionStartStatus.textContent = "Extracting text…";
-  }
-  if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = true;
+  showDocumentPreparingScreen("Extracting text…");
 
   try {
     const { normalizeMultipleFiles } = await import("./input-normalization.js?v=20260625_02");
@@ -2159,55 +2138,35 @@ async function processCreateSessionStagedUpload(title) {
     state.lastCleanedMaterialWordCount = countWords(cleanedText);
     state.lastUploadedFileNames = result.files.map((f) => f.fileName).filter(Boolean);
 
-    if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Preparing document…";
-    }
     mountModeSelectBreadcrumb(doc);
-    void pollCreateSessionPrepStatus(doc.docId, runId);
-    void startDocumentPreparation(doc, {
+    showDocumentPreparingScreen("Preparing document…");
+    await startDocumentPreparation(doc, {
       stopAfterTier: 1,
       ...preparationGateOptions((msg) => {
         if (runId !== createSessionStartRunId) return;
-        if (els.createSessionStartStatus) {
-          els.createSessionStartStatus.textContent = formatPreparationProgressMessage(msg);
+        if (els.reviewGeneratingLabel) {
+          els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
         }
       }),
-    })
-      .then(async (preparedDoc) => {
-        if (runId !== createSessionStartRunId) return;
-        const fresh = preparedDoc || (await getActiveSession());
-        if (els.createSessionStartStatus) {
-          els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(fresh);
-        }
-        notifyPreparationSparseIfNeeded(fresh);
-        refreshCreateSessionInsights(fresh);
-        updateCreateSessionContinueState(fresh);
-      })
-      .catch((err) => {
-        if (runId !== createSessionStartRunId) return;
-        console.error("[DPP] Upload preparation failed:", err);
-        if (els.createSessionStartStatus) {
-          els.createSessionStartStatus.textContent =
-            err?.message
-              ? String(err.message)
-              : "Preparation incomplete. Sign in and try again, or tap Continue to retry.";
-        }
-      })
-      .finally(() => {
-        createSessionUploadInProgress = false;
-        if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = false;
-        void getActiveSession().then((fresh) => updateCreateSessionContinueState(fresh));
-      });
-  } catch (err) {
-    createSessionUploadInProgress = false;
-    if (els.createSessionStartAddFileBtn) els.createSessionStartAddFileBtn.disabled = false;
+    });
+
     if (runId !== createSessionStartRunId) return;
-    if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = err?.message
+
+    const fresh = await getActiveSession();
+    notifyPreparationSparseIfNeeded(fresh);
+    await applySessionTitleToActiveDoc(title);
+    await enterModeSelectAfterTier1Gate();
+  } catch (err) {
+    if (runId !== createSessionStartRunId) return;
+    console.error("[DPP] Upload preparation failed:", err);
+    if (els.reviewGeneratingError) {
+      els.reviewGeneratingError.hidden = false;
+      els.reviewGeneratingError.textContent = err?.message
         ? String(err.message)
         : "Could not process these files.";
     }
-    updateCreateSessionContinueState();
+  } finally {
+    createSessionUploadInProgress = false;
   }
 }
 
@@ -2238,14 +2197,11 @@ async function handleCreateSessionStartContinue() {
 
   const doc = await getActiveSession();
   if (doc?.docId) {
-    if (isTier1PreparationComplete(doc)) {
-      await applySessionTitleToActiveDoc(title);
-      await enterModeSelectAfterTier1Gate();
-      return;
+    await applySessionTitleToActiveDoc(title);
+    if (!isTier1PreparationComplete(doc)) {
+      showDocumentPreparingScreen("Preparing document…");
     }
-    if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = resolveCreateSessionPrepStatus(doc);
-    }
+    await enterModeSelectAfterTier1Gate();
     return;
   }
 
