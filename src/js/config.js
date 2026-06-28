@@ -2,6 +2,8 @@ export const LS_ACTIVE_SESSION_KEY = "active_session";
 export const LS_SESSIONS_BY_MODE_KEY = "sessions_by_mode";
 export const LS_DEFAULT_LLM_MODEL_KEY = "default_llm_model";
 export const LS_SOURCE_FIDELITY_STRICT_KEY = "source_fidelity_strict";
+/** RSVP pre-packing assessment user preference (global, default ON). */
+export const LS_ASSESSMENT_BEFORE_PACKING_KEY = "pith_assessment_before_packing";
 export const LS_STUDY_LANG_KEY = "study_lang";
 export const LS_STUDY_NOTES_KEY = "study_notes";
 export const LS_BLOCK_INDEX_KEY = "block_index";

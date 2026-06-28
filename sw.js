@@ -1,5 +1,5 @@
 // Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and index.html script ?v= neighbors.
-const CACHE_NAME = "pith-v93";
+const CACHE_NAME = "pith-v94";
 
 const STATIC_ASSETS = [
   "/",

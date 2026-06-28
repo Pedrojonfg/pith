@@ -1,6 +1,9 @@
 /** Feature flags — RSVP assessment reposition (20260611-rsvp-assessment-reposition). */
 
+import { LS_ASSESSMENT_BEFORE_PACKING_KEY, LS_SOURCE_FIDELITY_STRICT_KEY } from "../config.js";
+
 export const ASSESSMENT_FLAGS = Object.freeze({
+  /** @deprecated Use getAssessmentBeforePackingPreference / isPrePackingAssessmentEnabled instead. */
   ASSESSMENT_BEFORE_PACKING: true,
   ASSESSMENT_USE_QUESTIONS_UI: true,
   /** Safety ceiling only; count driven by n_test + n_socratic. */
@@ -21,8 +24,26 @@ export function isHolisticAssessmentEnabled() {
   );
 }
 
+export function getAssessmentBeforePackingPreference() {
+  try {
+    const pref = localStorage.getItem(LS_ASSESSMENT_BEFORE_PACKING_KEY);
+    if (pref === null) return true;
+    return JSON.parse(pref) === true;
+  } catch {
+    return true;
+  }
+}
+
+export function saveAssessmentBeforePackingPreference(enabled) {
+  try {
+    localStorage.setItem(LS_ASSESSMENT_BEFORE_PACKING_KEY, JSON.stringify(enabled === true));
+  } catch {
+    // ignore
+  }
+}
+
 export function isPrePackingAssessmentEnabled() {
-  return ASSESSMENT_FLAGS.ASSESSMENT_BEFORE_PACKING === true;
+  return getAssessmentBeforePackingPreference() === true;
 }
 
 export function isAssessmentQuestionsUiEnabled() {
@@ -30,8 +51,6 @@ export function isAssessmentQuestionsUiEnabled() {
 }
 
 /** Source fidelity strict mode (20260613-source-fidelity Phase C). */
-import { LS_SOURCE_FIDELITY_STRICT_KEY } from "../config.js";
-
 export function getSourceFidelityStrictPreference() {
   try {
     return localStorage.getItem(LS_SOURCE_FIDELITY_STRICT_KEY) === "true";
