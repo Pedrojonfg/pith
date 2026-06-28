@@ -11,11 +11,11 @@ import {
 } from "./normalize.js?v=20260625_02";
 
 const PHASE_LABELS = [
-  "Grafo epist�mico",
-  "An�lisis sem�ntico",
-  "�tems base",
+  "Grafo epistémico",
+  "Análisis semántico",
+  "Ítems base",
   "Distractores",
-  "QA y calibraci�n",
+  "QA y calibración",
 ];
 
 export { getValidItems, PHASE_LABELS };

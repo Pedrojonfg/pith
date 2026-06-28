@@ -5,21 +5,21 @@ import { charOffsetToPage } from "./pagination.js?v=20260625_02";
 import { slugGraphTermId } from "./phase0.js?v=20260625_02";
 
 const TYPE_LABELS_ES = {
-  "�": "Par�frasis",
+  "≈": "Paráfrasis",
   "?": "Pregunta",
-  "?": "Autoexplicaci�n",
-  "?": "Conexi�n",
-  "?": "Preguntar a IA",
-  "?": "Objeci�n",
-  "?": "Tensi�n",
-  "?": "Debilidad",
-  "?": "Fortaleza",
-  "?": "Steel man",
+  "→": "Autoexplicación",
+  "⟷": "Conexión",
+  "⚑": "Preguntar a IA",
+  "⊘": "Objeción",
+  "↯": "Tensión",
+  "⚠": "Debilidad",
+  "★": "Fortaleza",
+  "⇑": "Steel man",
   "ia-query": "Consulta IA",
-  "??": "Marcador",
-  "?": "Insight",
-  "?": "Retorno",
-  "??": "Grafo",
+  "📌": "Marcador",
+  "⚡": "Insight",
+  "↩": "Retorno",
+  "🔗": "Grafo",
 };
 
 const TYPE_ORDER = new Map(ANNOTATION_TYPES.map((t, i) => [t.symbol, i]));
@@ -44,13 +44,13 @@ export function annotationExcerpt(scopeText, ann, maxLen = 40) {
   const fromScope = String(scopeText || "").slice(ann?.charStart ?? 0, ann?.charEnd ?? 0).trim();
   const raw = fromUser || fromScope;
   if (raw.length <= maxLen) return raw;
-  return `${raw.slice(0, Math.max(0, maxLen - 1))}�`;
+  return `${raw.slice(0, Math.max(0, maxLen - 1))}…`;
 }
 
 export function groupAnnotationsByType(annotations) {
   const groups = new Map();
   for (const ann of annotations || []) {
-    const type = String(ann?.type || "�");
+    const type = String(ann?.type || "≈");
     if (!groups.has(type)) groups.set(type, []);
     groups.get(type).push(ann);
   }
@@ -133,7 +133,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   if (!groups.length) {
     const empty = document.createElement("p");
     empty.className = "slow-sidebar-empty";
-    empty.textContent = "Sin anotaciones todav�a.";
+    empty.textContent = "Sin anotaciones todavía.";
     annHost.appendChild(empty);
   } else {
     for (const [type, items] of groups) {
@@ -171,7 +171,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   if (!terms.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin t�rminos todav�a.";
+    li.textContent = "Sin términos todavía.";
     dictHost.appendChild(li);
   } else {
     for (const t of terms) {
@@ -189,13 +189,13 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
   }
 
   const iaQueries = annotations.filter(
-    (a) => a.type === "?" || a.type === "ia-query" || (a.type === "?" && a.aiReply),
+    (a) => a.type === "⚑" || a.type === "ia-query" || (a.type === "⇑" && a.aiReply),
   );
   iaQueriesHost.innerHTML = "";
   if (!iaQueries.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin consultas todav�a.";
+    li.textContent = "Sin consultas todavía.";
     iaQueriesHost.appendChild(li);
   } else {
     for (const q of iaQueries) {
@@ -246,7 +246,7 @@ export function wireSidebarIAInput(getSession, onSubmit) {
   });
 }
 
-/** Concepts available for ? graph link picker. */
+/** Concepts available for ⟷ graph link picker. */
 export function buildConceptPickerOptions(session) {
   const map = new Map();
   for (const c of getSortedSessionConcepts()) {

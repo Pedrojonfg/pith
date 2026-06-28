@@ -137,7 +137,7 @@ async function renderSm2ReviewItem() {
       assessmentSignals: originSession?.shared?.assessmentSignals,
       now,
     });
-    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length} � ${why}`;
+    els.reviewSm2Meta.textContent = `Item ${sm2ReviewIndex + 1} of ${sm2ReviewQueue.length} — ${why}`;
   }
   if (els.reviewSm2EarlyChip) {
     els.reviewSm2EarlyChip.classList.toggle("hidden", !early);
@@ -146,7 +146,7 @@ async function renderSm2ReviewItem() {
     const facet = String(item.facet || "").trim();
     const facetLabel = facet ? FACET_LABELS[facet] || facet : "";
     const sourceLabel = SM2_SOURCE_LABELS[item.sourceType] || item.sourceType;
-    let badge = facetLabel ? `${sourceLabel} � ${facetLabel}` : sourceLabel;
+    let badge = facetLabel ? `${sourceLabel} — ${facetLabel}` : sourceLabel;
     const conceptIds = resolveSmItemConceptIds(item, originSession);
     const pending = conceptIds.some((cid) => {
       const c = originSession?.shared?.conceptInventory?.find(
@@ -154,7 +154,7 @@ async function renderSm2ReviewItem() {
       );
       return c && c.questionClass !== "factual" && c.comprehensionConfirmed !== true;
     });
-    if (pending) badge += " � needs deeper understanding first";
+    if (pending) badge += " — needs deeper understanding first";
     els.reviewSm2SourceBadge.textContent = badge;
   }
   if (els.reviewSm2Title) els.reviewSm2Title.textContent = String(item.title || "Review item");
@@ -162,7 +162,7 @@ async function renderSm2ReviewItem() {
     const preview = String(item.contentPreview || "");
     if (!sm2ReviewDocId && item.docId) {
       const docTitle = originSession?.shared?.docMeta?.titleInferred || item.docId;
-      els.reviewSm2Preview.textContent = preview ? `${docTitle} � ${preview}` : docTitle;
+      els.reviewSm2Preview.textContent = preview ? `${docTitle} — ${preview}` : docTitle;
     } else {
       els.reviewSm2Preview.textContent = preview;
     }
@@ -820,7 +820,7 @@ function normalizeReviewQuestion(q) {
       feedback: obj.feedback != null ? String(obj.feedback).trim() : "",
     };
   }
-  // Keep full model fields (choices, option_A, etc.) � same path as session block generation.
+  // Keep full model fields (choices, option_A, etc.) — same path as session block generation.
   return shuffleTestQuestionOptions(normalizeTestQuestion({ ...obj, type: "test", question }));
 }
 
@@ -1094,7 +1094,7 @@ function resetReviewRun() {
   clearReviewConfigError();
   clearReviewGeneratingError();
   clearReviewError();
-  els.reviewGeneratingLabel.textContent = "Generating questions�";
+  els.reviewGeneratingLabel.textContent = "Generating questions…";
   els.reviewGeneratingFill.style.width = "0%";
   els.reviewTestFeedback.hidden = true;
   clearMarkdownContainer(els.reviewTestFeedback);
@@ -1167,7 +1167,7 @@ async function startReviewGeneration() {
   const all = [];
   for (const batchSize of batches) {
     if (reviewGenCancelToken.cancelled) return;
-    els.reviewGeneratingLabel.textContent = `Generating questions� (${done}/${total})`;
+    els.reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
     els.reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
 
     const content = await deepSeekGenerateReviewBatch({
@@ -1189,7 +1189,7 @@ async function startReviewGeneration() {
     }
 
     done += batchSize;
-    els.reviewGeneratingLabel.textContent = `Generating questions� (${done}/${total})`;
+    els.reviewGeneratingLabel.textContent = `Generating questions… (${done}/${total})`;
     els.reviewGeneratingFill.style.width = `${Math.round((done / total) * 100)}%`;
   }
 
@@ -1276,7 +1276,7 @@ export async function wireReviewHandlers() {
 
   els.reviewStartBtn.addEventListener("click", async () => {
     els.reviewConfigStatus.textContent = "";
-    els.reviewConfigStatus.textContent = "Preparing�";
+    els.reviewConfigStatus.textContent = "Preparing…";
     try {
       await startReviewGeneration();
     } catch (err) {

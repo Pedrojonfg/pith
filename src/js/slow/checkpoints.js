@@ -6,7 +6,7 @@ import { generateCheckpointQuestion } from "./phase0.js?v=20260625_02";
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
 
 const CHECKPOINT_DELAY_MS = 10000;
-export const CHECKPOINT_CHIP_LABEL = "[= CHECKPOINT � 30 seg]";
+export const CHECKPOINT_CHIP_LABEL = "[= CHECKPOINT — 30 seg]";
 
 /** Section boundaries within scope coordinates. */
 export function buildSectionBoundaries(scopeText, format) {
@@ -139,7 +139,7 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
   dismiss.type = "button";
   dismiss.className = "slow-checkpoint-dismiss";
   dismiss.setAttribute("aria-label", "Dismiss checkpoint");
-  dismiss.textContent = "�";
+  dismiss.textContent = "×";
   const onDismiss = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -153,17 +153,17 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
 
   const questionEl = document.createElement("p");
   questionEl.className = "slow-checkpoint-question";
-  questionEl.textContent = "�";
+  questionEl.textContent = "…";
 
   const input = document.createElement("input");
   input.type = "text";
   input.className = "slow-checkpoint-input";
   const lang = getStudyLanguage() || "English";
-  input.placeholder = /spanish|espa�ol|^es/i.test(lang) ? "Tu respuesta�" : "Your answer�";
+  input.placeholder = /spanish|español|^es/i.test(lang) ? "Tu respuesta…" : "Your answer…";
 
   const send = document.createElement("button");
   send.type = "button";
-  send.textContent = "?";
+  send.textContent = "→";
   send.addEventListener("click", async () => {
     const text = input.value.trim();
     if (!text) return;
@@ -203,7 +203,7 @@ async function showCheckpointChip(session, section, breakpoints, pageIndex, onAn
     questionEl.textContent = question;
   } catch {
     if (gen !== checkpointGen || checkpointEl.hidden) return;
-    questionEl.textContent = "�";
+    questionEl.textContent = "…";
   }
 }
 

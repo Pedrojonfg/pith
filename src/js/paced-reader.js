@@ -172,7 +172,7 @@ function renderProgress() {
   const total = getPageCount(pacedReaderState.breakpoints);
   const idx = pacedReaderState.currentPageIndex;
   if (els.pacedReaderPageIndicator) {
-    if (!total) els.pacedReaderPageIndicator.textContent = "�";
+    if (!total) els.pacedReaderPageIndicator.textContent = "—";
     else if (total === 1) els.pacedReaderPageIndicator.textContent = "1 page";
     else els.pacedReaderPageIndicator.textContent = `Page ${idx + 1} of ${total}`;
   }

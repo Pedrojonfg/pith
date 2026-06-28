@@ -551,7 +551,7 @@ async function handleRetryPreparationClick() {
     els.generateBlocksError.hidden = true;
     els.generateBlocksError.textContent = "";
   }
-  showDocumentPreparingScreen("Retrying document preparation?");
+  showDocumentPreparingScreen("Retrying document preparation…");
   await startDocumentPreparation(doc, {
     forceRerun: true,
     ...preparationGateOptions((msg) => {
@@ -585,7 +585,7 @@ async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOp
     throw new Error(PREPARATION_FAILED_MSG);
   }
   if (guard.decision === "waiting") {
-    if (statusEl) statusEl.textContent = "Document preparation in progress?";
+    if (statusEl) statusEl.textContent = "Document preparation in progress…";
     const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
@@ -606,7 +606,7 @@ async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOp
     }
   }
   if (guard.decision === "run") {
-    if (statusEl) statusEl.textContent = "Preparing document?";
+    if (statusEl) statusEl.textContent = "Preparing document…";
     doc = await ensureTier1Preparation(doc, {
       ...splitOpts,
       ...preparationGateOptions((msg) => {
@@ -668,7 +668,7 @@ function refreshCreateSessionInsights(doc) {
   const dupe = related.find((r) => (r?.score ?? 0) >= DOC_SIMILARITY_DUPLICATE_THRESHOLD);
   if (dupe) {
     parts.push(
-      `This looks very similar to "${dupe.title || dupe.docId}" ? did you mean to re-upload?`,
+      `This looks very similar to "${dupe.title || dupe.docId}" — did you mean to re-upload?`,
     );
   }
   if (!parts.length) {
@@ -677,7 +677,7 @@ function refreshCreateSessionInsights(doc) {
     return;
   }
   el.hidden = false;
-  el.textContent = parts.join(" ? ");
+  el.textContent = parts.join(" · ");
 }
 
 function preparationGateOptions(onProgress) {
@@ -689,7 +689,7 @@ function preparationGateOptions(onProgress) {
   };
 }
 
-function showDocumentPreparingScreen(initialLabel = "Processing document?") {
+function showDocumentPreparingScreen(initialLabel = "Processing document…") {
   if (els.reviewGeneratingLabel) {
     els.reviewGeneratingLabel.textContent = initialLabel;
   }
@@ -720,7 +720,7 @@ async function enterModeSelectAfterTier1Gate() {
   }
 
   if (guard.decision === "waiting") {
-    showDocumentPreparingScreen("Document preparation in progress?");
+    showDocumentPreparingScreen("Document preparation in progress…");
     const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
@@ -999,7 +999,7 @@ async function buildRecommendationSubtitle(recommendation, doc = null) {
   const parts = [];
   if (reasoning) parts.push(reasoning);
   if (whyText && whyText !== reasoning) parts.push(whyText);
-  return parts.join(" ? ");
+  return parts.join(" · ");
 }
 
 /**
@@ -1073,7 +1073,7 @@ function clearFlowRecommendFeedback() {
 
 function setFlowRecommendLoading(isLoading) {
   if (els.flowRecommendStatus) {
-    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow?" : "";
+    els.flowRecommendStatus.textContent = isLoading ? "Computing your study flow…" : "";
   }
 }
 
@@ -1632,7 +1632,7 @@ function renderBookSearchPanel() {
 
   if (els.bookSearchLookupBtn) {
     els.bookSearchLookupBtn.disabled = bookSearchState.searching;
-    els.bookSearchLookupBtn.textContent = bookSearchState.searching ? "Searching?" : "Look up book";
+    els.bookSearchLookupBtn.textContent = bookSearchState.searching ? "Searching…" : "Look up book";
   }
 }
 
@@ -1727,7 +1727,7 @@ function interviewFollowUpErrorMessage(err) {
 
 function showInterviewGeneratingScreen(label) {
   if (els.reviewGeneratingLabel) {
-    els.reviewGeneratingLabel.textContent = String(label || "Working?");
+    els.reviewGeneratingLabel.textContent = String(label || "Working…");
   }
   showScreen("reviewGenerating");
 }
@@ -1810,7 +1810,7 @@ async function loadNextInterviewQuestion(doc) {
     return doc;
   }
   const runId = ++interviewCaptureState.runId;
-  showInterviewGeneratingScreen("Generating follow-up question?");
+  showInterviewGeneratingScreen("Generating follow-up question…");
   try {
     assertLlmKeyPresent(getSessionLlmModel());
     const { question } = await generateInterviewFollowUp({
@@ -1930,7 +1930,7 @@ async function handleInterviewFinish(fromCap = false) {
   await saveDocumentSession(doc);
 
   const runId = ++interviewCaptureState.runId;
-  showInterviewGeneratingScreen("Structuring your answers?");
+  showInterviewGeneratingScreen("Structuring your answers…");
   try {
     assertLlmKeyPresent(getSessionLlmModel());
     const { doc: updated } = await applyInterviewSynthesis(doc, {
@@ -1942,7 +1942,7 @@ async function handleInterviewFinish(fromCap = false) {
     if (runId !== interviewCaptureState.runId) return;
     await saveDocumentSession(updated);
     if (els.reviewGeneratingLabel) {
-      els.reviewGeneratingLabel.textContent = "Processing document?";
+      els.reviewGeneratingLabel.textContent = "Processing document…";
     }
     const prepared = await ensureTier1Preparation(updated, {
       ...preparationGateOptions((msg) => {
@@ -1960,7 +1960,7 @@ async function handleInterviewFinish(fromCap = false) {
     }
     kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
     if (fromCap && els.interviewCaptureStatus) {
-      els.interviewCaptureStatus.textContent = "Interview complete ? round cap reached.";
+      els.interviewCaptureStatus.textContent = "Interview complete — round cap reached.";
     }
     enterModeSelectScreen();
   } catch (err) {
@@ -2001,7 +2001,7 @@ async function handleCreateSessionStartFilePicked() {
   if (!file) return;
   const runId = ++createSessionStartRunId;
   if (els.createSessionStartStatus) {
-    els.createSessionStartStatus.textContent = "Extracting text?";
+    els.createSessionStartStatus.textContent = "Extracting text…";
   }
   if (els.createSessionStartContinueBtn) {
     els.createSessionStartContinueBtn.disabled = true;
@@ -2044,7 +2044,7 @@ async function handleCreateSessionStartFilePicked() {
       els.createSessionStartContinueBtn.disabled = false;
     }
     if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Preparing document?";
+      els.createSessionStartStatus.textContent = "Preparing document…";
     }
     mountModeSelectBreadcrumb(doc);
     void pollCreateSessionPrepStatus(doc.docId, runId);
@@ -2393,7 +2393,7 @@ async function loadUploadVaultCandidates() {
     els.uploadVaultError.textContent = "";
   }
   if (els.btnUploadVaultRetry) els.btnUploadVaultRetry.hidden = true;
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestions?";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Loading suggestions…";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
 
   const studied = getStudiedConcepts(doc);
@@ -2559,7 +2559,7 @@ async function commitUploadVaultSelections() {
     );
     if (!proceed) return;
   }
-  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault upload?";
+  if (els.uploadVaultStatus) els.uploadVaultStatus.textContent = "Queuing vault upload…";
   if (els.btnUploadVaultCommit) els.btnUploadVaultCommit.disabled = true;
   try {
     const queueRows = selections.map((sel) => ({
@@ -2575,7 +2575,7 @@ async function commitUploadVaultSelections() {
     }));
     createUploadQueue(doc.docId, queueRows);
     if (els.uploadVaultStatus) {
-      els.uploadVaultStatus.textContent = "Uploading to vault in background?";
+      els.uploadVaultStatus.textContent = "Uploading to vault in background…";
     }
     const sessionForQueue = doc;
     void processUploadQueue(sessionForQueue, ({ done, total, error }) => {
@@ -2867,7 +2867,7 @@ function notifyInventoryRunStatus(invResult) {
 async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onProgress) {
   let docHierarchy = doc?.shared?.docHierarchy;
   if (docHierarchy?.tree?.length || wordCount <= 8000) return docHierarchy;
-  if (typeof onProgress === "function") onProgress("Building document structure?");
+  if (typeof onProgress === "function") onProgress("Building document structure…");
   docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
   if (doc?.shared && docHierarchy) {
     doc.shared.docHierarchy = docHierarchy;
@@ -3203,12 +3203,12 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.generateBlocksBtn) {
     const bootstrapped = Boolean(state.materialBootstrapActive);
     if (bootstrapped && (isSlow || isCloze)) {
-      els.generateBlocksBtn.textContent = "Continue with loaded material ?";
+      els.generateBlocksBtn.textContent = "Continue with loaded material…";
     } else if (isQuestions) {
       els.generateBlocksBtn.textContent = "Generate questions";
     } else {
       els.generateBlocksBtn.textContent =
-        isSlow || isCloze ? "Upload and continue ?" : "Generate blocks";
+        isSlow || isCloze ? "Upload and continue…" : "Generate blocks";
     }
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
@@ -3238,7 +3238,7 @@ function updateClozeSessionPanel(session) {
   if (els.clozePipelineProgress) {
     if (generating && cloze.pipelinePhase != null) {
       const phaseNum = Number(cloze.pipelinePhase);
-      els.clozePipelineProgress.textContent = `Generating items ? Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
+      els.clozePipelineProgress.textContent = `Generating items — Phase ${phaseNum + 1}/5: ${getPhaseLabel(phaseNum)}`;
     } else if (ready) {
       els.clozePipelineProgress.textContent = "Items ready.";
     } else if (failed) {
@@ -3510,7 +3510,7 @@ async function renderSlowScopeScreen(session) {
     els.slowScopeHierarchyLoading.hidden = !loading;
     if (loading) {
       els.slowScopeHierarchyLoading.textContent =
-        "Analyzing document structure?";
+        "Analyzing document structure…";
     }
   }
 
@@ -3637,7 +3637,7 @@ async function renderSlowScopeScreen(session) {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "slow-scope-toggle";
-      toggle.textContent = collapsed ? "?" : "?";
+      toggle.textContent = collapsed ? "▸" : "▾";
       toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
       toggle.addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -3765,7 +3765,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "�";
+    del.textContent = "×";
     del.title = "Eliminar pregunta";
     del.addEventListener("click", () => {
       phase0.prequestions.splice(index, 1);
@@ -3902,7 +3902,7 @@ function renderSlowPhase0Concepts(session, parent) {
     const del = document.createElement("button");
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
-    del.textContent = "�";
+    del.textContent = "×";
     del.addEventListener("click", () => {
       phase0.conceptsToFind.splice(i, 1);
       renderSlowPhase0Content(session);
@@ -3921,7 +3921,7 @@ function renderSlowPhase0Concepts(session, parent) {
   dictSelect.className = "slow-phase0-select";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = "Add from dictionary?";
+  placeholder.textContent = "Add from dictionary…";
   dictSelect.appendChild(placeholder);
   const dictConcepts = getSortedSessionConcepts();
   for (const c of dictConcepts) {
@@ -3987,7 +3987,7 @@ function renderSlowPhase0Content(session) {
     renderPhase0ReadonlyBlock(
       host,
       "Examine critically",
-      phase0.criticalExaminePoints.map((p) => `� ${p}`).join("\n"),
+      phase0.criticalExaminePoints.map((p) => `• ${p}`).join("\n"),
     );
   }
 }
@@ -4019,7 +4019,7 @@ function renderSlowPhase0Screen(session) {
     if (els.slowPhase0Progress) {
       els.slowPhase0Progress.hidden = false;
       if (!els.slowPhase0Progress.textContent) {
-        els.slowPhase0Progress.textContent = "Generating orientation?";
+        els.slowPhase0Progress.textContent = "Generating orientation…";
       }
     }
     return;
@@ -4090,7 +4090,7 @@ async function runPhase0Generation(session) {
   slow.phase0Error = null;
   if (els.slowPhase0Progress) {
     els.slowPhase0Progress.hidden = false;
-    els.slowPhase0Progress.textContent = "Generating orientation?";
+    els.slowPhase0Progress.textContent = "Generating orientation…";
   }
   renderSlowPhase0Screen(session);
   await storeActiveSession(session);
@@ -4104,9 +4104,9 @@ async function runPhase0Generation(session) {
         if (!els.slowPhase0Progress) return;
         els.slowPhase0Progress.hidden = false;
         if (phase === "chunk") {
-          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} ? ${label}`;
+          els.slowPhase0Progress.textContent = `Phase 0: section ${current}/${total} — ${label}`;
         } else {
-          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientation?";
+          els.slowPhase0Progress.textContent = "Phase 0: synthesizing global orientation…";
         }
       },
     });
@@ -4448,7 +4448,7 @@ function renderSplitMergeSummary(splitRunMeta) {
       const keepBefore = String(row?.keep_title_before || "").trim();
       const keepAfter = String(row?.keep_title_after || "").trim();
       const absorbTitles = Array.isArray(row?.absorb_titles) ? row.absorb_titles : [];
-      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} ? absorb ${absorbIds
+      top.textContent = `Keep #${keepId}: ${keepAfter || keepBefore || "Untitled"} — absorb ${absorbIds
         .map((x) => `#${x}`)
         .join(", ")}`;
       const sub = document.createElement("div");
@@ -4457,12 +4457,12 @@ function renderSplitMergeSummary(splitRunMeta) {
       sub.textContent =
         absorbTitles.length || keepBefore
           ? `${keepBefore ? `Before: ${keepBefore}. ` : ""}${
-              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" � ")}` : ""
+              absorbTitles.length ? `Absorbed: ${absorbTitles.filter(Boolean).join(" · ")}` : ""
             }`
           : "";
       if (sub.textContent) card.appendChild(sub);
     } else {
-      top.textContent = `Keep #${keepId} ? absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
+      top.textContent = `Keep #${keepId} — absorb ${absorbIds.map((x) => `#${x}`).join(", ")}`;
     }
 
     const why = document.createElement("div");
@@ -4625,7 +4625,7 @@ function bumpQuestionCount(kind, delta) {
 
 function setGenerateLoading(isLoading) {
   els.generateBlocksBtn.disabled = isLoading;
-  els.generateBlocksBtn.textContent = isLoading ? "Generating?" : "Generate blocks";
+  els.generateBlocksBtn.textContent = isLoading ? "Generating…" : "Generate blocks";
 }
 function setGenerateError(message) {
   els.generateBlocksError.hidden = false;
@@ -4910,7 +4910,7 @@ function setOfflinePackError(message) {
 
 function setOfflinePackLoading(isLoading) {
   if (els.offlinePackStatus) {
-    els.offlinePackStatus.textContent = isLoading ? "Reading?" : "";
+    els.offlinePackStatus.textContent = isLoading ? "Reading…" : "";
   }
 }
 
@@ -4997,11 +4997,11 @@ async function loadOfflinePack(text, filename = "") {
   setBlocksReadonlyMode({
     enabled: true,
     bannerText:
-      `${totalBlocks} blocks � Generated ${generatedAt}`
-      + (failedBlocks > 0 ? ` � ${failedBlocks} blocks have no content` : ""),
+      `${totalBlocks} blocks · Generated ${generatedAt}`
+      + (failedBlocks > 0 ? ` · ${failedBlocks} blocks have no content` : ""),
   });
   if (els.confirmBlocksStatus) {
-    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks � Generated ${generatedAt}`;
+    els.confirmBlocksStatus.textContent = `${totalBlocks} blocks · Generated ${generatedAt}`;
   }
   if (els.confirmBlocksError) {
     els.confirmBlocksError.hidden = failedBlocks <= 0;
@@ -5015,7 +5015,7 @@ async function loadOfflinePack(text, filename = "") {
 
 function setConfirmLoading(isLoading) {
   els.confirmBlocksBtn.disabled = isLoading;
-  els.confirmBlocksBtn.textContent = isLoading ? "Saving?" : "Looks good, start session";
+  els.confirmBlocksBtn.textContent = isLoading ? "Saving…" : "Looks good, start session";
 }
 function setConfirmError(message) {
   els.confirmBlocksError.hidden = false;
@@ -5605,7 +5605,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (!blockReady) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Preparing next block?";
+    o.sneakPeekText.textContent = "Preparing next block…";
     return;
   }
 
@@ -5638,7 +5638,7 @@ function renderTransitionSneakPeek(o, finishedIdx) {
   if (bridgeGenerating) {
     o.sneakPeekWrap.hidden = false;
     o.sneakPeekText.className = "hint";
-    o.sneakPeekText.textContent = "Writing transition preview?";
+    o.sneakPeekText.textContent = "Writing transition preview…";
     return;
   }
 
@@ -5699,7 +5699,7 @@ function getOrCreateTransitionOverlay() {
   sneakPeekText.className = "hint";
   sneakPeekText.style.lineHeight = "1.5";
   sneakPeekText.style.marginBottom = "10px";
-  sneakPeekText.textContent = "Preparing next block?";
+  sneakPeekText.textContent = "Preparing next block…";
 
   sneakPeekWrap.appendChild(sneakPeekLabel);
   sneakPeekWrap.appendChild(sneakPeekText);
@@ -5728,7 +5728,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextTestMinus = document.createElement("button");
   nextTestMinus.type = "button";
-  nextTestMinus.textContent = "?";
+  nextTestMinus.textContent = "−";
   const nextTestValue = document.createElement("div");
   nextTestValue.style.minWidth = "22px";
   nextTestValue.style.textAlign = "center";
@@ -5753,7 +5753,7 @@ function getOrCreateTransitionOverlay() {
 
   const nextSocMinus = document.createElement("button");
   nextSocMinus.type = "button";
-  nextSocMinus.textContent = "?";
+  nextSocMinus.textContent = "−";
   const nextSocValue = document.createElement("div");
   nextSocValue.style.minWidth = "22px";
   nextSocValue.style.textAlign = "center";
@@ -6176,7 +6176,7 @@ function setSocraticError(message) {
 }
 function setSocraticLoading(isLoading) {
   els.socraticSubmitBtn.disabled = isLoading;
-  els.socraticSubmitBtn.textContent = isLoading ? "Submitting?" : "Submit";
+  els.socraticSubmitBtn.textContent = isLoading ? "Submitting…" : "Submit";
   els.socraticNextQuestionBtn.disabled = isLoading;
   els.socraticNextBlockBtn.disabled = isLoading;
   els.socraticAnswer.disabled = isLoading;
@@ -6247,14 +6247,14 @@ function setQuestionProgressUi() {
   const ctx = getActiveQuestionContext();
   const n = Math.max(1, ctx.total);
   const label = isPrePackingAssessmentRunner()
-    ? `Knowledge check � Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
+    ? `Knowledge check — Q${Math.min(ctx.globalIndex + 1, n)} of ${n}`
     : `Q${Math.min(ctx.globalIndex + 1, n)} of ${n} (${ctx.phase})`;
   if (els.testMeta) {
     if (isPrePackingAssessmentRunner()) {
       els.testMeta.textContent = label;
     } else {
       const totalBlocks = Math.max(1, getTotalBlocksSafe());
-      els.testMeta.textContent = `${label} � Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
+      els.testMeta.textContent = `${label} — Block ${state.activeBlockIndex + 1} of ${totalBlocks}`;
     }
   }
   if (els.socraticQuestionTitle) {
@@ -6272,11 +6272,11 @@ export function syncBlockFidelityBanner(block, blockIndexEntry) {
 
   let message = "";
   if (anchor === "weak") {
-    message = "Anclaje d�bil al documento ? contrasta con tu PDF.";
+    message = "Anclaje débil al documento — contrasta con tu PDF.";
   } else if (anchor === "proportional_fallback") {
     message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
   } else if (fidelity === "warn") {
-    message = "Fidelidad reducida: parte del contenido podr�a no reflejar la fuente.";
+    message = "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
   }
 
   if (!message) {
@@ -6348,7 +6348,7 @@ function checkPrerequisiteBlockWarning(blockIndex) {
           `Prerequisite block ${prereqBlockIdx + 1} not yet studied before block ${blockIndex + 1}.`,
         );
         if (els.testMeta) {
-          els.testMeta.textContent += " � Prerequisite block not studied yet";
+          els.testMeta.textContent += " — Prerequisite block not studied yet";
         }
         return;
       }
@@ -6512,7 +6512,7 @@ async function startTestBlock() {
   els.testQaView.hidden = true;
   els.testRsvpView.hidden = false;
   if (els.testRsvpWord) els.testRsvpWord.textContent = "";
-  els.testRsvpStatus.textContent = "Generating block?";
+  els.testRsvpStatus.textContent = "Generating block…";
 
   try {
     els.testRsvpSkipBtn.disabled = true;
@@ -6555,7 +6555,7 @@ async function startSocraticBlock() {
 
   try {
     setSocraticLoading(true);
-    els.socraticStatus.textContent = "Generating block?";
+    els.socraticStatus.textContent = "Generating block…";
     await ensureBlockGenerated(state.activeBlockIndex);
   } catch (err) {
     setSocraticError(err?.message ? String(err.message) : String(err));
@@ -6942,14 +6942,14 @@ async function finishQuestions(blockIndex) {
   }
 
   const setStatusPreparing = () => {
-    o.statusBarText.textContent = "Preparing next block?";
+    o.statusBarText.textContent = "Preparing next block…";
     o.statusBarFill.style.animation = "transitionBarSlide 1.2s ease-in-out infinite";
     o.statusBarFill.style.background = "rgba(148, 163, 184, 0.75)";
     o.statusBarFill.style.transform = "translateX(-120%)";
     o.statusBarFill.style.width = "40%";
   };
   const setStatusReady = () => {
-    o.statusBarText.textContent = "Ready ?";
+    o.statusBarText.textContent = "Ready…";
     o.statusBarText.style.color = "rgba(34, 197, 94, 0.95)";
     o.statusBarFill.style.animation = "none";
     o.statusBarFill.style.width = "100%";
@@ -7058,7 +7058,7 @@ async function finishQuestions(blockIndex) {
 
     setPrefetchIndicator("generating");
     setStatusPreparing();
-    o.statusBarText.textContent = "Regenerating next block?";
+    o.statusBarText.textContent = "Regenerating next block…";
     triggerPrefetch(nextIndex, { ...nextCfg, force: true });
     syncPrefetchUi();
   };
@@ -7151,7 +7151,7 @@ async function finishQuestions(blockIndex) {
         if (mode === "consume_prefetch") {
           data = await getPrefetchedBlock(nextIndex, { configKey: keyOf(nextCfg) });
         } else if (mode === "questions_only") {
-          o.status.textContent = "Regenerating questions?";
+          o.status.textContent = "Regenerating questions…";
           if (isQuestionsStudyMode(state.activeSession)) {
             data = await generateQuestionsBlockForIndex(nextIndex, nextCfg);
           } else {
@@ -7165,7 +7165,7 @@ async function finishQuestions(blockIndex) {
           setPrefetchIndicator("ready");
           setStatusReady();
         } else {
-          o.status.textContent = "Regenerating block?";
+          o.status.textContent = "Regenerating block…";
           setPrefetchIndicator("generating");
           data = await generateBlockDirect(nextIndex, {
             timeoutMs: 30_000,
@@ -7191,7 +7191,7 @@ async function finishQuestions(blockIndex) {
   o.retryBtn.onclick = async () => {
     o.error.hidden = true;
     o.error.textContent = "";
-    o.status.textContent = "Retrying?";
+    o.status.textContent = "Retrying…";
     try {
       setPrefetchIndicator("generating");
       const cfg = o.view === "adjust" ? nextCfg : blockDefaults;
@@ -7812,7 +7812,7 @@ function renderPrePackingAssessmentGraph(inventory) {
     blockIndex: [],
     conceptInventory: Array.isArray(inventory) ? inventory : [],
   };
-  host.textContent = `${graph.nodes.length} concepts � ${graph.edges.length} relations`;
+  host.textContent = `${graph.nodes.length} concepts · ${graph.edges.length} relations`;
 }
 
 function recordAssessmentResponse(row) {
@@ -8011,7 +8011,7 @@ function renderPrePackingAssessmentQuestion() {
     if (presumed) {
       const badge = document.createElement("span");
       badge.className = "pre-packing-presumed-badge";
-      badge.textContent = "? Presumed known (override below)";
+      badge.textContent = "✓ Presumed known (override below)";
       els.prePackingAssessmentQuestion.appendChild(badge);
     }
   }
@@ -8060,7 +8060,7 @@ async function enterPrePackingAssessmentScreen() {
     els.prePackingAssessmentError.textContent = "";
   }
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Loading questions?";
+    els.prePackingAssessmentStatus.textContent = "Loading questions…";
   }
   showScreen("prePackingAssessment");
 
@@ -8174,7 +8174,7 @@ async function finishPrePackingAssessment() {
   }); // [debug-enrich]
   clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
-    els.prePackingAssessmentStatus.textContent = "Evaluating responses?";
+    els.prePackingAssessmentStatus.textContent = "Evaluating responses…";
   }
   if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = true;
 
@@ -8257,7 +8257,7 @@ function renderPrePackingResultsScreen(counts) {
   if (!prePackingFlow) return;
   const { full, partial, none } = counts;
   if (els.prePackingResultsSummary) {
-    els.prePackingResultsSummary.textContent = `Mastered: ${full} � Partial: ${partial} � New: ${none}`;
+    els.prePackingResultsSummary.textContent = `Mastered: ${full} · Partial: ${partial} · New: ${none}`;
   }
   if (els.prePackingResultsDiff) {
     if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
@@ -8283,7 +8283,7 @@ async function handlePrePackingAccept() {
   if (!prePackingFlow) return;
   if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Preparing blocks?";
+    els.prePackingResultsStatus.textContent = "Preparing blocks…";
   }
   try {
     let packed = prePackingFlow.packedResult;
@@ -8317,7 +8317,7 @@ async function handlePrePackingIgnore() {
   console.info("[study.handlePrePackingIgnore] Re-packing without profile"); // [debug-enrich]
   prePackingFlow.packingIgnoredProfile = true;
   if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Re-packing without profile?";
+    els.prePackingResultsStatus.textContent = "Re-packing without profile…";
   }
   try {
     prePackingFlow.packingPromise = null;
@@ -8353,7 +8353,7 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "blocksMaterialGraphBtn" })}
-    <span class="hint">${es ? `${graph.nodes.length} nodos � ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes � ${graph.edges.length} edges`}</span>`;
+    <span class="hint">${es ? `${graph.nodes.length} nodos · ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes · ${graph.edges.length} edges`}</span>`;
 }
 
 function renderSlowPhase0GraphActions(session) {
@@ -8371,7 +8371,7 @@ function renderSlowPhase0GraphActions(session) {
   host.hidden = false;
   host.innerHTML = `
     ${renderGraphUnlockButtonHtml(lang, { id: "slowPhase0GraphBtn" })}
-    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} � ${graph.nodes.length} nodes</span>`;
+    <span class="hint">${es ? "Vista previa del mapa argumental" : "Argument map preview"} — ${graph.nodes.length} nodes</span>`;
 }
 
 function wireMaterialGraphHandlers() {
@@ -8686,7 +8686,7 @@ export async function wireStudyHandlers() {
       els.fileExtractHint.textContent = `Selected: ${String(file.name || "file")} (${formatFileSize(file.size)})`;
       const markerProbe = await file.slice(0, 64 * 1024).text();
       if (String(markerProbe || "").includes("OFFLINE_PACK_V1")) {
-        els.fileExtractHint.textContent = "Loading offline pack?";
+        els.fileExtractHint.textContent = "Loading offline pack…";
         const rawMaterialText = await readFileAsText(file);
         await loadOfflinePack(rawMaterialText, String(file.name || ""));
         return;
@@ -8794,7 +8794,7 @@ export async function wireStudyHandlers() {
       clearGenerateError();
       els.generateBlocksStatus.textContent = "";
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading material?";
+      els.generateBlocksStatus.textContent = "Reading material…";
       const resolvedCloze = await resolveMaterialForGenerate();
       if (!resolvedCloze) {
         setGenerateLoading(false);
@@ -8848,7 +8848,7 @@ export async function wireStudyHandlers() {
         return;
       }
       setGenerateLoading(true);
-      els.generateBlocksStatus.textContent = "Reading material?";
+      els.generateBlocksStatus.textContent = "Reading material…";
       const resolvedSlow = await resolveMaterialForGenerate();
       if (!resolvedSlow) {
         setGenerateLoading(false);
@@ -8970,7 +8970,7 @@ export async function wireStudyHandlers() {
     }
 
     setGenerateLoading(true);
-    els.generateBlocksStatus.textContent = "Reading material?";
+    els.generateBlocksStatus.textContent = "Reading material…";
 
     const resolvedRsvp = await resolveMaterialForGenerate();
     if (!resolvedRsvp) {
@@ -9235,7 +9235,7 @@ export async function wireStudyHandlers() {
 
     if (window.offlineMode === true) {
       setConfirmLoading(true);
-      els.confirmBlocksStatus.textContent = "Loading offline session?";
+      els.confirmBlocksStatus.textContent = "Loading offline session…";
       try {
         const pack = window.offlinePack && typeof window.offlinePack === "object" ? window.offlinePack : null;
         const offlineBlocks = normalizeOfflineBlocks(pack?.blocks);
@@ -9313,7 +9313,7 @@ export async function wireStudyHandlers() {
     }
 
     setConfirmLoading(true);
-    els.confirmBlocksStatus.textContent = "Saving blocks list?";
+    els.confirmBlocksStatus.textContent = "Saving blocks list…";
 
     try {
       if (!state.lastBlockIndex || !Array.isArray(state.lastBlockIndex)) {
@@ -9588,7 +9588,7 @@ export async function wireStudyHandlers() {
         if (els.fullPackCancelBtn) els.fullPackCancelBtn.hidden = true;
         if (els.fullPackStudyNowBtn) {
           els.fullPackStudyNowBtn.hidden = false;
-          els.fullPackStudyNowBtn.textContent = "Study now ?";
+          els.fullPackStudyNowBtn.textContent = "Study now →";
         }
         if (els.fullPackExitBtn) {
           els.fullPackExitBtn.hidden = false;
@@ -9883,13 +9883,13 @@ export async function wireStudyHandlers() {
 
       const prevText = els.summarySoFarBtn.textContent;
       els.summarySoFarBtn.disabled = true;
-      els.summarySoFarBtn.textContent = "Summarising?";
+      els.summarySoFarBtn.textContent = "Summarising…";
 
       if (els.summaryOverlayTitle) {
         els.summaryOverlayTitle.textContent = `Summary so far (blocks 1?${n})`;
       }
       if (els.summaryOverlayBody) {
-        els.summaryOverlayBody.textContent = "Summarising?";
+        els.summaryOverlayBody.textContent = "Summarising…";
         els.summaryOverlayBody.classList.remove("md-content");
       }
       setSummaryOverlayError("");

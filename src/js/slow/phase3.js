@@ -1,4 +1,4 @@
-import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260625_02";
+﻿import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260625_02";
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
 import {
   annotationsToFlashcardPayload,
@@ -21,29 +21,29 @@ import {
 
 export { PROXIMITY, resolveArgumentMapNodeAnchor };
 
-export const FLASHCARD_CONVERTIBLE_TYPES = ["?", "�", "?", "?"];
+export const FLASHCARD_CONVERTIBLE_TYPES = ["→", "≈", "⊘", "↯"];
 
 const RELEVANT_ANNOTATION_TYPES = new Set([
-  "�",
+  "≈",
   "?",
-  "?",
-  "?",
-  "?",
-  "?",
-  "?",
-  "?",
-  "?",
+  "→",
+  "⟷",
+  "⊘",
+  "↯",
+  "⚠",
+  "★",
+  "⇑",
 ]);
 
 export const PHASE3_MODULE_DEFS = [
-  { id: "A", label: "Revisi�n", title: "A � Revisi�n argumental" },
-  { id: "B", label: "Retrieval", title: "B � Retrieval" },
-  { id: "C", label: "Grafo", title: "C � Grafo" },
+  { id: "A", label: "Revisión", title: "A — Revisión argumental" },
+  { id: "B", label: "Retrieval", title: "B — Retrieval" },
+  { id: "C", label: "Grafo", title: "C — Grafo" },
 ];
 
-/** Spec �7 � annotation type ? retrieval question pattern (UI hint). */
+/** Spec §7 — annotation type → retrieval question pattern (UI hint). */
 export const RETRIEVAL_PROMPT_TEMPLATES = {
-  "�": {
+  "≈": {
     es: "Explica el concepto sin usar las palabras del texto.",
     en: "Explain the concept without using the text's words.",
   },
@@ -51,54 +51,54 @@ export const RETRIEVAL_PROMPT_TEMPLATES = {
     es: "Tu propia pregunta como retrieval.",
     en: "Your own question as retrieval practice.",
   },
-  "?": {
-    es: "Reconstruye tu auto-explicaci�n desde memoria.",
+  "→": {
+    es: "Reconstruye tu auto-explicación desde memoria.",
     en: "Reconstruct your self-explanation from memory.",
   },
-  "?": {
-    es: "Resume la conexi�n que identificaste entre ideas.",
+  "⟷": {
+    es: "Resume la conexión que identificaste entre ideas.",
     en: "Summarize the connection you identified between ideas.",
   },
-  "?": {
-    es: "�C�mo responder�a el autor a que esto no est� argumentado?",
+  "⊘": {
+    es: "¿Cómo respondería el autor a que esto no está argumentado?",
     en: "How would the author respond that this is not argued?",
   },
-  "?": {
-    es: "�Qu� premisa impl�cita necesitar�a el argumento para ser v�lido?",
+  "↯": {
+    es: "¿Qué premisa implícita necesitaría el argumento para ser válido?",
     en: "What implicit premise would the argument need to be valid?",
   },
-  "?": {
-    es: "�Cu�l es la forma correcta de hacer este argumento?",
+  "⚠": {
+    es: "¿Cuál es la forma correcta de hacer este argumento?",
     en: "What is the correct way to make this argument?",
   },
-  "?": {
-    es: "�Por qu� este movimiento argumentativo es s�lido?",
+  "★": {
+    es: "¿Por qué este movimiento argumentativo es sólido?",
     en: "Why is this argumentative move solid?",
   },
-  "?": {
-    es: "Formula el argumento m�s fuerte posible para este punto.",
+  "⇑": {
+    es: "Formula el argumento más fuerte posible para este punto.",
     en: "Formulate the strongest possible argument for this point.",
   },
 };
 
-/** IA hints aligned with slow_mode_spec.md �7 table. */
+/** IA hints aligned with slow_mode_spec.md §7 table. */
 export const RETRIEVAL_IA_HINTS = {
-  "�": "Explain the concept without using the text's words",
+  "≈": "Explain the concept without using the text's words",
   "?": "Use the user's own question verbatim as the retrieval question",
-  "?": "Ask them to reconstruct their self-explanation from memory (front: their note)",
-  "?": "Ask them to summarize the connection they identified between ideas",
-  "?": "Ask how the author would respond to the objection that X is not argued",
-  "?": "Ask what implicit premise the argument would need to be valid",
-  "?": "Ask what the correct form of this argument would be",
-  "?": "Ask why this argumentative move is solid",
-  "?": "Ask them to formulate the strongest possible argument for X",
+  "→": "Ask them to reconstruct their self-explanation from memory (front: their note)",
+  "⟷": "Ask them to summarize the connection they identified between ideas",
+  "⊘": "Ask how the author would respond to the objection that X is not argued",
+  "↯": "Ask what implicit premise the argument would need to be valid",
+  "⚠": "Ask what the correct form of this argument would be",
+  "★": "Ask why this argumentative move is solid",
+  "⇑": "Ask them to formulate the strongest possible argument for X",
 };
 
-export const DEVILS_ADVOCATE_TYPES = new Set(["?", "?", "?"]);
+export const DEVILS_ADVOCATE_TYPES = new Set(["⊘", "↯", "⚠"]);
 
 function isSpanishLang(lang) {
   const v = String(lang || "").trim().toLowerCase();
-  return v.startsWith("es") || v.includes("spanish") || v.includes("espa�ol");
+  return v.startsWith("es") || v.includes("spanish") || v.includes("español");
 }
 
 function annotationMid(ann) {
@@ -116,7 +116,7 @@ function escapeHtml(text) {
 function truncate(text, max = 80) {
   const s = String(text || "").trim();
   if (s.length <= max) return s;
-  return `${s.slice(0, max - 1)}�`;
+  return `${s.slice(0, max - 1)}…`;
 }
 
 export function comparePhase0ToAnnotations(phase0, annotations, scopeText, options = {}) {
@@ -209,7 +209,7 @@ export function computePhase3WeakPointStats(session) {
   const criticalPoints = Array.isArray(slow?.phase0?.criticalExaminePoints)
     ? slow.phase0.criticalExaminePoints.filter(Boolean)
     : [];
-  const criticalAnns = (slow?.annotations || []).filter((a) => ["?", "?", "?"].includes(a.type));
+  const criticalAnns = (slow?.annotations || []).filter((a) => ["⊘", "↯", "⚠"].includes(a.type));
   const total = criticalPoints.length || Math.min(3, criticalAnns.length || 3);
   let found = 0;
   if (criticalPoints.length) {
@@ -242,24 +242,24 @@ export function renderPhase3ModuleA(rows, session, { lang, breakpoints } = {}) {
   const es = isSpanishLang(lang);
   const conceptStats = computePhase3ConceptStats(session);
   const weakStats = computePhase3WeakPointStats(session);
-  const reviewCopy = es ? "oportunidad de revisi�n" : "review opportunity";
+  const reviewCopy = es ? "oportunidad de revisión" : "review opportunity";
   const coveredCopy = es ? "cubierto por tus anotaciones" : "covered by your notes";
 
   const items = (rows || [])
     .map((r) => {
       const label = r.node?.text || r.node?.label || r.node?.id || "Node";
       const page = pageLabelForRow(r, breakpoints);
-      const pageStr = page != null ? (es ? `p�g. ${page}` : `p. ${page}`) : es ? "p�g. �" : "p. �";
-      const status = r.hit ? "?" : "?";
+      const pageStr = page != null ? (es ? `pág. ${page}` : `p. ${page}`) : es ? "pág. —" : "p. —";
+      const status = r.hit ? "✓" : "✗";
       const statusText = r.hit ? coveredCopy : reviewCopy;
       const snippet = r.snippet
-        ? `<span class="slow-phase3-snippet">�${escapeHtml(r.snippet)}�</span>`
+        ? `<span class="slow-phase3-snippet">«${escapeHtml(r.snippet)}»</span>`
         : "";
       return `<li class="slow-phase3-review-row ${r.hit ? "is-covered" : "is-review"}">
         <span class="slow-phase3-status" aria-hidden="true">${status}</span>
         <div class="slow-phase3-review-body">
           <strong>${escapeHtml(label)}</strong>
-          <span class="slow-phase3-meta">${escapeHtml(pageStr)} � ${escapeHtml(statusText)}</span>
+          <span class="slow-phase3-meta">${escapeHtml(pageStr)} · ${escapeHtml(statusText)}</span>
           ${snippet}
         </div>
       </li>`;
@@ -270,7 +270,7 @@ export function renderPhase3ModuleA(rows, session, { lang, breakpoints } = {}) {
     ? `Conceptos: ${conceptStats.found}/${conceptStats.total || 5}`
     : `Concepts: ${conceptStats.found}/${conceptStats.total || 5}`;
   const weakLabel = es
-    ? `Puntos d�biles: ${weakStats.found}/${weakStats.total || 3}`
+    ? `Puntos débiles: ${weakStats.found}/${weakStats.total || 3}`
     : `Weak points: ${weakStats.found}/${weakStats.total || 3}`;
 
   return `<ul class="slow-phase3-review-list">${items || `<li class="hint">${es ? "Sin nodos en el mapa argumental." : "No argument map nodes."}</li>`}</ul>
@@ -293,7 +293,7 @@ function snippetForQuestion(text, max = 60) {
   return truncate(String(text || "").trim(), max);
 }
 
-/** Local per-type retrieval question � spec �7 table (no LLM). */
+/** Local per-type retrieval question — spec §7 table (no LLM). */
 export function buildRetrievalQuestionLocal(annotation, lang) {
   const es = isSpanishLang(lang);
   const note = snippetForQuestion(annotation?.userText, 80);
@@ -304,55 +304,55 @@ export function buildRetrievalQuestionLocal(annotation, lang) {
   }
 
   const byType = {
-    "�": es
-      ? `Explica �${note}� sin usar las palabras del texto.`
-      : `Explain �${note}� without using the text's words.`,
-    "?": es
-      ? `Reconstruye desde memoria tu auto-explicaci�n sobre �${note}�.`
-      : `From memory, reconstruct your self-explanation about �${note}�.`,
-    "?": es
-      ? `Resume la conexi�n que identificaste: �${note}�.`
-      : `Summarize the connection you identified: �${note}�.`,
-    "?": es
-      ? `�C�mo responder�a el autor a la objeci�n de que �${note}� no est� argumentado?`
-      : `How would the author respond to the objection that �${note}� is not argued?`,
-    "?": es
-      ? `�Qu� premisa impl�cita necesitar�a el argumento relacionado con �${note}� para ser v�lido?`
-      : `What implicit premise would the argument related to �${note}� need to be valid?`,
-    "?": es
-      ? `�Cu�l es la forma correcta de hacer el argumento que criticaste (�${note}�)?`
-      : `What is the correct way to make the argument you criticized (�${note}�)?`,
-    "?": es
-      ? `�Por qu� el movimiento argumentativo que marcaste (�${note}�) es s�lido?`
-      : `Why is the argumentative move you marked (�${note}�) solid?`,
-    "?": es
-      ? `Formula el argumento m�s fuerte posible para �${note}�.`
-      : `Formulate the strongest possible argument for �${note}�.`,
+    "≈": es
+      ? `Explica «${note}» sin usar las palabras del texto.`
+      : `Explain «${note}» without using the text's words.`,
+    "→": es
+      ? `Reconstruye desde memoria tu auto-explicación sobre «${note}».`
+      : `From memory, reconstruct your self-explanation about «${note}».`,
+    "⟷": es
+      ? `Resume la conexión que identificaste: «${note}».`
+      : `Summarize the connection you identified: «${note}».`,
+    "⊘": es
+      ? `¿Cómo respondería el autor a la objeción de que «${note}» no está argumentado?`
+      : `How would the author respond to the objection that «${note}» is not argued?`,
+    "↯": es
+      ? `¿Qué premisa implícita necesitaría el argumento relacionado con «${note}» para ser válido?`
+      : `What implicit premise would the argument related to «${note}» need to be valid?`,
+    "⚠": es
+      ? `¿Cuál es la forma correcta de hacer el argumento que criticaste («${note}»)?`
+      : `What is the correct way to make the argument you criticized («${note}»)?`,
+    "★": es
+      ? `¿Por qué el movimiento argumentativo que marcaste («${note}») es sólido?`
+      : `Why is the argumentative move you marked («${note}») solid?`,
+    "⇑": es
+      ? `Formula el argumento más fuerte posible para «${note}».`
+      : `Formulate the strongest possible argument for «${note}».`,
   };
 
   return byType[type] || buildRetrievalPromptTemplate(annotation, lang);
 }
 
-/** Local inverse devil's advocate � spec �7 closing loop (no LLM). */
+/** Local inverse devil's advocate — spec §7 closing loop (no LLM). */
 export function buildDevilsAdvocateQuestionLocal(annotation, lang) {
   const es = isSpanishLang(lang);
   const note = snippetForQuestion(annotation?.userText, 80);
   const type = annotation?.type;
 
-  if (type === "?") {
+  if (type === "⊘") {
     return es
-      ? `Marcaste que �${note}� no est� argumentada. �C�mo responder�a el autor a esta objeci�n? Formula su mejor defensa antes de evaluar si hay respuesta en el texto.`
-      : `You marked that �${note}� is not argued. How would the author respond to this objection? State their best defense before checking whether the text answers it.`;
+      ? `Marcaste que «${note}» no está argumentada. ¿Cómo respondería el autor a esta objeción? Formula su mejor defensa antes de evaluar si hay respuesta en el texto.`
+      : `You marked that «${note}» is not argued. How would the author respond to this objection? State their best defense before checking whether the text answers it.`;
   }
-  if (type === "?") {
+  if (type === "↯") {
     return es
-      ? `Se�alaste un gap de inferencia: �${note}�. �C�mo defender�a el autor el nexo? Formula su mejor r�plica antes de evaluar el texto.`
-      : `You flagged an inference gap: �${note}�. How would the author defend the link? State their best reply before evaluating the text.`;
+      ? `Señalaste un gap de inferencia: «${note}». ¿Cómo defendería el autor el nexo? Formula su mejor réplica antes de evaluar el texto.`
+      : `You flagged an inference gap: «${note}». How would the author defend the link? State their best reply before evaluating the text.`;
   }
-  if (type === "?") {
+  if (type === "⚠") {
     return es
-      ? `Identificaste una posible falacia: �${note}�. �C�mo reconstruir�a el autor este argumento de forma v�lida? Anticipa su defensa antes de juzgar.`
-      : `You identified a possible fallacy: �${note}�. How would the author reconstruct this argument validly? Anticipate their defense before judging.`;
+      ? `Identificaste una posible falacia: «${note}». ¿Cómo reconstruiría el autor este argumento de forma válida? Anticipa su defensa antes de juzgar.`
+      : `You identified a possible fallacy: «${note}». How would the author reconstruct this argument validly? Anticipate their defense before judging.`;
   }
   return "";
 }
@@ -392,7 +392,7 @@ export function buildRetrievalQuestionShells(annotations, lang) {
 }
 
 /**
- * Per-type retrieval questions � spec �7 table; optional IA refinement.
+ * Per-type retrieval questions — spec §7 table; optional IA refinement.
  */
 export async function generateRetrievalByType(session, annotations, { llmCall = llmChatCompletions } = {}) {
   const lang = getStudyLanguage() || "English";
@@ -438,7 +438,7 @@ export async function generateRetrievalByType(session, annotations, { llmCall = 
 }
 
 /**
- * Inverse devil's advocate � one Socratic question per ?/?/? (IA with local fallback).
+ * Inverse devil's advocate — one Socratic question per ⊘/↯/⚠ (IA with local fallback).
  */
 export async function generateDevilsAdvocateQuestions(
   session,
@@ -470,8 +470,8 @@ export async function generateDevilsAdvocateQuestions(
           content:
             `Generate exactly one inverse devil's advocate question per critical annotation as JSON array ` +
             `{annotationId, question}. Each question must be Socratic: ask the reader to formulate the ` +
-            `author's best defense or reply BEFORE evaluating the text. Types: ? unjustified premise, ` +
-            `? inference gap, ? fallacy. Respond entirely in ${lang}. Return ONLY JSON.`,
+            `author's best defense or reply BEFORE evaluating the text. Types: ⊘ unjustified premise, ` +
+            `↯ inference gap, ⚠ fallacy. Respond entirely in ${lang}. Return ONLY JSON.`,
         },
         {
           role: "user",
@@ -511,16 +511,16 @@ function renderRetrievalItem(q, lang, { variant = "retrieval" } = {}) {
         <div class="slow-retrieval-head">
           <span class="slow-retrieval-type" aria-label="tipo">${escapeHtml(q.type)}</span>
           ${badge}
-          <span class="slow-retrieval-source">�${escapeHtml(q.sourceSnippet)}�</span>
+          <span class="slow-retrieval-source">«${escapeHtml(q.sourceSnippet)}»</span>
         </div>
         <p class="slow-retrieval-prompt">${escapeHtml(question)}</p>
         ${promptLine}
         <textarea class="slow-retrieval-answer" rows="2" placeholder="${escapeHtml(
-          es ? "Tu respuesta�" : "Your answer�",
+          es ? "Tu respuesta…" : "Your answer…",
         )}" aria-label="${escapeHtml(
           variant === "devils-advocate"
             ? es
-              ? "R�plica del autor"
+              ? "Réplica del autor"
               : "Author's reply"
             : es
               ? "Respuesta retrieval"
@@ -538,7 +538,7 @@ export function renderPhase3ModuleB(shells, lang, { devilsAdvocate = [], flashca
     ? "Anticipa la mejor defensa del autor antes de evaluar el texto."
     : "Anticipate the author's best defense before evaluating the text.";
   if (!shells?.length && !devilsAdvocate?.length && !flashcardPanelHtml) {
-    return `<p class="hint">${es ? "A�ade anotaciones con texto para practicar retrieval." : "Add annotations with text to practice retrieval."}</p>`;
+    return `<p class="hint">${es ? "Añade anotaciones con texto para practicar retrieval." : "Add annotations with text to practice retrieval."}</p>`;
   }
   const retrievalItems = (shells || [])
     .map((q) => renderRetrievalItem(q, lang, { variant: "retrieval" }))
@@ -574,8 +574,8 @@ export function renderPhase3FlashcardPanel(session, lang, sessionId) {
 
   const title = es ? "Flashcards para repaso" : "Flashcards for review";
   const hint = es
-    ? "Convierte anotaciones ?/�/?/? a tarjetas del flujo de review."
-    : "Convert ?/�/?/? annotations into cards for the review flow.";
+    ? "Convierte anotaciones →/≈/⊘/↯ a tarjetas del flujo de review."
+    : "Convert →/≈/⊘/↯ annotations into cards for the review flow.";
   const convertLabel = es ? "Convertir" : "Convert";
   const convertedLabel = es ? "En cola" : "Queued";
 
@@ -586,10 +586,10 @@ export function renderPhase3FlashcardPanel(session, lang, sessionId) {
       return `<li class="slow-flashcard-item${isConverted ? " is-converted" : ""}" data-annotation-id="${escapeHtml(ann.id)}">
         <div class="slow-flashcard-head">
           <span class="slow-flashcard-type" aria-label="tipo">${escapeHtml(ann.type)}</span>
-          <span class="slow-flashcard-source">�${escapeHtml(snippet)}�</span>
+          <span class="slow-flashcard-source">«${escapeHtml(snippet)}»</span>
         </div>
         <button type="button" class="slow-flashcard-convert-btn btn-secondary" data-convert-flashcard="1" data-annotation-id="${escapeHtml(ann.id)}" ${isConverted ? "disabled aria-pressed=\"true\"" : ""}>
-          ${isConverted ? `? ${escapeHtml(convertedLabel)}` : escapeHtml(convertLabel)}
+          ${isConverted ? `✓ ${escapeHtml(convertedLabel)}` : escapeHtml(convertLabel)}
         </button>
       </li>`;
     })
@@ -629,7 +629,7 @@ export async function wirePhase3FlashcardConvert(hostEl, session) {
       const sessionId =
         getActiveReviewSessionId() || String(session?._meta?.session_id || "").trim();
       if (!sessionId) {
-        showStatus(es ? "Guarda la sesi�n antes de convertir." : "Save the session before converting.");
+        showStatus(es ? "Guarda la sesión antes de convertir." : "Save the session before converting.");
         return;
       }
 
@@ -650,21 +650,21 @@ export async function wirePhase3FlashcardConvert(hostEl, session) {
         }
       }
       if (!added) {
-        showStatus(es ? "Esta anotaci�n ya est� en cola." : "This annotation is already queued.");
+        showStatus(es ? "Esta anotación ya está en cola." : "This annotation is already queued.");
         btn.disabled = true;
         btn.setAttribute("aria-pressed", "true");
-        btn.textContent = es ? "? En cola" : "? Queued";
+        btn.textContent = es ? "✓ En cola" : "✓ Queued";
         btn.closest(".slow-flashcard-item")?.classList.add("is-converted");
         return;
       }
 
       btn.disabled = true;
       btn.setAttribute("aria-pressed", "true");
-      btn.textContent = es ? "? En cola" : "? Queued";
+      btn.textContent = es ? "✓ En cola" : "✓ Queued";
       btn.closest(".slow-flashcard-item")?.classList.add("is-converted");
       showStatus(
         es
-          ? `A�adida a review (${total} tarjeta${total === 1 ? "" : "s"} en cola).`
+          ? `Añadida a review (${total} tarjeta${total === 1 ? "" : "s"} en cola).`
           : `Added to review queue (${total} card${total === 1 ? "" : "s"} queued).`,
       );
     });
@@ -692,7 +692,7 @@ export function renderPhase3ModuleC(session, lang = "English") {
   const lines = withText.slice(0, 20).map((a) => `[Pedro:${a.type}] ${a.userText}`);
   const listHtml = lines.length
     ? `<ul class="slow-phase3-graph-list">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`
-    : `<p class="hint">${escapeHtml(es ? "A�n no hay anotaciones con texto." : "No annotations with text yet.")}</p>`;
+    : `<p class="hint">${escapeHtml(es ? "Aún no hay anotaciones con texto." : "No annotations with text yet.")}</p>`;
   return `
     <p class="hint">${escapeHtml(graphHint)}</p>
     <button type="button" id="slowPhase3ModuleCGraphBtn" class="btn-secondary slow-phase3-module-c-graph-btn">${escapeHtml(graphBtnLabel)}</button>
@@ -711,13 +711,13 @@ export function renderPhase3ModulePicker(session, pickerEl, { onChange } = {}) {
   const lang = getStudyLanguage() || "English";
   const es = isSpanishLang(lang);
   const hint = es
-    ? "Elige m�dulos y orden (puedes omitir alguno)."
+    ? "Elige módulos y orden (puedes omitir alguno)."
     : "Choose modules and order (you may skip any).";
 
   pickerEl.innerHTML = `
     <p class="hint slow-phase3-picker-hint">${escapeHtml(hint)}</p>
     <div class="slow-phase3-module-buttons" role="group" aria-label="${escapeHtml(
-      es ? "M�dulos de consolidaci�n" : "Consolidation modules",
+      es ? "Módulos de consolidación" : "Consolidation modules",
     )}">
       ${PHASE3_MODULE_DEFS.filter((m) => eligible.includes(m.id))
         .map(
@@ -758,7 +758,7 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
     const def = PHASE3_MODULE_DEFS.find((m) => m.id === "A");
     sections.push(`<section class="slow-phase3-module slow-phase3-module-a">
       <h2>${escapeHtml(def?.title || "A")}</h2>
-      <p class="hint">${escapeHtml(es ? "Comparaci�n amable � oportunidades de revisi�n, no calificaci�n." : "Gentle comparison � review opportunities, not grading.")}</p>
+      <p class="hint">${escapeHtml(es ? "Comparación amable — oportunidades de revisión, no calificación." : "Gentle comparison — review opportunities, not grading.")}</p>
       ${renderPhase3ModuleA(moduleA, session, { lang, breakpoints })}
     </section>`);
   }
@@ -788,7 +788,7 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
 
   hostEl.innerHTML =
     sections.join("") ||
-    `<p class="hint">${escapeHtml(es ? "Selecciona al menos un m�dulo arriba." : "Select at least one module above.")}</p>`;
+    `<p class="hint">${escapeHtml(es ? "Selecciona al menos un módulo arriba." : "Select at least one module above.")}</p>`;
 }
 
 export async function generateRetrievalQuestions(session, annotations) {

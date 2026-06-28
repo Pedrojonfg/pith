@@ -1,5 +1,5 @@
 /**
- * Holistic pre-packing assessment � budget, section coverage plan, merge.
+ * Holistic pre-packing assessment — budget, section coverage plan, merge.
  * @see specs/20260618-holistic-assessment-coverage/
  */
 

@@ -215,7 +215,7 @@ async function handleOptionSelect(session, host, idx) {
 
   if (feedback) {
     feedback.hidden = false;
-    feedback.textContent = `Incorrecto � respuesta: ${item.blank_text}`;
+    feedback.textContent = `Incorrecto — respuesta: ${item.blank_text}`;
   }
   if (nextBtn) nextBtn.hidden = false;
   persistProgress(session);
@@ -227,7 +227,7 @@ function renderSummary(session) {
   const host = els.clozeStudyContent;
   if (!host) return;
   host.innerHTML = `
-    <h2>Sesi�n completada</h2>
+    <h2>Sesión completada</h2>
     <p class="hint">${correct} / ${shown} correctas</p>
     <button type="button" id="clozeStudyExitBtn" class="btn-primary">Volver</button>
   `;
@@ -262,7 +262,7 @@ function renderItem(session) {
   answered = false;
 
   if (meta) {
-    meta.textContent = `�tem ${activeIndex + 1} / ${activeOrder.length} � ${item.difficulty || "medium"}`;
+    meta.textContent = `Ítem ${activeIndex + 1} / ${activeOrder.length} — ${item.difficulty || "medium"}`;
   }
 
   const optionsHtml = shuffledOptions
