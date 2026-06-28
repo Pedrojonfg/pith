@@ -436,6 +436,13 @@ let documentPreparationRunId = 0;
  */
 export async function startDocumentPreparation(doc, options = {}) {
   if (!doc?.docId) return null;
+  console.debug("[study.startDocumentPreparation] Called:", {
+    docId: doc.docId,
+    stopAfterTier: options.stopAfterTier ?? 2,
+    forceRerun: options.forceRerun === true,
+    prepStatus: doc?.shared?.preparation?.status,
+    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+  }); // [debug-enrich]
   const forceRerun = options.forceRerun === true;
   if (forceRerun) {
     console.log("[DPP-GUARD] Force rerun requested ? bypassing guard.");
@@ -466,6 +473,13 @@ export async function startDocumentPreparation(doc, options = {}) {
       options.onProgress?.(msg);
     },
   });
+  console.info("[study.startDocumentPreparation] Finished:", {
+    docId: doc.docId,
+    runId,
+    status: result?.status || doc?.shared?.preparation?.status,
+    conceptCount: result?.doc?.shared?.conceptInventory?.length ?? doc?.shared?.conceptInventory?.length ?? 0,
+    errorCount: result?.errors?.length ?? 0,
+  }); // [debug-enrich]
   return result?.doc ?? doc;
 }
 
@@ -529,6 +543,13 @@ async function handleRetryPreparationClick() {
 async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOpts, statusEl) {
   doc = await repairStuckRunningPreparationIfNeeded(doc);
   const guard = evaluateConceptInventoryGuard(doc);
+  console.debug("[study.resolveInventoryForBlockFlow] Guard:", {
+    docId: doc?.docId,
+    decision: guard.decision,
+    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+    prepStatus: doc?.shared?.preparation?.status,
+    wordCount,
+  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(doc);
     throw new Error(PREPARATION_FAILED_MSG);
@@ -1946,6 +1967,12 @@ async function handleCreateSessionStartFilePicked() {
     if (!String(cleanedText || "").trim()) {
       throw new Error("The file appears to be empty.");
     }
+    console.info("[study.handleCreateSessionStartFilePicked] Material ready:", {
+      fileName: file.name,
+      originalFormat,
+      wordCount: countWords(cleanedText),
+      pendingImages: pendingImages?.length || 0,
+    }); // [debug-enrich]
     if (runId !== createSessionStartRunId) return;
     const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
     const suggestedTitle = guessSessionNameFromFileName(file.name);
@@ -5303,6 +5330,16 @@ export async function readAndCleanMaterialText(file) {
     await normalizeStudyMaterial(rawContent, detectedFormat);
 
   const cleanedText = normalizedContent;
+  console.info("[study.readAndCleanMaterialText] Done:", {
+    fileName: file?.name || "",
+    detectedFormat,
+    normalizedFormat,
+    wordCount: countWords(cleanedText),
+    charCount: cleanedText.length,
+    warningCount: (warnings || []).length,
+    warnings: (warnings || []).slice(0, 5),
+    pendingImages: (pendingImages || []).length,
+  }); // [debug-enrich]
   return {
     cleanedText,
     wordCount: countWords(cleanedText),
@@ -7427,6 +7464,13 @@ let prePackingFlow = null;
 let prePackingDraftMeta = null;
 
 function resetPrePackingFlow() {
+  if (prePackingFlow) {
+    console.debug("[study.resetPrePackingFlow] Clearing flow:", {
+      phase: prePackingFlow.phase,
+      hadItemsPromise: Boolean(prePackingFlow.itemsPromise),
+      hadPackingPromise: Boolean(prePackingFlow.packingPromise),
+    }); // [debug-enrich]
+  }
   clearAssessmentChrome();
   prePackingFlow = null;
 }
@@ -7523,6 +7567,12 @@ async function persistAdaptiveBeliefToSession(doc, flow) {
 }
 
 function createPrePackingItemsPromise(flow) {
+  console.debug("[study.createPrePackingItemsPromise] Start:", {
+    holistic: isHolisticAssessmentEnabled(),
+    inventorySize: flow?.conceptInventory?.length || 0,
+    nBlocks: flow?.nBlocks,
+    prefetchConfigKey: flow?.prefetchConfigKey || null,
+  }); // [debug-enrich]
   if (isHolisticAssessmentEnabled()) {
     return Promise.resolve(resolveHolisticAssessmentContext(flow)).then((ctx) => {
       flow.edges = ctx.edges;
@@ -7730,11 +7780,22 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
 async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
   if (!prePackingFlow) throw new Error("Pre-packing flow not initialized.");
   const { conceptInventory, nBlocks, cleanedText, splitOpts } = prePackingFlow;
+  console.info("[study.runPrePackingPack] Start:", {
+    nBlocks,
+    inventorySize: conceptInventory?.length || 0,
+    hasKnowledgeProfile: Boolean(knowledgeProfile),
+    pipeline: knowledgeProfile ? "profile_pack" : "default_pack",
+  }); // [debug-enrich]
   const packed = await packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
     ...splitOpts,
     knowledgeProfile,
     onProgress,
   });
+  console.info("[study.runPrePackingPack] Done:", {
+    blockCount: packed?.blockIndex?.length || 0,
+    pipeline: packed?.splitRunMeta?.pipeline,
+    packFallback: packed?.splitRunMeta?.pack_fallback_reason || null,
+  }); // [debug-enrich]
   if (packed?.blockIndex) {
     packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
   }
@@ -8037,6 +8098,7 @@ async function enterPrePackingAssessmentScreen() {
 
 async function handlePrePackingSkip() {
   if (!prePackingFlow) return;
+  console.info("[study.handlePrePackingSkip] Assessment skipped — packing without profile"); // [debug-enrich]
   prePackingFlow.knowledgeProfile = null;
   prePackingFlow.assessmentSkipped = true;
   prePackingFlow.packingIgnoredProfile = false;
@@ -8103,6 +8165,11 @@ async function advancePrePackingAssessment() {
 
 async function finishPrePackingAssessment() {
   if (!prePackingFlow) return;
+  console.info("[study.finishPrePackingAssessment] Start:", {
+    runnerMode: prePackingFlow.runnerMode,
+    responseCount: (prePackingFlow.assessmentResponses || prePackingFlow.responses || []).length,
+    hasParallelPack: Boolean(ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING),
+  }); // [debug-enrich]
   clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
     els.prePackingAssessmentStatus.textContent = "Evaluating responses?";
@@ -8134,6 +8201,10 @@ async function finishPrePackingAssessment() {
   prePackingFlow.knowledgeProfile = profile;
   prePackingFlow.assessmentSkipped = false;
   prePackingFlow.packingIgnoredProfile = false;
+  console.debug("[study.finishPrePackingAssessment] Profile evaluated:", {
+    hasProfile: Boolean(profile),
+    masteryCounts: countProfileMastery(profile),
+  }); // [debug-enrich]
 
   const doc = await getActiveSession();
   if (doc && prePackingFlow.adaptiveProbing?.beliefState) {
@@ -8239,6 +8310,7 @@ async function handlePrePackingAccept() {
 
 async function handlePrePackingIgnore() {
   if (!prePackingFlow) return;
+  console.info("[study.handlePrePackingIgnore] Re-packing without profile"); // [debug-enrich]
   prePackingFlow.packingIgnoredProfile = true;
   if (els.prePackingResultsStatus) {
     els.prePackingResultsStatus.textContent = "Re-packing without profile?";
@@ -8942,11 +9014,21 @@ export async function wireStudyHandlers() {
       resetPrePackingFlow();
       prePackingDraftMeta = null;
       const prePackingOn = shouldRunPrePackingAssessment();
+      console.info("[study.generateBlocks] RSVP split start:", {
+        docId: doc?.docId,
+        nBlocks,
+        wordCount,
+        prePackingOn,
+        hasCachedInventory: isConceptInventoryValid(doc),
+        cacheValid: isBlockSplitCacheValid(cache, fingerprint),
+        preparedPack: Boolean(resolveRsvpInventoryForPack(doc, { fingerprint })),
+      }); // [debug-enrich]
 
       if (!prePackingOn) {
         let packed;
         const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
         if (preparedPack) {
+          console.debug("[study.generateBlocks] Pack path: preparedPack"); // [debug-enrich]
           packed = await packInventoryToBlocks(
             preparedPack.inventory,
             nBlocks,
@@ -8954,6 +9036,7 @@ export async function wireStudyHandlers() {
             splitOpts,
           );
         } else if (isBlockSplitCacheValid(cache, fingerprint)) {
+          console.debug("[study.generateBlocks] Pack path: blockSplitCache"); // [debug-enrich]
           packed = await packInventoryToBlocks(
             cache.conceptInventory,
             nBlocks,
@@ -8961,6 +9044,7 @@ export async function wireStudyHandlers() {
             splitOpts,
           );
         } else if (isConceptInventoryValid(doc)) {
+          console.debug("[study.generateBlocks] Pack path: shared.conceptInventory"); // [debug-enrich]
           packed = await packInventoryToBlocks(
             doc.shared.conceptInventory,
             nBlocks,
@@ -8975,8 +9059,12 @@ export async function wireStudyHandlers() {
             Array.isArray(sparseInv) &&
             sparseInv.length > 0
           ) {
+            console.warn("[study.generateBlocks] Pack path: degraded sparse inventory", {
+              conceptCount: sparseInv.length,
+            }); // [debug-enrich]
             packed = await packInventoryToBlocks(sparseInv, nBlocks, cleanedText, splitOpts);
           } else {
+            console.debug("[study.generateBlocks] Pack path: twoPhaseConceptSplit"); // [debug-enrich]
             const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
             packed = {
               blockIndex: splitResult.blockIndex,
@@ -9111,6 +9199,14 @@ export async function wireStudyHandlers() {
         questionIndex: 0,
         draftMeta: { _meta: {} },
       };
+      console.info("[study.generateBlocks] Pre-packing flow initialized:", {
+        inventorySize: conceptInventory.length,
+        nBlocks,
+        holistic,
+        prefetchConfigKey,
+        batchCount: holisticPlan?.batches?.length || 0,
+        qCfg,
+      }); // [debug-enrich]
       prePackingFlow.itemsPromise = createPrePackingItemsPromise(prePackingFlow);
 
       setGenerateLoading(false);
@@ -9118,6 +9214,11 @@ export async function wireStudyHandlers() {
       await enterPrePackingAssessmentScreen();
       return;
     } catch (err) {
+      console.error("[study.generateBlocks] Failed:", {
+        message: err?.message || String(err),
+        stack: err?.stack,
+        prePackingActive: Boolean(prePackingFlow),
+      }); // [debug-enrich]
       setGenerateError(err?.message ? String(err.message) : String(err));
     } finally {
       setGenerateLoading(false);
