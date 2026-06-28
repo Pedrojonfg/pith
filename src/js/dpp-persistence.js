@@ -4,6 +4,7 @@
  */
 
 import { getSession, saveActiveSession } from "./session-store.js";
+import { hasTier1Artifacts } from "./session-types.js";
 
 /** @type {Map<string, string>} docId → active runId on this device */
 const activeDppRunByDocId = new Map();
@@ -97,6 +98,8 @@ export function isPreparedDocAheadOfStore(prepared, store) {
     : 0;
   if (prepInv > storeInv) return true;
 
+  if (hasTier1Artifacts(prepared) && !hasTier1Artifacts(store)) return true;
+
   const prepStatus = String(prepared.shared.preparation?.status || "pending");
   const storeStatus = String(store.shared.preparation?.status || "pending");
 
@@ -111,6 +114,10 @@ export function isPreparedDocAheadOfStore(prepared, store) {
   const prepRunId = prepared.shared.preparation?.runId;
   const storeRunId = store.shared.preparation?.runId;
   if (prepRunId && prepRunId === storeRunId && prepStatus !== storeStatus) return true;
+
+  if (TERMINAL_PREP_STATUSES.has(prepStatus) && IN_PROGRESS_PREP_STATUSES.has(storeStatus)) {
+    return true;
+  }
 
   return false;
 }

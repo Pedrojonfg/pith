@@ -50,6 +50,7 @@ import {
   normalizePreparationState,
   normalizeMarkdownForHash,
   isTier1PreparationComplete,
+  hasTier1Artifacts,
   setPreparationStatus,
 } from "./session-types.js";
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
@@ -174,7 +175,7 @@ function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
 function resolveFinalStatus(prep, doc, stopAfterTier) {
   const results = prep.phaseResults || {};
   const failed = Object.values(results).filter((r) => r?.status === "failed");
-  const tier1Ok = isTier1PreparationComplete(doc);
+  const tier1Ok = hasTier1Artifacts(doc);
   if (!tier1Ok) {
     setPreparationStatus(prep, failed.length ? "failed" : "partial");
     return;

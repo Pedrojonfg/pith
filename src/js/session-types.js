@@ -605,23 +605,32 @@ export function normalizePreparationState(raw) {
 }
 
 /**
+ * Tier-1 shared artifacts present (ignores preparation status).
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function hasTier1Artifacts(session) {
+  const shared = session?.shared;
+  if (!shared) return false;
+  const inv = shared.conceptInventory;
+  const hasInventory = Array.isArray(inv) && inv.length > 0;
+  const hasBlockRec =
+    shared.blockRecommendation != null &&
+    Number(shared.blockRecommendation.nBlocks) > 0;
+  const hasModeRec =
+    shared.modeRecommendation != null && typeof shared.modeRecommendation === "object";
+  return hasInventory && hasBlockRec && hasModeRec;
+}
+
+/**
  * @param {unknown} session
  * @returns {boolean}
  */
 export function isTier1PreparationComplete(session) {
+  if (!hasTier1Artifacts(session)) return false;
   const prep = normalizePreparationState(session?.shared?.preparation);
-  const shared = session?.shared;
-  const inv = shared?.conceptInventory;
-  const hasInventory = Array.isArray(inv) && inv.length > 0;
-  const hasBlockRec =
-    shared?.blockRecommendation != null &&
-    Number(shared.blockRecommendation.nBlocks) > 0;
-  const hasModeRec =
-    shared?.modeRecommendation != null && typeof shared.modeRecommendation === "object";
-  const artifactsReady = hasInventory && hasBlockRec && hasModeRec;
-
-  if (prep.status === "ready" || prep.status === "legacy") return artifactsReady;
-  if (prep.status === "partial") return artifactsReady;
+  if (prep.status === "ready" || prep.status === "legacy") return true;
+  if (prep.status === "partial") return true;
   return false;
 }
 

@@ -63,7 +63,12 @@ import {
   DPP_STALE_TIMEOUT_MS,
   DPP_PENDING_GRACE_MS,
 } from "./config/flags.js";
-import { normalizePreparationState, setPreparationStatus, isTier1PreparationComplete } from "./session-types.js";
+import {
+  normalizePreparationState,
+  setPreparationStatus,
+  isTier1PreparationComplete,
+  hasTier1Artifacts,
+} from "./session-types.js";
 import { isDppRunActiveOnDevice } from "./dpp-persistence.js";
 
 /**
@@ -2424,20 +2429,30 @@ export async function runConceptInventoryMapReduce(
     return null;
   }
 
+  let inventoryChunks = chunks;
+  if (String(chunks[0]?.label || "").startsWith("Part ")) {
+    const { refineCharFallbackBoundaries } = await import("./api.js?v=20260625_02");
+    inventoryChunks =
+      (await refineCharFallbackBoundaries(materialText, chunks, {
+        llmModel: splitOpts.llmModel,
+        language: splitOpts.language,
+      })) || chunks;
+  }
+
   console.info("[session.runConceptInventoryMapReduce] Start:", {
     wordCount,
-    chunkCount: chunks.length,
+    chunkCount: inventoryChunks.length,
     parallelCap: INVENTORY_MAX_PARALLEL_CALLS,
   }); // [debug-enrich]
 
   const progress = (msg) => {
     if (typeof splitOpts.onProgress === "function" && msg) splitOpts.onProgress(String(msg));
   };
-  progress(`Indexing concepts (${chunks.length} sections)…`);
+  progress(`Indexing concepts (${inventoryChunks.length} sections)…`);
 
-  if (chunks.length > INVENTORY_MAX_PARALLEL_CALLS) {
+  if (inventoryChunks.length > INVENTORY_MAX_PARALLEL_CALLS) {
     console.warn(
-      `Map-reduce inventory: ${chunks.length} chunks exceed parallel cap ${INVENTORY_MAX_PARALLEL_CALLS}; processing in batches.`,
+      `Map-reduce inventory: ${inventoryChunks.length} chunks exceed parallel cap ${INVENTORY_MAX_PARALLEL_CALLS}; processing in batches.`,
     );
   }
 
@@ -2489,8 +2504,8 @@ export async function runConceptInventoryMapReduce(
   /** @type {string[]} */
   const failedChunks = [];
 
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
+  for (let i = 0; i < inventoryChunks.length; i += batchSize) {
+    const batch = inventoryChunks.slice(i, i + batchSize);
     const settled = await Promise.allSettled(
       batch.map((chunk) => extractChunkWithBisect(chunk)),
     );
@@ -2514,7 +2529,7 @@ export async function runConceptInventoryMapReduce(
 
   if (!partials.length) {
     console.error("[session.runConceptInventoryMapReduce] All chunks failed:", {
-      chunkCount: chunks.length,
+      chunkCount: inventoryChunks.length,
       failedChunks,
     }); // [debug-enrich]
     throw new Error("All inventory chunks failed.");
@@ -2535,7 +2550,7 @@ export async function runConceptInventoryMapReduce(
   return {
     inventory: merged.concepts,
     inventoryMode: merged.inventoryMode || "map_reduce",
-    chunkCount: chunks.length,
+    chunkCount: inventoryChunks.length,
     failedChunks,
   };
 }
@@ -2716,6 +2731,33 @@ export async function scanStalePreparationSessions(sessions) {
  * @returns {Promise<object>}
  */
 export async function repairStuckRunningPreparationIfNeeded(session) {
+  if (!session?.shared) return session;
+  const prep = normalizePreparationState(session.shared.preparation);
+  session.shared.preparation = prep;
+  const docId = String(session?.docId || "").trim();
+  if (isDppInFlight(docId)) return session;
+
+  if (
+    (prep.status === "running" || prep.status === "pending") &&
+    hasTier1Artifacts(session)
+  ) {
+    const t12 = prep.phaseResults?.T1.2;
+    if (t12?.status === "success" || t12?.status === "skipped") {
+      setPreparationStatus(
+        prep,
+        prep.failReason === "INVENTORY_TOO_SPARSE" ? "partial" : "ready",
+      );
+      prep.updatedAt = Date.now();
+      prep.completedAt = prep.completedAt || Date.now();
+      console.info("[DPP-GUARD] Repaired running → terminal (tier-1 artifacts complete).", {
+        docId,
+        conceptCount: session.shared.conceptInventory?.length ?? 0,
+      });
+      await saveDocumentSession(session);
+      return session;
+    }
+  }
+
   const result = await markStalePreparationSession(session);
   return result.session;
 }

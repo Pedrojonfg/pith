@@ -939,6 +939,195 @@ export function buildCharFallbackInventoryChunks(rawMarkdown, charCount = 0) {
   return chunks.length >= 2 ? chunks : null;
 }
 
+/** Minimum chars per char-fallback slice after boundary refinement. */
+export const INVENTORY_CHAR_FALLBACK_MIN_CHARS = 4000;
+
+/** One LLM call to nudge mechanical slice boundaries (~8 cuts × context). */
+export const CHAR_BOUNDARY_REFINE_MAX_TOKENS = 2048;
+
+/** Max interior boundary shift when refining char slices. */
+export const CHAR_BOUNDARY_REFINE_WINDOW = 2000;
+
+/**
+ * @param {number} materialLength
+ * @param {number} [sliceChars]
+ * @returns {number[]}
+ */
+export function mechanicalCharFallbackOffsets(
+  materialLength,
+  sliceChars = INVENTORY_CHAR_FALLBACK_SLICE_CHARS,
+) {
+  const total = Math.max(0, Number(materialLength) || 0);
+  if (total <= 0) return [0, 0];
+  const slice = Math.max(1000, Number(sliceChars) || INVENTORY_CHAR_FALLBACK_SLICE_CHARS);
+  /** @type {number[]} */
+  const offsets = [0];
+  for (let start = slice; start < total; start += slice) {
+    offsets.push(start);
+  }
+  offsets.push(total);
+  return offsets;
+}
+
+/**
+ * @param {string} rawMarkdown
+ * @param {number[]} offsets — sorted, includes 0 and material.length
+ * @returns {{ label: string, text: string, wordCount: number }[] | null}
+ */
+export function buildCharFallbackInventoryChunksFromOffsets(rawMarkdown, offsets) {
+  const material = String(rawMarkdown || "");
+  const sorted = (Array.isArray(offsets) ? offsets : [])
+    .map((n) => Math.floor(Number(n) || 0))
+    .filter((n, i, arr) => i === 0 || n > arr[i - 1]);
+  if (sorted.length < 2 || sorted[0] !== 0 || sorted[sorted.length - 1] > material.length) {
+    return null;
+  }
+  /** @type {{ label: string, text: string, wordCount: number }[]} */
+  const chunks = [];
+  for (let i = 0; i < sorted.length - 1; i += 1) {
+    const text = material.slice(sorted[i], sorted[i + 1]).trim();
+    if (!text) continue;
+    chunks.push({
+      label: `Part ${chunks.length + 1}`,
+      text,
+      wordCount: countInventoryWords(text),
+    });
+  }
+  return chunks.length >= 2 ? chunks : null;
+}
+
+/**
+ * @param {number[]} offsets
+ * @param {number} totalLen
+ * @param {number} maxSlice
+ * @param {number} minSlice
+ */
+export function validateCharFallbackOffsets(offsets, totalLen, maxSlice, minSlice) {
+  if (!Array.isArray(offsets) || offsets.length < 2) return false;
+  if (offsets[0] !== 0 || offsets[offsets.length - 1] !== totalLen) return false;
+  for (let i = 0; i < offsets.length - 1; i += 1) {
+    const len = offsets[i + 1] - offsets[i];
+    if (len > maxSlice + 500) return false;
+    const isTail = i === offsets.length - 2;
+    if (!isTail && len < minSlice) return false;
+  }
+  return true;
+}
+
+function snapOffsetToParagraph(material, offset, window = CHAR_BOUNDARY_REFINE_WINDOW) {
+  const total = material.length;
+  const o = Math.max(0, Math.min(total, Math.floor(Number(offset) || 0)));
+  const lo = Math.max(0, o - window);
+  const hi = Math.min(total, o + window);
+  let splitAt = material.lastIndexOf("\n\n", o);
+  if (splitAt < lo) splitAt = material.indexOf("\n\n", o);
+  if (splitAt < lo || splitAt > hi) return o;
+  return splitAt;
+}
+
+function buildCharBoundaryRefinePrompt(boundaryContextsJson) {
+  return `You adjust mechanical document slice boundaries for concept extraction.
+
+Each boundary separates two consecutive parts. Prefer moving cuts to paragraph breaks (blank lines) without changing reading order.
+
+Rules:
+- Return ONLY JSON: {"boundaries":[{"index":1,"offset":12345}, ...]}
+- "index" is the boundary between part index and index+1 (1-based interior boundaries only).
+- Each "offset" MUST stay within the allowed range shown for that boundary.
+- Do not add or remove parts; only adjust existing interior cuts.
+
+Boundaries to refine:
+${boundaryContextsJson}`;
+}
+
+/**
+ * One cheap LLM pass to nudge char-fallback cuts toward paragraph boundaries.
+ * @param {string} rawMarkdown
+ * @param {{ label?: string, text?: string }[]} mechanicalChunks
+ * @param {{ llmModel?: string, language?: string }} [splitOpts]
+ */
+export async function refineCharFallbackBoundaries(rawMarkdown, mechanicalChunks, splitOpts = {}) {
+  const material = String(rawMarkdown || "");
+  const chunks = Array.isArray(mechanicalChunks) ? mechanicalChunks : [];
+  if (chunks.length < 2 || material.length < 50000) return chunks;
+
+  const model = resolveLlmModelArg(splitOpts.llmModel);
+  if (!model) return chunks;
+
+  const baseOffsets = mechanicalCharFallbackOffsets(material.length);
+  if (baseOffsets.length < 3) return chunks;
+
+  /** @type {object[]} */
+  const boundaryMeta = [];
+  for (let i = 1; i < baseOffsets.length - 1; i += 1) {
+    const offset = baseOffsets[i];
+    const lo = Math.max(0, offset - CHAR_BOUNDARY_REFINE_WINDOW);
+    const hi = Math.min(material.length, offset + CHAR_BOUNDARY_REFINE_WINDOW);
+    boundaryMeta.push({
+      index: i,
+      currentOffset: offset,
+      allowedMin: lo,
+      allowedMax: hi,
+      context: material.slice(Math.max(0, offset - 300), Math.min(material.length, offset + 300)),
+    });
+  }
+
+  let raw = "";
+  try {
+    raw = await callLlmSplit({
+      llmModel: model,
+      messages: [
+        { role: "system", content: buildCharBoundaryRefinePrompt(JSON.stringify(boundaryMeta)) },
+        { role: "user", content: "Adjust boundaries. JSON only." },
+      ],
+      useJsonObjectMode: true,
+      max_tokens: CHAR_BOUNDARY_REFINE_MAX_TOKENS,
+    });
+  } catch (err) {
+    console.warn("[api.refineCharFallbackBoundaries] LLM skipped:", err?.message || err);
+    return chunks;
+  }
+
+  const parsed = parseModelJsonValue(raw);
+  const proposed = Array.isArray(parsed?.boundaries) ? parsed.boundaries : [];
+  const offsetMap = new Map(baseOffsets.map((o, idx) => [idx, o]));
+
+  for (const row of proposed) {
+    const idx = Math.floor(Number(row?.index));
+    const offset = Math.floor(Number(row?.offset));
+    if (!Number.isFinite(idx) || idx < 1 || idx >= baseOffsets.length - 1) continue;
+    const meta = boundaryMeta.find((b) => b.index === idx);
+    if (!meta) continue;
+    const clamped = Math.max(meta.allowedMin, Math.min(meta.allowedMax, offset));
+    offsetMap.set(idx, snapOffsetToParagraph(material, clamped));
+  }
+
+  const refinedOffsets = [...offsetMap.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, o]) => o);
+
+  if (
+    !validateCharFallbackOffsets(
+      refinedOffsets,
+      material.length,
+      INVENTORY_CHAR_FALLBACK_SLICE_CHARS,
+      INVENTORY_CHAR_FALLBACK_MIN_CHARS,
+    )
+  ) {
+    console.warn("[api.refineCharFallbackBoundaries] Invalid offsets — keeping mechanical slices.");
+    return chunks;
+  }
+
+  const rebuilt = buildCharFallbackInventoryChunksFromOffsets(material, refinedOffsets);
+  if (!rebuilt?.length) return chunks;
+
+  console.info("[api.refineCharFallbackBoundaries] Applied semantic boundary nudge:", {
+    partCount: rebuilt.length,
+    interiorBoundaries: refinedOffsets.length - 2,
+  });
+  return rebuilt;
+}
+
 export function throwConceptInventoryParseError(lastRaw) {
   if (looksLikeTruncatedModelJson(lastRaw)) {
     const err = new Error("concept_inventory_truncated");
@@ -1601,6 +1790,185 @@ ${partialsJson}
 Respond entirely in ${language}.`;
 }
 
+/** Slim merge input cap — id/title/scope_one_line only. */
+export const MERGE_SLIM_SCOPE_MAX = 80;
+
+/** Monolithic slim merge input budget (chars). */
+export const MERGE_SLIM_INPUT_MAX_CHARS = 80000;
+
+/** Per pair in slim merge tree (~40 concepts × ~60 tok). */
+export const MERGE_PAIR_SLIM_MAX_TOKENS = 6144;
+
+/** Partial recovery must retain at least this fraction of deterministic tree count. */
+export const MERGE_PARTIAL_RECOVERY_MIN_RATIO = 0.75;
+
+/**
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ */
+export function slimPartialsForMerge(partials) {
+  return (Array.isArray(partials) ? partials : []).map((p) => ({
+    label: String(p?.label || "Section"),
+    concepts: (Array.isArray(p?.concepts) ? p.concepts : []).map((c) => ({
+      id: c?.id,
+      order: c?.order,
+      title: String(c?.title || "").trim(),
+      scope_one_line: String(c?.scope_one_line || c?.scope || "")
+        .trim()
+        .slice(0, MERGE_SLIM_SCOPE_MAX),
+    })),
+  }));
+}
+
+/**
+ * Restore source_phrase and optional fields from richest partial matches.
+ * @param {object[]} mergedSlim
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ */
+export function rehydrateMergedConcepts(mergedSlim, partials) {
+  /** @type {Map<string, object>} */
+  const richest = new Map();
+  for (const partial of Array.isArray(partials) ? partials : []) {
+    const moduleName = String(partial?.label || "Section");
+    for (const item of Array.isArray(partial?.concepts) ? partial.concepts : []) {
+      if (!item || typeof item !== "object") continue;
+      const key = normalizeConceptTitleKey(item.title);
+      if (!key) continue;
+      const existing = richest.get(key);
+      const spLen = String(item.source_phrase || "").length;
+      const espLen = String(existing?.source_phrase || "").length;
+      if (!existing || spLen > espLen) {
+        richest.set(key, { ...item, module: item.module || moduleName });
+      }
+    }
+  }
+
+  /** @type {object[]} */
+  const out = [];
+  for (let i = 0; i < (Array.isArray(mergedSlim) ? mergedSlim.length : 0); i += 1) {
+    const slim = mergedSlim[i];
+    const key = normalizeConceptTitleKey(slim?.title);
+    const rich = key ? richest.get(key) : null;
+    const row = {
+      ...(rich || {}),
+      ...slim,
+      id: `c${i + 1}`,
+      order: i + 1,
+      title: String(slim?.title || rich?.title || "").trim(),
+      scope_one_line: String(slim?.scope_one_line || rich?.scope_one_line || "").trim(),
+      prerequisite_ids: [],
+    };
+    if (row.title && row.scope_one_line) out.push(row);
+  }
+  return parseConceptInventoryFromModelResponse(JSON.stringify({ concepts: out })) || out;
+}
+
+function buildSlimMergePairPrompt(lang, partialsJson) {
+  const language = String(lang || "English").trim() || "English";
+  return `Merge partial concept inventories into one ordered deduplicated inventory.
+
+Output ONLY valid JSON. No markdown. First char \`{\`, last \`}\`.
+Fields per concept: id, order, title, scope_one_line only.
+Deduplicate semantically similar concepts across sections. Preserve document order.
+
+Output JSON only:
+{"concepts":[{"id":"c1","order":1,"title":"Short name","scope_one_line":"What this covers"}]}
+
+Partials:
+${partialsJson}
+
+Respond entirely in ${language}.`;
+}
+
+/**
+ * @param {{ label: string, concepts: object[] }} left
+ * @param {{ label: string, concepts: object[] }} right
+ * @param {{ model: string, lang: string }} opts
+ */
+async function mergeTwoPartialsSlimLlm(left, right, { model, lang }) {
+  const slimPayload = slimPartialsForMerge([
+    { label: left.label, concepts: left.concepts },
+    { label: right.label, concepts: right.concepts },
+  ]);
+  const partialsJson = JSON.stringify(slimPayload);
+  let lastRaw = "";
+  try {
+    lastRaw = await callLlmSplit({
+      llmModel: model,
+      messages: [
+        { role: "system", content: buildSlimMergePairPrompt(lang, partialsJson) },
+        { role: "user", content: "Merge and deduplicate. JSON only." },
+      ],
+      useJsonObjectMode: true,
+      max_tokens: MERGE_PAIR_SLIM_MAX_TOKENS,
+    });
+  } catch (err) {
+    if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+      lastRaw = await callLlmSplit({
+        llmModel: model,
+        messages: [
+          { role: "system", content: buildSlimMergePairPrompt(lang, partialsJson) },
+          { role: "user", content: "Merge and deduplicate. JSON only." },
+        ],
+        useJsonObjectMode: false,
+        max_tokens: MERGE_PAIR_SLIM_MAX_TOKENS,
+      });
+    } else {
+      throw err;
+    }
+  }
+  const concepts = parseConceptInventoryFromModelResponse(lastRaw);
+  if (Array.isArray(concepts) && concepts.length) return concepts;
+  const recovered = recoverPartialConceptArray(lastRaw);
+  if (recovered.length) {
+    return (
+      parseConceptInventoryFromModelResponse(JSON.stringify({ concepts: recovered })) ||
+      recovered
+    );
+  }
+  return mergeConceptInventoriesDeterministic([left, right]);
+}
+
+/**
+ * Pairwise slim LLM merge tree — bounded input/output per call.
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @param {{ llmModel?: string, language?: string }} splitOpts
+ */
+export async function mergeConceptInventoriesSlimTree(partials, splitOpts = {}) {
+  const model = resolveLlmModelArg(splitOpts.llmModel);
+  const lang = String(splitOpts.language || "English").trim() || "English";
+  /** @type {{ label: string, concepts: object[] }[]} */
+  let level = (Array.isArray(partials) ? partials : [])
+    .map((p) => ({
+      label: String(p?.label || "Section"),
+      concepts: Array.isArray(p?.concepts) ? p.concepts : [],
+    }))
+    .filter((p) => p.concepts.length > 0);
+
+  if (!level.length) return null;
+  if (level.length === 1) return level[0].concepts;
+
+  while (level.length > 1) {
+    /** @type {{ label: string, concepts: object[] }[]} */
+    const next = [];
+    for (let i = 0; i < level.length; i += 2) {
+      const left = level[i];
+      const right = level[i + 1];
+      if (!right) {
+        next.push(left);
+        continue;
+      }
+      const merged = await mergeTwoPartialsSlimLlm(left, right, { model, lang });
+      if (!Array.isArray(merged) || !merged.length) return null;
+      next.push({
+        label: `${left.label} + ${right.label}`,
+        concepts: merged,
+      });
+    }
+    level = next;
+  }
+  return level[0]?.concepts?.length ? level[0].concepts : null;
+}
+
 export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) {
   const { llmModel, language, charCount, mergePolish } = splitOpts;
   const { minViableConcepts } = await import("./config/flags.js");
@@ -1646,108 +2014,87 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
     });
   }
 
-  const partialsJson = JSON.stringify(payload);
-  const system = buildMergeConceptInventoriesPrompt(lang, partialsJson);
-  const MAX_MERGE_ATTEMPTS = 3;
-  const largeDoc = Number(charCount) >= 100_000;
-  const attemptConfigs = largeDoc
-    ? [
-        { compact: true, terse: true },
-        { compact: true, terse: false },
-        { compact: false, terse: false },
-      ]
-    : [
-        { compact: false, terse: false },
-        { compact: true, terse: false },
-        { compact: true, terse: true },
-      ];
+  const deterministicCount = Array.isArray(treeMerged) ? treeMerged.length : 0;
 
-  function normalizeRecoveredConcepts(recovered) {
-    if (!Array.isArray(recovered) || !recovered.length) return [];
-    const validated = parseConceptInventoryFromModelResponse(
-      JSON.stringify({ concepts: recovered }),
-    );
-    return Array.isArray(validated) ? validated : [];
+  function tryAcceptSlimMerge(mergedSlim, inventoryMode) {
+    if (!Array.isArray(mergedSlim) || !mergedSlim.length) return null;
+    const rehydrated = rehydrateMergedConcepts(mergedSlim, payload);
+    if (Array.isArray(rehydrated) && rehydrated.length >= minRequired) {
+      console.info("[inventory-merge] Slim merge accepted:", {
+        inventoryMode,
+        slimCount: mergedSlim.length,
+        rehydratedCount: rehydrated.length,
+        deterministicCount,
+      });
+      return { concepts: rehydrated, inventoryMode };
+    }
+    return null;
   }
 
-  let lastRaw = "";
-  for (let attemptIndex = 0; attemptIndex < MAX_MERGE_ATTEMPTS; attemptIndex += 1) {
-    const attempt = attemptConfigs[attemptIndex] || attemptConfigs[attemptConfigs.length - 1];
-    const userContent = attempt.terse
-      ? "Merge into one inventory. JSON only. If needed omit source_phrase and optional fields."
-      : attempt.compact
-        ? "Merge partial inventories. JSON only. Be concise."
-        : "Merge the partial inventories into one ordered concept list.";
-    try {
-      lastRaw = await callLlmSplit({
-        llmModel: model,
-        messages: [
-          { role: "system", content: attempt.terse ? buildConceptInventoryTersePrompt(lang) : system },
-          { role: "user", content: userContent },
-        ],
-        useJsonObjectMode: true,
-        max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
-      });
-    } catch (err) {
-      if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+  const slimPayload = slimPartialsForMerge(payload);
+  const slimJson = JSON.stringify(slimPayload);
+
+  if (payload.length >= 2 && slimJson.length <= MERGE_SLIM_INPUT_MAX_CHARS) {
+    const slimSystem = buildSlimMergePairPrompt(lang, slimJson);
+    for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+      let lastRaw = "";
+      try {
         lastRaw = await callLlmSplit({
           llmModel: model,
           messages: [
-            { role: "system", content: attempt.terse ? buildConceptInventoryTersePrompt(lang) : system },
-            { role: "user", content: userContent },
+            { role: "system", content: slimSystem },
+            { role: "user", content: "Merge all partials. Deduplicate semantically. JSON only." },
           ],
-          useJsonObjectMode: false,
+          useJsonObjectMode: true,
           max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
         });
-      } else {
-        throw err;
+      } catch (err) {
+        if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+          lastRaw = await callLlmSplit({
+            llmModel: model,
+            messages: [
+              { role: "system", content: slimSystem },
+              { role: "user", content: "Merge all partials. Deduplicate semantically. JSON only." },
+            ],
+            useJsonObjectMode: false,
+            max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
+          });
+        } else {
+          throw err;
+        }
       }
+      let mergedSlim = parseConceptInventoryFromModelResponse(lastRaw);
+      if (!Array.isArray(mergedSlim) || !mergedSlim.length) {
+        mergedSlim = recoverPartialConceptArray(lastRaw);
+      }
+      const accepted = tryAcceptSlimMerge(mergedSlim, "map_reduce_slim");
+      if (accepted) return accepted;
     }
-
-    const concepts = parseConceptInventoryFromModelResponse(lastRaw);
-    if (Array.isArray(concepts) && concepts.length >= minRequired) {
-      return {
-        concepts,
-        inventoryMode: attempt.terse ? "map_reduce_terse" : "map_reduce",
-      };
-    }
-
-    console.log(
-      `[inventory-merge] Parse failed. Running partial recovery on ${lastRaw.length} chars of raw response.`,
-    );
-    const recovered = normalizeRecoveredConcepts(recoverPartialConceptArray(lastRaw));
-    console.log(`[inventory-merge] Partial recovery: extracted ${recovered.length} complete objects.`);
-
-    if (recovered.length >= minRequired) {
-      console.log(
-        `[inventory-merge] Partial recovery accepted (${recovered.length} >= minRequired ${minRequired}). Proceeding without retry.`,
-      );
-      return {
-        concepts: recovered,
-        inventoryMode: "map_reduce_partial",
-      };
-    }
-
-    if (attemptIndex < MAX_MERGE_ATTEMPTS - 1) {
-      console.log(
-        `[inventory-merge] Partial recovery insufficient (${recovered.length} < minRequired ${minRequired}). Retrying LLM call (attempt ${attemptIndex + 2}/${MAX_MERGE_ATTEMPTS}).`,
-      );
-      continue;
-    }
+  } else if (payload.length >= 2) {
+    console.info("[inventory-merge] Slim input too large for monolithic merge; using pairwise tree.", {
+      slimJsonChars: slimJson.length,
+    });
   }
 
-  const deterministic = mergeConceptInventoriesDeterministic(payload);
-  if (Array.isArray(deterministic) && deterministic.length >= minRequired) {
-    console.log(
-      `[inventory-merge] Deterministic fallback: ${deterministic.length} concepts (>= minRequired ${minRequired}).`,
-    );
+  if (payload.length >= 2) {
+    console.info("[inventory-merge] Running pairwise slim merge tree.");
+    const treeSlim = await mergeConceptInventoriesSlimTree(payload, splitOpts);
+    const treeAccepted = tryAcceptSlimMerge(treeSlim, "map_reduce_slim_tree");
+    if (treeAccepted) return treeAccepted;
+  }
+
+  if (Array.isArray(treeMerged) && treeMerged.length >= minRequired) {
+    console.info("[inventory-merge] Deterministic tree fallback:", {
+      conceptCount: treeMerged.length,
+      minRequired,
+    });
     return {
-      concepts: deterministic,
+      concepts: treeMerged,
       inventoryMode: "map_reduce_deterministic",
     };
   }
 
-  console.warn("[inventory-merge] All attempts failed. Marking DPP as failed.");
+  console.warn("[inventory-merge] All merge attempts failed. Marking DPP as failed.");
   return { concepts: [], failReason: "MERGE_TRUNCATED" };
 }
 
