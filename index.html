@@ -1866,7 +1866,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260705_01";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260705_02";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1892,7 +1892,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260705_01");
+        await import("./src/js/main.js?v=20260705_02");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

@@ -82,6 +82,7 @@ import {
 } from "./document-preparation.js";
 import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
 import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
+import { commitPreparedDocToStore } from "./dpp-persistence.js";
 import { computeAverageNovelty } from "./vault/novelty-scoring.js";
 import {
   DOC_SIMILARITY_DUPLICATE_THRESHOLD,
@@ -402,6 +403,27 @@ export async function syncSlowDocHierarchyToShared(slowSession) {
   await saveDocumentSession(doc);
 }
 
+function needsPreparationResetForReuse(doc) {
+  if (isTier1PreparationComplete(doc)) return false;
+  const prep = normalizePreparationState(doc?.shared?.preparation);
+  const inv = doc?.shared?.conceptInventory?.length ?? 0;
+  if (prep.status === "failed") return true;
+  if (prep.failReason === "STALE_RUN") return true;
+  if ((prep.status === "pending" || prep.status === "running") && inv === 0) return true;
+  if (prep.status === "partial" && inv === 0) return true;
+  return false;
+}
+
+function resetPreparationForFreshRun(doc) {
+  if (!doc.shared) doc.shared = {};
+  const prep = normalizePreparationState(null);
+  setPreparationStatus(prep, "pending");
+  doc.shared.preparation = prep;
+  doc.shared.conceptInventory = [];
+  doc.shared.blockRecommendation = null;
+  doc.shared.modeRecommendation = null;
+}
+
 export async function ensureDocumentSessionForUpload(markdown, options = {}) {
   const text = String(markdown || "");
   const docId = await computeDocId(text);
@@ -426,6 +448,10 @@ export async function ensureDocumentSessionForUpload(markdown, options = {}) {
         console.warn("[study] image persist failed", err?.message || err);
       }
     }
+    await saveDocumentSession(doc);
+  }
+  if (needsPreparationResetForReuse(doc)) {
+    resetPreparationForFreshRun(doc);
     await saveDocumentSession(doc);
   }
   await setActiveSession(docId);
@@ -493,14 +519,16 @@ export async function startDocumentPreparation(doc, options = {}) {
       options.onProgress?.(msg);
     },
   });
+  const prepared = result?.doc ?? doc;
+  const reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   console.info("[study.startDocumentPreparation] Finished:", {
     docId: doc.docId,
     runId,
-    status: result?.status || doc?.shared?.preparation?.status,
-    conceptCount: result?.doc?.shared?.conceptInventory?.length ?? doc?.shared?.conceptInventory?.length ?? 0,
+    status: reconciled?.shared?.preparation?.status ?? result?.status,
+    conceptCount: reconciled?.shared?.conceptInventory?.length ?? 0,
     errorCount: result?.errors?.length ?? 0,
   }); // [debug-enrich]
-  return result?.doc ?? doc;
+  return reconciled;
 }
 
 function notifyPreparationSparseIfNeeded(doc) {
@@ -551,7 +579,7 @@ async function handleRetryPreparationClick() {
     els.generateBlocksError.textContent = "";
   }
   showDocumentPreparingScreen("Retrying document preparation…");
-  await startDocumentPreparation(doc, {
+  const prepared = await startDocumentPreparation(doc, {
     forceRerun: true,
     ...preparationGateOptions((msg) => {
       if (els.reviewGeneratingLabel) {
@@ -559,14 +587,13 @@ async function handleRetryPreparationClick() {
       }
     }),
   });
-  const fresh = await getActiveSession();
-  const guard = evaluateConceptInventoryGuard(fresh);
+  const guard = evaluateConceptInventoryGuard(prepared);
   if (guard.decision === "failed") {
-    renderPreparationFailedUi(fresh);
+    renderPreparationFailedUi(prepared);
     enterModeSelectScreen();
     return;
   }
-  await enterModeSelectAfterTier1Gate();
+  await enterModeSelectAfterTier1Gate(prepared);
 }
 
 async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOpts, statusEl) {
@@ -702,8 +729,13 @@ function showDocumentPreparingScreen(initialLabel = "Processing document…") {
   showScreen("reviewGenerating");
 }
 
-async function enterModeSelectAfterTier1Gate() {
-  let doc = await getActiveSession();
+async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
+  let doc = null;
+  if (preparedDoc?.docId) {
+    doc = (await commitPreparedDocToStore(preparedDoc)) ?? preparedDoc;
+  } else {
+    doc = await getActiveSession();
+  }
   if (!doc?.docId) {
     enterModeSelectScreen();
     return;
@@ -2140,7 +2172,7 @@ async function processCreateSessionStagedUpload(title) {
 
     mountModeSelectBreadcrumb(doc);
     showDocumentPreparingScreen("Preparing document…");
-    await startDocumentPreparation(doc, {
+    const prepared = await startDocumentPreparation(doc, {
       stopAfterTier: 1,
       ...preparationGateOptions((msg) => {
         if (runId !== createSessionStartRunId) return;
@@ -2152,10 +2184,9 @@ async function processCreateSessionStagedUpload(title) {
 
     if (runId !== createSessionStartRunId) return;
 
-    const fresh = await getActiveSession();
-    notifyPreparationSparseIfNeeded(fresh);
-    await applySessionTitleToActiveDoc(title);
-    await enterModeSelectAfterTier1Gate();
+    notifyPreparationSparseIfNeeded(prepared);
+    await applySessionTitleToActiveDoc(title, prepared);
+    await enterModeSelectAfterTier1Gate(prepared);
   } catch (err) {
     if (runId !== createSessionStartRunId) return;
     console.error("[DPP] Upload preparation failed:", err);
@@ -2170,15 +2201,15 @@ async function processCreateSessionStagedUpload(title) {
   }
 }
 
-async function applySessionTitleToActiveDoc(title) {
-  const doc = await getActiveSession();
+async function applySessionTitleToActiveDoc(title, doc = null) {
+  const target = doc ?? (await getActiveSession());
   const safeTitle = String(title || "").trim();
-  if (!doc || !safeTitle) return;
-  doc.shared.docMeta = {
-    ...(doc.shared.docMeta || {}),
+  if (!target || !safeTitle) return;
+  target.shared.docMeta = {
+    ...(target.shared.docMeta || {}),
     titleInferred: safeTitle,
   };
-  await saveDocumentSession(doc);
+  await saveDocumentSession(target);
 }
 
 async function handleCreateSessionStartContinue() {
