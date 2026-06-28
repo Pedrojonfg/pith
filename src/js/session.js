@@ -2741,21 +2741,18 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
     (prep.status === "running" || prep.status === "pending") &&
     hasTier1Artifacts(session)
   ) {
-    const t12 = prep.phaseResults?.["T1.2"];
-    if (t12?.status === "success" || t12?.status === "skipped") {
-      setPreparationStatus(
-        prep,
-        prep.failReason === "INVENTORY_TOO_SPARSE" ? "partial" : "ready",
-      );
-      prep.updatedAt = Date.now();
-      prep.completedAt = prep.completedAt || Date.now();
-      console.info("[DPP-GUARD] Repaired running → terminal (tier-1 artifacts complete).", {
-        docId,
-        conceptCount: session.shared.conceptInventory?.length ?? 0,
-      });
-      await saveDocumentSession(session);
-      return session;
-    }
+    setPreparationStatus(
+      prep,
+      prep.failReason === "INVENTORY_TOO_SPARSE" ? "partial" : "ready",
+    );
+    prep.updatedAt = Date.now();
+    prep.completedAt = prep.completedAt || Date.now();
+    console.info("[DPP-GUARD] Repaired running → terminal (tier-1 artifacts complete).", {
+      docId,
+      conceptCount: session.shared.conceptInventory?.length ?? 0,
+    });
+    await saveDocumentSession(session);
+    return session;
   }
 
   const result = await markStalePreparationSession(session);
@@ -2895,6 +2892,17 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   const length = Array.isArray(session?.shared?.conceptInventory)
     ? session.shared.conceptInventory.length
     : 0;
+
+  if (
+    (status === "running" || status === "pending") &&
+    hasTier1Artifacts(session)
+  ) {
+    console.log(
+      `[DPP-GUARD] Tier-1 artifacts present while status is ${status} — treating preparation as complete.`,
+    );
+    return { decision: "skip" };
+  }
+
   console.log(
     `[DPP-GUARD] isConceptInventoryValid ? FALSE. Status: ${status}, inventory: ${length} concepts.`,
   );

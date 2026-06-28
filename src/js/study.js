@@ -82,7 +82,7 @@ import {
 } from "./document-preparation.js";
 import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
 import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
-import { commitPreparedDocToStore } from "./dpp-persistence.js";
+import { commitPreparedDocToStore, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
 import { computeAverageNovelty } from "./vault/novelty-scoring.js";
 import {
   DOC_SIMILARITY_DUPLICATE_THRESHOLD,
@@ -528,14 +528,15 @@ export async function startDocumentPreparation(doc, options = {}) {
   const prepared = result?.doc ?? doc;
   let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   const preparedStatus = prepared?.shared?.preparation?.status;
-  const reconciledStatus = reconciled?.shared?.preparation?.status;
-  if (
-    preparedStatus &&
-    preparedStatus !== "running" &&
-    preparedStatus !== "pending" &&
-    (reconciledStatus === "running" || reconciledStatus === "pending") &&
-    hasTier1Artifacts(prepared)
-  ) {
+  let reconciledStatus = reconciled?.shared?.preparation?.status;
+  const terminalPrepared =
+    preparedStatus === "ready" ||
+    preparedStatus === "partial" ||
+    preparedStatus === "failed" ||
+    preparedStatus === "legacy";
+  const inProgressReconciled =
+    reconciledStatus === "running" || reconciledStatus === "pending";
+  if (terminalPrepared && inProgressReconciled) {
     console.warn("[study.startDocumentPreparation] Reconcile returned stale in-progress status — force persist.", {
       docId: prepared.docId,
       preparedStatus,
@@ -543,7 +544,19 @@ export async function startDocumentPreparation(doc, options = {}) {
     });
     await saveDocumentSession(prepared);
     reconciled = (await getSession(prepared.docId)) ?? prepared;
+    reconciledStatus = reconciled?.shared?.preparation?.status;
   }
+  reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
+  if (
+    (reconciled?.shared?.preparation?.status === "running" ||
+      reconciled?.shared?.preparation?.status === "pending") &&
+    terminalPrepared
+  ) {
+    reconciled = prepared;
+    await saveDocumentSession(prepared);
+    reconciled = (await getSession(prepared.docId)) ?? prepared;
+  }
+  hydrateCallerDocFromPrepared(doc, reconciled);
   console.info("[study.startDocumentPreparation] Finished:", {
     docId: doc.docId,
     runId,

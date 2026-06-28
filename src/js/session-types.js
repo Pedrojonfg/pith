@@ -597,6 +597,9 @@ export function normalizePreparationState(raw) {
       ? { ...raw.phaseResults }
       : {};
   base.errors = Array.isArray(raw.errors) ? [...raw.errors] : [];
+  if (raw.runId != null && String(raw.runId).trim()) {
+    base.runId = String(raw.runId).trim();
+  }
   base.failReason = raw.failReason != null ? String(raw.failReason) : null;
   base.staleRetryCount = Number.isFinite(Number(raw.staleRetryCount))
     ? Math.max(0, Math.floor(Number(raw.staleRetryCount)))
