@@ -6470,7 +6470,9 @@ function attachTestMcKeydown() {
 function showTestQuestions() {
   els.testRsvpView.hidden = true;
   els.testQaView.hidden = false;
-  setBlockReadSidebarAvailable(true);
+  if (!isPrePackingAssessmentRunner()) {
+    setBlockReadSidebarAvailable(true);
+  }
 }
 
 function beginRsvpForCurrentBlock({ onDone }) {
@@ -6655,7 +6657,9 @@ function renderTestQuestion() {
     // If test questions are exhausted, jump to Socratic (or finish block).
     if (ctx.type === "socratic") {
       showScreen("socratic");
-      setBlockReadSidebarAvailable(true);
+      if (!isPrePackingAssessmentRunner()) {
+        setBlockReadSidebarAvailable(true);
+      }
       renderSocraticQuestion();
       return;
     }
@@ -7762,7 +7766,9 @@ function getAssessmentQuestionContext() {
 }
 
 function renderAssessmentChrome() {
-  document.body.classList.add("assessment-runner-active");
+  document.body.classList.add("assessment-runner-active", "assessment-active");
+  setBlockReadSidebarAvailable(false);
+  syncFloatingChrome();
   if (els.testAssessmentChrome) els.testAssessmentChrome.hidden = false;
   if (els.socraticAssessmentChrome) els.socraticAssessmentChrome.hidden = false;
   if (els.testRestartBlockBtn) els.testRestartBlockBtn.hidden = true;
@@ -7771,7 +7777,8 @@ function renderAssessmentChrome() {
 }
 
 function clearAssessmentChrome() {
-  document.body.classList.remove("assessment-runner-active");
+  document.body.classList.remove("assessment-runner-active", "assessment-active");
+  syncFloatingChrome();
   if (els.testAssessmentChrome) els.testAssessmentChrome.hidden = true;
   if (els.socraticAssessmentChrome) els.socraticAssessmentChrome.hidden = true;
   if (els.testRestartBlockBtn) els.testRestartBlockBtn.hidden = false;
