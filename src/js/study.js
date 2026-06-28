@@ -78,7 +78,10 @@ import {
   ensureTier1Preparation,
   kickoffTier2PreparationInBackground,
   hasPendingTier2Preparation,
+  runPostCacheUserPhases,
 } from "./document-preparation.js";
+import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
+import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
 import { computeAverageNovelty } from "./vault/novelty-scoring.js";
 import {
   DOC_SIMILARITY_DUPLICATE_THRESHOLD,
@@ -455,12 +458,27 @@ export async function startDocumentPreparation(doc, options = {}) {
     await saveDocumentSession(doc);
   }
   const stopAfterTier = options.stopAfterTier ?? 2;
-  if (!forceRerun && stopAfterTier <= 1 && isConceptInventoryValid(doc)) return doc;
-  if (stopAfterTier <= 1 && isTier1PreparationComplete(doc)) return doc;
+  if (!forceRerun && stopAfterTier <= 1) {
+    const cached = await fetchSharedDppCache(doc.docId);
+    if (cached) {
+      hydrateSessionFromSharedCache(doc, cached);
+      if (isTier1PreparationComplete(doc)) {
+        console.info("[study.startDocumentPreparation] Shared cache hit:", doc.docId);
+        await runPostCacheUserPhases(doc, {
+          llmModel: getSessionLlmModel(),
+          language: getStudyLanguage(),
+          studyNotes: options.studyNotes ?? state.studyNotes ?? "",
+          onProgress: options.onProgress,
+        });
+        return doc;
+      }
+    }
+  }
+  if (!forceRerun && stopAfterTier <= 1 && isTier1PreparationComplete(doc)) return doc;
   const prep = normalizePreparationState(doc.shared?.preparation);
   if (!forceRerun && prep.status === "ready" && stopAfterTier >= 2) {
     if (!hasPendingTier2Preparation(doc, options)) return doc;
-  } else if (!forceRerun && prep.status === "ready" && stopAfterTier <= 1) {
+  } else if (!forceRerun && prep.status === "ready" && stopAfterTier <= 1 && isTier1PreparationComplete(doc)) {
     return doc;
   }
   const runId = ++documentPreparationRunId;
@@ -2006,6 +2024,10 @@ function updateCreateSessionContinueState(doc = null) {
     btn.disabled = true;
     return;
   }
+  if (createSessionStagedFiles.length > 0) {
+    btn.disabled = !hasName;
+    return;
+  }
   if (doc?.docId) {
     btn.disabled = !hasName || !isTier1PreparationComplete(doc);
     return;
@@ -2201,7 +2223,6 @@ async function applySessionTitleToActiveDoc(title) {
 }
 
 async function handleCreateSessionStartContinue() {
-  const doc = await getActiveSession();
   const title = String(els.createSessionStartNameInput?.value || "").trim();
   if (!title) {
     if (els.createSessionStartStatus) {
@@ -2210,6 +2231,12 @@ async function handleCreateSessionStartContinue() {
     return;
   }
 
+  if (createSessionStagedFiles.length > 0) {
+    await processCreateSessionStagedUpload(title);
+    return;
+  }
+
+  const doc = await getActiveSession();
   if (doc?.docId) {
     if (isTier1PreparationComplete(doc)) {
       await applySessionTitleToActiveDoc(title);
@@ -2222,14 +2249,9 @@ async function handleCreateSessionStartContinue() {
     return;
   }
 
-  if (!createSessionStagedFiles.length) {
-    if (els.createSessionStartStatus) {
-      els.createSessionStartStatus.textContent = "Add at least one file before continuing.";
-    }
-    return;
+  if (els.createSessionStartStatus) {
+    els.createSessionStartStatus.textContent = "Add at least one file before continuing.";
   }
-
-  await processCreateSessionStagedUpload(title);
 }
 
 export async function enterCreateSessionStartScreen() {

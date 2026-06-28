@@ -2706,7 +2706,7 @@ export function resolveCreateSessionPrepStatus(doc) {
       : "Document preparation failed. Try again or tap Continue.";
   }
   if (prep.status === "ready" || prep.status === "partial") {
-    if (hasInv || isTier1PreparationComplete(doc)) {
+    if (isTier1PreparationComplete(doc)) {
       return prep.failReason === "INVENTORY_TOO_SPARSE"
         ? "Document ready with reduced concept coverage. You can continue."
         : "Document ready. You can continue.";
