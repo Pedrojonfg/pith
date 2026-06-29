@@ -1219,12 +1219,143 @@ function resolveModeSelectScreenEl() {
   return el;
 }
 
-function setScreenAriaHidden(el, visible) {
-  if (!el) return;
-  if (!visible && el.contains(document.activeElement)) {
-    document.body.focus();
+/** @type {HTMLElement | null} */
+let focusSinkEl = null;
+
+function getFocusSink() {
+  if (!focusSinkEl) {
+    focusSinkEl = document.getElementById("appFocusSink");
   }
-  el.setAttribute("aria-hidden", String(!visible));
+  return focusSinkEl;
+}
+
+/** Move focus out of `container` before hiding it from assistive tech. */
+function releaseFocusFromContainer(container) {
+  if (!container?.contains(document.activeElement)) return;
+  const sink = getFocusSink();
+  if (sink instanceof HTMLElement) {
+    sink.focus({ preventScroll: true });
+    return;
+  }
+  const active = document.activeElement;
+  if (active instanceof HTMLElement) active.blur();
+}
+
+function revealScreen(el) {
+  if (!el) return;
+  el.removeAttribute("inert");
+  el.setAttribute("aria-hidden", "false");
+}
+
+function concealScreen(el) {
+  if (!el) return;
+  releaseFocusFromContainer(el);
+  el.setAttribute("inert", "");
+  el.setAttribute("aria-hidden", "true");
+}
+
+/**
+ * @param {HTMLElement | null | undefined} screenEl
+ * @returns {boolean}
+ */
+function focusFirstInScreen(screenEl) {
+  if (!screenEl) return false;
+  const selector = [
+    "button:not([disabled]):not([hidden])",
+    "input:not([disabled]):not([hidden])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "a[href]",
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(", ");
+  const target = screenEl.querySelector(selector);
+  if (target instanceof HTMLElement) {
+    target.focus({ preventScroll: true });
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @param {Array<[HTMLElement | null | undefined, boolean]>} entries
+ */
+function revealScreens(entries) {
+  for (const [el, visible] of entries) {
+    if (visible) revealScreen(el);
+  }
+}
+
+/**
+ * @param {Array<[HTMLElement | null | undefined, boolean]>} entries
+ */
+function concealScreens(entries) {
+  for (const [el, visible] of entries) {
+    if (!visible) concealScreen(el);
+  }
+}
+
+/** @param {string} which */
+function focusScreenEntry(which) {
+  if (which === "appHome") {
+    if (els.btnAppHomeVault?.focus) {
+      els.btnAppHomeVault.focus();
+      return;
+    }
+  }
+  if (which === "modeSelect") {
+    const firstMode = document.querySelector('input[name="studyMode"]');
+    if (firstMode instanceof HTMLElement) {
+      firstMode.focus();
+      return;
+    }
+  }
+  if (which === "docLibrary") {
+    if (els.docLibraryBackBtn?.focus) {
+      els.docLibraryBackBtn.focus();
+      return;
+    }
+  }
+  if (which === "createSessionStart") {
+    if (els.createSessionStartFileInput && !els.createSessionStartFileInput.disabled) {
+      els.createSessionStartFileInput.focus();
+      return;
+    }
+    if (els.createSessionStartNameInput?.focus) {
+      els.createSessionStartNameInput.focus();
+      return;
+    }
+  }
+  if (which === "retrievalHub") {
+    const first = els.retrievalHubOptions?.querySelector("[data-retrieval-mode]");
+    if (first instanceof HTMLElement) {
+      first.focus();
+      return;
+    }
+    if (els.retrievalHubBackBtn?.focus) {
+      els.retrievalHubBackBtn.focus();
+      return;
+    }
+  }
+  if (which === "create") {
+    if (els.fileInput && !els.generateBlocksForm?.hidden) {
+      els.fileInput.focus();
+      return;
+    }
+  }
+  if (which === "blocks") {
+    if (els.blocksListEditor?.focus) {
+      els.blocksListEditor.focus();
+      return;
+    }
+  }
+  if (which === "recall") {
+    if (els.recallAnswer?.focus) {
+      els.recallAnswer.focus();
+      return;
+    }
+  }
+  const visible = document.querySelector('.screen[aria-hidden="false"]');
+  focusFirstInScreen(visible instanceof HTMLElement ? visible : null);
 }
 
 export function showScreen(which) {
@@ -1265,39 +1396,44 @@ export function showScreen(which) {
   const showRecall = which === "recall";
   const showStudyProgress = showSocratic || showTest;
 
-  setScreenAriaHidden(els.screenSettings, showSettings);
-  setScreenAriaHidden(els.screenAuth, showAuth);
-  setScreenAriaHidden(els.screenAppHome, showAppHome);
-  setScreenAriaHidden(els.screenVaultBranch, showVaultBranch);
-  setScreenAriaHidden(els.screenUploadToVaultCandidates, showUploadToVault);
-  setScreenAriaHidden(els.screenCreateSessionStart, showCreateSessionStart);
-  setScreenAriaHidden(els.screenBookSearch, showBookSearch);
-  setScreenAriaHidden(els.screenInterviewCapture, showInterviewCapture);
-  setScreenAriaHidden(modeSelectEl, showModeSelectScreen);
-  setScreenAriaHidden(els.screenDocLibrary, showDocLibrary);
-  setScreenAriaHidden(els.screenRetrievalHub, showRetrievalHub);
-  setScreenAriaHidden(els.screenPlaceholder, showCreate);
-  setScreenAriaHidden(els.screenPrePackingAssessment, showPrePackingAssessment);
-  setScreenAriaHidden(els.screenPrePackingResults, showPrePackingResults);
-  setScreenAriaHidden(els.screenBlocksList, showBlocks);
-  setScreenAriaHidden(els.screenSessionReady, showReady);
-  setScreenAriaHidden(els.screenFullPackGenerating, showFullPackGenerating);
-  setScreenAriaHidden(els.screenSocratic, showSocratic);
-  setScreenAriaHidden(els.screenTest, showTest);
-  setScreenAriaHidden(els.screenComplete, showComplete);
-  setScreenAriaHidden(els.screenReviewConfig, showReviewConfig);
-  setScreenAriaHidden(els.screenReviewGenerating, showReviewGenerating);
-  setScreenAriaHidden(els.screenReview, showReview);
-  setScreenAriaHidden(els.screenReviewSummary, showReviewSummary);
-  setScreenAriaHidden(els.screenSlowScope, showSlowScope);
-  setScreenAriaHidden(els.screenSlowPhase0, showSlowPhase0);
-  setScreenAriaHidden(els.screenSlowReader, showSlowReader);
-  setScreenAriaHidden(els.screenSlowPhase3, showSlowPhase3);
-  setScreenAriaHidden(els.screenSlowGraph, showSlowGraph);
-  setScreenAriaHidden(els.screenClozeStudy, showClozeStudy);
-  setScreenAriaHidden(els.screenRecall, showRecall);
+  const screenEntries = [
+    [els.screenSettings, showSettings],
+    [els.screenAuth, showAuth],
+    [els.screenAppHome, showAppHome],
+    [els.screenVaultBranch, showVaultBranch],
+    [els.screenUploadToVaultCandidates, showUploadToVault],
+    [els.screenCreateSessionStart, showCreateSessionStart],
+    [els.screenBookSearch, showBookSearch],
+    [els.screenInterviewCapture, showInterviewCapture],
+    [modeSelectEl, showModeSelectScreen],
+    [els.screenDocLibrary, showDocLibrary],
+    [els.screenRetrievalHub, showRetrievalHub],
+    [els.screenPlaceholder, showCreate],
+    [els.screenPrePackingAssessment, showPrePackingAssessment],
+    [els.screenPrePackingResults, showPrePackingResults],
+    [els.screenBlocksList, showBlocks],
+    [els.screenSessionReady, showReady],
+    [els.screenFullPackGenerating, showFullPackGenerating],
+    [els.screenSocratic, showSocratic],
+    [els.screenTest, showTest],
+    [els.screenComplete, showComplete],
+    [els.screenReviewConfig, showReviewConfig],
+    [els.screenReviewGenerating, showReviewGenerating],
+    [els.screenReview, showReview],
+    [els.screenReviewSummary, showReviewSummary],
+    [els.screenSlowScope, showSlowScope],
+    [els.screenSlowPhase0, showSlowPhase0],
+    [els.screenSlowReader, showSlowReader],
+    [els.screenSlowPhase3, showSlowPhase3],
+    [els.screenSlowGraph, showSlowGraph],
+    [els.screenClozeStudy, showClozeStudy],
+    [els.screenRecall, showRecall],
+    [els.studyProgress, showStudyProgress],
+  ];
 
-  setScreenAriaHidden(els.studyProgress, showStudyProgress);
+  revealScreens(screenEntries);
+  focusScreenEntry(which);
+  concealScreens(screenEntries);
   document.body.classList.toggle("study-active", showStudyProgress);
   document.body.classList.toggle("slow-reader-active", showSlowReader);
   document.body.classList.toggle("recall-active", showRecall);
@@ -1309,47 +1445,6 @@ export function showScreen(which) {
   applyOfflineUiRestrictions();
   syncFloatingChrome();
 
-  if (showModeSelectScreen) {
-    setTimeout(() => {
-      const firstMode = document.querySelector('input[name="studyMode"]');
-      if (firstMode) firstMode.focus();
-    }, 0);
-  }
-
-  if (showDocLibrary) {
-    setTimeout(() => els.docLibraryBackBtn?.focus?.(), 0);
-  }
-
-  if (showCreateSessionStart) {
-    setTimeout(() => {
-      if (els.createSessionStartFileInput && !els.createSessionStartFileInput.disabled) {
-        els.createSessionStartFileInput.focus();
-      } else {
-        els.createSessionStartNameInput?.focus?.();
-      }
-    }, 0);
-  }
-
-  if (showRetrievalHub) {
-    setTimeout(() => {
-      const first = els.retrievalHubOptions?.querySelector("[data-retrieval-mode]");
-      if (first) first.focus();
-      else els.retrievalHubBackBtn?.focus?.();
-    }, 0);
-  }
-
-  if (showCreate) {
-    setTimeout(() => {
-      if (els.fileInput && !els.generateBlocksForm?.hidden) {
-        els.fileInput.focus();
-      }
-    }, 0);
-  }
-
-  if (showBlocks) {
-    setTimeout(() => els.blocksListEditor?.focus?.(), 0);
-  }
-
   if (showTest) {
     els.testRsvpStatus.textContent = "";
     els.testError.hidden = true;
@@ -1360,14 +1455,10 @@ export function showScreen(which) {
     els.testNextBtn.textContent = "";
   }
 
-  if (showRecall) {
-    setTimeout(() => els.recallAnswer?.focus?.(), 0);
-  }
-
   const anyVisible = document.querySelector('.screen[aria-hidden="false"]');
   if (!anyVisible) {
     console.warn(`showScreen("${which}"): no visible screen — falling back to settings to settings`);
-    els.screenSettings?.setAttribute("aria-hidden", "false");
+    revealScreen(els.screenSettings);
   }
 }
 
