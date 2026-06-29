@@ -834,6 +834,18 @@ export const CONCEPT_INVENTORY_CHUNK_MAX_TOKENS = 8192;
 /** Phase 1 map-reduce merge: consolidated partials, deduped output (~60 concepts × ~200 tok). */
 export const CONCEPT_INVENTORY_MERGE_MAX_TOKENS = 12288;
 
+/** Final semantic dedup pass on merged inventory (~200 concepts × ~120 tok). */
+export const SEMANTIC_DEDUP_PASS_MAX_TOKENS = 24576;
+
+/**
+ * @param {number} conceptCount
+ * @returns {number}
+ */
+export function mergeMaxTokensForConceptCount(conceptCount) {
+  const n = Math.max(0, Math.floor(Number(conceptCount) || 0));
+  return Math.min(32768, Math.max(CONCEPT_INVENTORY_MERGE_MAX_TOKENS, Math.ceil(n * 140)));
+}
+
 export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
 export const INVENTORY_TARGET_CHUNK_WORDS = 2500;
 export const INVENTORY_MAX_PARALLEL_CALLS = 8;
@@ -1820,29 +1832,46 @@ export function slimPartialsForMerge(partials) {
 }
 
 /**
- * Restore source_phrase and optional fields from richest partial matches.
- * @param {object[]} mergedSlim
  * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @param {object[][]} [extraInventories]
+ * @returns {Map<string, object>}
  */
-export function rehydrateMergedConcepts(mergedSlim, partials) {
+export function buildRichestConceptLookup(partials, extraInventories = []) {
   /** @type {Map<string, object>} */
   const richest = new Map();
+  const ingest = (item, moduleName = "Section") => {
+    if (!item || typeof item !== "object") return;
+    const key = normalizeConceptTitleKey(item.title);
+    if (!key) return;
+    const existing = richest.get(key);
+    const spLen = String(item.source_phrase || "").length;
+    const espLen = String(existing?.source_phrase || "").length;
+    if (!existing || spLen > espLen) {
+      richest.set(key, { ...item, module: item.module || moduleName });
+    }
+  };
   for (const partial of Array.isArray(partials) ? partials : []) {
     const moduleName = String(partial?.label || "Section");
     for (const item of Array.isArray(partial?.concepts) ? partial.concepts : []) {
-      if (!item || typeof item !== "object") continue;
-      const key = normalizeConceptTitleKey(item.title);
-      if (!key) continue;
-      const existing = richest.get(key);
-      const spLen = String(item.source_phrase || "").length;
-      const espLen = String(existing?.source_phrase || "").length;
-      if (!existing || spLen > espLen) {
-        richest.set(key, { ...item, module: item.module || moduleName });
-      }
+      ingest(item, moduleName);
     }
   }
+  for (const inv of extraInventories) {
+    for (const item of Array.isArray(inv) ? inv : []) {
+      ingest(item, String(item?.module || "Section"));
+    }
+  }
+  return richest;
+}
 
-  /** @type {object[]} */
+/**
+ * Restore source_phrase and optional fields from richest partial matches.
+ * @param {object[]} mergedSlim
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @param {object[][]} [extraInventories]
+ */
+export function rehydrateMergedConcepts(mergedSlim, partials, extraInventories = []) {
+  const richest = buildRichestConceptLookup(partials, extraInventories);
   const out = [];
   for (let i = 0; i < (Array.isArray(mergedSlim) ? mergedSlim.length : 0); i += 1) {
     const slim = mergedSlim[i];
@@ -1868,7 +1897,13 @@ function buildSlimMergePairPrompt(lang, partialsJson) {
 
 Output ONLY valid JSON. No markdown. First char \`{\`, last \`}\`.
 Fields per concept: id, order, title, scope_one_line only.
-Deduplicate semantically similar concepts across sections. Preserve document order.
+
+DEDUP RULES (apply aggressively):
+- Merge concepts that describe the same idea under different titles, wording, abbreviations, or scope phrasing.
+- Merge near-synonyms and overlapping scopes across sections — prefer ONE entry, not two.
+- Title-key normalization already removed exact title duplicates; your job is SEMANTIC duplicates the client cannot see.
+- Keep the clearest short title and the most informative scope_one_line from the merged group.
+- Preserve overall document order (first appearance wins position).
 
 Output JSON only:
 {"concepts":[{"id":"c1","order":1,"title":"Short name","scope_one_line":"What this covers"}]}
@@ -1877,6 +1912,142 @@ Partials:
 ${partialsJson}
 
 Respond entirely in ${language}.`;
+}
+
+function buildSemanticDedupPassPrompt(lang, slimJson, inputCount) {
+  const language = String(lang || "English").trim() || "English";
+  return `You are performing a final semantic deduplication pass on a single document concept inventory.
+
+The list below has ${inputCount} concepts. Many are likely SEMANTIC DUPLICATES (same underlying idea, different labels or scopes) that survived title-key normalization.
+
+Your task:
+1. MERGE aggressively — same theory, same mechanism, same author argument, same term family → one concept.
+2. Keep the clearest title and richest scope_one_line from each merged group.
+3. Preserve document order (first surviving appearance keeps position).
+4. Output FEWER concepts when duplicates exist — do not echo the input unchanged unless every entry is genuinely distinct.
+
+Output ONLY valid JSON. No markdown. Fields: id, order, title, scope_one_line only.
+
+Output JSON only:
+{"concepts":[{"id":"c1","order":1,"title":"Short name","scope_one_line":"What this covers"}]}
+
+Inventory:
+${slimJson}
+
+Respond entirely in ${language}.`;
+}
+
+/**
+ * LLM semantic dedup pass — always runs after map-reduce merge (independent of title-key dedupe).
+ * @param {object[]} concepts
+ * @param {{ label?: string, concepts?: object[] }[]} partials
+ * @param {{ llmModel?: string, language?: string, charCount?: number }} splitOpts
+ * @returns {Promise<{ concepts: object[], inventoryMode: string|null, inputCount: number, outputCount: number }>}
+ */
+export async function runSemanticDedupPassOnInventory(concepts, partials, splitOpts = {}) {
+  const input = Array.isArray(concepts) ? concepts : [];
+  const inputCount = input.length;
+  if (inputCount < 2) {
+    return { concepts: input, inventoryMode: null, inputCount, outputCount: inputCount };
+  }
+
+  const model = resolveLlmModelArg(splitOpts.llmModel);
+  const lang = String(splitOpts.language || "English").trim() || "English";
+  const { minViableConcepts } = await import("./config/flags.js");
+  const minRequired = minViableConcepts(splitOpts.charCount ?? 0);
+
+  const slimPayload = input.map((c, i) => ({
+    id: c?.id || `c${i + 1}`,
+    order: c?.order ?? i + 1,
+    title: String(c?.title || "").trim(),
+    scope_one_line: String(c?.scope_one_line || c?.scope || "")
+      .trim()
+      .slice(0, MERGE_SLIM_SCOPE_MAX),
+  }));
+  const slimJson = JSON.stringify(slimPayload);
+  if (slimJson.length > MERGE_SLIM_INPUT_MAX_CHARS) {
+    console.info("[inventory-merge] Semantic dedup pass skipped — input too large.", {
+      slimJsonChars: slimJson.length,
+      inputCount,
+    });
+    return { concepts: input, inventoryMode: null, inputCount, outputCount: inputCount };
+  }
+
+  const systemPrompt = buildSemanticDedupPassPrompt(lang, slimJson, inputCount);
+  const maxTokens = mergeMaxTokensForConceptCount(inputCount);
+  let mergedSlim = null;
+
+  for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+    let lastRaw = "";
+    try {
+      lastRaw = await callLlmSplit({
+        llmModel: model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content:
+              "Deduplicate semantically. Merge overlapping concepts. JSON only.",
+          },
+        ],
+        useJsonObjectMode: true,
+        max_tokens: maxTokens,
+      });
+    } catch (err) {
+      if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+        lastRaw = await callLlmSplit({
+          llmModel: model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content:
+                "Deduplicate semantically. Merge overlapping concepts. JSON only.",
+            },
+          ],
+          useJsonObjectMode: false,
+          max_tokens: maxTokens,
+        });
+      } else {
+        throw err;
+      }
+    }
+    mergedSlim = parseConceptInventoryFromModelResponse(lastRaw);
+    if (!Array.isArray(mergedSlim) || !mergedSlim.length) {
+      mergedSlim = recoverPartialConceptArray(lastRaw);
+    }
+    if (Array.isArray(mergedSlim) && mergedSlim.length) break;
+  }
+
+  if (!Array.isArray(mergedSlim) || !mergedSlim.length) {
+    console.warn("[inventory-merge] Semantic dedup pass produced no concepts; keeping pre-pass inventory.", {
+      inputCount,
+    });
+    return { concepts: input, inventoryMode: null, inputCount, outputCount: inputCount };
+  }
+
+  const rehydrated = rehydrateMergedConcepts(mergedSlim, partials, [input]);
+  if (!Array.isArray(rehydrated) || rehydrated.length < minRequired) {
+    console.warn("[inventory-merge] Semantic dedup pass below minimum; keeping pre-pass inventory.", {
+      inputCount,
+      outputCount: rehydrated?.length ?? 0,
+      minRequired,
+    });
+    return { concepts: input, inventoryMode: null, inputCount, outputCount: inputCount };
+  }
+
+  const outputCount = rehydrated.length;
+  console.info("[inventory-merge] Semantic dedup pass complete:", {
+    inputCount,
+    outputCount,
+    reduction: inputCount - outputCount,
+  });
+  return {
+    concepts: rehydrated,
+    inventoryMode: "map_reduce_semantic_dedup",
+    inputCount,
+    outputCount,
+  };
 }
 
 /**
@@ -1890,41 +2061,53 @@ async function mergeTwoPartialsSlimLlm(left, right, { model, lang }) {
     { label: right.label, concepts: right.concepts },
   ]);
   const partialsJson = JSON.stringify(slimPayload);
-  let lastRaw = "";
-  try {
-    lastRaw = await callLlmSplit({
-      llmModel: model,
-      messages: [
-        { role: "system", content: buildSlimMergePairPrompt(lang, partialsJson) },
-        { role: "user", content: "Merge and deduplicate. JSON only." },
-      ],
-      useJsonObjectMode: true,
-      max_tokens: MERGE_PAIR_SLIM_MAX_TOKENS,
-    });
-  } catch (err) {
-    if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+  const inputCount = (left.concepts?.length || 0) + (right.concepts?.length || 0);
+  const maxTokens = mergeMaxTokensForConceptCount(inputCount);
+
+  for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+    let lastRaw = "";
+    try {
       lastRaw = await callLlmSplit({
         llmModel: model,
         messages: [
           { role: "system", content: buildSlimMergePairPrompt(lang, partialsJson) },
-          { role: "user", content: "Merge and deduplicate. JSON only." },
+          { role: "user", content: "Merge and deduplicate semantically. JSON only." },
         ],
-        useJsonObjectMode: false,
-        max_tokens: MERGE_PAIR_SLIM_MAX_TOKENS,
+        useJsonObjectMode: true,
+        max_tokens: maxTokens,
       });
-    } else {
-      throw err;
+    } catch (err) {
+      if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+        lastRaw = await callLlmSplit({
+          llmModel: model,
+          messages: [
+            { role: "system", content: buildSlimMergePairPrompt(lang, partialsJson) },
+            { role: "user", content: "Merge and deduplicate semantically. JSON only." },
+          ],
+          useJsonObjectMode: false,
+          max_tokens: maxTokens,
+        });
+      } else {
+        throw err;
+      }
+    }
+    const concepts = parseConceptInventoryFromModelResponse(lastRaw);
+    if (Array.isArray(concepts) && concepts.length) return concepts;
+    const recovered = recoverPartialConceptArray(lastRaw);
+    if (recovered.length) {
+      return (
+        parseConceptInventoryFromModelResponse(JSON.stringify({ concepts: recovered })) ||
+        recovered
+      );
     }
   }
-  const concepts = parseConceptInventoryFromModelResponse(lastRaw);
-  if (Array.isArray(concepts) && concepts.length) return concepts;
-  const recovered = recoverPartialConceptArray(lastRaw);
-  if (recovered.length) {
-    return (
-      parseConceptInventoryFromModelResponse(JSON.stringify({ concepts: recovered })) ||
-      recovered
-    );
-  }
+
+  console.warn("[inventory-merge] Pairwise LLM merge failed; deterministic fallback for pair:", {
+    left: left.label,
+    right: right.label,
+    leftCount: left.concepts?.length ?? 0,
+    rightCount: right.concepts?.length ?? 0,
+  });
   return mergeConceptInventoriesDeterministic([left, right]);
 }
 
@@ -2016,25 +2199,60 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
 
   const deterministicCount = Array.isArray(treeMerged) ? treeMerged.length : 0;
 
-  function tryAcceptSlimMerge(mergedSlim, inventoryMode) {
+  function tryAcceptSlimMerge(mergedSlim, inventoryMode, options = {}) {
     if (!Array.isArray(mergedSlim) || !mergedSlim.length) return null;
     const rehydrated = rehydrateMergedConcepts(mergedSlim, payload);
-    if (Array.isArray(rehydrated) && rehydrated.length >= minRequired) {
-      console.info("[inventory-merge] Slim merge accepted:", {
+    if (!Array.isArray(rehydrated) || rehydrated.length < minRequired) return null;
+
+    const slimCount = mergedSlim.length;
+    const noReductionVsDeterministic =
+      payload.length >= 2 && slimCount >= deterministicCount;
+    if (noReductionVsDeterministic && options.rejectIfNoReductionVsDeterministic) {
+      console.info("[inventory-merge] LLM merge did not reduce below deterministic count; trying next strategy.", {
         inventoryMode,
-        slimCount: mergedSlim.length,
-        rehydratedCount: rehydrated.length,
+        slimCount,
         deterministicCount,
+        rawConceptCount,
       });
-      return { concepts: rehydrated, inventoryMode };
+      return null;
     }
-    return null;
+
+    console.info("[inventory-merge] Slim merge accepted:", {
+      inventoryMode,
+      slimCount,
+      rehydratedCount: rehydrated.length,
+      deterministicCount,
+      rawConceptCount,
+    });
+    return { concepts: rehydrated, inventoryMode };
+  }
+
+  async function finalizeLlmMerge(accepted) {
+    const dedup = await runSemanticDedupPassOnInventory(accepted.concepts, payload, {
+      llmModel: model,
+      language: lang,
+      charCount: charCount ?? 0,
+    });
+    const inventoryMode =
+      dedup.inventoryMode != null
+        ? `${accepted.inventoryMode}+${dedup.inventoryMode}`
+        : accepted.inventoryMode;
+    return { concepts: dedup.concepts, inventoryMode };
   }
 
   const slimPayload = slimPartialsForMerge(payload);
   const slimJson = JSON.stringify(slimPayload);
+  const monolithicMaxTokens = mergeMaxTokensForConceptCount(deterministicCount || rawConceptCount);
+
+  if (payload.length >= 2) {
+    console.info("[inventory-merge] Running pairwise slim merge tree (primary).");
+    const treeSlim = await mergeConceptInventoriesSlimTree(payload, splitOpts);
+    const treeAccepted = tryAcceptSlimMerge(treeSlim, "map_reduce_slim_tree");
+    if (treeAccepted) return finalizeLlmMerge(treeAccepted);
+  }
 
   if (payload.length >= 2 && slimJson.length <= MERGE_SLIM_INPUT_MAX_CHARS) {
+    console.info("[inventory-merge] Pairwise merge inconclusive — trying monolithic slim merge.");
     const slimSystem = buildSlimMergePairPrompt(lang, slimJson);
     for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
       let lastRaw = "";
@@ -2046,7 +2264,7 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
             { role: "user", content: "Merge all partials. Deduplicate semantically. JSON only." },
           ],
           useJsonObjectMode: true,
-          max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
+          max_tokens: monolithicMaxTokens,
         });
       } catch (err) {
         if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
@@ -2057,7 +2275,7 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
               { role: "user", content: "Merge all partials. Deduplicate semantically. JSON only." },
             ],
             useJsonObjectMode: false,
-            max_tokens: CONCEPT_INVENTORY_MERGE_MAX_TOKENS,
+            max_tokens: monolithicMaxTokens,
           });
         } else {
           throw err;
@@ -2067,20 +2285,17 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       if (!Array.isArray(mergedSlim) || !mergedSlim.length) {
         mergedSlim = recoverPartialConceptArray(lastRaw);
       }
-      const accepted = tryAcceptSlimMerge(mergedSlim, "map_reduce_slim");
-      if (accepted) return accepted;
+      const accepted = tryAcceptSlimMerge(mergedSlim, "map_reduce_slim", {
+        rejectIfNoReductionVsDeterministic: true,
+      });
+      if (accepted) return finalizeLlmMerge(accepted);
+      const acceptedDespiteCount = tryAcceptSlimMerge(mergedSlim, "map_reduce_slim");
+      if (acceptedDespiteCount) return finalizeLlmMerge(acceptedDespiteCount);
     }
   } else if (payload.length >= 2) {
-    console.info("[inventory-merge] Slim input too large for monolithic merge; using pairwise tree.", {
+    console.info("[inventory-merge] Slim input too large for monolithic merge.", {
       slimJsonChars: slimJson.length,
     });
-  }
-
-  if (payload.length >= 2) {
-    console.info("[inventory-merge] Running pairwise slim merge tree.");
-    const treeSlim = await mergeConceptInventoriesSlimTree(payload, splitOpts);
-    const treeAccepted = tryAcceptSlimMerge(treeSlim, "map_reduce_slim_tree");
-    if (treeAccepted) return treeAccepted;
   }
 
   if (Array.isArray(treeMerged) && treeMerged.length >= minRequired) {
@@ -2088,6 +2303,20 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       conceptCount: treeMerged.length,
       minRequired,
     });
+    if (payload.length >= 2) {
+      const dedup = await runSemanticDedupPassOnInventory(treeMerged, payload, {
+        llmModel: model,
+        language: lang,
+        charCount: charCount ?? 0,
+      });
+      return {
+        concepts: dedup.concepts,
+        inventoryMode:
+          dedup.inventoryMode != null
+            ? `map_reduce_deterministic+${dedup.inventoryMode}`
+            : "map_reduce_deterministic",
+      };
+    }
     return {
       concepts: treeMerged,
       inventoryMode: "map_reduce_deterministic",
