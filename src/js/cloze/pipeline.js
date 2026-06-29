@@ -390,19 +390,38 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
 
   onPhase(2, "phase2", { epistemicGraph, analysis });
   items = await generateBaseItems(text, analysis, { llmModel, signal });
+  const baseCount = (Array.isArray(items) ? items : []).length;
   onPhase(2, "phase2", { epistemicGraph, analysis, items });
 
   onPhase(3, "phase3", { epistemicGraph, analysis, items });
   items = await generateDistractors(items, epistemicGraph, { llmModel, signal });
+  const postDistractorCount = (Array.isArray(items) ? items : []).filter(
+    (i) => Array.isArray(i?.options) && i.options.length === 4,
+  ).length;
   onPhase(3, "phase3", { epistemicGraph, analysis, items });
 
   onPhase(4, "phase4", { epistemicGraph, analysis, items });
   items = await qaAndCalibrate(items, { llmModel, signal });
+  const postQaCount = (Array.isArray(items) ? items : []).length;
   onPhase(4, "phase4", { epistemicGraph, analysis, items });
 
   if (doc?.docId) {
     persistClozeItemsToShared(doc.docId, items);
   }
 
-  return { epistemicGraph, analysis, items, validItems: getValidItems(items) };
+  const validItems = getValidItems(items);
+  console.info("[cloze.runClozePipelinePhases] Item counts:", {
+    docId: doc?.docId,
+    baseCount,
+    postDistractorCount,
+    postQaCount,
+    validCount: validItems.length,
+  });
+  return {
+    epistemicGraph,
+    analysis,
+    items,
+    validItems,
+    diagnostics: { baseCount, postDistractorCount, postQaCount, validCount: validItems.length },
+  };
 }

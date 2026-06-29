@@ -58,6 +58,12 @@ import {
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
+/** Gate-critical Tier 1 — unlocks mode select (matches hasTier1Artifacts). */
+const TIER1_GATE_PHASE_IDS = ["T0.1", "T0.2", "T1.1", "T1.2", "T1.4", "T1.5"];
+const TIER1_GATE_PHASES = new Set(TIER1_GATE_PHASE_IDS);
+/** Deferred Tier 1 — vault, graph, novelty; background after gate. */
+const TIER1_DEFERRED_PHASE_IDS = ["T1.3", "T1.6", "T1.7", "T1.8", "T1.9"];
+const TIER1_DEFERRED_PHASES = new Set(TIER1_DEFERRED_PHASE_IDS);
 const PHASE_DEPS = {
   "T0.1": [],
   "T0.2": ["T0.1"],
@@ -72,7 +78,7 @@ const PHASE_DEPS = {
   "T1.9": ["T1.2", "T1.8"],
   "T2.1": ["T1.3"],
   "T2.2": ["T1.2", "T1.5"],
-  "T2.3": ["T1.1"],
+  "T2.3": ["T1.2", "T1.4", "T1.5"],
 };
 
 const PHASE_LABELS = {
@@ -143,11 +149,11 @@ function ensurePreparation(doc) {
 
 function phaseSucceeded(prep, phaseId, fingerprint) {
   const row = prep.phaseResults?.[phaseId];
-  return (
-    row?.status === "success" &&
-    row?.outputHash &&
-    prep.fingerprint === fingerprint
-  );
+  const terminal =
+    row?.status === "success" ||
+    row?.status === "partial" ||
+    row?.status === "skipped";
+  return terminal && row?.outputHash && prep.fingerprint === fingerprint;
 }
 
 function markPhase(prep, phaseId, status, outputHash, error) {
@@ -168,6 +174,7 @@ function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
     const row = prep.phaseResults?.[id];
     return (
       row?.status === "success" ||
+      row?.status === "partial" ||
       row?.status === "skipped" ||
       phaseSucceeded(prep, id, fingerprint)
     );
@@ -475,7 +482,17 @@ async function runPhaseT21(doc, ctx) {
   if (result.epistemicGraph?.nodes?.length) {
     doc.shared.conceptGraph = result.epistemicGraph;
   }
-  const validItems = getValidItems(result.items || []);
+  const allItems = result.items || [];
+  const validItems = getValidItems(allItems);
+  const pipelineStatus = validItems.length ? "ready" : "degraded";
+  console.info("[document-preparation.runPhaseT21] Cloze pipeline counts:", {
+    docId: doc.docId,
+    baseItems: result.diagnostics?.baseCount ?? allItems.length,
+    postDistractor: result.diagnostics?.postDistractorCount ?? allItems.length,
+    postQa: result.diagnostics?.postQaCount ?? allItems.length,
+    valid: validItems.length,
+    pipelineStatus,
+  });
   if (!doc.modes) doc.modes = {};
   doc.modes.cloze = {
     studyMode: "cloze",
@@ -485,15 +502,19 @@ async function runPhaseT21(doc, ctx) {
     cloze: {
       normalizedText: text,
       normalizedFormat: "markdown",
-      pipelineStatus: validItems.length ? "ready" : "failed",
+      pipelineStatus,
       epistemicGraph: result.epistemicGraph,
       analysis: result.analysis,
-      items: result.items || [],
+      items: allItems,
       studyIndex: 0,
       studyStats: { correct: 0, shown: 0 },
     },
   };
-  if (!validItems.length) throw new Error("Cloze pipeline produced no valid items");
+  if (!validItems.length) {
+    const prep = ensurePreparation(doc);
+    prep.failReason = prep.failReason || "CLOZE_NO_VALID_ITEMS";
+    return { partial: true, hash: hashPayload("cloze_degraded") };
+  }
   return hashPayload(validItems.map((i) => i.id));
 }
 
@@ -556,11 +577,11 @@ const PHASE_RUNNERS = {
 function phasesForStopTier(stopAfterTier) {
   const all = Object.keys(PHASE_RUNNERS);
   if (stopAfterTier <= 0) return all.filter((id) => id.startsWith("T0."));
-  if (stopAfterTier === 1) return all.filter((id) => !id.startsWith("T2."));
+  if (stopAfterTier === 1) return [...TIER1_GATE_PHASE_IDS];
   return all;
 }
 
-function buildWaves(phaseIds) {
+export function buildWaves(phaseIds) {
   const remaining = new Set(phaseIds);
   const waves = [];
   while (remaining.size) {
@@ -698,6 +719,9 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             if (output && typeof output === "object" && output.skipped) {
               markPhase(prep, phaseId, "skipped", output.hash || "skipped");
               console.info("[document-preparation.executePhase] Skipped:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
+            } else if (output && typeof output === "object" && output.partial) {
+              markPhase(prep, phaseId, "partial", output.hash || "partial");
+              console.warn("[document-preparation.executePhase] Partial:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
             } else {
               markPhase(prep, phaseId, "success", output);
               console.info("[document-preparation.executePhase] Success:", {
@@ -710,7 +734,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
               phaseId,
               wave: wi + 1,
               label: PHASE_LABELS[phaseId] || phaseId,
-              status: output?.skipped ? "skipped" : "success",
+              status: output?.skipped ? "skipped" : output?.partial ? "partial" : "success",
             });
             return { phaseId, ok: true };
           } catch (err) {
@@ -837,6 +861,11 @@ function tier2PhasesPending(doc, fingerprint) {
   return TIER2_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
 }
 
+function deferredTier1PhasesPending(doc, fingerprint) {
+  const prep = ensurePreparation(doc);
+  return TIER1_DEFERRED_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
+}
+
 /**
  * Await Tier 1 DPP; dedupes concurrent runs per docId.
  * @param {object} doc
@@ -873,16 +902,22 @@ export async function ensureTier1Preparation(doc, options = {}) {
 export function kickoffTier2PreparationInBackground(doc, options = {}) {
   if (!doc?.docId || !isTier1PreparationComplete(doc)) return;
   const fingerprint = computePreparationFingerprint(doc, options);
-  if (!tier2PhasesPending(doc, fingerprint)) return;
-  void runDocumentPreparationPipeline(doc, { ...options, stopAfterTier: 2 }).catch((err) => {
-    console.warn("[DPP] Tier 2 background preparation failed:", err?.message || err);
+  const tier2Pending = tier2PhasesPending(doc, fingerprint);
+  const deferredPending = deferredTier1PhasesPending(doc, fingerprint);
+  if (!tier2Pending && !deferredPending) return;
+  void runDocumentPreparationPipeline(doc, {
+    ...options,
+    stopAfterTier: 2,
+    resume: options.resume !== false,
+  }).catch((err) => {
+    console.warn("[DPP] Background deferred/Tier-2 preparation failed:", err?.message || err);
   });
 }
 
 export function hasPendingTier2Preparation(doc, options = {}) {
   if (!doc?.docId || !isTier1PreparationComplete(doc)) return false;
   const fingerprint = computePreparationFingerprint(doc, options);
-  return tier2PhasesPending(doc, fingerprint);
+  return tier2PhasesPending(doc, fingerprint) || deferredTier1PhasesPending(doc, fingerprint);
 }
 
 /**
@@ -939,4 +974,11 @@ export async function runPostCacheUserPhases(doc, options = {}) {
   return doc;
 }
 
-export { TIER1_PHASES, PHASE_LABELS };
+export {
+  TIER1_PHASES,
+  TIER1_GATE_PHASES,
+  TIER1_DEFERRED_PHASES,
+  PHASE_DEPS,
+  PHASE_LABELS,
+  buildWaves as buildDppWaves,
+};

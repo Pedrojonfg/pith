@@ -12,12 +12,16 @@ import {
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
 import { addConceptsToShared, getActiveSession, saveActiveSession } from "../session-store.js";
 import { SLOW_PHASE0_GENERATIVE_RULES } from "../pedagogy/generative-pedagogy.js";
+import { looksLikeTruncatedModelJson } from "../api.js?v=20260625_02";
 
 export const PHASE0_MAP_REDUCE_THRESHOLD = SCOPE_CHAR_WARN;
 export const PHASE0_MAX_CHUNK_CHARS = 50000;
+/** ~8 partialMap nodes + 5 concepts × ~120 tok; headroom for dense Spanish prose */
+export const PHASE0_CHUNK_MAX_TOKENS = 3072;
 
 const MIN_CONCEPTS = 3;
 const MAX_CONCEPTS = 5;
+const PHASE0_CHUNK_BISECT_MAX_DEPTH = 2;
 
 export const NODE_TYPES = new Set(["CONCEPT", "PERSON", "WORK", "MOVEMENT", "EVENT"]);
 export const TEXT_GENRES = new Set([
@@ -346,7 +350,7 @@ async function callPhase0Json({ llmModel, systemPrompt, userPrompt, max_tokens =
   return content;
 }
 
-function parsePartialChunk(text) {
+export function parsePartialChunk(text) {
   const parsed = parseModelJsonObject(text);
   if (!parsed || typeof parsed !== "object") return null;
   const partialMap = Array.isArray(parsed.partialMap)
@@ -357,6 +361,89 @@ function parsePartialChunk(text) {
     ? conceptsRaw.map(normalizeConcept).filter(Boolean)
     : [];
   return { partialMap, concepts };
+}
+
+function splitPhase0ChunkForBisect(chunk) {
+  const text = String(chunk?.text || "");
+  if (text.length < 800) return null;
+  const mid = Math.floor(text.length / 2);
+  let splitAt = text.lastIndexOf("\n\n", mid);
+  if (splitAt < text.length * 0.25) splitAt = text.lastIndexOf("\n", mid);
+  if (splitAt < text.length * 0.25) splitAt = mid;
+  const a = text.slice(0, splitAt).trim();
+  const b = text.slice(splitAt).trim();
+  if (!a.length || !b.length) return null;
+  return [
+    { title: `${chunk.title} (a)`, text: a },
+    { title: `${chunk.title} (b)`, text: b },
+  ];
+}
+
+async function fetchPartialChunkLlm(chunk, ctx) {
+  const { model, language, normalizedFormat, treeSummary, signal, max_tokens, terse } = ctx;
+  const systemPrompt = terse
+    ? `${buildChunkSystemPrompt(language)}\nRespond with MINIMAL JSON — at most 3 partialMap nodes and 2 concepts.`
+    : buildChunkSystemPrompt(language);
+  const userPrompt = buildPhase0UserPrompt(
+    scopeTextForPhase0IA(chunk.text, normalizedFormat),
+    treeSummary,
+  ).replace("Analyze this text", `Analyze this section (${chunk.title})`);
+  return callPhase0Json({
+    llmModel: model,
+    systemPrompt,
+    userPrompt,
+    max_tokens,
+    signal,
+  });
+}
+
+/**
+ * @param {{ title: string, text: string }} chunk
+ * @param {object} ctx
+ * @param {number} [depth]
+ */
+export async function extractPartialChunkWithRetry(chunk, ctx, depth = 0) {
+  const attempts = [
+    { max_tokens: PHASE0_CHUNK_MAX_TOKENS, terse: false },
+    { max_tokens: PHASE0_CHUNK_MAX_TOKENS, terse: true },
+  ];
+  let lastRaw = "";
+  for (const attempt of attempts) {
+    lastRaw = await fetchPartialChunkLlm(chunk, { ...ctx, ...attempt });
+    const partial = parsePartialChunk(lastRaw);
+    if (partial) return partial;
+    const truncated = looksLikeTruncatedModelJson(lastRaw);
+    console.warn("[phase0.mapReducePhase0] Parse failed, next attempt:", {
+      title: chunk.title,
+      depth,
+      truncated,
+      responseChars: String(lastRaw || "").length,
+    });
+    if (!truncated && attempt.terse) break;
+  }
+  if (depth >= PHASE0_CHUNK_BISECT_MAX_DEPTH) {
+    throw new Error(`Invalid partial Phase 0 JSON for section: ${chunk.title}.`);
+  }
+  const halves = splitPhase0ChunkForBisect(chunk);
+  if (!halves) {
+    throw new Error(`Invalid partial Phase 0 JSON for section: ${chunk.title}.`);
+  }
+  console.warn("[phase0.mapReducePhase0] Bisecting chunk after parse failure:", {
+    title: chunk.title,
+    depth,
+  });
+  const results = await Promise.all(
+    halves.map((half) => extractPartialChunkWithRetry(half, ctx, depth + 1)),
+  );
+  const partialMap = results.flatMap((r) => r.partialMap || []);
+  /** @type {Map<string, object>} */
+  const conceptByTerm = new Map();
+  for (const r of results) {
+    for (const c of r.concepts || []) {
+      if (c?.term) conceptByTerm.set(c.term, c);
+    }
+  }
+  return { partialMap, concepts: [...conceptByTerm.values()] };
 }
 
 /**
@@ -548,6 +635,13 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
   }
 
   const partials = [];
+  const chunkCtx = {
+    model,
+    language,
+    normalizedFormat,
+    treeSummary: resolvedTreeSummary,
+    signal,
+  };
   for (let i = 0; i < chunks.length; i += 1) {
     if (signal?.aborted) throw new Error("Phase 0 generation cancelled.");
     if (onProgress) {
@@ -558,24 +652,18 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
         label: chunks[i].title,
       });
     }
-    const raw = await callPhase0Json({
-      llmModel: model,
-      systemPrompt: buildChunkSystemPrompt(language),
-      userPrompt: buildPhase0UserPrompt(
-        scopeTextForPhase0IA(chunks[i].text, normalizedFormat),
-        resolvedTreeSummary,
-      ).replace(
-        "Analyze this text",
-        `Analyze this section (${chunks[i].title})`,
-      ),
-      max_tokens: 2048,
-      signal,
-    });
-    const partial = parsePartialChunk(raw);
-    if (!partial) {
+    try {
+      const partial = await extractPartialChunkWithRetry(chunks[i], chunkCtx);
+      partials.push({ title: chunks[i].title, ...partial });
+    } catch (err) {
+      const prepHint = err?.message || String(err);
+      console.error("[phase0.mapReducePhase0] Chunk failed:", {
+        section: i + 1,
+        title: chunks[i].title,
+        message: prepHint,
+      });
       throw new Error(`Invalid partial Phase 0 JSON for section ${i + 1}.`);
     }
-    partials.push({ title: chunks[i].title, ...partial });
   }
 
   if (onProgress) {
