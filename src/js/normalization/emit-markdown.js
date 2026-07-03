@@ -30,6 +30,13 @@ export function emitMarkdown(blocks, headings, opts = {}) {
 
   const activeBlocks = blocks.filter((b) => b.kind !== "artifact" && b.text.trim());
 
+  // [debug-enrich] open question: no dedicated table-to-markdown-table path exists in this emitter
+  console.debug("[emit-markdown.emitMarkdown] Start:", {
+    activeBlockCount: activeBlocks.length,
+    headingCount: headings.length,
+    tableNote: "no table detection/emission step — cells pass through as plain paragraphs",
+  }); // [debug-enrich]
+
   for (const block of activeBlocks) {
     const heading = headingByBlock.get(block.id);
     if (heading) {
@@ -61,5 +68,9 @@ export function emitMarkdown(blocks, headings, opts = {}) {
   }
 
   const markdown = parts.join("\n");
+  console.debug("[emit-markdown.emitMarkdown] Done:", {
+    charCount: markdown.length,
+    headingsWithOffsets: withOffsets.length,
+  }); // [debug-enrich]
   return { markdown, headings: withOffsets };
 }

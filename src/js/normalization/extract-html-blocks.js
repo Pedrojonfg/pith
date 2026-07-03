@@ -6,6 +6,11 @@ import { createTextBlock } from "./types.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
+/** [debug-enrich] instrumentation-only */
+function dppNormDbg() {
+  return globalThis.__dppNormalizationDebug;
+}
+
 const HEADING_CLASS_PATTERNS = [
   { re: /heading\s*1|h1|title/i, level: 1 },
   { re: /heading\s*2|h2|chapter/i, level: 2 },
@@ -131,6 +136,21 @@ export function extractHtmlBlocks(html) {
   };
 
   for (const child of Array.from(body.children || [])) walk(child);
+
+  const tdThCount = (raw.match(/<t[dh]\b/gi) || []).length; // [debug-enrich]
+  console.info("[extract-html-blocks.extractHtmlBlocks] Done:", {
+    blockCount: blocks.length,
+    htmlTableCellsInSource: tdThCount,
+    tableNote:
+      tdThCount > 0
+        ? "td/th present in HTML but emitted as plain text blocks — no markdown table syntax"
+        : "no table elements detected in source",
+  }); // [debug-enrich]
+  const bag = dppNormDbg();
+  if (bag && tdThCount > 0) {
+    bag.tablesDetected = tdThCount;
+    bag.tablesEmittedOk = 0;
+  }
 
   if (!blocks.length) {
     const text = (body.innerText || body.textContent || "").trim();

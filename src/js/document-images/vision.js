@@ -72,8 +72,18 @@ function parseVisionResponse(raw) {
  * @param {{ docId?: string, language?: string }} ctx
  */
 export async function analyzeDocumentImage(image, conceptInventory, ctx = {}) {
+  console.debug("[vision.analyzeDocumentImage] Start:", {
+    imageId: image.imageId,
+    visionStatus: image.visionStatus,
+    storagePath: image.storagePath ? "present" : "missing",
+  }); // [debug-enrich]
   const signedUrl = await getDocumentImageSignedUrl(image.storagePath);
-  if (!signedUrl) throw new Error("image URL unavailable");
+  if (!signedUrl) {
+    console.warn("[vision.analyzeDocumentImage] Skipped — image URL unavailable:", {
+      imageId: image.imageId,
+    }); // [debug-enrich]
+    throw new Error("image URL unavailable");
+  }
 
   const concepts = (conceptInventory || [])
     .slice(0, 80)
@@ -108,12 +118,18 @@ export async function analyzeDocumentImage(image, conceptInventory, ctx = {}) {
     temperature: 0,
   });
 
-  if (!llmResult) return null;
+  if (!llmResult) {
+    console.warn("[vision.analyzeDocumentImage] Gemini call returned null — skipping:", {
+      imageId: image.imageId,
+    }); // [debug-enrich]
+    return null;
+  }
 
   if (!llmResult.content) {
-    console.warn(
-      `[vision] ${image.imageId} Gemini vision failed with status ${llmResult.status} — skipping.`,
-    );
+    console.warn("[vision.analyzeDocumentImage] Gemini vision failed:", {
+      imageId: image.imageId,
+      status: llmResult.status,
+    }); // [debug-enrich]
     return null;
   }
 
@@ -126,7 +142,9 @@ export async function analyzeDocumentImage(image, conceptInventory, ctx = {}) {
 
   const parsed = parseVisionResponse(llmResult.content);
   if (!parsed) {
-    console.warn(`[vision] ${image.imageId} vision parse failed — skipping.`);
+    console.warn("[vision.analyzeDocumentImage] Vision JSON parse failed:", {
+      imageId: image.imageId,
+    }); // [debug-enrich]
     return null;
   }
 
@@ -136,6 +154,14 @@ export async function analyzeDocumentImage(image, conceptInventory, ctx = {}) {
     : [];
   const createConcept =
     parsed.createConcept != null ? String(parsed.createConcept).trim() : "";
+
+  console.info("[vision.analyzeDocumentImage] Success:", {
+    imageId: image.imageId,
+    descriptionReturned: Boolean(description),
+    descriptionChars: description.length,
+    matchedConceptCount: matchedConceptIds.length,
+    createConcept: Boolean(createConcept),
+  }); // [debug-enrich]
 
   return { description, matchedConceptIds, createConcept };
 }
@@ -151,23 +177,39 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
   const inventory = Array.isArray(doc?.shared?.conceptInventory)
     ? doc.shared.conceptInventory
     : [];
+  const detectedCount = images.length;
+  console.info("[vision.runImageVisionAnalysis] Start:", {
+    docId: doc.docId,
+    imagesDetected: detectedCount,
+    inventoryConcepts: inventory.length,
+  }); // [debug-enrich]
   if (!images.length) return { analyzed: 0, failed: 0 };
 
   const pending = images.filter(
     (img) => img.visionStatus !== "ready" && img.visionStatus !== "skipped",
   );
+  console.debug("[vision.runImageVisionAnalysis] Pending for Gemini:", {
+    docId: doc.docId,
+    pendingCount: pending.length,
+    alreadyReady: images.filter((img) => img.visionStatus === "ready").length,
+    alreadySkipped: images.filter((img) => img.visionStatus === "skipped").length,
+  }); // [debug-enrich]
   if (!pending.length) return { analyzed: 0, failed: 0 };
 
   if (!hasPlatformLlmAccess()) {
     if (!_visionKeyWarningShown) {
-      console.warn(
-        "[vision] Sign in required — skipping image analysis for this upload.",
-      );
+      console.warn("[vision.runImageVisionAnalysis] Sign in required — skipping all images:", {
+        docId: doc.docId,
+        imagesDetected: detectedCount,
+      }); // [debug-enrich]
       _visionKeyWarningShown = true;
     }
     for (const image of pending) {
       image.visionStatus = "skipped";
       image.visionDescription = null;
+      console.warn("[vision.runImageVisionAnalysis] Image skipped (no auth):", {
+        imageId: image.imageId,
+      }); // [debug-enrich]
     }
     return { analyzed: 0, failed: 0 };
   }
@@ -199,6 +241,10 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
         image.visionStatus = "failed";
         image.visionDescription = null;
         failed += 1;
+        console.warn("[vision.runImageVisionAnalysis] Image failed:", {
+          imageId: image.imageId,
+          visionStatus: "failed",
+        }); // [debug-enrich]
         if (failed >= 2 && analyzed === 0) {
           visionCooldownUntil = Date.now() + VISION_429_COOLDOWN_MS;
         }
@@ -251,17 +297,33 @@ export async function runImageVisionAnalysis(doc, ctx = {}) {
         image.visionStatus = "ready";
       }
       analyzed += 1;
+      console.debug("[vision.runImageVisionAnalysis] Image ready:", {
+        imageId: image.imageId,
+        conceptLinks: image.conceptLinks?.length ?? 0,
+      }); // [debug-enrich]
       await new Promise((resolve) => setTimeout(resolve, VISION_INTER_CALL_DELAY_MS));
     } catch (err) {
       image.visionStatus = "failed";
       image.visionDescription = null;
       failed += 1;
-      console.warn("[vision]", image.imageId, err?.message || err);
+      console.warn("[vision.runImageVisionAnalysis] Image error:", {
+        imageId: image.imageId,
+        message: err?.message || String(err),
+        visionStatus: "failed",
+      }); // [debug-enrich]
       await new Promise((resolve) => setTimeout(resolve, VISION_INTER_CALL_DELAY_MS));
     }
   }
 
   doc.shared.conceptInventory = inventory;
   doc.shared.conceptGraph = graph;
+  console.info("[vision.runImageVisionAnalysis] Done:", {
+    docId: doc.docId,
+    imagesDetected: detectedCount,
+    sentToGemini: pending.length,
+    analyzed,
+    failed,
+    skipped: images.filter((img) => img.visionStatus === "skipped").length,
+  }); // [debug-enrich]
   return { analyzed, failed };
 }
