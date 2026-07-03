@@ -27,7 +27,6 @@ import {
   isSharedPreModeAssessmentEnabled,
   isAdaptiveProbingEnabled,
   isBookLookupEnabled,
-  getAssessmentBeforePackingPreference,
   saveAssessmentBeforePackingPreference,
   saveSourceFidelityStrictPreference,
 } from "./config/flags.js";
@@ -781,6 +780,13 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   } else {
     doc = await getActiveSession();
   }
+  console.info("[study.enterModeSelectAfterTier1Gate] Start:", {
+    docId: doc?.docId || null,
+    hasPreparedDoc: Boolean(preparedDoc?.docId),
+    prepStatus: doc?.shared?.preparation?.status || null,
+    hasGateResolved: Boolean(doc?.shared?.assessmentGate?.resolvedAt),
+    isOffline: isOfflineMode(),
+  }); // [debug-enrich]
   if (!doc?.docId) {
     enterModeSelectScreen();
     return;
@@ -870,6 +876,14 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
 }
 
 function shouldOfferSharedAssessmentGate(doc) {
+  console.debug("[study.shouldOfferSharedAssessmentGate] Evaluate:", {
+    docId: doc?.docId || null,
+    enabled: isSharedPreModeAssessmentEnabled(),
+    offline: isOfflineMode(),
+    interview: isInterviewOriginSession(doc),
+    tier1Ready: isTier1PreparationComplete(doc),
+    alreadyResolved: isAssessmentGateResolved(doc),
+  }); // [debug-enrich]
   if (!isSharedPreModeAssessmentEnabled()) return false;
   if (isOfflineMode()) return false;
   if (isInterviewOriginSession(doc)) return false;
@@ -879,6 +893,11 @@ function shouldOfferSharedAssessmentGate(doc) {
 }
 
 async function finalizeModeSelectEntry(doc) {
+  console.info("[study.finalizeModeSelectEntry] Start:", {
+    docId: doc?.docId || null,
+    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
+    hasSharedProfile: Boolean(doc?.shared?.knowledgeProfile),
+  }); // [debug-enrich]
   migrateKnowledgeProfileToShared(doc);
   if (!doc?.shared?.modeRecommendation) {
     await runModeRecommendationPhase(doc, preparationGateOptions(), {
@@ -891,17 +910,29 @@ async function finalizeModeSelectEntry(doc) {
     }
   }
   kickoffTier2PreparationInBackground(doc, preparationGateOptions());
+  console.info("[study.finalizeModeSelectEntry] Done:", {
+    docId: doc?.docId || null,
+    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
+  }); // [debug-enrich]
   enterModeSelectScreen();
 }
 
 async function maybeEnterSharedAssessmentGate(doc) {
   if (!shouldOfferSharedAssessmentGate(doc)) return false;
+  console.info("[study.maybeEnterSharedAssessmentGate] Enter gate:", {
+    docId: doc?.docId || null,
+  }); // [debug-enrich]
   showScreen("assessmentGate");
   return true;
 }
 
 async function completeSharedAssessmentGate({ outcome, profile }) {
   let doc = await getActiveSession();
+  console.info("[study.completeSharedAssessmentGate] Start:", {
+    docId: doc?.docId || null,
+    outcome,
+    hasProfile: Boolean(profile),
+  }); // [debug-enrich]
   if (!doc?.docId) {
     resetPrePackingFlow();
     enterModeSelectScreen();
@@ -919,11 +950,20 @@ async function completeSharedAssessmentGate({ outcome, profile }) {
   }
   resetPrePackingFlow();
   kickoffTier2PreparationInBackground(doc, preparationGateOptions());
+  console.info("[study.completeSharedAssessmentGate] Done:", {
+    docId: doc?.docId || null,
+    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
+    gateOutcome: doc?.shared?.assessmentGate?.outcome || null,
+  }); // [debug-enrich]
   enterModeSelectScreen();
 }
 
 async function startSharedAssessmentFromGate() {
   const doc = await getActiveSession();
+  console.info("[study.startSharedAssessmentFromGate] Start:", {
+    docId: doc?.docId || null,
+    inventorySize: doc?.shared?.conceptInventory?.length || 0,
+  }); // [debug-enrich]
   if (!doc?.shared?.conceptInventory?.length) {
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
@@ -950,6 +990,12 @@ async function startSharedAssessmentFromGate() {
     knowledgeProfile: null,
     questionIndex: 0,
   };
+  console.debug("[study.startSharedAssessmentFromGate] Flow initialized:", {
+    docId: doc?.docId || null,
+    runnerMode: prePackingFlow.runnerMode,
+    inventorySize: conceptInventory.length,
+    edgeCount: prepEdges.length,
+  }); // [debug-enrich]
   if (els.prePackingAssessmentSkip) {
     els.prePackingAssessmentSkip.textContent = "Skip for now";
   }
@@ -962,20 +1008,28 @@ async function startSharedAssessmentFromGate() {
 }
 
 async function handleAssessmentGateAccept() {
+  console.info("[study.handleAssessmentGateAccept] User accepted gate"); // [debug-enrich]
   await startSharedAssessmentFromGate();
 }
 
 async function handleAssessmentGateSkip() {
+  console.info("[study.handleAssessmentGateSkip] User skipped gate"); // [debug-enrich]
   await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
 }
 
 async function handleRedoAssessmentRequest() {
   const doc = await getActiveSession();
   if (!doc?.docId) return;
+  console.warn("[study.handleRedoAssessmentRequest] Confirm redo requested:", {
+    docId: doc.docId,
+  }); // [debug-enrich]
   const ok = window.confirm(
     "Retaking the knowledge check will reset your study progress for this document (modes, spaced repetition, annotations, and assessment signals). Document content and your mnemonics will be kept. Continue?",
   );
   if (!ok) return;
+  console.warn("[study.handleRedoAssessmentRequest] Redo confirmed:", {
+    docId: doc.docId,
+  }); // [debug-enrich]
   resetSessionForAssessmentRedo(doc);
   await saveDocumentSession(doc);
   await maybeEnterSharedAssessmentGate(doc);
@@ -3486,8 +3540,7 @@ function setGenerateBlocksFormHidden(hidden) {
 }
 
 function syncRsvpAssessmentToggleFromPreference() {
-  if (!els.rsvpRunAssessment) return;
-  els.rsvpRunAssessment.checked = getAssessmentBeforePackingPreference();
+  // Legacy RSVP toggle removed; shared gate preference is controlled in Settings.
 }
 
 function updateCreateScreenModeVisibility(mode) {
@@ -4725,9 +4778,7 @@ function wireStudyModeSelector() {
     els.criticalModeToggleBtn.setAttribute("aria-pressed", String(next));
   });
 
-  els.rsvpRunAssessment?.addEventListener("change", () => {
-    saveAssessmentBeforePackingPreference(els.rsvpRunAssessment.checked === true);
-  });
+  // RSVP create-screen assessment toggle removed (shared gate is controlled in Settings).
 }
 
 let splitMergeSummaryEls = null;
@@ -8497,6 +8548,7 @@ async function enterPrePackingAssessmentScreen() {
 async function handlePrePackingSkip() {
   if (!prePackingFlow) return;
   if (prePackingFlow.runnerMode === "shared_gate") {
+    console.info("[study.handlePrePackingSkip] Shared gate assessment skipped"); // [debug-enrich]
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
@@ -8609,6 +8661,9 @@ async function finishPrePackingAssessment() {
   }); // [debug-enrich]
 
   if (prePackingFlow.runnerMode === "shared_gate") {
+    console.info("[study.finishPrePackingAssessment] Completing shared gate with accepted outcome", {
+      hasProfile: Boolean(profile),
+    }); // [debug-enrich]
     await completeSharedAssessmentGate({ outcome: "accepted", profile });
     return;
   }

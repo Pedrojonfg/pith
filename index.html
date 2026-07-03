@@ -375,6 +375,18 @@
 
             <div class="divider"></div>
 
+            <h2 class="settings-section-title">Knowledge check</h2>
+            <label class="review-scope-include">
+              <input type="checkbox" id="sharedAssessmentGateToggle" checked />
+              Offer knowledge check before mode select
+            </label>
+            <p class="hint">
+              When enabled, Pith can optionally ask a few questions after document preparation to
+              tailor recommendations and skip what you already know.
+            </p>
+
+            <div class="divider"></div>
+
             <h2 class="settings-section-title">Source fidelity</h2>
             <p class="hint settings-fidelity-lead">
               Strict stays closer to your source material and may feel terser. Standard allows more
@@ -867,21 +879,6 @@
                   hidden
                   aria-live="polite"
                 ></p>
-              </div>
-
-              <div id="rsvpAssessmentOption" class="create-already-know" hidden>
-                <label class="create-checkbox-label" for="rsvpRunAssessment">
-                  <input
-                    id="rsvpRunAssessment"
-                    name="rsvpRunAssessment"
-                    type="checkbox"
-                    checked
-                  />
-                  Quick assessment before studying
-                </label>
-                <div class="hint">
-                  Adapts block difficulty to what you already know.
-                </div>
               </div>
 
               <div id="rsvpCommentsGroup" hidden>
@@ -1903,7 +1900,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260703_03";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260703_04";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1929,7 +1926,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260703_03");
+        await import("./src/js/main.js?v=20260703_04");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

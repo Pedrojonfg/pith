@@ -1,7 +1,9 @@
 import { isPwaStandalone } from "./pwa-install.js";
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260625_02";
 import {
+  getAssessmentBeforePackingPreference,
   getSourceFidelityStrictPreference,
+  saveAssessmentBeforePackingPreference,
 } from "./config/flags.js";
 import { renderMarkdown } from "./markdown.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
@@ -623,6 +625,7 @@ export const els = {
   rsvpAssessmentOption: document.getElementById("rsvpAssessmentOption"),
   rsvpRunAssessment: document.getElementById("rsvpRunAssessment"),
   rsvpCommentsGroup: document.getElementById("rsvpCommentsGroup"),
+  sharedAssessmentGateToggle: document.getElementById("sharedAssessmentGateToggle"),
   createBackToModesBtn: document.getElementById("createBackToModesBtn"),
   createModeLabel: document.getElementById("createModeLabel"),
   rsvpBlocksCountGroup: document.getElementById("rsvpBlocksCountGroup"),
@@ -1190,6 +1193,18 @@ export function initMnemonicSettingsUi() {
   toggle.addEventListener("change", () => {
     setMnemonicButtonVisiblePref(toggle.checked);
     syncMnemonicButtonVisibility(currentScreenId);
+  });
+}
+
+export function initSharedAssessmentGateSettingsUi() {
+  const toggle = els.sharedAssessmentGateToggle;
+  if (!toggle || toggle.dataset.sharedAssessmentGateWired === "1") return;
+  toggle.dataset.sharedAssessmentGateWired = "1";
+  toggle.checked = getAssessmentBeforePackingPreference() === true;
+  toggle.addEventListener("change", () => {
+    const enabled = toggle.checked === true;
+    console.info("[ui.initSharedAssessmentGateSettingsUi] Preference changed:", { enabled }); // [debug-enrich]
+    saveAssessmentBeforePackingPreference(enabled);
   });
 }
 

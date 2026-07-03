@@ -15,6 +15,7 @@ import {
   closeBlockReadSidebar,
   initLanguageUi,
   initMnemonicSettingsUi,
+  initSharedAssessmentGateSettingsUi,
   initSourceFidelityStrictUi,
   els,
   openSettingsScreen,
@@ -115,6 +116,7 @@ async function bootstrap() {
   state.sourceFidelityStrict = getSourceFidelityStrictPreference();
   initSourceFidelityStrictUi();
   initMnemonicSettingsUi();
+  initSharedAssessmentGateSettingsUi();
   wireStudyHandlers();
   wireReviewHandlers();
   wireAuthUi();
