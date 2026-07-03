@@ -32,7 +32,7 @@
  * @property {string} label
  * @property {1|2|3|4|5|6} level
  * @property {number} score
- * @property {"outline"|"font-size"|"pattern"|"html-tag"|"html-inferred"} source
+ * @property {"outline"|"font-size"|"pattern"|"html-tag"|"html-heuristic"|"html-inferred"} source
  * @property {string} blockId
  * @property {number} charStart
  * @property {number} charEnd

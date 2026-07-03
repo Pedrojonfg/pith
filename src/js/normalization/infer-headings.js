@@ -36,7 +36,7 @@ const SECTION_KEYWORDS = [
 ];
 
 const NUMBERED_HEADING =
-  /^(\d+(\.\d+)*\.?)\s+([A-Z][\w\s\-–—:,]+)$/u;
+  /^(\d+(\.\d+)*\.?)\s+([A-Z\p{Lu}][\p{L}\w\s\-–—:,]+)$/u;
 const ROMAN_HEADING = /^([IVXLC]+)\.\s+([A-Z])/u;
 const MD_HEADING = /^(#{1,6})\s+(.+)$/;
 
@@ -192,13 +192,19 @@ export function validateHeadingHierarchy(headings) {
 /**
  * @param {TextBlock[]} blocks
  * @param {{ format?: string, outline?: HeadingCandidate[], pageHeights?: number[], outlineCoverage?: number }} [opts]
- * @returns {{ headings: HeadingCandidate[], bodyFontSize: number }}
+ * @returns {{ headings: HeadingCandidate[], bodyFontSize: number, diagnostics: { candidateCount: number, acceptedCount: number, rejectionReasons: Record<string, number>, bySource: Record<string, number> } }}
  */
 export function inferHeadings(blocks, opts = {}) {
   const pageHeights = opts.pageHeights || [];
   const defaultPageHeight = pageHeights[0] || 792;
   const bodyFontSize = computeBodyFontSize(blocks);
   const threshold = 35;
+
+  /** @type {Record<string, number>} */
+  const rejectionReasons = {};
+  const bumpRejection = (code) => {
+    rejectionReasons[code] = (rejectionReasons[code] || 0) + 1;
+  };
 
   /** @type {HeadingCandidate[]} */
   const candidates = [];
@@ -235,15 +241,29 @@ export function inferHeadings(blocks, opts = {}) {
     if (bag) {
       bag.headingsInferred = validated.length;
       bag.headingsBySource = bySource;
+      bag.headingInferenceDiagnostics = buildDiagnostics(validated, candidates.length, rejectionReasons);
     }
-    return { headings: validated, bodyFontSize };
+    return {
+      headings: validated,
+      bodyFontSize,
+      diagnostics: buildDiagnostics(validated, candidates.length, rejectionReasons),
+    };
   }
 
   /** @type {TextBlock[]} */
   const acceptedBlocks = [];
 
   for (const block of blocks) {
-    if (block.kind === "artifact") continue;
+    if (block.kind === "artifact") {
+      bumpRejection("artifact");
+      continue;
+    }
+
+    const text = block.text.trim();
+    if (!text) {
+      bumpRejection("empty_text");
+      continue;
+    }
 
     const outlineMatch = outlineByBlock.get(block.id);
     if (outlineMatch) {
@@ -264,14 +284,18 @@ export function inferHeadings(blocks, opts = {}) {
     const score = scoreBlock(block, bodyFontSize, pageHeight);
 
     if (block.kind === "heading") {
-      const levelFromTag = block.fontSize > 0 ? undefined : undefined;
-      void levelFromTag;
       const htmlLevel = block.lineIndex >= 1 && block.lineIndex <= 6 ? block.lineIndex : 2;
+      const isHeuristic = block.fontWeight === "heuristic";
       candidates.push({
         label: labelFromBlock(block),
         level: htmlLevel,
         score: Math.max(score, 80),
-        source: block.source === "html" ? "html-tag" : "html-inferred",
+        source:
+          block.source === "html"
+            ? isHeuristic
+              ? "html-heuristic"
+              : "html-tag"
+            : "html-inferred",
         blockId: block.id,
         charStart: 0,
         charEnd: 0,
@@ -291,11 +315,13 @@ export function inferHeadings(blocks, opts = {}) {
         charStart: 0,
         charEnd: 0,
       });
+    } else {
+      bumpRejection("below_threshold");
     }
   }
 
   const fontSizes = candidates
-    .filter((c) => c.source !== "outline" && c.source !== "html-tag")
+    .filter((c) => c.source !== "outline" && c.source !== "html-tag" && c.source !== "html-heuristic")
     .map((c) => {
       const block = blocks.find((b) => b.id === c.blockId);
       return block?.fontSize || 0;
@@ -305,7 +331,7 @@ export function inferHeadings(blocks, opts = {}) {
   const levelMap = assignLevelsFromFontSizes(fontSizes);
 
   for (const c of candidates) {
-    if (c.source === "outline" || c.source === "html-tag") continue;
+    if (c.source === "outline" || c.source === "html-tag" || c.source === "html-heuristic") continue;
     const block = blocks.find((b) => b.id === c.blockId);
     if (block?.fontSize && levelMap.has(block.fontSize)) {
       c.level = /** @type {1|2|3|4|5|6} */ (levelMap.get(block.fontSize));
@@ -327,33 +353,52 @@ export function inferHeadings(blocks, opts = {}) {
       ? "outline-partial"
       : bySource["font-size"] > 0
         ? "font-size"
-        : bySource["html-tag"] > 0
+        : bySource["html-tag"] > 0 || bySource["html-heuristic"] > 0
           ? "html-tag"
           : validated.length > 0
             ? "pattern"
             : "none";
+  const diagnostics = buildDiagnostics(validated, candidates.length, rejectionReasons);
   console.info("[infer-headings.inferHeadings] Done:", {
     headingCount: validated.length,
     bodyFontSize,
     bySource,
     primaryMethod,
     outlineCoverage: opts.outlineCoverage ?? 0,
-  }); // [debug-enrich]
+    diagnostics,
+  });
   if (validated.length === 0) {
     console.warn("[infer-headings.inferHeadings] No headings inferred:", {
       blockCount: blocks.length,
       bodyFontSize,
       format: opts.format || "unknown",
-    }); // [debug-enrich]
+      candidateCount: diagnostics.candidateCount,
+      rejectionReasons: diagnostics.rejectionReasons,
+    });
   }
 
   const bag = dppNormDbg();
   if (bag) {
     bag.headingsInferred = validated.length;
     bag.headingsBySource = bySource;
+    bag.headingInferenceDiagnostics = diagnostics;
   }
 
-  return { headings: validated, bodyFontSize };
+  return { headings: validated, bodyFontSize, diagnostics };
+}
+
+/**
+ * @param {HeadingCandidate[]} validated
+ * @param {number} candidateCount
+ * @param {Record<string, number>} rejectionReasons
+ */
+function buildDiagnostics(validated, candidateCount, rejectionReasons) {
+  return {
+    candidateCount,
+    acceptedCount: validated.length,
+    rejectionReasons,
+    bySource: countHeadingsBySource(validated),
+  };
 }
 
 /**

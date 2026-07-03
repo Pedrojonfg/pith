@@ -3,46 +3,9 @@
  */
 
 import { createTextBlock } from "./types.js";
+import { htmlTableToMarkdown } from "./table-markdown.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
-
-function escapeMarkdownTableCell(text) {
-  return String(text || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
-}
-
-/**
- * Minimal HTML table → markdown table.
- * @param {Element} tableEl
- * @returns {string|null}
- */
-function tableElementToMarkdown(tableEl) {
-  const rows = Array.from(tableEl.querySelectorAll("tr"));
-  if (!rows.length) return null;
-
-  const grid = rows.map((tr) => {
-    const cells = Array.from(tr.querySelectorAll("th,td"));
-    return cells.map((c) => escapeMarkdownTableCell(c.textContent || ""));
-  }).filter((r) => r.length > 0);
-
-  if (!grid.length) return null;
-
-  const headerRow =
-    Array.from(rows[0].querySelectorAll("th")).length > 0
-      ? grid[0]
-      : grid[0];
-  const colCount = Math.max(1, ...grid.map((r) => r.length));
-  const header = Array.from({ length: colCount }, (_, i) => headerRow[i] || "");
-  const sep = Array.from({ length: colCount }, () => "---");
-  const body = grid.slice(1).map((r) => Array.from({ length: colCount }, (_, i) => r[i] || ""));
-
-  const lines = [];
-  lines.push(`| ${header.join(" | ")} |`);
-  lines.push(`| ${sep.join(" | ")} |`);
-  for (const r of body) {
-    lines.push(`| ${r.join(" | ")} |`);
-  }
-  return lines.join("\n");
-}
 
 /** [debug-enrich] instrumentation-only */
 function dppNormDbg() {
@@ -56,6 +19,7 @@ const HEADING_CLASS_PATTERNS = [
   { re: /heading\s*4|h4/i, level: 4 },
   { re: /heading\s*5|h5/i, level: 5 },
   { re: /heading\s*6|h6/i, level: 6 },
+  { re: /\bmw-heading\b/i, level: 2 },
 ];
 
 /**
@@ -84,33 +48,82 @@ function parseInlineFontWeight(style) {
 
 /**
  * @param {Element} el
+ * @returns {{ level: number, heuristic: boolean }}
  */
 export function inferLevelFromElement(el) {
   const tag = String(el.tagName || "").toLowerCase();
   const hMatch = /^h([1-6])$/.exec(tag);
-  if (hMatch) return parseInt(hMatch[1], 10);
+  if (hMatch) return { level: parseInt(hMatch[1], 10), heuristic: false };
+
+  if (tag === "span" && /\bmw-headline\b/i.test(String(el.className || ""))) {
+    const parentTag = String(el.parentElement?.tagName || "").toLowerCase();
+    const parentH = /^h([1-6])$/.exec(parentTag);
+    if (parentH) return { level: parseInt(parentH[1], 10), heuristic: false };
+    return { level: 2, heuristic: true };
+  }
 
   const role = el.getAttribute("role");
   const ariaLevel = el.getAttribute("aria-level");
   if (role === "heading" && ariaLevel) {
-    return Math.min(6, Math.max(1, parseInt(ariaLevel, 10) || 2));
+    return {
+      level: Math.min(6, Math.max(1, parseInt(ariaLevel, 10) || 2)),
+      heuristic: false,
+    };
   }
 
   const className = String(el.className || "");
   for (const { re, level } of HEADING_CLASS_PATTERNS) {
-    if (re.test(className)) return level;
+    if (re.test(className)) {
+      return { level, heuristic: /\bmw-heading\b/i.test(className) };
+    }
+  }
+
+  const mwChild = el.querySelector?.(".mw-headline");
+  if (mwChild) {
+    const parentTag = String(el.tagName || "").toLowerCase();
+    const parentH = /^h([1-6])$/.exec(parentTag);
+    if (parentH) return { level: parseInt(parentH[1], 10), heuristic: false };
+    return { level: 2, heuristic: true };
   }
 
   const style = el.getAttribute("style") || "";
   const fs = parseInlineFontSize(style);
   const fw = parseInlineFontWeight(style);
   if (fs >= 18 || fw === "bold") {
-    if (fs >= 24) return 1;
-    if (fs >= 18) return 2;
-    return 3;
+    if (fs >= 24) return { level: 1, heuristic: true };
+    if (fs >= 18) return { level: 2, heuristic: true };
+    return { level: 3, heuristic: true };
   }
 
-  return 0;
+  return { level: 0, heuristic: false };
+}
+
+/**
+ * @param {Element} el
+ * @param {number} lineIndex
+ * @returns {TextBlock|null}
+ */
+function blockFromHeadingElement(el, lineIndex) {
+  const { level, heuristic } = inferLevelFromElement(el);
+  if (level <= 0) return null;
+
+  const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  if (!text) return null;
+
+  const mdText = `${"#".repeat(level)} ${text}`;
+  const style = el.getAttribute("style") || "";
+  const fontSize = parseInlineFontSize(style) || (level ? 18 - level : 0);
+  const fontWeight = heuristic ? "heuristic" : parseInlineFontWeight(style);
+
+  return createTextBlock({
+    text: mdText,
+    fontSize,
+    fontWeight,
+    pageIndex: 0,
+    lineIndex: level,
+    source: "html",
+    kind: "heading",
+  });
 }
 
 /**
@@ -143,7 +156,7 @@ export function extractHtmlBlocks(html) {
     if (tag === "script" || tag === "style" || tag === "noscript") return;
 
     if (tag === "table") {
-      const md = tableElementToMarkdown(el);
+      const md = htmlTableToMarkdown(el);
       if (md) {
         blocks.push(
           createTextBlock({
@@ -161,19 +174,48 @@ export function extractHtmlBlocks(html) {
       return;
     }
 
+    if (tag === "span" && /\bmw-headline\b/i.test(String(el.className || ""))) {
+      const parentTag = String(el.parentElement?.tagName || "").toLowerCase();
+      if (/^h[1-6]$/.test(parentTag)) return;
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        const level = 2;
+        blocks.push(
+          createTextBlock({
+            text: `${"#".repeat(level)} ${text}`,
+            fontSize: 0,
+            fontWeight: "heuristic",
+            pageIndex: 0,
+            lineIndex: level,
+            source: "html",
+            kind: "heading",
+          }),
+        );
+        lineIndex += 1;
+      }
+      return;
+    }
+
     const blockTags = new Set([
       "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
       "li", "blockquote", "pre",
     ]);
 
     if (blockTags.has(tag)) {
+      const headingBlock = /^h[1-6]$/.test(tag) ? blockFromHeadingElement(el, lineIndex) : null;
+      if (headingBlock) {
+        blocks.push(headingBlock);
+        lineIndex += 1;
+        return;
+      }
+
+      const { level, heuristic } = inferLevelFromElement(el);
       const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
       if (text) {
-        const level = inferLevelFromElement(el);
         const mdText = level > 0 ? `${"#".repeat(level)} ${text}` : text;
         const style = el.getAttribute("style") || "";
         const fontSize = parseInlineFontSize(style) || (level ? 18 - level : 0);
-        const fontWeight = parseInlineFontWeight(style);
+        const fontWeight = heuristic ? "heuristic" : parseInlineFontWeight(style);
         blocks.push(
           createTextBlock({
             text: mdText,
@@ -195,15 +237,16 @@ export function extractHtmlBlocks(html) {
 
   for (const child of Array.from(body.children || [])) walk(child);
 
-  const tableCount = (raw.match(/<table\b/gi) || []).length; // [debug-enrich]
+  const tableCount = (raw.match(/<table\b/gi) || []).length;
   console.info("[extract-html-blocks.extractHtmlBlocks] Done:", {
     blockCount: blocks.length,
     htmlTablesInSource: tableCount,
-  }); // [debug-enrich]
+    headingBlocks: blocks.filter((b) => b.kind === "heading").length,
+  });
   const bag = dppNormDbg();
   if (bag && tableCount > 0) {
     bag.tablesDetected = tableCount;
-    bag.tablesEmittedOk = 0; // updated by downstream emit step in later tasks
+    bag.tablesEmittedOk = 0;
   }
 
   if (!blocks.length) {
@@ -231,7 +274,6 @@ function fallbackHtmlBlocks(html) {
   const blocks = [];
   const headingRe = /<p[^>]*class=["'][^"']*Heading1[^"']*["'][^>]*>([\s\S]*?)<\/p>/gi;
   let m;
-  let lineIndex = 0;
   while ((m = headingRe.exec(html)) !== null) {
     const text = m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     if (text) {
@@ -245,7 +287,6 @@ function fallbackHtmlBlocks(html) {
           kind: "heading",
         }),
       );
-      lineIndex += 1;
     }
   }
   if (!blocks.length) {
