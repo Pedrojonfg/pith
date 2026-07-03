@@ -21,6 +21,71 @@ function countWords(text) {
   return String(text || "").trim().split(/\s+/).filter(Boolean).length;
 }
 
+/** [debug-enrich] math-notation diagnostics (PDF text-layer extraction can garble/drop symbols) */
+const MATH_INDICATOR_CHARS = new Set(
+  [
+    "α",
+    "β",
+    "γ",
+    "δ",
+    "ε",
+    "θ",
+    "λ",
+    "μ",
+    "π",
+    "ρ",
+    "σ",
+    "τ",
+    "φ",
+    "ω",
+    "Δ",
+    "Θ",
+    "Λ",
+    "Π",
+    "Σ",
+    "Φ",
+    "Ω",
+    "√",
+    "∫",
+    "±",
+    "≤",
+    "≥",
+    "∂",
+    "∇",
+  ],
+); // [debug-enrich]
+
+/** [debug-enrich] */
+function scanMathDiagnostics(text) {
+  const s = String(text || "");
+  let replacement = 0;
+  let suspiciousUnicode = 0;
+  let mathIndicators = 0;
+
+  // Count code points to avoid splitting surrogate pairs.
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) || 0;
+    if (cp === 0xfffd) replacement += 1;
+    if (MATH_INDICATOR_CHARS.has(ch)) mathIndicators += 1;
+
+    // Private Use Areas + Specials are strong "custom font mapping" signals.
+    const isPrivateUse =
+      (cp >= 0xe000 && cp <= 0xf8ff) ||
+      (cp >= 0xf0000 && cp <= 0xffffd) ||
+      (cp >= 0x100000 && cp <= 0x10fffd);
+    const isSpecials = cp >= 0xfff0 && cp <= 0xffff;
+    if (isPrivateUse || isSpecials) suspiciousUnicode += 1;
+  }
+
+  // LaTeX-like remnants that sometimes survive OCR/extraction.
+  const latexHits =
+    (s.match(/\\(frac|sum|int|sqrt|alpha|beta|gamma|theta|sigma|Sigma)\b/g) || []).length +
+    (s.match(/\^\{|\_\{/g) || []).length;
+  mathIndicators += latexHits;
+
+  return { replacement, suspiciousUnicode, mathIndicators };
+}
+
 /**
  * @param {number[]} transform
  */
@@ -214,12 +279,45 @@ export async function extractPdfBlocks(buffer) {
       }); // [debug-enrich]
     }
 
+    // [debug-enrich] math-notation integrity scan (counts only; no text dump)
+    const mathDiag = scanMathDiagnostics(pageText); // [debug-enrich]
+    const suspiciousDensity = pageChars > 0 ? mathDiag.suspiciousUnicode / pageChars : 0; // [debug-enrich]
+    if (mathDiag.replacement > 0 || (mathDiag.suspiciousUnicode >= 5 && suspiciousDensity >= 0.005)) {
+      console.warn("[extract-pdf-blocks.extractPdfBlocks] Suspicious math unicode on page:", {
+        pageNum,
+        charCount: pageChars,
+        replacementChars: mathDiag.replacement,
+        suspiciousUnicodeChars: mathDiag.suspiciousUnicode,
+        suspiciousUnicodeDensity: Number(suspiciousDensity.toFixed(4)),
+        mathIndicators: mathDiag.mathIndicators,
+        extractionPath,
+      }); // [debug-enrich]
+    } else if (mathDiag.mathIndicators > 0) {
+      console.debug("[extract-pdf-blocks.extractPdfBlocks] Math indicators on page:", {
+        pageNum,
+        mathIndicators: mathDiag.mathIndicators,
+        replacementChars: mathDiag.replacement,
+        suspiciousUnicodeChars: mathDiag.suspiciousUnicode,
+      }); // [debug-enrich]
+    }
+
     const bag = dppNormDbg();
     if (bag) {
       bag.totalPages = doc.numPages;
       if (pageChars < LOW_EXTRACTION_PAGE_CHARS) {
         bag.lowExtractionPages.push(pageNum);
       }
+
+      // [debug-enrich] aggregate for end-of-pipeline summary
+      bag.replacementCharsFound = (bag.replacementCharsFound || 0) + mathDiag.replacement;
+      bag.mathIndicatorsFound = (bag.mathIndicatorsFound || 0) + mathDiag.mathIndicators;
+      bag.suspiciousUnicodeCharsFound =
+        (bag.suspiciousUnicodeCharsFound || 0) + mathDiag.suspiciousUnicode;
+      bag.pagesWithReplacementChars =
+        (bag.pagesWithReplacementChars || 0) + (mathDiag.replacement > 0 ? 1 : 0);
+      bag.pagesWithSuspiciousUnicode =
+        (bag.pagesWithSuspiciousUnicode || 0) +
+        (mathDiag.suspiciousUnicode >= 5 && suspiciousDensity >= 0.005 ? 1 : 0);
     }
   }
 

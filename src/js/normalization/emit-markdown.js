@@ -5,6 +5,108 @@
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
+/** [debug-enrich] instrumentation-only */
+function dppNormDbg() {
+  return globalThis.__dppNormalizationDebug;
+}
+
+/** [debug-enrich] math-notation diagnostics: confirm formulas survive end-to-end emission */
+const MATH_INDICATOR_CHARS = new Set(
+  [
+    "α",
+    "β",
+    "γ",
+    "δ",
+    "ε",
+    "θ",
+    "λ",
+    "μ",
+    "π",
+    "ρ",
+    "σ",
+    "τ",
+    "φ",
+    "ω",
+    "Δ",
+    "Θ",
+    "Λ",
+    "Π",
+    "Σ",
+    "Φ",
+    "Ω",
+    "√",
+    "∫",
+    "±",
+    "≤",
+    "≥",
+    "∂",
+    "∇",
+  ],
+); // [debug-enrich]
+
+/** [debug-enrich] */
+function countMathIndicators(text) {
+  const s = String(text || "");
+  let hits = 0;
+  for (const ch of s) {
+    if (MATH_INDICATOR_CHARS.has(ch)) hits += 1;
+  }
+  hits += (s.match(/\\(frac|sum|int|sqrt|alpha|beta|gamma|theta|sigma|Sigma)\b/g) || []).length;
+  hits += (s.match(/\^\{|\_\{/g) || []).length;
+  return hits;
+}
+
+/** [debug-enrich] */
+function countReplacementChars(text) {
+  const s = String(text || "");
+  let count = 0;
+  for (const ch of s) {
+    if ((ch.codePointAt(0) || 0) === 0xfffd) count += 1;
+  }
+  return count;
+}
+
+/** [debug-enrich] */
+function sampleForLog(text, maxLen) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
+/** [debug-enrich] pick windows with highest math-indicator density */
+function pickMathDenseSnippets(text, { windowChars = 220, snippets = 3, snippetChars = 100 } = {}) {
+  const s = String(text || "");
+  if (!s.trim()) return [];
+
+  /** @type {{ start: number, end: number, hits: number }[]} */
+  const windows = [];
+  const step = Math.max(40, Math.floor(windowChars / 2));
+  for (let start = 0; start < s.length; start += step) {
+    const end = Math.min(s.length, start + windowChars);
+    const slice = s.slice(start, end);
+    const hits = countMathIndicators(slice);
+    if (hits > 0) windows.push({ start, end, hits });
+  }
+  windows.sort((a, b) => b.hits - a.hits);
+
+  /** @type {{ start: number, end: number, hits: number }[]} */
+  const chosen = [];
+  for (const w of windows) {
+    if (chosen.length >= snippets) break;
+    const overlaps = chosen.some((c) => !(w.end <= c.start || w.start >= c.end));
+    if (overlaps) continue;
+    chosen.push(w);
+  }
+
+  return chosen.map((w) => {
+    const center = Math.floor((w.start + w.end) / 2);
+    const half = Math.floor(snippetChars / 2);
+    const a = Math.max(0, center - half);
+    const b = Math.min(s.length, a + snippetChars);
+    return sampleForLog(s.slice(a, b), snippetChars);
+  });
+}
+
 /**
  * Join hyphenated line breaks within words (FIX-07).
  * Preserves names like Korsgaard-\nMueller (uppercase after break).
@@ -68,6 +170,41 @@ export function emitMarkdown(blocks, headings, opts = {}) {
   }
 
   const markdown = parts.join("\n");
+
+  // [debug-enrich] final-output math integrity scan (counts + short snippets only)
+  const mathIndicatorsFound = countMathIndicators(markdown); // [debug-enrich]
+  const replacementCharsFound = countReplacementChars(markdown); // [debug-enrich]
+  const sampleSnippets = pickMathDenseSnippets(markdown, { snippets: 3, snippetChars: 100 }); // [debug-enrich]
+  console.info("[emit-markdown.emitMarkdown] Math diagnostics:", {
+    mathIndicatorsFound,
+    replacementCharsFound,
+    sampleSnippets,
+  }); // [debug-enrich]
+  const bagPre = dppNormDbg(); // [debug-enrich]
+  const upstreamMathIndicators = bagPre?.mathIndicatorsFound ?? null; // [debug-enrich]
+  const upstreamSuspiciousUnicodePages = bagPre?.pagesWithSuspiciousUnicode ?? null; // [debug-enrich]
+  const shouldWarnNearZero =
+    mathIndicatorsFound === 0 &&
+    ((upstreamMathIndicators != null && upstreamMathIndicators > 0) ||
+      (upstreamSuspiciousUnicodePages != null && upstreamSuspiciousUnicodePages > 0)); // [debug-enrich]
+  if (replacementCharsFound > 0 || shouldWarnNearZero) {
+    console.warn("[emit-markdown.emitMarkdown] Potential math extraction loss:", {
+      mathIndicatorsFound,
+      replacementCharsFound,
+      note:
+        replacementCharsFound > 0
+          ? "U+FFFD replacement chars present in final markdown"
+          : "Near-zero math indicators in final markdown despite upstream math/suspicious unicode signals",
+    }); // [debug-enrich]
+  }
+
+  const bag = dppNormDbg();
+  if (bag) {
+    bag.finalMarkdownMathIndicatorsFound = mathIndicatorsFound;
+    bag.finalMarkdownReplacementCharsFound = replacementCharsFound;
+    bag.finalMarkdownSampleSnippets = sampleSnippets;
+  }
+
   console.debug("[emit-markdown.emitMarkdown] Done:", {
     charCount: markdown.length,
     headingsWithOffsets: withOffsets.length,

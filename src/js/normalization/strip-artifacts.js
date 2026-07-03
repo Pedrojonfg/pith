@@ -16,6 +16,59 @@ function blockCharCount(blocks) {
   return (blocks || []).reduce((sum, b) => sum + String(b?.text || "").length, 0);
 }
 
+/** [debug-enrich] math-notation diagnostics: avoid stripping formula-like content silently */
+const MATH_INDICATOR_CHARS = new Set(
+  [
+    "α",
+    "β",
+    "γ",
+    "δ",
+    "ε",
+    "θ",
+    "λ",
+    "μ",
+    "π",
+    "ρ",
+    "σ",
+    "τ",
+    "φ",
+    "ω",
+    "Δ",
+    "Θ",
+    "Λ",
+    "Π",
+    "Σ",
+    "Φ",
+    "Ω",
+    "√",
+    "∫",
+    "±",
+    "≤",
+    "≥",
+    "∂",
+    "∇",
+  ],
+); // [debug-enrich]
+
+/** [debug-enrich] */
+function countMathIndicators(text) {
+  const s = String(text || "");
+  let hits = 0;
+  for (const ch of s) {
+    if (MATH_INDICATOR_CHARS.has(ch)) hits += 1;
+  }
+  hits += (s.match(/\\(frac|sum|int|sqrt|alpha|beta|gamma|theta|sigma|Sigma)\b/g) || []).length;
+  hits += (s.match(/\^\{|\_\{/g) || []).length;
+  return hits;
+}
+
+/** [debug-enrich] */
+function sampleForLog(text, maxLen) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= maxLen) return s;
+  return `${s.slice(0, Math.max(0, maxLen - 3))}...`;
+}
+
 const DEFAULT_HEADER_RATIO = 0.1;
 const DEFAULT_FOOTER_RATIO = 0.1;
 
@@ -199,6 +252,26 @@ export function stripArtifacts(blocks, opts = {}) {
     if (block.kind === "artifact") return block;
 
     if (isArtifact(block, frontMatterEnd)) {
+      const mathHits = countMathIndicators(block.text); // [debug-enrich]
+      if (mathHits > 0) {
+        console.warn("[strip-artifacts.stripArtifacts] Stripping may remove formula-like content:", {
+          rule: "isArtifact",
+          pageIndex: block.pageIndex,
+          blockId: block.id,
+          mathIndicators: mathHits,
+          sample: sampleForLog(block.text, 80),
+        }); // [debug-enrich]
+        const bag = dppNormDbg();
+        if (bag) {
+          bag.suspiciousStripRemovals = (bag.suspiciousStripRemovals || 0) + 1;
+          bag.suspiciousStripRemovalSamples = Array.isArray(bag.suspiciousStripRemovalSamples)
+            ? bag.suspiciousStripRemovalSamples
+            : [];
+          if (bag.suspiciousStripRemovalSamples.length < 5) {
+            bag.suspiciousStripRemovalSamples.push(sampleForLog(block.text, 80));
+          }
+        }
+      }
       artifactsRemoved += 1;
       return { ...block, kind: "artifact" };
     }
@@ -254,6 +327,30 @@ export function stripArtifacts(blocks, opts = {}) {
         bodyZoneRejections += 1;
         return block;
       }
+
+      const mathHits = countMathIndicators(block.text); // [debug-enrich]
+      if (mathHits > 0) {
+        console.warn("[strip-artifacts.stripArtifacts] Stripping may remove formula-like content:", {
+          rule: reason,
+          code,
+          pageIndex: block.pageIndex,
+          blockId: block.id,
+          inHeaderFooterZone: inZone,
+          mathIndicators: mathHits,
+          sample: sampleForLog(block.text, 80),
+        }); // [debug-enrich]
+        const bag = dppNormDbg();
+        if (bag) {
+          bag.suspiciousStripRemovals = (bag.suspiciousStripRemovals || 0) + 1;
+          bag.suspiciousStripRemovalSamples = Array.isArray(bag.suspiciousStripRemovalSamples)
+            ? bag.suspiciousStripRemovalSamples
+            : [];
+          if (bag.suspiciousStripRemovalSamples.length < 5) {
+            bag.suspiciousStripRemovalSamples.push(sampleForLog(block.text, 80));
+          }
+        }
+      }
+
       artifactsRemoved += 1;
       return { ...block, kind: "artifact" };
     }

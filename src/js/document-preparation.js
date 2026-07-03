@@ -71,6 +71,9 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
   const imagesAnalyzed = images.filter((img) => img.visionStatus === "ready").length;
   const imagesFailed = images.filter((img) => img.visionStatus === "failed").length;
   const imagesSkipped = images.filter((img) => img.visionStatus === "skipped").length;
+  const sampleSnippets = Array.isArray(bag.finalMarkdownSampleSnippets)
+    ? bag.finalMarkdownSampleSnippets
+    : []; // [debug-enrich]
   const summary = {
     docId: doc.docId,
     totalPages: bag.totalPages ?? 0,
@@ -86,8 +89,37 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     imagesSkipped,
     charsBeforeStrip: bag.charsBeforeStrip ?? 0,
     charsAfterStrip: bag.charsAfterStrip ?? 0,
+
+    // [debug-enrich] math-notation diagnostics across normalization pipeline
+    mathIndicatorsFound: bag.mathIndicatorsFound ?? 0,
+    replacementCharsFound: bag.replacementCharsFound ?? 0,
+    suspiciousStripRemovals: bag.suspiciousStripRemovals ?? 0,
+    sampleSnippets,
   };
   console.info("[document-preparation] Normalization quality summary:", summary); // [debug-enrich]
+
+  if ((summary.replacementCharsFound || 0) > 0 || (summary.suspiciousStripRemovals || 0) > 0) {
+    console.warn("[document-preparation] Normalization math diagnostics warning:", {
+      docId: summary.docId,
+      replacementCharsFound: summary.replacementCharsFound,
+      suspiciousStripRemovals: summary.suspiciousStripRemovals,
+      sampleSnippets: summary.sampleSnippets,
+    }); // [debug-enrich]
+  } else if (
+    (summary.totalPages || 0) >= 3 &&
+    (summary.mathIndicatorsFound || 0) === 0 &&
+    (bag.pagesWithReplacementChars || 0) === 0 &&
+    (bag.pagesWithSuspiciousUnicode || 0) > 0
+  ) {
+    console.warn("[document-preparation] Potential silent math loss:", {
+      docId: summary.docId,
+      mathIndicatorsFound: summary.mathIndicatorsFound,
+      pagesWithSuspiciousUnicode: bag.pagesWithSuspiciousUnicode,
+      suspiciousUnicodeCharsFound: bag.suspiciousUnicodeCharsFound || 0,
+      note: "Healthy char counts can still hide garbled/dropped formula glyphs (custom encodings)",
+    }); // [debug-enrich]
+  }
+
   return summary;
 }
 
