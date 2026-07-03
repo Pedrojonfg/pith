@@ -472,6 +472,10 @@ export const els = {
   modeSelectRetryPreparationBtn: document.getElementById("modeSelectRetryPreparationBtn"),
   screenPlaceholder: document.getElementById("screenPlaceholder"),
   screenPrePackingAssessment: document.getElementById("screenPrePackingAssessment"),
+  screenAssessmentGate: document.getElementById("screenAssessmentGate"),
+  assessmentGateAcceptBtn: document.getElementById("assessmentGateAcceptBtn"),
+  assessmentGateSkipBtn: document.getElementById("assessmentGateSkipBtn"),
+  modeSelectRedoAssessmentBtn: document.getElementById("modeSelectRedoAssessmentBtn"),
   screenPrePackingResults: document.getElementById("screenPrePackingResults"),
   screenBlocksList: document.getElementById("screenBlocksList"),
   prePackingAssessmentScreen: document.getElementById("screenPrePackingAssessment"),
@@ -1377,6 +1381,7 @@ export function showScreen(which) {
   const showCreate = which === "create" || (showModeSelect && !modeSelectEl);
   const showPrePackingAssessment = which === "prePackingAssessment";
   const showPrePackingResults = which === "prePackingResults";
+  const showAssessmentGate = which === "assessmentGate";
   const showBlocks = which === "blocks";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
@@ -1410,6 +1415,7 @@ export function showScreen(which) {
     [els.screenRetrievalHub, showRetrievalHub],
     [els.screenPlaceholder, showCreate],
     [els.screenPrePackingAssessment, showPrePackingAssessment],
+    [els.screenAssessmentGate, showAssessmentGate],
     [els.screenPrePackingResults, showPrePackingResults],
     [els.screenBlocksList, showBlocks],
     [els.screenSessionReady, showReady],

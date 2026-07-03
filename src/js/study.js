@@ -24,6 +24,7 @@ import {
   isAssessmentQuestionsUiEnabled,
   isHolisticAssessmentEnabled,
   isPrePackingAssessmentEnabled,
+  isSharedPreModeAssessmentEnabled,
   isAdaptiveProbingEnabled,
   isBookLookupEnabled,
   getAssessmentBeforePackingPreference,
@@ -79,7 +80,15 @@ import {
   kickoffTier2PreparationInBackground,
   hasPendingTier2Preparation,
   runPostCacheUserPhases,
+  runModeRecommendationPhase,
 } from "./document-preparation.js";
+import {
+  migrateKnowledgeProfileToShared,
+  persistSharedKnowledgeProfile,
+  isAssessmentGateResolved,
+  resetSessionForAssessmentRedo,
+  resolvePackKnowledgeProfile,
+} from "./knowledge-profile-shared.js";
 import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
 import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
 import { commitPreparedDocToStore, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
@@ -856,8 +865,134 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
       return;
     }
   }
+  if (await maybeEnterSharedAssessmentGate(doc)) return;
+  await finalizeModeSelectEntry(doc);
+}
+
+function shouldOfferSharedAssessmentGate(doc) {
+  if (!isSharedPreModeAssessmentEnabled()) return false;
+  if (isOfflineMode()) return false;
+  if (isInterviewOriginSession(doc)) return false;
+  if (!isTier1PreparationComplete(doc)) return false;
+  if (isAssessmentGateResolved(doc)) return false;
+  return true;
+}
+
+async function finalizeModeSelectEntry(doc) {
+  migrateKnowledgeProfileToShared(doc);
+  if (!doc?.shared?.modeRecommendation) {
+    await runModeRecommendationPhase(doc, preparationGateOptions(), {
+      knowledgeProfile: doc?.shared?.knowledgeProfile ?? null,
+      force: true,
+    });
+    await saveDocumentSession(doc);
+    if (doc.docId && doc.shared?.modeRecommendation) {
+      await updateRecommendation(doc.docId, doc.shared.modeRecommendation);
+    }
+  }
   kickoffTier2PreparationInBackground(doc, preparationGateOptions());
   enterModeSelectScreen();
+}
+
+async function maybeEnterSharedAssessmentGate(doc) {
+  if (!shouldOfferSharedAssessmentGate(doc)) return false;
+  showScreen("assessmentGate");
+  return true;
+}
+
+async function completeSharedAssessmentGate({ outcome, profile }) {
+  let doc = await getActiveSession();
+  if (!doc?.docId) {
+    resetPrePackingFlow();
+    enterModeSelectScreen();
+    return;
+  }
+  persistSharedKnowledgeProfile(doc, profile, outcome);
+  doc.shared.modeRecommendation = null;
+  await runModeRecommendationPhase(doc, preparationGateOptions(), {
+    knowledgeProfile: doc.shared?.knowledgeProfile ?? null,
+    force: true,
+  });
+  await saveDocumentSession(doc);
+  if (doc.shared?.modeRecommendation) {
+    await updateRecommendation(doc.docId, doc.shared.modeRecommendation);
+  }
+  resetPrePackingFlow();
+  kickoffTier2PreparationInBackground(doc, preparationGateOptions());
+  enterModeSelectScreen();
+}
+
+async function startSharedAssessmentFromGate() {
+  const doc = await getActiveSession();
+  if (!doc?.shared?.conceptInventory?.length) {
+    await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
+    return;
+  }
+  const cleanedText = String(doc.shared.rawMarkdown || "");
+  const conceptInventory = doc.shared.conceptInventory;
+  const prepEdges = deriveInventoryEdges(conceptInventory, doc.shared.conceptGraph);
+  resetPrePackingFlow();
+  prePackingFlow = {
+    runnerMode: "shared_gate",
+    phase: "assessment",
+    conceptInventory,
+    edges: prepEdges,
+    docHierarchy: doc.shared.docHierarchy ?? null,
+    conceptGraph: doc.shared.conceptGraph ?? null,
+    cleanedText,
+    splitOpts: {
+      llmModel: getDefaultLlmModel(),
+      language: getStudyLanguage(),
+    },
+    assessmentItems: [],
+    itemsPromise: null,
+    responses: [],
+    knowledgeProfile: null,
+    questionIndex: 0,
+  };
+  if (els.prePackingAssessmentSkip) {
+    els.prePackingAssessmentSkip.textContent = "Skip for now";
+  }
+  const intro = document.querySelector(".pre-packing-assessment-intro");
+  if (intro) {
+    intro.textContent =
+      "Answer a few questions so we can tailor mode recommendations and RSVP blocks to what you already know.";
+  }
+  await enterPrePackingAssessmentScreen();
+}
+
+async function handleAssessmentGateAccept() {
+  await startSharedAssessmentFromGate();
+}
+
+async function handleAssessmentGateSkip() {
+  await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
+}
+
+async function handleRedoAssessmentRequest() {
+  const doc = await getActiveSession();
+  if (!doc?.docId) return;
+  const ok = window.confirm(
+    "Retaking the knowledge check will reset your study progress for this document (modes, spaced repetition, annotations, and assessment signals). Document content and your mnemonics will be kept. Continue?",
+  );
+  if (!ok) return;
+  resetSessionForAssessmentRedo(doc);
+  await saveDocumentSession(doc);
+  await maybeEnterSharedAssessmentGate(doc);
+  if (!shouldOfferSharedAssessmentGate(doc)) {
+    await finalizeModeSelectEntry(doc);
+  }
+}
+
+function syncModeSelectAssessmentRedoButton(doc) {
+  const btn = els.modeSelectRedoAssessmentBtn;
+  if (!btn) return;
+  const show =
+    isSharedPreModeAssessmentEnabled() &&
+    !isOfflineMode() &&
+    !isInterviewOriginSession(doc) &&
+    isAssessmentGateResolved(doc);
+  btn.hidden = !show;
 }
 
 function applySharedBlockRecommendationToUi(doc) {
@@ -1213,13 +1348,12 @@ export async function recommendFlowFromUploadedFile(file) {
   if (!isTier1PreparationComplete(prepared)) {
     throw new Error("Document preparation incomplete. Add an API key in Settings or retry.");
   }
-  kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
 
-  const refreshed = await getActiveSession();
-  resetModeSelectUi();
-  renderFlowPanel(refreshed);
-  showScreen("modeSelect");
-  return refreshed?.shared?.modeRecommendation ?? null;
+  const refreshed = (await getActiveSession()) || prepared;
+  if (await maybeEnterSharedAssessmentGate(refreshed)) return refreshed?.shared?.modeRecommendation ?? null;
+  await finalizeModeSelectEntry(refreshed);
+  const after = await getActiveSession();
+  return after?.shared?.modeRecommendation ?? null;
 }
 
 function startReviewFromRecommendation() {
@@ -1621,6 +1755,8 @@ export async function enterModeSelectScreen() {
   const active = await getActiveSession();
   if (active) {
     await markStalePreparationSession(active);
+    migrateKnowledgeProfileToShared(active);
+    syncModeSelectAssessmentRedoButton(active);
   }
   renderFlowPanel(await getActiveSession());
   mountModeSelectBreadcrumb(await getActiveSession());
@@ -3349,12 +3485,6 @@ function setGenerateBlocksFormHidden(hidden) {
   if (!hidden) updateCreateScreenModeVisibility(resolveActiveCreateMode());
 }
 
-function shouldRunPrePackingAssessment() {
-  if (!isPrePackingAssessmentEnabled()) return false;
-  if (isOfflineMode()) return false;
-  return els.rsvpRunAssessment?.checked === true;
-}
-
 function syncRsvpAssessmentToggleFromPreference() {
   if (!els.rsvpRunAssessment) return;
   els.rsvpRunAssessment.checked = getAssessmentBeforePackingPreference();
@@ -3373,9 +3503,8 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isRsvp;
   if (els.rsvpCommentsGroup) els.rsvpCommentsGroup.hidden = !showComments;
   if (els.rsvpAssessmentOption) {
-    els.rsvpAssessmentOption.hidden = !isRsvp || isOfflineMode();
+    els.rsvpAssessmentOption.hidden = true;
   }
-  if (isRsvp) syncRsvpAssessmentToggleFromPreference();
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.blocksInput) els.blocksInput.required = isRsvp;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
@@ -8367,6 +8496,10 @@ async function enterPrePackingAssessmentScreen() {
 
 async function handlePrePackingSkip() {
   if (!prePackingFlow) return;
+  if (prePackingFlow.runnerMode === "shared_gate") {
+    await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
+    return;
+  }
   console.info("[study.handlePrePackingSkip] Assessment skipped — packing without profile"); // [debug-enrich]
   prePackingFlow.knowledgeProfile = null;
   prePackingFlow.assessmentSkipped = true;
@@ -8474,6 +8607,11 @@ async function finishPrePackingAssessment() {
     hasProfile: Boolean(profile),
     masteryCounts: countProfileMastery(profile),
   }); // [debug-enrich]
+
+  if (prePackingFlow.runnerMode === "shared_gate") {
+    await completeSharedAssessmentGate({ outcome: "accepted", profile });
+    return;
+  }
 
   const doc = await getActiveSession();
   if (doc && prePackingFlow.adaptiveProbing?.beliefState) {
@@ -9283,205 +9421,91 @@ export async function wireStudyHandlers() {
 
       resetPrePackingFlow();
       prePackingDraftMeta = null;
-      const prePackingOn = shouldRunPrePackingAssessment();
+      migrateKnowledgeProfileToShared(doc);
+      const packKnowledgeProfile = resolvePackKnowledgeProfile(doc);
+      const packOpts = { ...splitOpts, knowledgeProfile: packKnowledgeProfile };
       console.info("[study.generateBlocks] RSVP split start:", {
         docId: doc?.docId,
         nBlocks,
         wordCount,
-        prePackingOn,
+        hasSharedProfile: Boolean(packKnowledgeProfile),
         hasCachedInventory: isConceptInventoryValid(doc),
         cacheValid: isBlockSplitCacheValid(cache, fingerprint),
         preparedPack: Boolean(resolveRsvpInventoryForPack(doc, { fingerprint })),
       }); // [debug-enrich]
 
-      if (!prePackingOn) {
-        let packed;
-        const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
-        if (preparedPack) {
-          console.debug("[study.generateBlocks] Pack path: preparedPack"); // [debug-enrich]
-          packed = await packInventoryToBlocks(
-            preparedPack.inventory,
-            nBlocks,
-            cleanedText,
-            splitOpts,
-          );
-        } else if (isBlockSplitCacheValid(cache, fingerprint)) {
-          console.debug("[study.generateBlocks] Pack path: blockSplitCache"); // [debug-enrich]
-          packed = await packInventoryToBlocks(
-            cache.conceptInventory,
-            nBlocks,
-            cleanedText,
-            splitOpts,
-          );
-        } else if (isConceptInventoryValid(doc)) {
-          console.debug("[study.generateBlocks] Pack path: shared.conceptInventory"); // [debug-enrich]
-          packed = await packInventoryToBlocks(
-            doc.shared.conceptInventory,
-            nBlocks,
-            cleanedText,
-            splitOpts,
-          );
-        } else {
-          const sparseInv = doc?.shared?.conceptInventory;
-          const blockGuard = evaluateConceptInventoryGuard(doc);
-          if (
-            blockGuard.decision === "degraded" &&
-            Array.isArray(sparseInv) &&
-            sparseInv.length > 0
-          ) {
-            console.warn("[study.generateBlocks] Pack path: degraded sparse inventory", {
-              conceptCount: sparseInv.length,
-            }); // [debug-enrich]
-            packed = await packInventoryToBlocks(sparseInv, nBlocks, cleanedText, splitOpts);
-          } else {
-            console.debug("[study.generateBlocks] Pack path: twoPhaseConceptSplit"); // [debug-enrich]
-            const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
-            packed = {
-              blockIndex: splitResult.blockIndex,
-              splitRunMeta: splitResult.splitRunMeta,
-              conceptInventory: splitResult.conceptInventory,
-            };
-            const inv = splitResult.conceptInventory;
-            if (Array.isArray(inv) && inv.length > 0) {
-              setBlockSplitCache({
-                fingerprint,
-                conceptInventory: inv,
-                recommendation: cache?.recommendation ?? null,
-              });
-            }
-          }
-        }
-        if (!Array.isArray(packed.blockIndex) || !packed.blockIndex.length) {
-          throw new Error(
-            "Block split returned no blocks. Please try generating blocks again.",
-          );
-        }
-        packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
-        promoteConceptInventoryToShared(
-          packed.conceptInventory ||
-            packed.splitRunMeta?.concept_inventory ||
-            [],
-          "rsvp",
-        );
-        applyPackedBlocksToEditor(
-          packed,
-          packed.conceptInventory || packed.splitRunMeta?.concept_inventory,
-        );
-        return;
-      }
-
-      let conceptInventory;
+      let packed;
       const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
       if (preparedPack) {
-        conceptInventory = preparedPack.inventory;
-      } else if (isBlockSplitCacheValid(cache, fingerprint)) {
-        conceptInventory = cache.conceptInventory;
-      } else if (isConceptInventoryValid(doc)) {
-        conceptInventory = doc.shared.conceptInventory;
-      } else {
-        const resolved = await resolveInventoryForBlockFlow(
-          doc,
+        console.debug("[study.generateBlocks] Pack path: preparedPack"); // [debug-enrich]
+        packed = await packInventoryToBlocks(
+          preparedPack.inventory,
+          nBlocks,
           cleanedText,
-          wordCount,
-          { ...splitOpts, nBlocks },
-          els.generateBlocksStatus,
+          packOpts,
         );
-        conceptInventory = resolved.inventory;
-        doc = resolved.doc;
-        if (Array.isArray(conceptInventory) && conceptInventory.length > 0) {
-          setBlockSplitCache({
-            fingerprint,
-            conceptInventory,
-            recommendation: cache?.recommendation ?? null,
-          });
-        }
-      }
-
-      if (!Array.isArray(conceptInventory) || !conceptInventory.length) {
-        throw new Error("Concept inventory returned no concepts. Please try again.");
-      }
-
-      promoteConceptInventoryToShared(conceptInventory, "rsvp");
-
-      const docIdForPrep = state.activeDocId || state.activeSession?.docId;
-      const docForPrep = docIdForPrep ? await getSession(docIdForPrep) : null;
-      const holistic = isHolisticAssessmentEnabled();
-      const prepEdges = deriveInventoryEdges(
-        conceptInventory,
-        docForPrep?.shared?.conceptGraph,
-      );
-      const holisticBudget = holistic
-        ? computeHolisticAssessmentBudget(conceptInventory, prepEdges)
-        : null;
-      let holisticPlan = null;
-      if (holistic && holisticBudget) {
-        const chunks = buildInventoryChunks(docForPrep?.shared?.docHierarchy, cleanedText);
-        if (isAdaptiveProbingEnabled()) {
-          const adaptive = buildAdaptiveCoveragePlan({
-            inventory: conceptInventory,
-            edges: prepEdges,
-            inventoryChunks: chunks,
-            rawMarkdown: cleanedText,
-            budget: holisticBudget,
-            conceptGraph: docForPrep?.shared?.conceptGraph ?? null,
-            projectId: docForPrep?.projectId || getUploadDefaultProjectId(),
-            docId: docForPrep?.docId || docIdForPrep || "",
-          });
-          holisticPlan = adaptive?.plan || adaptive;
+      } else if (isBlockSplitCacheValid(cache, fingerprint)) {
+        console.debug("[study.generateBlocks] Pack path: blockSplitCache"); // [debug-enrich]
+        packed = await packInventoryToBlocks(
+          cache.conceptInventory,
+          nBlocks,
+          cleanedText,
+          packOpts,
+        );
+      } else if (isConceptInventoryValid(doc)) {
+        console.debug("[study.generateBlocks] Pack path: shared.conceptInventory"); // [debug-enrich]
+        packed = await packInventoryToBlocks(
+          doc.shared.conceptInventory,
+          nBlocks,
+          cleanedText,
+          packOpts,
+        );
+      } else {
+        const sparseInv = doc?.shared?.conceptInventory;
+        const blockGuard = evaluateConceptInventoryGuard(doc);
+        if (
+          blockGuard.decision === "degraded" &&
+          Array.isArray(sparseInv) &&
+          sparseInv.length > 0
+        ) {
+          console.warn("[study.generateBlocks] Pack path: degraded sparse inventory", {
+            conceptCount: sparseInv.length,
+          }); // [debug-enrich]
+          packed = await packInventoryToBlocks(sparseInv, nBlocks, cleanedText, packOpts);
         } else {
-          holisticPlan = buildAssessmentCoveragePlan({
-            inventory: conceptInventory,
-            edges: prepEdges,
-            inventoryChunks: chunks,
-            rawMarkdown: cleanedText,
-            budget: holisticBudget,
-          });
+          console.debug("[study.generateBlocks] Pack path: twoPhaseConceptSplit"); // [debug-enrich]
+          const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
+          packed = {
+            blockIndex: splitResult.blockIndex,
+            splitRunMeta: splitResult.splitRunMeta,
+            conceptInventory: splitResult.conceptInventory,
+          };
+          const inv = splitResult.conceptInventory;
+          if (Array.isArray(inv) && inv.length > 0) {
+            setBlockSplitCache({
+              fingerprint,
+              conceptInventory: inv,
+              recommendation: cache?.recommendation ?? null,
+            });
+          }
         }
       }
-      const qCfg = holistic ? holisticBudget : resolvePrePackingQuestionConfig();
-      const prefetchConfigKey = buildPrefetchConfigKey({
-        qCfg,
-        conceptInventory,
-        cleanedText,
-        holisticPlanHash: holisticPlan?.planHash,
-      });
-      prePackingFlow = {
-        phase: "assessment",
-        conceptInventory,
-        edges: prepEdges,
-        docHierarchy: docForPrep?.shared?.docHierarchy ?? null,
-        conceptGraph: docForPrep?.shared?.conceptGraph ?? null,
-        nBlocks,
-        cleanedText,
-        splitOpts,
-        fingerprint,
-        assessmentItems: [],
-        prefetchConfigKey,
-        coveragePlan: holisticPlan,
-        holisticBudget: holisticBudget,
-        itemsPromise: null,
-        responses: [],
-        knowledgeProfile: null,
-        packingPromise: null,
-        packedResult: null,
-        assessmentSkipped: false,
-        packingIgnoredProfile: false,
-        questionIndex: 0,
-        draftMeta: { _meta: {} },
-      };
-      console.info("[study.generateBlocks] Pre-packing flow initialized:", {
-        inventorySize: conceptInventory.length,
-        nBlocks,
-        holistic,
-        prefetchConfigKey,
-        batchCount: holisticPlan?.batches?.length || 0,
-        qCfg,
-      }); // [debug-enrich]
-      prePackingFlow.itemsPromise = createPrePackingItemsPromise(prePackingFlow);
-
-      setGenerateLoading(false);
-      els.generateBlocksStatus.textContent = "";
-      await enterPrePackingAssessmentScreen();
+      if (!Array.isArray(packed.blockIndex) || !packed.blockIndex.length) {
+        throw new Error(
+          "Block split returned no blocks. Please try generating blocks again.",
+        );
+      }
+      packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
+      promoteConceptInventoryToShared(
+        packed.conceptInventory ||
+          packed.splitRunMeta?.concept_inventory ||
+          [],
+        "rsvp",
+      );
+      applyPackedBlocksToEditor(
+        packed,
+        packed.conceptInventory || packed.splitRunMeta?.concept_inventory,
+      );
       return;
     } catch (err) {
       console.error("[study.generateBlocks] Failed:", {
@@ -9742,6 +9766,15 @@ export async function wireStudyHandlers() {
   });
   els.prePackingAssessmentSkip?.addEventListener("click", () => {
     void handlePrePackingSkip();
+  });
+  els.assessmentGateAcceptBtn?.addEventListener("click", () => {
+    void handleAssessmentGateAccept();
+  });
+  els.assessmentGateSkipBtn?.addEventListener("click", () => {
+    void handleAssessmentGateSkip();
+  });
+  els.modeSelectRedoAssessmentBtn?.addEventListener("click", () => {
+    void handleRedoAssessmentRequest();
   });
   els.prePackingAssessmentNext?.addEventListener("click", () => {
     void advancePrePackingAssessment();

@@ -650,6 +650,9 @@
 
             <div id="sessionHubActions" class="session-hub-actions row">
               <button type="button" id="btnUploadToVault" class="btn-secondary">Upload to vault</button>
+              <button type="button" id="modeSelectRedoAssessmentBtn" class="btn-secondary" hidden>
+                Retake knowledge check
+              </button>
             </div>
 
             <div id="modeSelectManual" class="mode-select-manual" hidden>
@@ -930,6 +933,28 @@
                 hidden
               >
                 Retry preparation
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="screenAssessmentGate"
+          class="screen assessment-gate-screen"
+          aria-hidden="true"
+          aria-label="Knowledge check"
+        >
+          <div class="card assessment-gate-card">
+            <h1>Quick knowledge check</h1>
+            <p class="subtle assessment-gate-lead">
+              Optional: answer a few questions so we can skip what you already know and recommend better study modes.
+            </p>
+            <div class="assessment-gate-actions row">
+              <button type="button" id="assessmentGateAcceptBtn" class="btn-primary">
+                Take knowledge check
+              </button>
+              <button type="button" id="assessmentGateSkipBtn" class="btn-secondary">
+                Skip for now
               </button>
             </div>
           </div>
@@ -1878,7 +1903,7 @@
     <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260707_01";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260703_01";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1904,7 +1929,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260707_01");
+        await import("./src/js/main.js?v=20260703_01");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

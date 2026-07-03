@@ -53,13 +53,17 @@ import {
   normalizeMarkdownForHash,
   isTier1PreparationComplete,
   hasTier1Artifacts,
+  hasTier1GateArtifacts,
   setPreparationStatus,
 } from "./session-types.js";
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
-/** Gate-critical Tier 1 — unlocks mode select (matches hasTier1Artifacts). */
-const TIER1_GATE_PHASE_IDS = ["T0.1", "T0.2", "T1.1", "T1.2", "T1.4", "T1.5"];
+/** Gate-critical Tier 1 — unlocks assessment gate (T1.5 runs after gate). */
+const TIER1_GATE_PHASE_IDS = ["T0.1", "T0.2", "T1.1", "T1.2", "T1.4"];
+/** Post-gate + deferred Tier 1 */
+const TIER1_POST_GATE_PHASE_IDS = ["T1.5"];
+const TIER1_POST_GATE_PHASES = new Set(TIER1_POST_GATE_PHASE_IDS);
 const TIER1_GATE_PHASES = new Set(TIER1_GATE_PHASE_IDS);
 /** Deferred Tier 1 — vault, graph, novelty; background after gate. */
 const TIER1_DEFERRED_PHASE_IDS = ["T1.3", "T1.6", "T1.7", "T1.8", "T1.9"];
@@ -184,7 +188,7 @@ function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
 function resolveFinalStatus(prep, doc, stopAfterTier) {
   const results = prep.phaseResults || {};
   const failed = Object.values(results).filter((r) => r?.status === "failed");
-  const tier1Ok = hasTier1Artifacts(doc);
+  const tier1Ok = hasTier1GateArtifacts(doc);
   if (!tier1Ok) {
     setPreparationStatus(prep, failed.length ? "failed" : "partial");
     return;
@@ -356,13 +360,33 @@ async function runPhaseT14(doc) {
 }
 
 async function runPhaseT15(doc, ctx) {
+  return runModeRecommendationPhase(doc, ctx);
+}
+
+/**
+ * T1.5 — mode recommendation (runs after shared assessment gate when applicable).
+ * @param {object} doc
+ * @param {object} [ctx]
+ * @param {{ knowledgeProfile?: object | null, force?: boolean }} [options]
+ */
+export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
   const text = getMarkdown(doc);
   const textMetrics = doc.shared.textMetrics || analyzeText(text);
   const hierarchy = doc.shared.docHierarchy;
   const pedagogicalMeta =
     hierarchy?.pedagogical_meta || buildDeterministicPedagogicalMeta(textMetrics);
   const method = hierarchy?.method === "llm" ? "llm_meta" : "deterministic";
-  const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, { method });
+  const knowledgeProfile =
+    options.knowledgeProfile !== undefined
+      ? options.knowledgeProfile
+      : doc.shared?.knowledgeProfile ?? null;
+  if (doc.shared?.modeRecommendation && !options.force) {
+    return hashPayload(doc.shared.modeRecommendation.primaryFlow);
+  }
+  const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, {
+    method,
+    knowledgeProfile,
+  });
   doc.shared.modeRecommendation = recommendation;
   return hashPayload(recommendation.primaryFlow);
 }
