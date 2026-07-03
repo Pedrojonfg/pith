@@ -7,8 +7,36 @@ import { loadPdfJs } from "./pdf-loader.js";
 import { renderPageFallback } from "../document-images/extract-pdf.js";
 import { extractPageTextWithVision } from "../document-images/vision.js";
 import { hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
+import { gridToMarkdownTable } from "./table-markdown.js";
+import {
+  PDF_TABLE_MIN_COLUMNS,
+  PDF_TABLE_MIN_ROWS,
+  PDF_TABLE_X_TOLERANCE,
+  PDF_TABLE_CELL_GAP,
+  mergeLinePartsIntoCells,
+  deriveColumnAnchors,
+  assignCellsToAnchors,
+  validateTableGrid,
+  blockMatchesTableAnchors,
+  rowMatchesColumnAnchors,
+} from "./pdf-table-constants.js";
+import {
+  detectTablesFromRulingLines,
+  rulingTableOverlapsAlignment,
+  lineIndicesInYRange,
+} from "./pdf-ruling-lines.js";
+
+export {
+  mergeLinePartsIntoCells,
+  deriveColumnAnchors,
+  assignCellsToAnchors,
+  validateTableGrid,
+  blockMatchesTableAnchors,
+  rowMatchesColumnAnchors,
+} from "./pdf-table-constants.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
+/** @typedef {'lines'|'alignment'|'both'} PdfTableDetectionMethod */
 
 const Y_TOLERANCE = 2;
 
@@ -127,13 +155,183 @@ export function detectColumnLayout(glyphs, pageWidth) {
   return null;
 }
 
+/** Count data rows in a markdown table (excludes header and separator). */
+function countMarkdownTableDataRows(markdown) {
+  const lines = String(markdown || "")
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|") && !/^\|\s*[-: ]+\|/.test(line));
+  return Math.max(0, lines.length - 1);
+}
+
 /**
- * @param {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]} glyphs
- * @param {number} pageIndex
- * @param {number} [pageHeight]
- * @returns {TextBlock[]}
+ * @param {{ type: "table", lineStart: number, lineEnd: number, markdown: string }[]} alignmentTables
+ * @param {import("./pdf-ruling-lines.js").RulingLineTable[]} rulingTables
+ * @param {{ y: number }[]} lines
+ * @returns {Array<{ lineStart: number, lineEnd: number, markdown: string, detectionMethod: PdfTableDetectionMethod }>}
  */
-function glyphsToBlocks(glyphs, pageIndex, pageHeight = 792) {
+function mergeTableDetections(alignmentTables, rulingTables, lines) {
+  /** @type {Array<{ lineStart: number, lineEnd: number, markdown: string, detectionMethod: PdfTableDetectionMethod }>} */
+  const merged = [];
+  const usedAlignment = new Set();
+  const usedRuling = new Set();
+
+  for (let ri = 0; ri < rulingTables.length; ri += 1) {
+    const ruling = rulingTables[ri];
+    let matchedAi = -1;
+    for (let ai = 0; ai < alignmentTables.length; ai += 1) {
+      if (usedAlignment.has(ai)) continue;
+      if (rulingTableOverlapsAlignment(ruling, alignmentTables[ai], lines)) {
+        matchedAi = ai;
+        break;
+      }
+    }
+    if (matchedAi >= 0) {
+      usedAlignment.add(matchedAi);
+      usedRuling.add(ri);
+      const seg = alignmentTables[matchedAi];
+      const alignRows = countMarkdownTableDataRows(seg.markdown);
+      const rulingRows = countMarkdownTableDataRows(ruling.markdown);
+      const preferRuling =
+        rulingRows >= alignRows ||
+        (alignRows > 0 && rulingRows / alignRows >= 0.85);
+      merged.push({
+        lineStart: seg.lineStart,
+        lineEnd: seg.lineEnd,
+        markdown: preferRuling ? ruling.markdown : seg.markdown,
+        detectionMethod: "both",
+      });
+    }
+  }
+
+  for (let ai = 0; ai < alignmentTables.length; ai += 1) {
+    if (usedAlignment.has(ai)) continue;
+    const seg = alignmentTables[ai];
+    merged.push({
+      lineStart: seg.lineStart,
+      lineEnd: seg.lineEnd,
+      markdown: seg.markdown,
+      detectionMethod: "alignment",
+    });
+  }
+
+  for (let ri = 0; ri < rulingTables.length; ri += 1) {
+    if (usedRuling.has(ri)) continue;
+    const ruling = rulingTables[ri];
+    const indices = lineIndicesInYRange(lines, ruling.yTop, ruling.yBottom);
+    merged.push({
+      lineStart: indices.length ? Math.min(...indices) : 0,
+      lineEnd: indices.length ? Math.max(...indices) + 1 : 0,
+      markdown: ruling.markdown,
+      detectionMethod: "lines",
+    });
+  }
+
+  merged.sort((a, b) => a.lineStart - b.lineStart);
+  return merged;
+}
+
+/**
+ * @param {{ str?: string, transform?: number[], height?: number, fontName?: string, width?: number }[]} items
+ * @returns {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]}
+ */
+function itemsToGlyphs(items) {
+  /** @type {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]} */
+  const glyphs = [];
+  for (const item of items || []) {
+    const str = String(item?.str || "");
+    if (!str) continue;
+    const t = item.transform || [1, 0, 0, 1, 0, 0];
+    const x = t[4] ?? 0;
+    const y = t[5] ?? 0;
+    const fontSize = fontHeightFromTransform(t) || Number(item.height) || 0;
+    const fontName = String(item.fontName || "");
+    const fontWeight = /bold/i.test(fontName) ? "bold" : "normal";
+    glyphs.push({ y, x, text: str, fontSize, fontWeight, height: item.height || fontSize });
+  }
+  return glyphs;
+}
+
+function isLikelyPdfFooterLine(cells, pageWidth) {
+  if (!cells?.length) return true;
+  const texts = cells.map((c) => String(c.text || "").trim()).filter(Boolean);
+  if (!texts.length) return true;
+  if (texts.length <= 2 && texts.every((t) => /^\d{1,3}$/.test(t))) return true;
+  if (
+    texts.length <= 2 &&
+    cells.every((c) => c.startX > pageWidth * 0.62) &&
+    texts.every((t) => /^\d/.test(t))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Detect consecutive aligned rows and return markdown table segments.
+ * @param {{ y: number, parts: { x: number, text: string, fontSize: number }[] }[]} lines
+ * @param {number} [pageWidth]
+ * @returns {{ type: "line", lineIndex: number } | { type: "table", lineStart: number, lineEnd: number, markdown: string }}[]}
+ */
+export function segmentLinesForTables(lines, pageWidth = 612) {
+  if (!lines?.length) return [];
+
+  /** @type {Array<{ type: "line", lineIndex: number } | { type: "table", lineStart: number, lineEnd: number, markdown: string }>} */
+  const segments = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const seedCells = mergeLinePartsIntoCells(lines[i].parts);
+    if (seedCells.length < PDF_TABLE_MIN_COLUMNS) {
+      segments.push({ type: "line", lineIndex: i });
+      i += 1;
+      continue;
+    }
+
+    let j = i + 1;
+    /** @type {PdfTableCell[][]} */
+    let cellsList = [seedCells];
+
+    while (j < lines.length) {
+      const nextCells = mergeLinePartsIntoCells(lines[j].parts);
+      if (isLikelyPdfFooterLine(nextCells, pageWidth)) {
+        j += 1;
+        continue;
+      }
+      const anchors = deriveColumnAnchors(cellsList);
+      if (!rowMatchesColumnAnchors(nextCells, anchors)) break;
+      cellsList.push(nextCells);
+      j += 1;
+    }
+
+    if (cellsList.length >= PDF_TABLE_MIN_ROWS) {
+      const anchors = deriveColumnAnchors(cellsList);
+      const grid = cellsList.map((cells) => assignCellsToAnchors(cells, anchors));
+      if (
+        blockMatchesTableAnchors(cellsList, anchors) &&
+        validateTableGrid(grid, anchors, pageWidth)
+      ) {
+        const markdown = gridToMarkdownTable(grid);
+        if (markdown) {
+          segments.push({ type: "table", lineStart: i, lineEnd: j, markdown });
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    segments.push({ type: "line", lineIndex: i });
+    i += 1;
+  }
+
+  return segments;
+}
+
+/**
+ * Cluster glyphs into lines without converting to blocks.
+ * @param {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]} glyphs
+ */
+function clusterGlyphsIntoLines(glyphs) {
   if (!glyphs.length) return [];
 
   glyphs.sort((a, b) => b.y - a.y || a.x - b.x);
@@ -151,22 +349,107 @@ function glyphsToBlocks(glyphs, pageIndex, pageHeight = 792) {
   }
 
   lines.sort((a, b) => b.y - a.y);
+  for (const line of lines) {
+    line.parts.sort((a, b) => a.x - b.x);
+  }
+  return lines;
+}
 
-  return lines
-    .map((line, lineIndex) => {
-      line.parts.sort((a, b) => a.x - b.x);
-      const text = line.parts
-        .map((p) => p.text)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
-      const maxFont = Math.max(...line.parts.map((p) => p.fontSize));
-      const hasBold = line.parts.some((p) => p.fontWeight === "bold");
-      const minX = Math.min(...line.parts.map((p) => p.x));
-      const maxX = Math.max(
-        ...line.parts.map((p) => p.x + p.text.length * maxFont * 0.5),
+/**
+ * @param {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]} glyphs
+ * @param {number} pageIndex
+ * @param {number} [pageHeight]
+ * @param {number} [pageWidth]
+ * @param {import("./pdf-ruling-lines.js").RulingLineTable[]} [rulingTables]
+ * @param {number} [pageNum]
+ * @param {Array<{ page: number, method: PdfTableDetectionMethod, preview: string }>} [detectionLog]
+ * @returns {{ blocks: TextBlock[], tablesDetected: number }}
+ */
+function buildBlocksFromGlyphs(
+  glyphs,
+  pageIndex,
+  pageHeight = 792,
+  pageWidth = 612,
+  rulingTables = [],
+  pageNum = 0,
+  detectionLog = null,
+) {
+  if (!glyphs.length) return { blocks: [], tablesDetected: 0 };
+
+  const lines = clusterGlyphsIntoLines(glyphs);
+  const rawSegments = segmentLinesForTables(lines, pageWidth);
+  const alignmentTables = rawSegments.filter((s) => s.type === "table");
+  const mergedTables = mergeTableDetections(alignmentTables, rulingTables, lines);
+
+  const consumedLines = new Set();
+  for (const table of mergedTables) {
+    for (let i = table.lineStart; i < table.lineEnd; i += 1) consumedLines.add(i);
+    if (detectionLog) {
+      detectionLog.push({
+        page: pageNum,
+        method: table.detectionMethod,
+        preview: table.markdown.split("\n")[0]?.slice(0, 80) || "",
+      });
+    }
+  }
+
+  /** @type {Array<{ type: "table", lineStart: number, lineEnd: number, markdown: string } | { type: "line", lineIndex: number }>} */
+  const segments = mergedTables.map((t) => ({
+    type: /** @type {const} */ ("table"),
+    lineStart: t.lineStart,
+    lineEnd: t.lineEnd,
+    markdown: t.markdown,
+  }));
+  for (const seg of rawSegments) {
+    if (seg.type === "line" && !consumedLines.has(seg.lineIndex)) {
+      segments.push(seg);
+    }
+  }
+  segments.sort((a, b) => {
+    const ai = a.type === "table" ? a.lineStart : a.lineIndex;
+    const bi = b.type === "table" ? b.lineStart : b.lineIndex;
+    return ai - bi;
+  });
+
+  /** @type {TextBlock[]} */
+  const blocks = [];
+  let tablesDetected = 0;
+  let lineCounter = 0;
+
+  for (const segment of segments) {
+    if (segment.type === "table") {
+      tablesDetected += 1;
+      blocks.push(
+        createTextBlock({
+          text: segment.markdown,
+          fontSize: 0,
+          fontWeight: "normal",
+          pageIndex,
+          lineIndex: lineCounter,
+          source: "pdf",
+          kind: "paragraph",
+        }),
       );
-      return createTextBlock({
+      lineCounter += 1;
+      continue;
+    }
+
+    const line = lines[segment.lineIndex];
+    const text = line.parts
+      .map((p) => p.text)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) continue;
+
+    const maxFont = Math.max(...line.parts.map((p) => p.fontSize));
+    const hasBold = line.parts.some((p) => p.fontWeight === "bold");
+    const minX = Math.min(...line.parts.map((p) => p.x));
+    const maxX = Math.max(
+      ...line.parts.map((p) => p.x + p.text.length * maxFont * 0.5),
+    );
+    blocks.push(
+      createTextBlock({
         text,
         fontSize: maxFont,
         fontWeight: hasBold ? "bold" : "normal",
@@ -177,12 +460,16 @@ function glyphsToBlocks(glyphs, pageIndex, pageHeight = 792) {
           height: line.parts[0]?.height || maxFont,
         },
         pageIndex,
-        lineIndex,
+        lineIndex: lineCounter,
         source: "pdf",
         kind: "paragraph",
-      });
-    })
-    .filter((b) => b.text.trim());
+      }),
+    );
+    lineCounter += 1;
+  }
+
+  void pageHeight;
+  return { blocks, tablesDetected };
 }
 
 /**
@@ -190,36 +477,51 @@ function glyphsToBlocks(glyphs, pageIndex, pageHeight = 792) {
  * @param {number} pageIndex
  * @param {number} [pageHeight]
  * @param {number} [pageWidth]
- * @returns {TextBlock[]}
+ * @returns {{ blocks: TextBlock[], tablesDetected: number }}
  */
 export function clusterTextItemsToBlocks(items, pageIndex, pageHeight = 792, pageWidth = 612) {
-  if (!items?.length) return [];
+  const glyphs = itemsToGlyphs(items);
+  return buildBlocksFromGlyphs(glyphs, pageIndex, pageHeight, pageWidth);
+}
 
-  /** @type {{ y: number, x: number, text: string, fontSize: number, fontWeight: number|"bold"|"normal", height: number }[]} */
-  const glyphs = [];
+/**
+ * @param {object} content pdf.js getTextContent result
+ * @param {object} page pdf.js page
+ * @param {object} pdfjs
+ * @param {number} pageIndex
+ * @param {{ width: number, height: number }} viewport
+ * @param {number} pageNum 1-based page number for logging
+ */
+async function buildPageBlocksFromContent(content, page, pdfjs, pageIndex, viewport, pageNum) {
+  const glyphs = itemsToGlyphs(content.items);
+  const layout = detectColumnLayout(glyphs, viewport.width);
+  /** @type {typeof glyphs[]} */
+  const groups = layout
+    ? [glyphs.filter((g) => g.x < layout.splitX), glyphs.filter((g) => g.x >= layout.splitX)]
+    : [glyphs];
 
-  for (const item of items) {
-    const str = String(item?.str || "");
-    if (!str) continue;
-    const t = item.transform || [1, 0, 0, 1, 0, 0];
-    const x = t[4] ?? 0;
-    const y = t[5] ?? 0;
-    const fontSize = fontHeightFromTransform(t) || Number(item.height) || 0;
-    const fontName = String(item.fontName || "");
-    const fontWeight = /bold/i.test(fontName) ? "bold" : "normal";
-    glyphs.push({ y, x, text: str, fontSize, fontWeight, height: item.height || fontSize });
+  /** @type {TextBlock[]} */
+  const blocks = [];
+  let tablesDetected = 0;
+  /** @type {Array<{ page: number, method: PdfTableDetectionMethod, preview: string }>} */
+  const detectionLog = [];
+
+  for (const groupGlyphs of groups) {
+    const rulingTables = await detectTablesFromRulingLines(page, pdfjs, groupGlyphs, viewport);
+    const built = buildBlocksFromGlyphs(
+      groupGlyphs,
+      pageIndex,
+      viewport.height,
+      viewport.width,
+      rulingTables,
+      pageNum,
+      detectionLog,
+    );
+    blocks.push(...built.blocks);
+    tablesDetected += built.tablesDetected;
   }
 
-  const layout = detectColumnLayout(glyphs, pageWidth);
-  if (!layout) {
-    return glyphsToBlocks(glyphs, pageIndex, pageHeight);
-  }
-
-  const leftGlyphs = glyphs.filter((g) => g.x < layout.splitX);
-  const rightGlyphs = glyphs.filter((g) => g.x >= layout.splitX);
-  const leftBlocks = glyphsToBlocks(leftGlyphs, pageIndex, pageHeight);
-  const rightBlocks = glyphsToBlocks(rightGlyphs, pageIndex, pageHeight);
-  return [...leftBlocks, ...rightBlocks];
+  return { blocks, tablesDetected, detectionLog };
 }
 
 /**
@@ -254,12 +556,28 @@ export async function extractPdfBlocks(buffer) {
       extractionPath = "bicolumn-split";
     }
 
-    let pageBlocks = clusterTextItemsToBlocks(
-      content.items,
+    const clustered = await buildPageBlocksFromContent(
+      content,
+      page,
+      pdfjs,
       pageNum - 1,
-      viewport.height,
-      viewport.width,
+      viewport,
+      pageNum,
     );
+    let pageBlocks = clustered.blocks;
+    const pageTablesDetected = clustered.tablesDetected;
+
+    if (pageTablesDetected > 0) {
+      const bagTables = dppNormDbg();
+      if (bagTables) {
+        bagTables.tablesDetected = (bagTables.tablesDetected || 0) + pageTablesDetected;
+        bagTables.tablesEmittedOk = 0;
+        if (!Array.isArray(bagTables.pdfTableDetectionLog)) {
+          bagTables.pdfTableDetectionLog = [];
+        }
+        bagTables.pdfTableDetectionLog.push(...clustered.detectionLog);
+      }
+    }
 
     let pageText = pageBlocks.map((b) => b.text).join(" ");
     let pageChars = pageText.length;
