@@ -490,7 +490,11 @@ export async function startDocumentPreparation(doc, options = {}) {
   }); // [debug-enrich]
   const forceRerun = options.forceRerun === true;
   if (forceRerun) {
-    console.log("[DPP-GUARD] Force rerun requested ? bypassing guard.");
+    console.info("[DPP-GUARD.startDocumentPreparation] Force rerun — bypassing guard", {
+      docId: doc.docId,
+      priorStatus: doc?.shared?.preparation?.status ?? null,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+    }); // [debug-enrich]
     if (!doc.shared) doc.shared = {};
     doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
     setPreparationStatus(doc.shared.preparation, "pending");
@@ -644,6 +648,12 @@ async function handleRetryPreparationClick() {
     }),
   });
   const guard = evaluateConceptInventoryGuard(prepared);
+  console.info("[DPP-GUARD.retryPreparation] Post-rerun guard", {
+    docId: prepared?.docId,
+    decision: guard.decision,
+    prepStatus: prepared?.shared?.preparation?.status ?? null,
+    conceptCount: prepared?.shared?.conceptInventory?.length ?? 0,
+  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(prepared);
     enterModeSelectScreen();
@@ -702,6 +712,10 @@ async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOp
     }
   }
   if (isConceptInventoryValid(doc)) {
+    console.debug("[DPP-GUARD.resolveInventoryForBlockFlow] Using valid shared inventory", {
+      docId: doc?.docId,
+      conceptCount: doc.shared.conceptInventory?.length ?? 0,
+    }); // [debug-enrich]
     return { inventory: doc.shared.conceptInventory, doc };
   }
   if (guard.decision === "degraded" || evaluateConceptInventoryGuard(doc).decision === "degraded") {
@@ -807,6 +821,13 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   doc = await repairStuckRunningPreparationIfNeeded(doc);
   clearPreparationFailedUi();
   let guard = evaluateConceptInventoryGuard(doc);
+  console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Initial guard", {
+    docId: doc.docId,
+    decision: guard.decision,
+    prepStatus: doc?.shared?.preparation?.status ?? null,
+    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+    tier1Complete: isTier1PreparationComplete(doc),
+  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(doc);
     enterModeSelectScreen();
@@ -827,6 +848,12 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
       });
     }
     guard = evaluateConceptInventoryGuard(doc);
+    console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Guard after poll/run", {
+      docId: doc?.docId,
+      decision: guard.decision,
+      prepStatus: doc?.shared?.preparation?.status ?? null,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+    }); // [debug-enrich]
     if (guard.decision === "failed") {
       renderPreparationFailedUi(doc);
       enterModeSelectScreen();
@@ -852,6 +879,12 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
       }),
     });
     guard = evaluateConceptInventoryGuard(doc);
+    console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Guard after poll/run", {
+      docId: doc?.docId,
+      decision: guard.decision,
+      prepStatus: doc?.shared?.preparation?.status ?? null,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+    }); // [debug-enrich]
     if (guard.decision === "failed") {
       renderPreparationFailedUi(doc);
       enterModeSelectScreen();
@@ -1677,6 +1710,11 @@ async function getRecallController() {
       runConceptInventoryForDoc: async () => {
         const doc = await getActiveSession();
         const guard = evaluateConceptInventoryGuard(doc);
+        console.debug("[DPP-GUARD.recall.runConceptInventoryForDoc] Guard", {
+          docId: doc?.docId,
+          decision: guard.decision,
+          conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+        }); // [debug-enrich]
         if (guard.decision === "skip" || guard.decision === "degraded") return;
         if (guard.decision === "failed") {
           throw new Error(PREPARATION_FAILED_MSG);
@@ -5262,13 +5300,27 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
     const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
 
     if (preparedPack) {
+      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: preparedPack", {
+        conceptCount: preparedPack.inventory?.length ?? 0,
+      }); // [debug-enrich]
       inventory = preparedPack.inventory;
     } else if (isBlockSplitCacheValid(cache, fingerprint)) {
+      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: blockSplitCache", {
+        conceptCount: cache.conceptInventory?.length ?? 0,
+      }); // [debug-enrich]
       inventory = cache.conceptInventory;
     } else if (isConceptInventoryValid(doc)) {
+      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: shared.conceptInventory", {
+        docId: doc?.docId,
+        conceptCount: doc.shared.conceptInventory?.length ?? 0,
+      }); // [debug-enrich]
       inventory = doc.shared.conceptInventory;
       setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
     } else {
+      console.info("[DPP-GUARD.recommendBlockCount] Inventory path: resolveInventoryForBlockFlow", {
+        docId: doc?.docId,
+        prepStatus: doc?.shared?.preparation?.status ?? null,
+      }); // [debug-enrich]
       const resolved = await resolveInventoryForBlockFlow(
         doc,
         cleanedText,
