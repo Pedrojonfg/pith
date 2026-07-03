@@ -4,46 +4,10 @@
 
 import { createTextBlock } from "../normalization/types.js";
 import { inferLevelFromElement } from "../normalization/extract-html-blocks.js";
+import { htmlTableToMarkdown } from "../normalization/table-markdown.js";
 import { formatPithImageToken, nextImageId } from "./tokens.js";
 
 /** @typedef {import("./storage.js").PendingDocumentImage} PendingDocumentImage */
-
-function escapeMarkdownTableCell(text) {
-  return String(text || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
-}
-
-/**
- * Minimal HTML table → markdown table.
- * @param {Element} tableEl
- * @returns {string|null}
- */
-function tableElementToMarkdown(tableEl) {
-  const rows = Array.from(tableEl.querySelectorAll("tr"));
-  if (!rows.length) return null;
-
-  const grid = rows
-    .map((tr) => {
-      const cells = Array.from(tr.querySelectorAll("th,td"));
-      return cells.map((c) => escapeMarkdownTableCell(c.textContent || ""));
-    })
-    .filter((r) => r.length > 0);
-
-  if (!grid.length) return null;
-
-  const headerRow = grid[0];
-  const colCount = Math.max(1, ...grid.map((r) => r.length));
-  const header = Array.from({ length: colCount }, (_, i) => headerRow[i] || "");
-  const sep = Array.from({ length: colCount }, () => "---");
-  const body = grid
-    .slice(1)
-    .map((r) => Array.from({ length: colCount }, (_, i) => r[i] || ""));
-
-  const lines = [];
-  lines.push(`| ${header.join(" | ")} |`);
-  lines.push(`| ${sep.join(" | ")} |`);
-  for (const r of body) lines.push(`| ${r.join(" | ")} |`);
-  return lines.join("\n");
-}
 
 /**
  * @param {string} src
@@ -129,7 +93,7 @@ export async function extractHtmlBlocksWithImages(html) {
     if (tag === "script" || tag === "style" || tag === "noscript") return;
 
     if (tag === "table") {
-      const md = tableElementToMarkdown(el);
+      const md = htmlTableToMarkdown(el);
       if (md) {
         blocks.push(
           createTextBlock({
@@ -177,6 +141,26 @@ export async function extractHtmlBlocksWithImages(html) {
       return;
     }
 
+    if (tag === "span" && /\bmw-headline\b/i.test(String(el.className || ""))) {
+      const parentTag = String(el.parentElement?.tagName || "").toLowerCase();
+      if (/^h[1-6]$/.test(parentTag)) return;
+      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (text) {
+        blocks.push(
+          createTextBlock({
+            text: `## ${text}`,
+            fontSize: 0,
+            fontWeight: "heuristic",
+            pageIndex: 0,
+            lineIndex: 2,
+            source: "html",
+            kind: "heading",
+          }),
+        );
+      }
+      return;
+    }
+
     if (blockTags.has(tag)) {
       const clone = el.cloneNode(true);
       for (const img of clone.querySelectorAll("img")) {
@@ -184,12 +168,13 @@ export async function extractHtmlBlocksWithImages(html) {
       }
       const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
       if (text) {
-        const headingLevel = inferLevelFromElement(el);
+        const { level: headingLevel, heuristic } = inferLevelFromElement(el);
         const mdText = headingLevel > 0 ? `${"#".repeat(headingLevel)} ${text}` : text;
         blocks.push(
           createTextBlock({
             text: mdText,
             fontSize: 0,
+            fontWeight: heuristic ? "heuristic" : "normal",
             pageIndex: 0,
             lineIndex: headingLevel > 0 ? headingLevel : lineIndex++,
             source: "html",

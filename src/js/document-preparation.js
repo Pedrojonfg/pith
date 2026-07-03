@@ -87,6 +87,7 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     tablesEmittedOk: bag.tablesEmittedOk ?? 0,
     headingsInferred: bag.headingsInferred ?? doc?.shared?.docMeta?.headingCount ?? 0,
     headingsFallbackUsed: Boolean(bag.headingsFallbackUsed),
+    headingInferenceDiagnostics: bag.headingInferenceDiagnostics ?? null,
     hierarchyMethod: hierarchy?.method ?? bag.hierarchyMethod ?? null,
     imagesDetected,
     imagesAnalyzed,
