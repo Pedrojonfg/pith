@@ -115,6 +115,21 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * Shared-layer knowledge profile (20260702-shared-pre-mode-assessment).
+ * @typedef {object} SharedKnowledgeProfile
+ * @property {number} computedAt
+ * @property {"assessment"|null} source
+ * @property {Record<string, { mastery: string, confidence: number }>} perConcept
+ * @property {ConceptCoverageKnowledgeProfile} [packProfile]
+ */
+
+/**
+ * @typedef {object} AssessmentGateState
+ * @property {number} resolvedAt
+ * @property {"accepted"|"skipped"} outcome
+ */
+
+/**
  * Pre-packing knowledge profile keyed by concept coverage.
  * @typedef {object} ConceptCoverageKnowledgeProfile
  * @property {Record<string, { assessed: boolean, correct?: boolean }>} byConceptId
@@ -608,11 +623,11 @@ export function normalizePreparationState(raw) {
 }
 
 /**
- * Tier-1 shared artifacts present (ignores preparation status).
+ * Tier-1 gate artifacts (inventory + block recommendation) — mode rec runs after assessment gate.
  * @param {unknown} session
  * @returns {boolean}
  */
-export function hasTier1Artifacts(session) {
+export function hasTier1GateArtifacts(session) {
   const shared = session?.shared;
   if (!shared) return false;
   const inv = shared.conceptInventory;
@@ -620,9 +635,20 @@ export function hasTier1Artifacts(session) {
   const hasBlockRec =
     shared.blockRecommendation != null &&
     Number(shared.blockRecommendation.nBlocks) > 0;
+  return hasInventory && hasBlockRec;
+}
+
+/**
+ * Tier-1 shared artifacts present including mode recommendation (ignores preparation status).
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function hasTier1Artifacts(session) {
+  if (!hasTier1GateArtifacts(session)) return false;
+  const shared = session?.shared;
   const hasModeRec =
     shared.modeRecommendation != null && typeof shared.modeRecommendation === "object";
-  return hasInventory && hasBlockRec && hasModeRec;
+  return hasModeRec;
 }
 
 /**
@@ -630,7 +656,7 @@ export function hasTier1Artifacts(session) {
  * @returns {boolean}
  */
 export function isTier1PreparationComplete(session) {
-  if (!hasTier1Artifacts(session)) return false;
+  if (!hasTier1GateArtifacts(session)) return false;
   const prep = normalizePreparationState(session?.shared?.preparation);
   if (prep.status === "ready" || prep.status === "legacy") return true;
   if (prep.status === "partial") return true;

@@ -131,7 +131,7 @@ function isPhilosophical(pedagogicalMeta, textMetrics) {
  * @param {Record<string, unknown>} textMetrics
  * @returns {{ primaryModes: StudyMode[], quickModes: StudyMode[], reasoning: string }}
  */
-function resolveDecision(pedagogicalMeta, textMetrics) {
+function resolveDecision(pedagogicalMeta, textMetrics, knowledgeProfile = null) {
   const genre = pedagogicalMeta.genre || "unknown";
   const argumentativeDensity = clampDensity(pedagogicalMeta.argumentativeDensity);
   const conceptualLoad = clampDensity(pedagogicalMeta.conceptualLoad);
@@ -144,71 +144,93 @@ function resolveDecision(pedagogicalMeta, textMetrics) {
     textMetrics,
   );
 
+  let base;
+
   if (argumentativeDensity >= 4 || genre === "philosophical") {
-    return {
+    base = {
       primaryModes: ["slow", "recall", "cloze", "review"],
       quickModes: ["rsvp", "questions"],
       reasoning:
         "Dense argumentative text. Deep reading, then recall synthesis, before cloze practice.",
     };
-  }
-
-  if (genre === "scientific_theoretical" && conceptualLoad >= 3) {
-    return {
+  } else if (genre === "scientific_theoretical" && conceptualLoad >= 3) {
+    base = {
       primaryModes: ["slow", "recall", "cloze", "review"],
       quickModes: ["rsvp", "cloze"],
       reasoning: "High conceptual load. Build the mental map before active practice.",
     };
-  }
-
-  if (genre === "scientific_empirical" || (hasBibliography && !philosophical)) {
-    return {
+  } else if (genre === "scientific_empirical" || (hasBibliography && !philosophical)) {
+    base = {
       primaryModes: ["rsvp", "questions", "cloze"],
       quickModes: ["rsvp", "questions"],
       reasoning:
         "Structured empirical text. RSVP works well here; use Cloze for the key concepts.",
     };
-  }
-
-  if (genre === "lecture_notes" || firstPersonRatio > 0.03) {
-    return {
+  } else if (genre === "lecture_notes" || firstPersonRatio > 0.03) {
+    base = {
       primaryModes: ["rsvp", "questions"],
       quickModes: ["questions"],
       reasoning: "Personal notes: you already processed this once. Go straight to retrieval.",
     };
-  }
-
-  if (genre === "textbook_chapter") {
-    return {
+  } else if (genre === "textbook_chapter") {
+    base = {
       primaryModes: ["rsvp", "cloze", "questions"],
       quickModes: ["rsvp", "questions"],
       reasoning:
         "Structured textbook material. Skim first, practice with cloze, then check comprehension with questions.",
     };
-  }
-
-  if (sizeCategory === "tiny") {
-    return {
+  } else if (sizeCategory === "tiny") {
+    base = {
       primaryModes: ["questions"],
       quickModes: ["questions"],
       reasoning: "Short text. Direct assessment without a full multi-mode pipeline.",
     };
-  }
-
-  if (primaryLearningGoal === "learn_procedure") {
-    return {
+  } else if (primaryLearningGoal === "learn_procedure") {
+    base = {
       primaryModes: ["rsvp", "questions"],
       quickModes: ["questions"],
       reasoning:
         "Procedural material. Structured review is more efficient than deep reading.",
     };
+  } else {
+    base = {
+      primaryModes: ["rsvp", "questions"],
+      quickModes: ["questions"],
+      reasoning: "Conservative default flow.",
+    };
   }
 
-  return {
-    primaryModes: ["rsvp", "questions"],
-    quickModes: ["questions"],
-    reasoning: "Conservative default flow.",
-  };
+  const masteryRatio = computeLearnerMasteryRatio(knowledgeProfile);
+  if (masteryRatio >= 0.5) {
+    const prioritizeRetrieval = (modes) => {
+      const retrievalFirst = ["questions", "recall", "review", "cloze", "rsvp", "slow"];
+      return [...modes].sort(
+        (a, b) => retrievalFirst.indexOf(a) - retrievalFirst.indexOf(b),
+      );
+    };
+    return {
+      ...base,
+      primaryModes: prioritizeRetrieval(base.primaryModes),
+      quickModes: prioritizeRetrieval(base.quickModes),
+      reasoning: `${base.reasoning} Prior knowledge detected — retrieval modes ranked higher.`,
+    };
+  }
+
+  return base;
+}
+
+/**
+ * @param {object | null | undefined} knowledgeProfile
+ * @returns {number}
+ */
+function computeLearnerMasteryRatio(knowledgeProfile) {
+  if (!knowledgeProfile || typeof knowledgeProfile !== "object") return 0;
+  const per = knowledgeProfile.perConcept;
+  if (!per || typeof per !== "object") return 0;
+  const entries = Object.values(per);
+  if (!entries.length) return 0;
+  const full = entries.filter((e) => e?.mastery === "full").length;
+  return full / entries.length;
 }
 
 /**
@@ -239,7 +261,7 @@ export function computeStepTimes(textMetrics, steps) {
 /**
  * @param {Record<string, unknown>} textMetrics
  * @param {Record<string, unknown>} pedagogicalMeta
- * @param {{ method?: 'llm_meta' | 'deterministic' }} [options]
+ * @param {{ method?: 'llm_meta' | 'deterministic', knowledgeProfile?: object | null }} [options]
  * @returns {Record<string, unknown>}
  */
 export function computeModeRecommendation(textMetrics, pedagogicalMeta, options = {}) {
@@ -249,10 +271,12 @@ export function computeModeRecommendation(textMetrics, pedagogicalMeta, options 
   const conceptualLoad = clampDensity(meta.conceptualLoad);
   const genre = meta.genre || "unknown";
   const method = options.method === "llm_meta" ? "llm_meta" : "deterministic";
+  const knowledgeProfile = options.knowledgeProfile ?? null;
 
   const { primaryModes, quickModes, reasoning } = resolveDecision(
     { ...meta, argumentativeDensity, conceptualLoad, genre },
     metrics,
+    knowledgeProfile,
   );
 
   const primaryFlow = computeStepTimes(metrics, buildFlow(primaryModes));

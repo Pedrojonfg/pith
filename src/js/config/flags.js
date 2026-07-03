@@ -46,6 +46,11 @@ export function isPrePackingAssessmentEnabled() {
   return getAssessmentBeforePackingPreference() === true;
 }
 
+/** Shared pre-mode assessment gate (20260702-shared-pre-mode-assessment). */
+export function isSharedPreModeAssessmentEnabled() {
+  return isPrePackingAssessmentEnabled();
+}
+
 export function isAssessmentQuestionsUiEnabled() {
   return ASSESSMENT_FLAGS.ASSESSMENT_USE_QUESTIONS_UI === true;
 }

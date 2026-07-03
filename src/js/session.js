@@ -24,6 +24,10 @@ import {
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260625_02";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
+import {
+  buildSharedKnowledgeProfile,
+  resolvePackKnowledgeProfile,
+} from "./knowledge-profile-shared.js";
 import { annotateBlocksWithSourceFileIds } from "./source-provenance.js";
 import {
   annotateBlockIndexEntry,
@@ -2297,21 +2301,27 @@ function ensureSessionMetaObject(sessionObj) {
 
 /** @returns {object | null} */
 export function getKnowledgeProfile(sessionObj) {
+  const fromShared = resolvePackKnowledgeProfile(sessionObj);
+  if (fromShared) return fromShared;
   const profile = sessionObj?._meta?.knowledge_profile;
   return profile && typeof profile === "object" ? profile : null;
 }
 
 export function setKnowledgeProfile(sessionObj, profile) {
   const meta = ensureSessionMetaObject(sessionObj);
-  if (!meta) return sessionObj;
+  if (!sessionObj?.shared) sessionObj.shared = {};
   if (profile == null) {
-    delete meta.knowledge_profile;
+    sessionObj.shared.knowledgeProfile = null;
+    if (meta) delete meta.knowledge_profile;
     return sessionObj;
   }
   if (typeof profile !== "object") return sessionObj;
-  meta.knowledge_profile = profile;
-  if (meta.assessment_skipped == null) meta.assessment_skipped = false;
-  if (meta.packing_ignored_profile == null) meta.packing_ignored_profile = false;
+  sessionObj.shared.knowledgeProfile = buildSharedKnowledgeProfile(profile, { source: "assessment" });
+  if (meta) {
+    delete meta.knowledge_profile;
+    if (meta.assessment_skipped == null) meta.assessment_skipped = false;
+    if (meta.packing_ignored_profile == null) meta.packing_ignored_profile = false;
+  }
   return sessionObj;
 }
 
