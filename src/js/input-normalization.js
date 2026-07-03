@@ -200,6 +200,41 @@ export async function loadPdfJs() {
   return loadPdfJsInternal();
 }
 
+/** [debug-enrich] instrumentation-only — shared normalization diagnostics bag */
+export function ensureNormalizationDebugBag() {
+  if (!globalThis.__dppNormalizationDebug) {
+    globalThis.__dppNormalizationDebug = {
+      totalPages: 0,
+      lowExtractionPages: [],
+      tablesDetected: 0,
+      tablesEmittedOk: 0,
+      headingsInferred: 0,
+      headingsBySource: {},
+      headingsFallbackUsed: false,
+      hierarchyMethod: null,
+      imagesDetected: 0,
+      imagesAnalyzed: 0,
+      imagesFailed: 0,
+      imagesSkipped: 0,
+      charsBeforeStrip: 0,
+      charsAfterStrip: 0,
+    };
+  }
+  return globalThis.__dppNormalizationDebug;
+}
+
+/** [debug-enrich] take and clear bag after normalization completes */
+export function takeNormalizationDebugBag() {
+  const bag = globalThis.__dppNormalizationDebug || null;
+  globalThis.__dppNormalizationDebug = null;
+  return bag;
+}
+
+/** [debug-enrich] peek without clearing — for DPP phases after upload */
+export function peekNormalizationDebugBag() {
+  return globalThis.__dppNormalizationDebug || null;
+}
+
 /** @param {ArrayBuffer} buffer */
 export async function extractPdfPlainText(buffer) {
   const pdfjs = await loadPdfJs();
@@ -248,6 +283,7 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
   }
 
   try {
+    ensureNormalizationDebugBag(); // [debug-enrich]
     const pipeline = await normalizeDocumentStructure({ rawContent, format });
     let normalizedContent = pipeline.normalizedContent || "";
 
@@ -266,6 +302,12 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
     }
 
     const warnings = [...(pipeline.structure?.warnings || [])];
+
+    const debugBag = peekNormalizationDebugBag(); // [debug-enrich]
+    if (debugBag) {
+      debugBag.imagesDetected = (pipeline.pendingImages || []).length;
+      debugBag.headingsFallbackUsed = Boolean(pipeline.fallbackSections);
+    }
 
     console.info("[input-normalization.normalizeStudyMaterial] Done:", {
       format,

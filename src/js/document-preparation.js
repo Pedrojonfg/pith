@@ -57,6 +57,39 @@ import {
   setPreparationStatus,
 } from "./session-types.js";
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
+import { peekNormalizationDebugBag } from "./input-normalization.js";
+
+/**
+ * [debug-enrich] Emit consolidated normalization quality summary after T1.1.
+ * @param {object} doc
+ * @param {object} [hierarchy]
+ */
+function emitNormalizationQualitySummary(doc, hierarchy) {
+  const bag = peekNormalizationDebugBag() || {};
+  const images = Array.isArray(doc?.shared?.images) ? doc.shared.images : [];
+  const imagesDetected = bag.imagesDetected ?? images.length;
+  const imagesAnalyzed = images.filter((img) => img.visionStatus === "ready").length;
+  const imagesFailed = images.filter((img) => img.visionStatus === "failed").length;
+  const imagesSkipped = images.filter((img) => img.visionStatus === "skipped").length;
+  const summary = {
+    docId: doc.docId,
+    totalPages: bag.totalPages ?? 0,
+    lowExtractionPages: Array.isArray(bag.lowExtractionPages) ? bag.lowExtractionPages.length : 0,
+    tablesDetected: bag.tablesDetected ?? 0,
+    tablesEmittedOk: bag.tablesEmittedOk ?? 0,
+    headingsInferred: bag.headingsInferred ?? doc?.shared?.docMeta?.headingCount ?? 0,
+    headingsFallbackUsed: Boolean(bag.headingsFallbackUsed),
+    hierarchyMethod: hierarchy?.method ?? bag.hierarchyMethod ?? null,
+    imagesDetected,
+    imagesAnalyzed,
+    imagesFailed,
+    imagesSkipped,
+    charsBeforeStrip: bag.charsBeforeStrip ?? 0,
+    charsAfterStrip: bag.charsAfterStrip ?? 0,
+  };
+  console.info("[document-preparation] Normalization quality summary:", summary); // [debug-enrich]
+  return summary;
+}
 
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
 /** Gate-critical Tier 1 — unlocks assessment gate (T1.5 runs after gate). */
@@ -205,12 +238,25 @@ function resolveFinalStatus(prep, doc, stopAfterTier) {
 async function runPhaseT01(doc, ctx) {
   const text = getMarkdown(doc);
   if (!text) throw new Error("T0.1: empty document");
+  console.info("[document-preparation.runPhaseT01] Normalized markdown present:", {
+    docId: doc.docId,
+    charCount: text.length,
+    wordCount: text.split(/\s+/).filter(Boolean).length,
+    pendingImages: Array.isArray(doc?.shared?.images) ? doc.shared.images.length : 0,
+  }); // [debug-enrich]
   return hashPayload(text.slice(0, 200));
 }
 
 async function runPhaseT02(doc, ctx) {
   const metrics = analyzeText(getMarkdown(doc));
   doc.shared.textMetrics = metrics;
+  console.info("[document-preparation.runPhaseT02] Text metrics:", {
+    docId: doc.docId,
+    charCount: metrics.charCount,
+    wordCount: metrics.wordCount,
+    sizeCategory: metrics.sizeCategory,
+    hasExplicitHeadings: metrics.structureSignals?.hasExplicitHeadings,
+  }); // [debug-enrich]
   return hashPayload(metrics);
 }
 
@@ -223,6 +269,7 @@ async function runPhaseT11(doc, ctx) {
   });
   doc.shared.docHierarchy = hierarchy;
   doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
+  emitNormalizationQualitySummary(doc, hierarchy); // [debug-enrich]
   return hashPayload(hierarchy);
 }
 
@@ -415,20 +462,53 @@ async function runPhaseT16(doc) {
 async function runPhaseT17(doc, ctx) {
   const images = doc.shared?.images;
   if (!Array.isArray(images) || !images.length) {
+    console.debug("[document-preparation.runPhaseT17] No images on document:", { docId: doc.docId }); // [debug-enrich]
     return hashPayload(0);
   }
+  const detectedCount = images.length;
+  const pendingCount = images.filter((img) => img.visionStatus === "pending").length;
+  console.info("[document-preparation.runPhaseT17] Image vision start:", {
+    docId: doc.docId,
+    imagesDetected: detectedCount,
+    pendingForVision: pendingCount,
+  }); // [debug-enrich]
   if (!meetsConceptInventoryThreshold(doc)) {
-    console.log("[vision] Skipping T1.7 — concept inventory below viability threshold.");
+    console.warn("[document-preparation.runPhaseT17] Skipping vision — inventory below threshold:", {
+      docId: doc.docId,
+      imagesDetected: detectedCount,
+      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
+    }); // [debug-enrich]
     for (const image of images) {
       if (image.visionStatus === "pending") {
         image.visionStatus = "skipped";
         image.visionDescription = null;
       }
     }
+    const bag = peekNormalizationDebugBag();
+    if (bag) {
+      bag.imagesSkipped = detectedCount;
+    }
+    console.info("[document-preparation.runPhaseT17] Vision skipped summary:", {
+      docId: doc.docId,
+      imagesDetected: detectedCount,
+      imagesAnalyzed: 0,
+      imagesFailed: 0,
+      imagesSkipped: detectedCount,
+    }); // [debug-enrich]
     return hashPayload("skipped-no-inventory");
   }
   const pending = images.filter((img) => img.visionStatus === "pending");
   if (!pending.length) {
+    const analyzed = images.filter((img) => img.visionStatus === "ready").length;
+    const failed = images.filter((img) => img.visionStatus === "failed").length;
+    const skipped = images.filter((img) => img.visionStatus === "skipped").length;
+    console.info("[document-preparation.runPhaseT17] Vision already complete:", {
+      docId: doc.docId,
+      imagesDetected: detectedCount,
+      imagesAnalyzed: analyzed,
+      imagesFailed: failed,
+      imagesSkipped: skipped,
+    }); // [debug-enrich]
     return hashPayload(images.map((img) => img.imageId));
   }
   const { runImageVisionAnalysis } = await import("./document-images/vision.js");
@@ -438,6 +518,23 @@ async function runPhaseT17(doc, ctx) {
     onProgress: (msg) =>
       ctx.onProgress?.({ phaseId: "T1.7", label: msg, status: "running" }),
   });
+  const postImages = doc.shared?.images || [];
+  const visionSummary = {
+    docId: doc.docId,
+    imagesDetected: detectedCount,
+    imagesAnalyzed: postImages.filter((img) => img.visionStatus === "ready").length,
+    imagesFailed: postImages.filter((img) => img.visionStatus === "failed").length,
+    imagesSkipped: postImages.filter((img) => img.visionStatus === "skipped").length,
+    runAnalyzed: result.analyzed,
+    runFailed: result.failed,
+  };
+  console.info("[document-preparation.runPhaseT17] Vision complete:", visionSummary); // [debug-enrich]
+  const bag = peekNormalizationDebugBag();
+  if (bag) {
+    bag.imagesAnalyzed = visionSummary.imagesAnalyzed;
+    bag.imagesFailed = visionSummary.imagesFailed;
+    bag.imagesSkipped = visionSummary.imagesSkipped;
+  }
   return hashPayload({ analyzed: result.analyzed, failed: result.failed });
 }
 

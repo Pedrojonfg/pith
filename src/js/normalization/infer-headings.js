@@ -5,6 +5,21 @@
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
+/** [debug-enrich] instrumentation-only */
+function dppNormDbg() {
+  return globalThis.__dppNormalizationDebug;
+}
+
+function countHeadingsBySource(headings) {
+  /** @type {Record<string, number>} */
+  const bySource = {};
+  for (const h of headings || []) {
+    const src = String(h.source || "unknown");
+    bySource[src] = (bySource[src] || 0) + 1;
+  }
+  return bySource;
+}
+
 const SECTION_KEYWORDS = [
   "introduction",
   "abstract",
@@ -209,6 +224,18 @@ export function inferHeadings(blocks, opts = {}) {
     }
     const deduped = dedupeHeadings(candidates);
     const validated = validateHeadingHierarchy(deduped);
+    const bySource = countHeadingsBySource(validated); // [debug-enrich]
+    console.info("[infer-headings.inferHeadings] Outline short-circuit:", {
+      headingCount: validated.length,
+      outlineCoverage: opts.outlineCoverage,
+      bySource,
+      method: "outline",
+    }); // [debug-enrich]
+    const bag = dppNormDbg();
+    if (bag) {
+      bag.headingsInferred = validated.length;
+      bag.headingsBySource = bySource;
+    }
     return { headings: validated, bodyFontSize };
   }
 
@@ -293,6 +320,38 @@ export function inferHeadings(blocks, opts = {}) {
 
   const deduped = dedupeHeadings(candidates);
   const validated = validateHeadingHierarchy(deduped);
+
+  const bySource = countHeadingsBySource(validated); // [debug-enrich]
+  const primaryMethod =
+    bySource.outline > 0
+      ? "outline-partial"
+      : bySource["font-size"] > 0
+        ? "font-size"
+        : bySource["html-tag"] > 0
+          ? "html-tag"
+          : validated.length > 0
+            ? "pattern"
+            : "none";
+  console.info("[infer-headings.inferHeadings] Done:", {
+    headingCount: validated.length,
+    bodyFontSize,
+    bySource,
+    primaryMethod,
+    outlineCoverage: opts.outlineCoverage ?? 0,
+  }); // [debug-enrich]
+  if (validated.length === 0) {
+    console.warn("[infer-headings.inferHeadings] No headings inferred:", {
+      blockCount: blocks.length,
+      bodyFontSize,
+      format: opts.format || "unknown",
+    }); // [debug-enrich]
+  }
+
+  const bag = dppNormDbg();
+  if (bag) {
+    bag.headingsInferred = validated.length;
+    bag.headingsBySource = bySource;
+  }
 
   return { headings: validated, bodyFontSize };
 }

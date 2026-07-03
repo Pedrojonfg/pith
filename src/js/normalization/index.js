@@ -53,6 +53,19 @@ async function extractBlocks(rawContent, format) {
     const html = typeof rawContent === "string" ? rawContent : "";
     const withImages = await extractHtmlBlocksWithImages(html);
     if (withImages.blocks.length) {
+      const bag = globalThis.__dppNormalizationDebug;
+      if (bag) {
+        bag.imagesDetected = withImages.pendingImages?.length ?? 0;
+        const tdThCount = (html.match(/<t[dh]\b/gi) || []).length;
+        if (tdThCount > 0) {
+          bag.tablesDetected = tdThCount;
+          bag.tablesEmittedOk = 0;
+        }
+      }
+      console.debug("[normalization.extractBlocks] HTML with images path:", {
+        blockCount: withImages.blocks.length,
+        pendingImages: withImages.pendingImages?.length ?? 0,
+      }); // [debug-enrich]
       return {
         blocks: withImages.blocks,
         pageHeights: [],
@@ -169,10 +182,19 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
       targetChunkSize: 5000,
       labelPrefix: "Sección",
     });
+    console.warn("[normalization.normalizeDocumentStructure] Equal-length section fallback:", {
+      charCount: totalChars,
+      headingCount: 0,
+    }); // [debug-enrich]
+    const bag = globalThis.__dppNormalizationDebug;
+    if (bag) bag.headingsFallbackUsed = true;
   }
 
   if (fmt === "pdf" && totalChars < 50) {
     warnings.push("scanned_pdf_no_text");
+    console.warn("[normalization.normalizeDocumentStructure] Possible scanned PDF (very low char count):", {
+      charCount: totalChars,
+    }); // [debug-enrich]
   }
 
   const structure = createStructureReport({

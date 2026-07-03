@@ -30,6 +30,12 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   const generatedAt = Date.now();
 
   if (hasMarkdownHeadings(text)) {
+    const bag = globalThis.__dppNormalizationDebug;
+    if (bag) bag.hierarchyMethod = "deterministic";
+    console.info("[hierarchy.buildDocumentHierarchy] Deterministic from markdown headings:", {
+      charCount: text.length,
+      method: "deterministic",
+    }); // [debug-enrich]
     return {
       method: "deterministic",
       tree: buildDeterministicHierarchy(text),
@@ -41,6 +47,12 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   }
 
   if (hasDelimiterHeadings(text)) {
+    const bag = globalThis.__dppNormalizationDebug;
+    if (bag) bag.hierarchyMethod = "deterministic-delimiter";
+    console.info("[hierarchy.buildDocumentHierarchy] Deterministic from delimiters:", {
+      charCount: text.length,
+      method: "deterministic",
+    }); // [debug-enrich]
     return {
       method: "deterministic",
       tree: buildDelimiterHierarchy(text),
@@ -52,6 +64,13 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   }
 
   if (text.length < minLlmChars) {
+    console.warn("[hierarchy.buildDocumentHierarchy] Trivial flat hierarchy (text below LLM threshold):", {
+      charCount: text.length,
+      minLlmChars,
+      method: "trivial",
+    }); // [debug-enrich]
+    const bag = globalThis.__dppNormalizationDebug;
+    if (bag) bag.hierarchyMethod = "trivial";
     return {
       method: "trivial",
       tree: buildTrivialHierarchy(text),
@@ -63,12 +82,19 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   }
 
   if (typeof llmFn !== "function") {
+    console.warn("[hierarchy.buildDocumentHierarchy] No LLM fn — returning null"); // [debug-enrich]
     return null;
   }
 
   if (useCache) {
     const cached = getCachedHierarchy(textHash);
     if (cached) {
+      const bag = globalThis.__dppNormalizationDebug;
+      if (bag) bag.hierarchyMethod = cached.method || "llm";
+      console.debug("[hierarchy.buildDocumentHierarchy] Cache hit:", {
+        method: cached.method || "llm",
+        rootCount: cached.tree?.length ?? 0,
+      }); // [debug-enrich]
       return {
         method: /** @type {'llm'} */ (cached.method || "llm"),
         tree: /** @type {import("./types.js").HierarchyNode[]} */ (cached.tree),
@@ -115,6 +141,14 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     setCachedHierarchy(textHash, { tree, method: "llm", pedagogicalMeta, topics });
   }
 
+  const bag = globalThis.__dppNormalizationDebug;
+  if (bag) bag.hierarchyMethod = "llm";
+  console.info("[hierarchy.buildDocumentHierarchy] LLM hierarchy built:", {
+    method: "llm",
+    rootCount: tree.length,
+    topicCount: topics.length,
+  }); // [debug-enrich]
+
   return { method: "llm", tree, pedagogicalMeta, topics, textHash, generatedAt };
 }
 
@@ -124,6 +158,12 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
  * @param {number} generatedAt
  */
 function deterministicFallback(text, textHash, generatedAt) {
+  console.warn("[hierarchy.buildDocumentHierarchy] LLM fallback to deterministic hierarchy:", {
+    charCount: text.length,
+    hasMarkdownHeadings: hasMarkdownHeadings(text),
+  }); // [debug-enrich]
+  const bag = globalThis.__dppNormalizationDebug;
+  if (bag) bag.hierarchyMethod = "deterministic-fallback";
   return {
     method: "deterministic",
     tree: buildDeterministicHierarchy(text),

@@ -4,6 +4,18 @@
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
+/** [debug-enrich] warn when artifact stripping removes more than this % of characters */
+const STRIP_OVER_REMOVAL_WARN_PCT = 30;
+
+/** [debug-enrich] instrumentation-only */
+function dppNormDbg() {
+  return globalThis.__dppNormalizationDebug;
+}
+
+function blockCharCount(blocks) {
+  return (blocks || []).reduce((sum, b) => sum + String(b?.text || "").length, 0);
+}
+
 const DEFAULT_HEADER_RATIO = 0.1;
 const DEFAULT_FOOTER_RATIO = 0.1;
 
@@ -144,6 +156,13 @@ export function stripArtifacts(blocks, opts = {}) {
   let artifactsRemoved = 0;
   let bodyZoneRejections = 0;
 
+  const charsBeforeStrip = blockCharCount(blocks); // [debug-enrich]
+  console.debug("[strip-artifacts.stripArtifacts] Start:", {
+    blockCount: blocks.length,
+    charsBeforeStrip,
+    format: opts.format || "unknown",
+  }); // [debug-enrich]
+
   const pageCount = Math.max(
     1,
     ...blocks.map((b) => b.pageIndex + 1),
@@ -244,6 +263,32 @@ export function stripArtifacts(blocks, opts = {}) {
 
   if (bodyZoneRejections >= 5) {
     warnings.push("layout_complex");
+  }
+
+  const charsAfterStrip = blockCharCount(result); // [debug-enrich]
+  const removedChars = Math.max(0, charsBeforeStrip - charsAfterStrip);
+  const removalPct = charsBeforeStrip > 0 ? Math.round((removedChars / charsBeforeStrip) * 100) : 0;
+  console.info("[strip-artifacts.stripArtifacts] Done:", {
+    artifactsRemoved,
+    charsBeforeStrip,
+    charsAfterStrip,
+    removalPct,
+    warningCount: warnings.length,
+  }); // [debug-enrich]
+  if (removalPct > STRIP_OVER_REMOVAL_WARN_PCT) {
+    console.warn("[strip-artifacts.stripArtifacts] Aggressive stripping:", {
+      charsBeforeStrip,
+      charsAfterStrip,
+      removalPct,
+      thresholdPct: STRIP_OVER_REMOVAL_WARN_PCT,
+      artifactsRemoved,
+    }); // [debug-enrich]
+  }
+
+  const bag = dppNormDbg();
+  if (bag) {
+    bag.charsBeforeStrip = charsBeforeStrip;
+    bag.charsAfterStrip = charsAfterStrip;
   }
 
   return {

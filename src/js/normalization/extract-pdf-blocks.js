@@ -9,6 +9,18 @@ import { loadPdfJs } from "./pdf-loader.js";
 
 const Y_TOLERANCE = 2;
 
+/** [debug-enrich] placeholder — calibrate against known-good PDFs; aligns with scanned_pdf_no_text (~50 chars) */
+const LOW_EXTRACTION_PAGE_CHARS = 50;
+
+/** [debug-enrich] instrumentation-only */
+function dppNormDbg() {
+  return globalThis.__dppNormalizationDebug;
+}
+
+function countWords(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean).length;
+}
+
 /**
  * @param {number[]} transform
  */
@@ -160,6 +172,20 @@ export async function extractPdfBlocks(buffer) {
     const viewport = page.getViewport({ scale: 1 });
     pageHeights.push(viewport.height);
     const content = await page.getTextContent();
+
+    /** [debug-enrich] detect extraction path without altering block clustering */
+    let extractionPath = "text-native";
+    const layoutGlyphs = [];
+    for (const item of content.items || []) {
+      const str = String(item?.str || "");
+      if (!str) continue;
+      const t = item.transform || [1, 0, 0, 1, 0, 0];
+      layoutGlyphs.push({ x: t[4] ?? 0 });
+    }
+    if (detectColumnLayout(layoutGlyphs, viewport.width)) {
+      extractionPath = "bicolumn-split";
+    }
+
     const pageBlocks = clusterTextItemsToBlocks(
       content.items,
       pageNum - 1,
@@ -167,7 +193,41 @@ export async function extractPdfBlocks(buffer) {
       viewport.width,
     );
     blocks.push(...pageBlocks);
+
+    const pageText = pageBlocks.map((b) => b.text).join(" ");
+    const pageChars = pageText.length;
+    const pageWords = countWords(pageText);
+    console.debug("[extract-pdf-blocks.extractPdfBlocks] Page extracted:", {
+      pageNum,
+      charCount: pageChars,
+      wordCount: pageWords,
+      blockCount: pageBlocks.length,
+      extractionPath,
+    }); // [debug-enrich]
+    if (pageChars < LOW_EXTRACTION_PAGE_CHARS) {
+      console.warn("[extract-pdf-blocks.extractPdfBlocks] Low extraction page:", {
+        pageNum,
+        charCount: pageChars,
+        threshold: LOW_EXTRACTION_PAGE_CHARS,
+        extractionPath,
+        note: "placeholder threshold — calibrate against known-good PDFs",
+      }); // [debug-enrich]
+    }
+
+    const bag = dppNormDbg();
+    if (bag) {
+      bag.totalPages = doc.numPages;
+      if (pageChars < LOW_EXTRACTION_PAGE_CHARS) {
+        bag.lowExtractionPages.push(pageNum);
+      }
+    }
   }
+
+  console.info("[extract-pdf-blocks.extractPdfBlocks] Document extraction summary:", {
+    totalPages: doc.numPages,
+    totalBlocks: blocks.length,
+    lowExtractionPages: dppNormDbg()?.lowExtractionPages?.length ?? 0,
+  }); // [debug-enrich]
 
   return { blocks, pageHeights, doc };
 }
