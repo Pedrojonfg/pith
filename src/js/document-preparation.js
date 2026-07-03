@@ -58,6 +58,7 @@ import {
 } from "./session-types.js";
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 import { peekNormalizationDebugBag } from "./input-normalization.js";
+import { computeDocumentQualitySignal } from "./normalization/quality-signal.js";
 
 /**
  * [debug-enrich] Emit consolidated normalization quality summary after T1.1.
@@ -78,6 +79,10 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     docId: doc.docId,
     totalPages: bag.totalPages ?? 0,
     lowExtractionPages: Array.isArray(bag.lowExtractionPages) ? bag.lowExtractionPages.length : 0,
+    lowExtractionPagesAfterVision: Array.isArray(bag.lowExtractionPagesAfterVision)
+      ? bag.lowExtractionPagesAfterVision.length
+      : null,
+    visionFallbackPages: Array.isArray(bag.visionFallbackPages) ? bag.visionFallbackPages.length : 0,
     tablesDetected: bag.tablesDetected ?? 0,
     tablesEmittedOk: bag.tablesEmittedOk ?? 0,
     headingsInferred: bag.headingsInferred ?? doc?.shared?.docMeta?.headingCount ?? 0,
@@ -89,14 +94,31 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     imagesSkipped,
     charsBeforeStrip: bag.charsBeforeStrip ?? 0,
     charsAfterStrip: bag.charsAfterStrip ?? 0,
-
-    // [debug-enrich] math-notation diagnostics across normalization pipeline
     mathIndicatorsFound: bag.mathIndicatorsFound ?? 0,
     replacementCharsFound: bag.replacementCharsFound ?? 0,
     suspiciousStripRemovals: bag.suspiciousStripRemovals ?? 0,
     sampleSnippets,
   };
-  console.info("[document-preparation] Normalization quality summary:", summary); // [debug-enrich]
+  console.info("[document-preparation] Normalization quality summary:", summary);
+
+  const qualitySignal = computeDocumentQualitySignal({
+    extractionConfidence: doc?.shared?.docMeta?.confidence || "low",
+    totalPages: summary.totalPages,
+    lowExtractionPageCount: summary.lowExtractionPages,
+    lowExtractionPagesAfterVision: bag.lowExtractionPagesAfterVision ?? null,
+    tablesDetected: summary.tablesDetected,
+    tablesEmittedOk: summary.tablesEmittedOk,
+    headingsFallbackUsed: summary.headingsFallbackUsed,
+    charCount: String(doc?.shared?.rawMarkdown || "").length,
+  });
+  if (!doc.shared) doc.shared = {};
+  doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
+  doc.shared.preparation.qualitySignal = qualitySignal;
+  console.info("[document-preparation] Document quality signal:", {
+    docId: doc.docId,
+    tier: qualitySignal.tier,
+    reasons: qualitySignal.reasons,
+  });
 
   if ((summary.replacementCharsFound || 0) > 0 || (summary.suspiciousStripRemovals || 0) > 0) {
     console.warn("[document-preparation] Normalization math diagnostics warning:", {

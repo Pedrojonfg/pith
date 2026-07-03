@@ -107,6 +107,21 @@ function pickMathDenseSnippets(text, { windowChars = 220, snippets = 3, snippetC
   });
 }
 
+/** Count markdown tables by header separator row. */
+function countMarkdownTables(markdown) {
+  const lines = String(markdown || "").split(/\r?\n/);
+  let count = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!/^\|\s*[-: ]+\|\s*([-: ]+\|\s*)+$/.test(line)) continue;
+    const prev = (lines[i - 1] || "").trim();
+    if (/^\|/.test(prev)) count += 1;
+  }
+  return count;
+}
+
+const TABLE_DETECTION_CEILING_CHARS_PER_TABLE = 2000; // placeholder: calibrate post-launch
+
 /**
  * Join hyphenated line breaks within words (FIX-07).
  * Preserves names like Korsgaard-\nMueller (uppercase after break).
@@ -170,6 +185,34 @@ export function emitMarkdown(blocks, headings, opts = {}) {
   }
 
   const markdown = parts.join("\n");
+
+  const tableCount = countMarkdownTables(markdown); // [debug-enrich]
+  const bagTables = dppNormDbg(); // [debug-enrich]
+  if (bagTables) {
+    if (bagTables.tablesDetected > 0) {
+      bagTables.tablesEmittedOk = tableCount;
+    }
+  }
+  if (bagTables?.tablesDetected > 0 && tableCount === 0) {
+    console.warn("[emit-markdown.emitMarkdown] Tables detected but none emitted as markdown tables:", {
+      tablesDetected: bagTables.tablesDetected,
+      tablesEmittedOk: tableCount,
+    }); // [debug-enrich]
+  }
+  if (bagTables?.tablesDetected > 0) {
+    const ceiling = Math.max(
+      1,
+      Math.ceil((markdown.length || 0) / TABLE_DETECTION_CEILING_CHARS_PER_TABLE),
+    );
+    if (bagTables.tablesDetected > ceiling) {
+      console.warn("[emit-markdown.emitMarkdown] Suspiciously high table detection count:", {
+        tablesDetected: bagTables.tablesDetected,
+        ceiling,
+        charCount: markdown.length,
+        charsPerTable: TABLE_DETECTION_CEILING_CHARS_PER_TABLE,
+      }); // [debug-enrich]
+    }
+  }
 
   // [debug-enrich] final-output math integrity scan (counts + short snippets only)
   const mathIndicatorsFound = countMathIndicators(markdown); // [debug-enrich]

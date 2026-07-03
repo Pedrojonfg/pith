@@ -212,6 +212,8 @@ export function ensureNormalizationDebugBag() {
       headingsBySource: {},
       headingsFallbackUsed: false,
       hierarchyMethod: null,
+      visionFallbackPages: [],
+      lowExtractionPagesAfterVision: [],
       imagesDetected: 0,
       imagesAnalyzed: 0,
       imagesFailed: 0,

@@ -584,6 +584,18 @@ function notifyPreparationSparseIfNeeded(doc) {
   }
 }
 
+const DOCUMENT_QUALITY_POOR_MSG =
+  "This document may not have processed correctly — review before studying.";
+
+function notifyDocumentQualityIfNeeded(doc) {
+  const tier = doc?.shared?.preparation?.qualitySignal?.tier;
+  if (tier === "poor") {
+    showInventoryStatusBanner(DOCUMENT_QUALITY_POOR_MSG, {
+      id: "document-quality-warning-banner",
+    });
+  }
+}
+
 function formatPreparationProgressMessage(msg) {
   const label = msg?.label || PHASE_LABELS[msg?.phaseId] || msg?.phaseId || "Preparing";
   const wave = msg?.wave ? ` (wave ${msg.wave})` : "";
@@ -1815,6 +1827,7 @@ export async function enterModeSelectScreen() {
   renderFlowPanel(await getActiveSession());
   mountModeSelectBreadcrumb(await getActiveSession());
   syncSessionHubActions();
+  notifyDocumentQualityIfNeeded(active);
   showScreen("modeSelect");
   syncExportButtonsEnabled();
   syncPersistenceHealthBanner();

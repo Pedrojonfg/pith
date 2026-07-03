@@ -6,6 +6,44 @@ import { createTextBlock } from "./types.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
+function escapeMarkdownTableCell(text) {
+  return String(text || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Minimal HTML table → markdown table.
+ * @param {Element} tableEl
+ * @returns {string|null}
+ */
+function tableElementToMarkdown(tableEl) {
+  const rows = Array.from(tableEl.querySelectorAll("tr"));
+  if (!rows.length) return null;
+
+  const grid = rows.map((tr) => {
+    const cells = Array.from(tr.querySelectorAll("th,td"));
+    return cells.map((c) => escapeMarkdownTableCell(c.textContent || ""));
+  }).filter((r) => r.length > 0);
+
+  if (!grid.length) return null;
+
+  const headerRow =
+    Array.from(rows[0].querySelectorAll("th")).length > 0
+      ? grid[0]
+      : grid[0];
+  const colCount = Math.max(1, ...grid.map((r) => r.length));
+  const header = Array.from({ length: colCount }, (_, i) => headerRow[i] || "");
+  const sep = Array.from({ length: colCount }, () => "---");
+  const body = grid.slice(1).map((r) => Array.from({ length: colCount }, (_, i) => r[i] || ""));
+
+  const lines = [];
+  lines.push(`| ${header.join(" | ")} |`);
+  lines.push(`| ${sep.join(" | ")} |`);
+  for (const r of body) {
+    lines.push(`| ${r.join(" | ")} |`);
+  }
+  return lines.join("\n");
+}
+
 /** [debug-enrich] instrumentation-only */
 function dppNormDbg() {
   return globalThis.__dppNormalizationDebug;
@@ -47,7 +85,7 @@ function parseInlineFontWeight(style) {
 /**
  * @param {Element} el
  */
-function inferLevelFromElement(el) {
+export function inferLevelFromElement(el) {
   const tag = String(el.tagName || "").toLowerCase();
   const hMatch = /^h([1-6])$/.exec(tag);
   if (hMatch) return parseInt(hMatch[1], 10);
@@ -104,21 +142,41 @@ export function extractHtmlBlocks(html) {
 
     if (tag === "script" || tag === "style" || tag === "noscript") return;
 
+    if (tag === "table") {
+      const md = tableElementToMarkdown(el);
+      if (md) {
+        blocks.push(
+          createTextBlock({
+            text: md,
+            fontSize: 0,
+            fontWeight: "normal",
+            pageIndex: 0,
+            lineIndex,
+            source: "html",
+            kind: "paragraph",
+          }),
+        );
+        lineIndex += 1;
+      }
+      return;
+    }
+
     const blockTags = new Set([
       "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
-      "li", "blockquote", "pre", "td", "th",
+      "li", "blockquote", "pre",
     ]);
 
     if (blockTags.has(tag)) {
       const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
       if (text) {
         const level = inferLevelFromElement(el);
+        const mdText = level > 0 ? `${"#".repeat(level)} ${text}` : text;
         const style = el.getAttribute("style") || "";
         const fontSize = parseInlineFontSize(style) || (level ? 18 - level : 0);
         const fontWeight = parseInlineFontWeight(style);
         blocks.push(
           createTextBlock({
-            text,
+            text: mdText,
             fontSize,
             fontWeight,
             pageIndex: 0,
@@ -137,19 +195,15 @@ export function extractHtmlBlocks(html) {
 
   for (const child of Array.from(body.children || [])) walk(child);
 
-  const tdThCount = (raw.match(/<t[dh]\b/gi) || []).length; // [debug-enrich]
+  const tableCount = (raw.match(/<table\b/gi) || []).length; // [debug-enrich]
   console.info("[extract-html-blocks.extractHtmlBlocks] Done:", {
     blockCount: blocks.length,
-    htmlTableCellsInSource: tdThCount,
-    tableNote:
-      tdThCount > 0
-        ? "td/th present in HTML but emitted as plain text blocks — no markdown table syntax"
-        : "no table elements detected in source",
+    htmlTablesInSource: tableCount,
   }); // [debug-enrich]
   const bag = dppNormDbg();
-  if (bag && tdThCount > 0) {
-    bag.tablesDetected = tdThCount;
-    bag.tablesEmittedOk = 0;
+  if (bag && tableCount > 0) {
+    bag.tablesDetected = tableCount;
+    bag.tablesEmittedOk = 0; // updated by downstream emit step in later tasks
   }
 
   if (!blocks.length) {

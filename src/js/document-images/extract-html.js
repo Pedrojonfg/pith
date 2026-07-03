@@ -3,9 +3,47 @@
  */
 
 import { createTextBlock } from "../normalization/types.js";
+import { inferLevelFromElement } from "../normalization/extract-html-blocks.js";
 import { formatPithImageToken, nextImageId } from "./tokens.js";
 
 /** @typedef {import("./storage.js").PendingDocumentImage} PendingDocumentImage */
+
+function escapeMarkdownTableCell(text) {
+  return String(text || "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Minimal HTML table → markdown table.
+ * @param {Element} tableEl
+ * @returns {string|null}
+ */
+function tableElementToMarkdown(tableEl) {
+  const rows = Array.from(tableEl.querySelectorAll("tr"));
+  if (!rows.length) return null;
+
+  const grid = rows
+    .map((tr) => {
+      const cells = Array.from(tr.querySelectorAll("th,td"));
+      return cells.map((c) => escapeMarkdownTableCell(c.textContent || ""));
+    })
+    .filter((r) => r.length > 0);
+
+  if (!grid.length) return null;
+
+  const headerRow = grid[0];
+  const colCount = Math.max(1, ...grid.map((r) => r.length));
+  const header = Array.from({ length: colCount }, (_, i) => headerRow[i] || "");
+  const sep = Array.from({ length: colCount }, () => "---");
+  const body = grid
+    .slice(1)
+    .map((r) => Array.from({ length: colCount }, (_, i) => r[i] || ""));
+
+  const lines = [];
+  lines.push(`| ${header.join(" | ")} |`);
+  lines.push(`| ${sep.join(" | ")} |`);
+  for (const r of body) lines.push(`| ${r.join(" | ")} |`);
+  return lines.join("\n");
+}
 
 /**
  * @param {string} src
@@ -75,7 +113,7 @@ export async function extractHtmlBlocksWithImages(html) {
 
   const blockTags = new Set([
     "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
-    "li", "blockquote", "pre", "td", "th", "figure",
+    "li", "blockquote", "pre", "figure",
   ]);
 
   /**
@@ -89,6 +127,23 @@ export async function extractHtmlBlocksWithImages(html) {
     const el = /** @type {Element} */ (node);
     const tag = String(el.tagName || "").toLowerCase();
     if (tag === "script" || tag === "style" || tag === "noscript") return;
+
+    if (tag === "table") {
+      const md = tableElementToMarkdown(el);
+      if (md) {
+        blocks.push(
+          createTextBlock({
+            text: md,
+            fontSize: 0,
+            pageIndex: 0,
+            lineIndex: lineIndex++,
+            source: "html",
+            kind: "paragraph",
+          }),
+        );
+      }
+      return;
+    }
 
     if (tag === "img") {
       const src = el.getAttribute("src") || "";
@@ -129,14 +184,16 @@ export async function extractHtmlBlocksWithImages(html) {
       }
       const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
       if (text) {
+        const headingLevel = inferLevelFromElement(el);
+        const mdText = headingLevel > 0 ? `${"#".repeat(headingLevel)} ${text}` : text;
         blocks.push(
           createTextBlock({
-            text,
+            text: mdText,
             fontSize: 0,
             pageIndex: 0,
-            lineIndex: lineIndex++,
+            lineIndex: headingLevel > 0 ? headingLevel : lineIndex++,
             source: "html",
-            kind: tag.startsWith("h") ? "heading" : "paragraph",
+            kind: headingLevel > 0 ? "heading" : tag.startsWith("h") ? "heading" : "paragraph",
           }),
         );
       }

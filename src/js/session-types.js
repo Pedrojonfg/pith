@@ -619,6 +619,17 @@ export function normalizePreparationState(raw) {
   base.staleRetryCount = Number.isFinite(Number(raw.staleRetryCount))
     ? Math.max(0, Math.floor(Number(raw.staleRetryCount)))
     : 0;
+  if (raw.qualitySignal && typeof raw.qualitySignal === "object") {
+    const tier = String(raw.qualitySignal.tier || "").trim();
+    if (tier === "good" || tier === "degraded" || tier === "poor") {
+      base.qualitySignal = {
+        tier,
+        reasons: Array.isArray(raw.qualitySignal.reasons)
+          ? raw.qualitySignal.reasons.map((r) => String(r))
+          : [],
+      };
+    }
+  }
   return base;
 }
 
