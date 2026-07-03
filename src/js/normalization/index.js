@@ -56,9 +56,9 @@ async function extractBlocks(rawContent, format) {
       const bag = globalThis.__dppNormalizationDebug;
       if (bag) {
         bag.imagesDetected = withImages.pendingImages?.length ?? 0;
-        const tdThCount = (html.match(/<t[dh]\b/gi) || []).length;
-        if (tdThCount > 0) {
-          bag.tablesDetected = tdThCount;
+        const tableCount = (html.match(/<table\b/gi) || []).length;
+        if (tableCount > 0) {
+          bag.tablesDetected = tableCount;
           bag.tablesEmittedOk = 0;
         }
       }
@@ -173,7 +173,15 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
   const normalizedContent = protectMarkdownTransform(emitted.markdown, dehyphenateRaw);
   const headingsWithOffsets = emitted.headings;
   const totalChars = normalizedContent?.length || 0;
-  const confidence = aggregateConfidence(headingsWithOffsets, totalChars);
+  let confidence = aggregateConfidence(headingsWithOffsets, totalChars);
+  const normBag = globalThis.__dppNormalizationDebug;
+  if (
+    normBag?.tablesDetected > 0 &&
+    (normBag.tablesEmittedOk ?? 0) === 0 &&
+    confidence === "high"
+  ) {
+    confidence = "medium";
+  }
 
   let fallbackSections;
   if (totalChars > 5000 && headingsWithOffsets.length === 0) {

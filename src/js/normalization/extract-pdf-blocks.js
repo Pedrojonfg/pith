@@ -4,6 +4,9 @@
 
 import { createTextBlock } from "./types.js";
 import { loadPdfJs } from "./pdf-loader.js";
+import { renderPageFallback } from "../document-images/extract-pdf.js";
+import { extractPageTextWithVision } from "../document-images/vision.js";
+import { hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
@@ -251,16 +254,59 @@ export async function extractPdfBlocks(buffer) {
       extractionPath = "bicolumn-split";
     }
 
-    const pageBlocks = clusterTextItemsToBlocks(
+    let pageBlocks = clusterTextItemsToBlocks(
       content.items,
       pageNum - 1,
       viewport.height,
       viewport.width,
     );
+
+    let pageText = pageBlocks.map((b) => b.text).join(" ");
+    let pageChars = pageText.length;
+
+    if (pageChars < LOW_EXTRACTION_PAGE_CHARS && hasPlatformLlmAccess()) {
+      try {
+        const rendered = await renderPageFallback(page);
+        if (rendered?.bytes) {
+          const visionText = await extractPageTextWithVision(
+            rendered.bytes,
+            rendered.mimeType || "image/png",
+            { pageNum },
+          );
+          if (visionText && visionText.length >= LOW_EXTRACTION_PAGE_CHARS) {
+            pageBlocks = [
+              createTextBlock({
+                text: visionText,
+                fontSize: 0,
+                fontWeight: "normal",
+                pageIndex: pageNum - 1,
+                lineIndex: 0,
+                source: "pdf",
+                kind: "paragraph",
+              }),
+            ];
+            extractionPath = "vision-fallback";
+            pageText = visionText;
+            pageChars = visionText.length;
+            const bagVision = dppNormDbg();
+            if (bagVision) {
+              bagVision.visionFallbackPages = Array.isArray(bagVision.visionFallbackPages)
+                ? bagVision.visionFallbackPages
+                : [];
+              bagVision.visionFallbackPages.push(pageNum);
+            }
+          }
+        }
+      } catch (err) {
+        console.debug("[extract-pdf-blocks.extractPdfBlocks] Vision fallback failed:", {
+          pageNum,
+          message: err?.message || String(err),
+        });
+      }
+    }
+
     blocks.push(...pageBlocks);
 
-    const pageText = pageBlocks.map((b) => b.text).join(" ");
-    const pageChars = pageText.length;
     const pageWords = countWords(pageText);
     console.debug("[extract-pdf-blocks.extractPdfBlocks] Page extracted:", {
       pageNum,
@@ -268,15 +314,14 @@ export async function extractPdfBlocks(buffer) {
       wordCount: pageWords,
       blockCount: pageBlocks.length,
       extractionPath,
-    }); // [debug-enrich]
+    });
     if (pageChars < LOW_EXTRACTION_PAGE_CHARS) {
-      console.warn("[extract-pdf-blocks.extractPdfBlocks] Low extraction page:", {
+      console.debug("[extract-pdf-blocks.extractPdfBlocks] Low extraction page:", {
         pageNum,
         charCount: pageChars,
         threshold: LOW_EXTRACTION_PAGE_CHARS,
         extractionPath,
-        note: "placeholder threshold — calibrate against known-good PDFs",
-      }); // [debug-enrich]
+      });
     }
 
     // [debug-enrich] math-notation integrity scan (counts only; no text dump)
@@ -321,11 +366,34 @@ export async function extractPdfBlocks(buffer) {
     }
   }
 
+  /** @type {Map<number, number>} */
+  const pageCharTotals = new Map();
+  for (const block of blocks) {
+    const pageIndex = Number(block.pageIndex) || 0;
+    pageCharTotals.set(
+      pageIndex,
+      (pageCharTotals.get(pageIndex) || 0) + String(block.text || "").length,
+    );
+  }
+  /** @type {number[]} */
+  const lowExtractionPagesAfterVision = [];
+  for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
+    const chars = pageCharTotals.get(pageNum - 1) || 0;
+    if (chars < LOW_EXTRACTION_PAGE_CHARS) lowExtractionPagesAfterVision.push(pageNum);
+  }
+
+  const bagFinal = dppNormDbg();
+  if (bagFinal) {
+    bagFinal.lowExtractionPagesAfterVision = lowExtractionPagesAfterVision;
+  }
+
   console.info("[extract-pdf-blocks.extractPdfBlocks] Document extraction summary:", {
     totalPages: doc.numPages,
     totalBlocks: blocks.length,
     lowExtractionPages: dppNormDbg()?.lowExtractionPages?.length ?? 0,
-  }); // [debug-enrich]
+    lowExtractionPagesAfterVision: lowExtractionPagesAfterVision.length,
+    visionFallbackPages: dppNormDbg()?.visionFallbackPages?.length ?? 0,
+  });
 
   return { blocks, pageHeights, doc };
 }

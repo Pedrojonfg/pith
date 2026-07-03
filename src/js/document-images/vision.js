@@ -13,6 +13,9 @@ const GEMINI_VISION_MODEL = "gemini-2.0-flash";
 /** Vision JSON: ~8 fields × ~40 tokens */
 const VISION_ANALYSIS_MAX_TOKENS = 512;
 
+/** Page OCR fallback: ~1 scanned page × ~800 tokens */
+const VISION_PAGE_TEXT_MAX_TOKENS = 4096;
+
 /** Pace Gemini vision calls to avoid upstream 429 bursts after DPP inventory. */
 const VISION_INTER_CALL_DELAY_MS = 500;
 const VISION_429_COOLDOWN_MS = 8000;
@@ -64,6 +67,75 @@ function parseVisionResponse(raw) {
   } catch {
     return null;
   }
+}
+
+function bytesToDataUrl(bytes, mimeType = "image/png") {
+  const bin = new Uint8Array(bytes);
+  let b64 = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bin.length; i += chunk) {
+    const slice = bin.subarray(i, i + chunk);
+    b64 += String.fromCharCode(...slice);
+  }
+  const encoded =
+    typeof btoa === "function"
+      ? btoa(b64)
+      : Buffer.from(bin).toString("base64");
+  return `data:${mimeType};base64,${encoded}`;
+}
+
+/**
+ * Extract readable text from a rendered PDF page image (R3 vision fallback).
+ * @param {ArrayBuffer} imageBytes
+ * @param {string} [mimeType]
+ * @param {{ docId?: string, pageNum?: number }} [ctx]
+ * @returns {Promise<string|null>}
+ */
+export async function extractPageTextWithVision(imageBytes, mimeType = "image/png", ctx = {}) {
+  if (!imageBytes?.byteLength) return null;
+  if (!hasPlatformLlmAccess()) return null;
+
+  const dataUrl = bytesToDataUrl(imageBytes, mimeType);
+  const prompt = [
+    "Extract all readable text from this document page image.",
+    "Return plain text only — preserve headings, paragraphs, lists, and table rows as readable lines.",
+    "Do not summarize or add commentary.",
+  ].join(" ");
+
+  const llmResult = await geminiVisionChat({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+    max_tokens: VISION_PAGE_TEXT_MAX_TOKENS,
+    temperature: 0,
+  });
+
+  if (!llmResult?.content) {
+    console.debug("[vision.extractPageTextWithVision] No text returned:", {
+      docId: ctx.docId || null,
+      pageNum: ctx.pageNum ?? null,
+      status: llmResult?.status ?? null,
+    });
+    return null;
+  }
+
+  const text = String(llmResult.content).trim();
+  if (!text) return null;
+
+  void logLlmUsage({
+    docId: ctx.docId,
+    phase: "T0.1-vision-page-fallback",
+    model: GEMINI_VISION_MODEL,
+    meta: { pageNum: ctx.pageNum ?? null },
+  });
+
+  return text;
 }
 
 /**

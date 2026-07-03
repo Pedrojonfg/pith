@@ -130,7 +130,7 @@ async function canvasToPng(canvas) {
 }
 
 /** @param {object} page */
-async function renderPageFallback(page) {
+export async function renderPageFallback(page) {
   const viewport = page.getViewport({ scale: 2 });
   const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
   if (!canvas) return null;
