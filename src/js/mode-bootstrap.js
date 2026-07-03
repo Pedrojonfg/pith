@@ -22,6 +22,16 @@ function preparationAllowsBootstrap(doc) {
   return false;
 }
 
+function logModeBootstrapInventoryCheck(doc, modeKey, checks) {
+  console.debug("[DPP-GUARD.resolveModeEntryState] Inventory gate", {
+    docId: doc?.docId ?? null,
+    mode: modeKey,
+    ...checks,
+    prepStatus: doc?.shared?.preparation?.status ?? null,
+    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+  }); // [debug-enrich]
+}
+
 /**
  * @param {object | null | undefined} slice
  * @returns {boolean}
@@ -163,7 +173,16 @@ export function resolveModeEntryState(doc, mode) {
         existingSlice: recallSlice,
       };
     }
-    if (isConceptInventoryValid(doc) || hasConceptInventory(doc) || preparationAllowsBootstrap(doc)) {
+    const inventoryValid = isConceptInventoryValid(doc);
+    const hasInv = hasConceptInventory(doc);
+    const prepAllows = preparationAllowsBootstrap(doc);
+    if (inventoryValid || hasInv || prepAllows) {
+      logModeBootstrapInventoryCheck(doc, modeKey, {
+        inventoryValid,
+        hasInventory: hasInv,
+        prepAllowsBootstrap: prepAllows,
+        branch: "recall_bootstrap",
+      });
       return {
         kind: "bootstrap",
         mode: modeKey,
@@ -188,7 +207,16 @@ export function resolveModeEntryState(doc, mode) {
     };
   }
 
-  if (isConceptInventoryValid(doc) || preparationAllowsBootstrap(doc) || hasConceptInventory(doc)) {
+  const inventoryValid = isConceptInventoryValid(doc);
+  const hasInv = hasConceptInventory(doc);
+  const prepAllows = preparationAllowsBootstrap(doc);
+  if (inventoryValid || prepAllows || hasInv) {
+    logModeBootstrapInventoryCheck(doc, modeKey, {
+      inventoryValid,
+      hasInventory: hasInv,
+      prepAllowsBootstrap: prepAllows,
+      branch: "prep_ready_bootstrap",
+    });
     return {
       kind: "bootstrap",
       mode: modeKey,

@@ -336,20 +336,34 @@ async function ensureThresholdTagsOnInventory(doc, ctx) {
 }
 
 async function runPhaseT12(doc, ctx) {
+  console.debug("[DPP-GUARD.runPhaseT12] Enter", {
+    docId: doc.docId,
+    forceRerun: ctx.forceRerun === true,
+    prepStatus: doc.shared?.preparation?.status ?? null,
+    conceptCount: doc.shared?.conceptInventory?.length ?? 0,
+    interviewSynthesisComplete: doc.shared?.interviewSynthesisComplete === true,
+  }); // [debug-enrich]
   if (
     doc.shared?.interviewSynthesisComplete === true &&
     Array.isArray(doc.shared.conceptInventory) &&
     doc.shared.conceptInventory.length > 0
   ) {
+    console.info("[DPP-GUARD.runPhaseT12] skip — interview synthesis inventory present", {
+      docId: doc.docId,
+      conceptCount: doc.shared.conceptInventory.length,
+    }); // [debug-enrich]
     await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(doc.shared.conceptInventory.length);
   }
   if (!ctx.forceRerun && isConceptInventoryValid(doc)) {
     const inv = doc.shared.conceptInventory;
     const charCount = doc.shared?.docMeta?.charCount ?? 0;
-    console.log(
-      `[DPP-GUARD] isConceptInventoryValid → TRUE (${inv.length} concepts, charCount ${charCount}). Skipping recalculation.`,
-    );
+    console.info("[DPP-GUARD.runPhaseT12] skip — isConceptInventoryValid", {
+      docId: doc.docId,
+      conceptCount: inv.length,
+      charCount,
+      prepStatus: doc.shared?.preparation?.status ?? null,
+    }); // [debug-enrich]
     await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(inv.length);
   }
@@ -1048,7 +1062,20 @@ function deferredTier1PhasesPending(doc, fingerprint) {
  */
 export async function ensureTier1Preparation(doc, options = {}) {
   if (!doc?.docId) return null;
-  if (!options.forceRerun && isTier1PreparationComplete(doc)) return doc;
+  if (!options.forceRerun && isTier1PreparationComplete(doc)) {
+    console.info("[DPP-GUARD.ensureTier1Preparation] skip — tier-1 already complete", {
+      docId: doc.docId,
+      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
+      prepStatus: doc.shared?.preparation?.status ?? null,
+    }); // [debug-enrich]
+    return doc;
+  }
+  console.info("[DPP-GUARD.ensureTier1Preparation] Starting tier-1 pipeline", {
+    docId: doc.docId,
+    forceRerun: options.forceRerun === true,
+    prepStatus: doc.shared?.preparation?.status ?? null,
+    inFlight: tier1InFlight.has(doc.docId),
+  }); // [debug-enrich]
 
   const docId = doc.docId;
   let flight = tier1InFlight.get(docId);

@@ -2667,13 +2667,34 @@ export async function runConceptInventory(
  */
 export function meetsConceptInventoryThreshold(session) {
   const shared = session?.shared;
-  if (!shared) return false;
+  if (!shared) {
+    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — no shared slice", {
+      docId: session?.docId ?? null,
+    }); // [debug-enrich]
+    return false;
+  }
 
   const inventory = shared.conceptInventory;
-  if (!Array.isArray(inventory) || inventory.length === 0) return false;
+  if (!Array.isArray(inventory) || inventory.length === 0) {
+    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — empty inventory", {
+      docId: session?.docId ?? null,
+      prepStatus: shared.preparation?.status ?? null,
+    }); // [debug-enrich]
+    return false;
+  }
 
   const charCount = shared.docMeta?.charCount ?? 0;
-  return inventory.length >= minViableConcepts(charCount);
+  const minRequired = minViableConcepts(charCount);
+  const meets = inventory.length >= minRequired;
+  if (!meets) {
+    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — below minViableConcepts", {
+      docId: session?.docId ?? null,
+      conceptCount: inventory.length,
+      minRequired,
+      charCount,
+    }); // [debug-enrich]
+  }
+  return meets;
 }
 
 /**
@@ -2713,7 +2734,13 @@ export async function markStalePreparationSession(session, options = {}) {
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
   prep.completedAt = prep.completedAt || Date.now();
-  console.log("[DPP-GUARD] Marked stale preparation failed (STALE_RUN).", { docId });
+  console.warn("[DPP-GUARD.markStalePreparationSession] Marked stale preparation failed (STALE_RUN)", {
+    docId,
+    runId: prep.runId ?? null,
+    startedAt: prep.startedAt ?? null,
+    updatedAt: prep.updatedAt ?? null,
+    conceptCount: session.shared.conceptInventory?.length ?? 0,
+  }); // [debug-enrich]
   if (options.persist !== false) {
     await saveDocumentSession(session);
   }
@@ -2728,9 +2755,17 @@ export async function markStalePreparationSession(session, options = {}) {
 export async function scanStalePreparationSessions(sessions) {
   const list = Array.isArray(sessions) ? sessions : [];
   const out = [];
+  let marked = 0;
   for (const session of list) {
     const result = await markStalePreparationSession(session);
+    if (result.changed) marked += 1;
     out.push(result.session);
+  }
+  if (marked > 0) {
+    console.info("[DPP-GUARD.scanStalePreparationSessions] Stale sessions marked failed", {
+      scanned: list.length,
+      marked,
+    }); // [debug-enrich]
   }
   return out;
 }
@@ -2775,11 +2810,40 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
  * @returns {boolean}
  */
 export function isConceptInventoryValid(session) {
-  if (!meetsConceptInventoryThreshold(session)) return false;
+  const docId = session?.docId ?? null;
+  const invLen = Array.isArray(session?.shared?.conceptInventory)
+    ? session.shared.conceptInventory.length
+    : 0;
+  const charCount = session?.shared?.docMeta?.charCount ?? 0;
+  const status = session?.shared?.preparation?.status ?? null;
 
-  const status = session?.shared?.preparation?.status;
-  if (status === "ready" || status === "partial") return true;
-  if (status === "legacy") return true;
+  if (!meetsConceptInventoryThreshold(session)) {
+    console.debug("[DPP-GUARD.isConceptInventoryValid] FALSE — threshold not met", {
+      docId,
+      invLen,
+      minRequired: minViableConcepts(charCount),
+      charCount,
+      status,
+    }); // [debug-enrich]
+    return false;
+  }
+
+  if (status === "ready" || status === "partial" || status === "legacy") {
+    console.debug("[DPP-GUARD.isConceptInventoryValid] TRUE", {
+      docId,
+      invLen,
+      charCount,
+      status,
+    }); // [debug-enrich]
+    return true;
+  }
+
+  console.debug("[DPP-GUARD.isConceptInventoryValid] FALSE — non-terminal prep status", {
+    docId,
+    invLen,
+    charCount,
+    status,
+  }); // [debug-enrich]
   return false;
 }
 
@@ -2830,7 +2894,16 @@ const dppFlights = new Map();
 export function runDedupedDppFlight(docId, factory, options = {}) {
   const id = String(docId || "").trim();
   if (!id) return Promise.resolve(factory());
-  if (!options.force && dppFlights.has(id)) return dppFlights.get(id);
+  if (!options.force && dppFlights.has(id)) {
+    console.debug("[DPP-GUARD.runDedupedDppFlight] Deduped — flight already in progress", {
+      docId: id,
+    }); // [debug-enrich]
+    return dppFlights.get(id);
+  }
+  console.debug("[DPP-GUARD.runDedupedDppFlight] Starting new flight", {
+    docId: id,
+    force: options.force === true,
+  }); // [debug-enrich]
   const flight = Promise.resolve()
     .then(factory)
     .finally(() => {
@@ -2873,7 +2946,11 @@ async function handlePreparationStaleRun(session) {
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
   prep.completedAt = prep.completedAt || Date.now();
-  console.log("[DPP-GUARD] Stale preparation — marking failed (STALE_RUN).");
+  console.warn("[DPP-GUARD.handlePreparationStaleRun] Stale preparation — marking failed (STALE_RUN)", {
+    docId,
+    runId: prep.runId ?? null,
+    conceptCount: session.shared.conceptInventory?.length ?? 0,
+  }); // [debug-enrich]
   await saveDocumentSession(session);
   return { retried: false, session };
 }
@@ -2884,73 +2961,104 @@ async function handlePreparationStaleRun(session) {
  * @returns {{ decision: 'skip'|'run'|'failed'|'waiting'|'degraded' }}
  */
 export function evaluateConceptInventoryGuard(session, options = {}) {
-  if (options.forceRerun) {
-    console.log("[DPP-GUARD] [DPP-GUARD] Force rerun requested — bypassing guard.");
-    return { decision: "run" };
-  }
-
-  if (isTier1PreparationComplete(session)) {
-    const inv = session.shared.conceptInventory;
-    const charCount = session.shared.docMeta?.charCount ?? 0;
-    console.log(
-      `[DPP-GUARD] isTier1PreparationComplete → TRUE (${inv?.length ?? 0} concepts, charCount ${charCount}). Skipping recalculation.`,
-    );
-    return { decision: "skip" };
-  }
-
+  const docId = session?.docId ?? null;
   const status = session?.shared?.preparation?.status ?? "undefined";
   const length = Array.isArray(session?.shared?.conceptInventory)
     ? session.shared.conceptInventory.length
     : 0;
+  const charCount = session?.shared?.docMeta?.charCount ?? 0;
+  const guardCtx = { docId, status, conceptCount: length, charCount, forceRerun: options.forceRerun === true }; // [debug-enrich]
+
+  if (options.forceRerun) {
+    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] Force rerun — bypassing guard", guardCtx); // [debug-enrich]
+    return { decision: "run" };
+  }
+
+  if (isTier1PreparationComplete(session)) {
+    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — tier-1 complete", {
+      ...guardCtx,
+      minRequired: minViableConcepts(charCount),
+      hasModeRec: Boolean(session?.shared?.modeRecommendation),
+      hasBlockRec: Boolean(session?.shared?.blockRecommendation?.nBlocks),
+    }); // [debug-enrich]
+    return { decision: "skip" };
+  }
 
   if (
     (status === "running" || status === "pending") &&
     hasTier1Artifacts(session)
   ) {
-    console.log(
-      `[DPP-GUARD] Tier-1 artifacts present while status is ${status} — treating preparation as complete.`,
-    );
+    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — tier-1 artifacts while in-flight status", {
+      ...guardCtx,
+      hasModeRec: Boolean(session?.shared?.modeRecommendation),
+    }); // [debug-enrich]
     return { decision: "skip" };
   }
 
-  console.log(
-    `[DPP-GUARD] isConceptInventoryValid ? FALSE. Status: ${status}, inventory: ${length} concepts.`,
-  );
+  console.debug("[DPP-GUARD.evaluateConceptInventoryGuard] inventory not yet valid for skip", {
+    ...guardCtx,
+    inventoryValid: isConceptInventoryValid(session),
+    tier1Complete: false,
+  }); // [debug-enrich]
 
   if (status === "failed") {
     const prep = normalizePreparationState(session?.shared?.preparation);
     if (prep.failReason === "STALE_RUN") {
-      console.log("[DPP-GUARD] Failed STALE_RUN — user may retry preparation.");
+      console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] failed — STALE_RUN (user may retry)", {
+        ...guardCtx,
+        failReason: prep.failReason,
+        staleRetryCount: prep.staleRetryCount ?? 0,
+      }); // [debug-enrich]
       return { decision: "failed" };
     }
-    console.log("[DPP-GUARD] Status 'failed' — surfacing error state. Not auto-retrying.");
+    console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] failed — surfacing error, no auto-retry", {
+      ...guardCtx,
+      failReason: prep.failReason ?? null,
+      lastError: prep.errors?.[prep.errors.length - 1]?.message ?? null,
+    }); // [debug-enrich]
     return { decision: "failed" };
   }
 
   if (status === "running" || status === "pending") {
     const prep = normalizePreparationState(session?.shared?.preparation);
-    const docId = String(session?.docId || "").trim();
-    if (isDppInFlight(docId)) {
-      console.log("[DPP-GUARD] Skipping DPP re-trigger: pipeline in flight.");
+    const prepDocId = String(session?.docId || "").trim();
+    const inFlight = isDppInFlight(prepDocId);
+    const stale = isPreparationStale(prep, session);
+    if (inFlight) {
+      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] waiting — pipeline in flight", {
+        ...guardCtx,
+        runId: prep.runId ?? null,
+        inFlight: true,
+      }); // [debug-enrich]
       return { decision: "waiting" };
     }
-    if (isPreparationStale(prep, session)) {
-      console.log("[DPP-GUARD] Preparation stale with no in-flight pipeline — allowing re-run.");
+    if (stale) {
+      console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] run — stale preparation, no in-flight pipeline", {
+        ...guardCtx,
+        runId: prep.runId ?? null,
+        startedAt: prep.startedAt ?? null,
+        updatedAt: prep.updatedAt ?? null,
+      }); // [debug-enrich]
       return { decision: "run" };
     }
-    console.log("[DPP-GUARD] Skipping DPP re-trigger: already running.");
+    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] waiting — preparation already running", {
+      ...guardCtx,
+      runId: prep.runId ?? null,
+    }); // [debug-enrich]
     return { decision: "waiting" };
   }
 
   if (status === "ready" || status === "partial") {
-    const charCount = session?.shared?.docMeta?.charCount ?? 0;
     const minRequired = minViableConcepts(charCount);
-    console.log(
-      `[DPP-GUARD] Inventory below minimum threshold (${length} < ${minRequired}). Treating as degraded.`,
-    );
+    console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] degraded — inventory below threshold", {
+      ...guardCtx,
+      minRequired,
+      failReason: session?.shared?.preparation?.failReason ?? null,
+    }); // [debug-enrich]
     return { decision: "degraded" };
   }
 
+  console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — no valid inventory, will trigger DPP", guardCtx); // [debug-enrich]
   return { decision: "run" };
 }
 
@@ -2964,10 +3072,19 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
   const pollMs = options.pollMs ?? 2000;
   const maxWaitMs = options.maxWaitMs ?? DPP_STALE_TIMEOUT_MS + 60_000;
   const started = Date.now();
+  let iteration = 0;
+  console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Start", { pollMs, maxWaitMs }); // [debug-enrich]
 
   while (Date.now() - started < maxWaitMs) {
+    iteration += 1;
     let session = await reloadSession();
-    if (!session) return { decision: "failed", session: null };
+    if (!session) {
+      console.error("[DPP-GUARD.pollUntilConceptInventoryReady] Session disappeared", {
+        iteration,
+        elapsedMs: Date.now() - started,
+      }); // [debug-enrich]
+      return { decision: "failed", session: null };
+    }
 
     session = await repairStuckRunningPreparationIfNeeded(session);
 
@@ -2978,24 +3095,63 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
       !isDppInFlight(session.docId)
     ) {
       if (isPreparationStale(prep, session)) {
+        console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Stale run detected during poll", {
+          iteration,
+          docId: session.docId,
+          elapsedMs: Date.now() - started,
+          runId: prep.runId ?? null,
+        }); // [debug-enrich]
         const stale = await handlePreparationStaleRun(session);
         return { decision: "failed", session: stale.session };
       }
     }
 
     const guard = evaluateConceptInventoryGuard(session);
+    console.debug("[DPP-GUARD.pollUntilConceptInventoryReady] Poll tick", {
+      iteration,
+      elapsedMs: Date.now() - started,
+      docId: session.docId,
+      decision: guard.decision,
+      prepStatus: prep.status,
+      conceptCount: session.shared?.conceptInventory?.length ?? 0,
+      inFlight: isDppInFlight(session.docId),
+    }); // [debug-enrich]
     if (guard.decision === "skip" || guard.decision === "degraded") {
+      console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Resolved", {
+        decision: guard.decision,
+        iteration,
+        elapsedMs: Date.now() - started,
+        docId: session.docId,
+      }); // [debug-enrich]
       return { decision: guard.decision, session };
     }
     if (guard.decision === "failed") {
+      console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Guard failed", {
+        iteration,
+        elapsedMs: Date.now() - started,
+        docId: session.docId,
+      }); // [debug-enrich]
       return { decision: "failed", session };
     }
     if (guard.decision === "run") {
+      console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Guard requests run", {
+        iteration,
+        elapsedMs: Date.now() - started,
+        docId: session.docId,
+      }); // [debug-enrich]
       return { decision: "run", session };
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
-  return { decision: "waiting", session: await reloadSession() };
+  const timedOutSession = await reloadSession();
+  console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Timed out", {
+    iteration,
+    elapsedMs: Date.now() - started,
+    maxWaitMs,
+    docId: timedOutSession?.docId ?? null,
+    prepStatus: timedOutSession?.shared?.preparation?.status ?? null,
+  }); // [debug-enrich]
+  return { decision: "waiting", session: timedOutSession };
 }
 
 /**

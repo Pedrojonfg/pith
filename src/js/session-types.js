@@ -667,11 +667,26 @@ export function hasTier1Artifacts(session) {
  * @returns {boolean}
  */
 export function isTier1PreparationComplete(session) {
-  if (!hasTier1GateArtifacts(session)) return false;
+  const docId = session?.docId ?? null;
+  const shared = session?.shared;
+  if (!hasTier1GateArtifacts(session)) {
+    console.debug("[DPP-GUARD.isTier1PreparationComplete] FALSE — missing gate artifacts", {
+      docId,
+      conceptCount: Array.isArray(shared?.conceptInventory) ? shared.conceptInventory.length : 0,
+      hasBlockRec: Boolean(shared?.blockRecommendation?.nBlocks),
+      prepStatus: shared?.preparation?.status ?? null,
+    }); // [debug-enrich]
+    return false;
+  }
   const prep = normalizePreparationState(session?.shared?.preparation);
-  if (prep.status === "ready" || prep.status === "legacy") return true;
-  if (prep.status === "partial") return true;
-  return false;
+  const ok = prep.status === "ready" || prep.status === "legacy" || prep.status === "partial";
+  console.debug(`[DPP-GUARD.isTier1PreparationComplete] ${ok ? "TRUE" : "FALSE"}`, {
+    docId,
+    prepStatus: prep.status,
+    conceptCount: shared?.conceptInventory?.length ?? 0,
+    blockRec: shared?.blockRecommendation?.nBlocks ?? null,
+  }); // [debug-enrich]
+  return ok;
 }
 
 /**
