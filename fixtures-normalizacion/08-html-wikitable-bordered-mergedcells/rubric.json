@@ -1,0 +1,31 @@
+{
+  "source_url": "https://en.wikipedia.org/wiki/List_of_Nobel_laureates_in_Physics",
+  "license": "CC BY-SA 4.0 (Wikipedia text/table data); excerpt (header + first 40 data rows) captured live for software-testing purposes.",
+  "primary_axis": "tables:bordered_wikitable_mergedcells",
+  "secondary_axes": [],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "List of Nobel laureates in Physics (excerpt)", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [1, 1],
+  "expected_tables": [
+    {
+      "location": "single table spanning the whole document body",
+      "approx_rows": 41,
+      "approx_cols": 6,
+      "has_merged_cells": true,
+      "has_borders": true,
+      "confidence": "high",
+      "notes": "Genuine class='wikitable' (bordered) table. Header row uses rowspan=2 on 'Year', 'Country', 'Citation', and 'Reference(s)' columns (these headers span both header sub-rows vertically since there's a second header sub-row for 'Image'/'Name'), and colspan=2 on 'Laureate' (splitting into 'Image' and 'Name' sub-columns beneath it). Body rows also use rowspan on the 'Year' cell for years with multiple co-laureates (shared prize), and some Country/Citation cells span multiple laureate rows within the same year. Verified directly: 19 rowspan attributes + 18 colspan attributes present across the excerpt (41 <tr> rows total including header)."
+    }
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation in this excerpt (physics laureate names/citations are prose, not equations).",
+  "expected_noise_elements": [
+    "Wikipedia citation/reference superscript markers (<sup class='mw-ref'>) embedded inside header and body cells"
+  ],
+  "notes_for_implementer": "This is the primary 'legitimate complex table' fixture -- unlike fixtures 05/06 (false-positive navbox tables) and fixture 04 (false-positive OCR noise), this table IS real tabular data and SHOULD be detected and reconstructed faithfully, including the two-level header (rowspan+colspan combination) and the in-body rowspans for shared-year/shared-country cells. A good normalization should either (a) faithfully reproduce the merged-cell structure in the output markdown/table representation, or (b) explicitly and correctly flatten it (e.g. repeating the spanned value into each logical row/column) rather than silently dropping cells or misaligning columns after the first rowspan is encountered. This is the positive control to pair against the false-positive fixtures: Pith must find exactly ONE table here, matching its true row/column footprint, not zero and not multiple fragments."
+}

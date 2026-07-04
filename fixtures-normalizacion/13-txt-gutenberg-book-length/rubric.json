@@ -1,0 +1,34 @@
+{
+  "source_url": "https://www.gutenberg.org/cache/epub/84/pg84.txt (Project Gutenberg eBook #84, Frankenstein by Mary Wollstonecraft Shelley)",
+  "license": "Public domain (author died 1851; also explicitly Project Gutenberg's own license which permits free redistribution of the public-domain text).",
+  "primary_axis": "length:book_length_long_document",
+  "secondary_axes": ["source_format:plain_txt", "structure:toc_vs_actual_content_mismatch"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "Frankenstein; or, the Modern Prometheus", "confidence": "medium"},
+    {"level": 2, "text": "CONTENTS", "confidence": "high"},
+    {"level": 2, "text": "Letter 1", "confidence": "high"},
+    {"level": 2, "text": "Letter 2", "confidence": "high"},
+    {"level": 2, "text": "Letter 3", "confidence": "high"},
+    {"level": 2, "text": "Letter 4", "confidence": "high"},
+    {"level": 2, "text": "Chapter 1", "confidence": "high"},
+    {"level": 2, "text": "Chapter 2", "confidence": "high"},
+    {"level": 2, "text": "Chapter 3", "confidence": "high"},
+    {"level": 2, "text": "Chapter 4", "confidence": "high"},
+    {"level": 2, "text": "Chapter 5", "confidence": "high"},
+    {"level": 2, "text": "Chapter 6", "confidence": "high"},
+    {"level": 2, "text": "Chapter 7", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [12, 14],
+  "expected_tables": [],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation.",
+  "expected_noise_elements": [
+    "Project Gutenberg boilerplate start marker: '*** START OF THE PROJECT GUTENBERG EBOOK 84 ***' as the very first line",
+    "A CONTENTS/table-of-contents block (lines 9-40) listing 'Letter 1' through 'Letter 4' and 'Chapter 1' through 'Chapter 24' -- IMPORTANT: this ToC lists 28 total entries, but this excerpt's actual body text only goes through Chapter 7 (see review note below) -- a naive implementation might treat the ToC as ground truth for the document's heading count and over-report expected headings that don't actually appear in the body"
+  ],
+  "notes_for_implementer": "TRUNCATION DISCLOSURE (important, not a defect in Pith): this fixture's input.txt is intentionally/unavoidably INCOMPLETE -- it was captured via a web-fetch tool with a hard truncation cap during the research phase and ends mid-sentence ('...I saw the lightning playing on the summit of Mont Blanc in') partway through Chapter 7, even though the book's own CONTENTS listing promises Letters 1-4 and Chapters 1-24. This is disclosed prominently here and in notes.md precisely so nobody mistakes the missing Chapters 8-24 for a Pith bug -- Pith is only being asked to normalize the text that is actually present in input.txt (Letters 1-4 + Chapters 1-7, ending mid-word), and expected_headings above lists only those actually-present headings. Separately, this fixture is a good real-world test of the general phenomenon where a document's own table-of-contents promises more structure than the (possibly truncated, possibly corrupted) body actually delivers -- Pith's heading extraction should reflect the actual body content, not blindly mirror the ToC's list of 28 entries."
+}

@@ -47,9 +47,31 @@ export function tableConversionFallbackLabel(rows, cols) {
 
 /**
  * @param {Element} tableEl
+ * @returns {boolean}
+ */
+export function isPresentationTable(tableEl) {
+  if (!tableEl || tableEl.nodeType !== 1) return false;
+  if (String(tableEl.getAttribute("role") || "").toLowerCase() === "presentation") return true;
+  const cls = String(tableEl.className || "");
+  if (
+    /\b(navbox|vertical-navbox|sistersitebox|infobox|mbox-small|navbox-inner|metadata|ambox|sidebar)\b/i.test(
+      cls,
+    )
+  ) {
+    return true;
+  }
+  if (tableEl.closest?.(".navbox, .vertical-navbox, .sistersitebox, .infobox")) return true;
+  const summary = String(tableEl.getAttribute("summary") || "");
+  if (/layout|navigation|presentation/i.test(summary)) return true;
+  return false;
+}
+
+/**
+ * @param {Element} tableEl
  * @returns {string|null}
  */
 export function htmlTableToMarkdown(tableEl) {
+  if (isPresentationTable(tableEl)) return null;
   const nested = tableEl.querySelector("table");
   if (nested && nested !== tableEl) {
     const rows = tableEl.querySelectorAll("tr").length;

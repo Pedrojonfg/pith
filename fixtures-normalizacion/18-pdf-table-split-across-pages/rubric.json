@@ -1,0 +1,34 @@
+{
+  "source_url": "https://www.bls.gov/news.release/pdf/cewqtr.pdf",
+  "license": "U.S. federal government work product (Bureau of Labor Statistics news release) -- public domain in the United States (17 U.S.C. 105).",
+  "primary_axis": "tables:split_across_pages",
+  "secondary_axes": ["tables:multi_level_header", "tables:dot_leader_fill_in_body"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "County Employment and Wages - Fourth Quarter 2025", "confidence": "high"},
+    {"level": 2, "text": "For More Information", "confidence": "medium"}
+  ],
+  "expected_heading_count_range": [1, 3],
+  "expected_tables": [
+    {
+      "location": "spans nearly the entire document, from page ~2 through page ~14/15 (page numbers approximate, not individually re-counted per page in this pass)",
+      "approx_rows": 373,
+      "approx_cols": 7,
+      "has_merged_cells": true,
+      "has_borders": false,
+      "confidence": "high",
+      "notes": "Table 1: 'Covered establishments, employment, and wages in the 373 largest counties, fourth quarter 2025'. Verified directly via pdftotext -layout: the 'Table 1.' caption appears 8 times total -- once as the original heading (no 'Continued' suffix) plus 7 more times with '- Continued' appended -- each time followed by a FULL re-statement of the two-level column header (top level: 'Employment' / 'Average weekly wage ²' spanning grouped sub-columns; second level: 'Establishments, fourth quarter 2025', 'December 2025', 'Percent change, December 2024-25³', 'Ranking by percent change', 'Fourth quarter 2025', 'Percent change...', 'Ranking by percent change' again). Body rows use dot-leader fill characters between the county name and its first numeric column (e.g. 'Baldwin, AL..................................    9.7    87.8 ...'), a legitimate visual-alignment device WITHIN a real table, distinct from fixture 16's dot-leaders in a Table of Contents (which is NOT a table)."
+    }
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation; footnote markers (superscript numbers 1-5) appear throughout the table header and body referencing endnote explanations, which could be mistaken for exponents/math notation by an overeager math-detector -- worth a light sanity check that these aren't flagged as 'math present'.",
+  "expected_noise_elements": [
+    "The exact same 'Table 1' caption + full two-level column header repeats verbatim at the top of 8 separate pages (1 original + 7 '- Continued' instances, precisely verified via grep -- an earlier draft of this rubric overstated this as '11+', which actually conflated Table 1's own repeats with separate '- Continued' occurrences belonging to Table 2 and Table 3 captions later in the document; corrected after independent re-verification) -- Pith must recognize these 8 as CONTINUATIONS of the same single logical table, not as 8 separate small tables",
+    "Footnote markers (superscript 1-5) scattered through headers and body cells, resolved in a footnotes/endnotes section elsewhere in the release",
+    "'For release 10:00 a.m. (ET)' and technical/media contact info block repeated as a running header on page 1 only"
+  ],
+  "notes_for_implementer": "PRIMARY test target: this is the canonical 'table split across pages' fixture. The 373-county table's caption and full column header repeat at the top of 8 pages it spans (1 original + 7 explicitly marked '- Continued', directly re-verified via pdftotext -layout). Pith must merge these into ONE logical table of 373 data rows, not 8 separate small tables each starting fresh -- the repeated caption/header on each page is the exact signal that should trigger continuation-merging rather than being treated as independent table headers. Note the document also contains at least two OTHER tables (Table 2, Table 3) later on, each with their own '- Continued' repeats -- do not conflate their counts with Table 1's when verifying this fixture. Secondary point: the dot-leader characters used to visually connect each county name to its first data column ARE part of a genuine table's body formatting here (unlike fixture 16, where dot-leaders appear in a Table of Contents that is NOT a table) -- useful contrast case for whether Pith's table detector distinguishes 'dot leaders inside a real tabular structure' from 'dot leaders inside a ToC'."
+}

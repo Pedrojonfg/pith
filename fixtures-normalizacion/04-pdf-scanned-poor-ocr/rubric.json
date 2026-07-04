@@ -1,0 +1,24 @@
+{
+  "source_url": "https://vault.fbi.gov/rosenberg-case/klaus-fuchs/Klaus%20Fuchs%20Part%2036/at_download/file",
+  "license": "U.S. federal government work product (FBI FOIA release) -- public domain in the United States (17 U.S.C. 105).",
+  "primary_axis": "source_format:pdf_scanned_poor_ocr",
+  "secondary_axes": ["tables:false_positive_risk_from_ocr_noise", "noise:foia_redaction_boilerplate", "length:long_100_pages"],
+  "confidence": "medium",
+  "needs_human_review": true,
+  "review_reason": "This document DOES have a genuine OCR text layer (confirmed via pdffonts: Helvetica/Helvetica-Bold Type 1 fonts embedded), and it IS genuinely poor quality (words run together with no spaces, e.g. 'toyouor thesubjectof yourrequest', scrambled character order in places). Flagged for human review specifically because of the table false-positive risk described below -- this is one of the two named weak-spot categories the task requires never rubber-stamping.",
+  "expected_headings": [],
+  "expected_heading_count_range": [0, 2],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "throughout the document body (verified via grep, dozens of occurrences)", "looks_like": "bordered table / horizontal rule sequences", "reason": "OCR of scan noise, page-skew artifacts, and stray punctuation from a low-quality 1949-1976-era typewritten scan produces long runs of dash and pipe-like characters (e.g. '-1-.', '._.', ',_ _.', '»_-»=') that a column-alignment or ASCII-table heuristic could easily misidentify as table borders or column separators. A raw grep for lines matching dash-sequences or pipe characters returns 279 hits in this ~100-page document -- none of which are real tables; the underlying source is entirely free-running memo prose (FBI investigative reports on Klaus Fuchs, 1949-1976).", "confidence": "high"}
+    ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation expected -- this is prose-only investigative correspondence. Any 'math-like' tokens that surface (isolated digits, decimal-looking OCR artifacts) are OCR noise, not real notation, and should not be flagged as math by Pith.",
+  "expected_noise_elements": [
+    "At least 3 occurrences of the standard FBI 'FOIPA DELETED PAGE INFORMATION SHEET' redaction boilerplate page (same template as fixture 03)",
+    "Pervasive OCR garbling: merged words with no spaces, stray punctuation runs, misrecognized characters -- this is the dominant characteristic of the entire 100-page document, not an isolated section",
+    "Repeating classification/handling stamps typical of 1950s-70s FBI memos (e.g. 'SECRET', 'CONFIDENTIAL') rendered inconsistently by the OCR pass",
+    "Page-skew / speckle scan artifacts manifesting as isolated single characters or short garbage tokens on many lines"
+  ],
+  "notes_for_implementer": "This is the primary intended stress-test for named weak spot #2 (table-detection false positives from a column-alignment heuristic). Do NOT rubber-stamp any table Pith reports here -- if Pith's normalizer emits ANY table for this document, that is almost certainly a false positive caused by OCR noise resembling column alignment, and should be investigated as a bug, not accepted as a correct extraction. Separately, this document is a genuine stress test of heading detection under severe OCR noise: with no real headings in the source (it is continuous investigative prose interspersed with boilerplate redaction sheets), Pith should report zero or near-zero headings; any heading Pith invents here is likely a false positive from OCR-mangled ALL-CAPS noise fragments (which do occur, e.g. 'SECURITY REASONSSURVEILLANCE TEMPORARILYDISCONTINUED') being misread as shouted/emphasized heading-like text."
+}

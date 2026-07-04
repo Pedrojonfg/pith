@@ -5,9 +5,9 @@
 
 import { createStructureReport, aggregateConfidence } from "./types.js";
 import { stripArtifacts } from "./strip-artifacts.js";
-import { inferHeadings, validateHeadingHierarchy } from "./infer-headings.js";
+import { inferHeadings } from "./infer-headings.js";
 import { extractPdfBlocks } from "./extract-pdf-blocks.js";
-import { extractPdfOutline, matchOutlineToBlocks, computeOutlineCoverage } from "./pdf-outline.js";
+import { extractPdfOutline, matchOutlineToBlocks, computeOutlineCoverage, filterOutlineHeadings } from "./pdf-outline.js";
 import { getFrontMatterPageRange, detectFrontMatterPages } from "./front-matter-detector.js";
 import { extractHtmlBlocks } from "./extract-html-blocks.js";
 import { extractHtmlBlocksWithImages } from "../document-images/extract-html.js";
@@ -15,7 +15,7 @@ import { extractPdfImages } from "../document-images/extract-pdf.js";
 import { emitMarkdown, dehyphenate as dehyphenateRaw } from "./emit-markdown.js";
 import { protectMarkdownTransform } from "../document-images/tokens.js";
 import { buildEqualLengthSections } from "../slow/headings.js";
-import { createTextBlock } from "./types.js";
+import { extractPlainBlocks, mergeGutenbergTitleBlocks, mergeRfcTitleBlocks } from "./plain-text-blocks.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
@@ -41,22 +41,8 @@ function countNonArtifactBlocks(blocks) {
  * @param {"txt"|"md"} source
  * @returns {TextBlock[]}
  */
-function extractPlainBlocks(text, source) {
-  const raw = String(text || "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .trim();
-  if (!raw) return [];
-  return raw.split(/\n{2,}/).map((para, i) => {
-    const trimmed = para.trim();
-    return createTextBlock({
-      text: trimmed,
-      fontSize: 0,
-      source,
-      lineIndex: i,
-      kind: "paragraph",
-    });
-  }).filter((b) => b.text);
+function extractPlainBlocksForFormat(text, source) {
+  return extractPlainBlocks(text, source);
 }
 
 /**
@@ -117,8 +103,17 @@ async function extractBlocks(rawContent, format) {
     };
   }
   const text = typeof rawContent === "string" ? rawContent : "";
+  const plainSource = format === "md" ? "md" : "txt";
+  let plainBlocks = extractPlainBlocksForFormat(text, plainSource);
+  if (plainSource === "txt") {
+    const beforeRfc = plainBlocks;
+    plainBlocks = mergeRfcTitleBlocks(plainBlocks);
+    if (plainBlocks === beforeRfc) {
+      plainBlocks = mergeGutenbergTitleBlocks(plainBlocks);
+    }
+  }
   return {
-    blocks: extractPlainBlocks(text, format === "md" ? "md" : "txt"),
+    blocks: plainBlocks,
     pageHeights: [],
     doc: null,
     pendingImages: [],
@@ -150,7 +145,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
 
   let outline = [];
   if (doc) {
-    outline = await extractPdfOutline(doc);
+    outline = filterOutlineHeadings(await extractPdfOutline(doc));
   }
 
   const totalPages = Math.max(
@@ -219,7 +214,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     outlineCoverage,
   });
 
-  const headings = validateHeadingHierarchy(inferred);
+  const headings = inferred;
   const emitted = emitMarkdown(stripResult.blocks, headings);
   const normalizedContent = protectMarkdownTransform(emitted.markdown, dehyphenateRaw);
   const headingsWithOffsets = emitted.headings;

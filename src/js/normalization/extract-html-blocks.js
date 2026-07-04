@@ -4,6 +4,7 @@
 
 import { createTextBlock } from "./types.js";
 import { htmlTableToMarkdown } from "./table-markdown.js";
+import { extractHeadingTextFromElement, normalizeHeadingLabel, resolveHtmlContentRoot, isHtmlBoilerplateElement } from "./heading-text.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
@@ -133,7 +134,8 @@ function blockFromHeadingElement(el, lineIndex) {
   const { level, heuristic } = inferLevelFromElement(el);
   if (level <= 0) return null;
 
-  const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  const mw = el.querySelector?.(".mw-headline");
+  const text = mw ? extractHeadingTextFromElement(mw) : extractHeadingTextFromElement(el);
   if (!text) return null;
 
   const mdText = `${"#".repeat(level)} ${text}`;
@@ -167,7 +169,8 @@ export function extractHtmlBlocks(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(raw, "text/html");
   const body = doc.body || doc.documentElement;
-  const domDiag = domStructureDiagnostics(body); // [debug-enrich]
+  const contentRoot = resolveHtmlContentRoot(body);
+  const domDiag = domStructureDiagnostics(contentRoot); // [debug-enrich]
   console.debug("[extract-html-blocks.extractHtmlBlocks] DOM parsed (pre-traversal):", {
     htmlCharLen: raw.length,
     ...domDiag,
@@ -183,6 +186,8 @@ export function extractHtmlBlocks(html) {
 
     const el = /** @type {Element} */ (node);
     const tag = String(el.tagName || "").toLowerCase();
+
+    if (isHtmlBoilerplateElement(el)) return;
 
     if (tag === "script" || tag === "style" || tag === "noscript") return;
 
@@ -208,7 +213,7 @@ export function extractHtmlBlocks(html) {
     if (tag === "span" && /\bmw-headline\b/i.test(String(el.className || ""))) {
       const parentTag = String(el.parentElement?.tagName || "").toLowerCase();
       if (/^h[1-6]$/.test(parentTag)) return;
-      const text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      const text = extractHeadingTextFromElement(el);
       if (text) {
         const level = 2;
         blocks.push(
@@ -227,12 +232,37 @@ export function extractHtmlBlocks(html) {
       return;
     }
 
-    const blockTags = new Set([
-      "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
-      "li", "blockquote", "pre", "section",
+    const containerTags = new Set([
+      "div", "section", "article", "main", "header", "footer", "aside", "nav", "figure",
+    ]);
+    const leafBlockTags = new Set([
+      "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "blockquote", "pre",
     ]);
 
-    if (blockTags.has(tag)) {
+    if (containerTags.has(tag)) {
+      const elementChildren = Array.from(el.children || []);
+      if (!elementChildren.length) {
+        const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+        if (text) {
+          blocks.push(
+            createTextBlock({
+              text,
+              fontSize: 0,
+              fontWeight: "normal",
+              pageIndex: 0,
+              lineIndex: lineIndex++,
+              source: "html",
+              kind: "paragraph",
+            }),
+          );
+        }
+      } else {
+        for (const child of elementChildren) walk(child);
+      }
+      return;
+    }
+
+    if (leafBlockTags.has(tag)) {
       const headingBlock = /^h[1-6]$/.test(tag) ? blockFromHeadingElement(el, lineIndex) : null;
       if (headingBlock) {
         blocks.push(headingBlock);
@@ -266,7 +296,7 @@ export function extractHtmlBlocks(html) {
     for (const child of Array.from(el.children || [])) walk(child);
   };
 
-  for (const child of Array.from(body.children || [])) walk(child);
+  for (const child of Array.from(contentRoot.children || [])) walk(child);
 
   const tableCount = (raw.match(/<table\b/gi) || []).length;
   const preFallbackBlockCount = blocks.length; // [debug-enrich]

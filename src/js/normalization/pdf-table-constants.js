@@ -21,13 +21,16 @@ export const PDF_TABLE_MIN_MAX_CELL_CHARS = 8;
 export const PDF_TABLE_MIN_FILL_RATIO = 0.45;
 
 /** [placeholder — calibrate] max column anchors per table */
-export const PDF_TABLE_MAX_COLUMNS = 8;
+export const PDF_TABLE_MAX_COLUMNS = 12;
 
 /** [placeholder — calibrate] max columns for ruling-line tables (wide LaTeX tables) */
 export const PDF_TABLE_MAX_COLUMNS_RULING = 14;
 
 /** [placeholder — calibrate] max x-span of column anchors as fraction of page width */
-export const PDF_TABLE_MAX_ANCHOR_SPAN_RATIO = 0.72;
+export const PDF_TABLE_MAX_ANCHOR_SPAN_RATIO = 0.92;
+
+/** [placeholder — calibrate] merge anchor positions closer than this after derivation */
+export const PDF_TABLE_ANCHOR_MERGE_TOLERANCE = 12;
 
 /** [placeholder — calibrate] max words in any single table cell */
 export const PDF_TABLE_MAX_CELL_WORDS = 8;
@@ -64,6 +67,27 @@ export function mergeLinePartsIntoCells(parts) {
 }
 
 /**
+ * Merge nearly duplicate x-positions produced by slight column drift across rows.
+ * @param {number[]} anchors
+ * @param {number} [mergeTolerance]
+ */
+export function consolidateColumnAnchors(anchors, mergeTolerance = PDF_TABLE_ANCHOR_MERGE_TOLERANCE) {
+  if (!anchors?.length) return [];
+  const sorted = [...anchors].sort((a, b) => a - b);
+  /** @type {number[]} */
+  const merged = [];
+  for (const anchor of sorted) {
+    const last = merged[merged.length - 1];
+    if (last !== undefined && anchor - last <= mergeTolerance) {
+      merged[merged.length - 1] = (last + anchor) / 2;
+    } else {
+      merged.push(anchor);
+    }
+  }
+  return merged;
+}
+
+/**
  * @param {PdfTableCell[][]} cellsList
  * @param {number} [tolerance]
  * @returns {number[]}
@@ -71,7 +95,7 @@ export function mergeLinePartsIntoCells(parts) {
 export function deriveColumnAnchors(cellsList, tolerance = PDF_TABLE_X_TOLERANCE) {
   if (!cellsList?.length) return [];
   if (cellsList.length === 1) {
-    return cellsList[0].map((cell) => cell.startX);
+    return consolidateColumnAnchors(cellsList[0].map((cell) => cell.startX), tolerance);
   }
 
   /** @type {number[]} */
@@ -90,13 +114,14 @@ export function deriveColumnAnchors(cellsList, tolerance = PDF_TABLE_X_TOLERANCE
 
   anchors.sort((a, b) => a - b);
   const minHits = Math.max(2, Math.min(PDF_TABLE_MIN_ROWS, cellsList.length));
-  return anchors.filter((anchor) => {
+  const filtered = anchors.filter((anchor) => {
     let hits = 0;
     for (const cells of cellsList) {
       if (cells.some((c) => Math.abs(c.startX - anchor) <= tolerance)) hits += 1;
     }
     return hits >= minHits;
   });
+  return consolidateColumnAnchors(filtered);
 }
 
 /**

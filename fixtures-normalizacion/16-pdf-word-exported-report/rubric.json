@@ -1,0 +1,50 @@
+{
+  "source_url": "https://www.huduser.gov/portal/About/style-guide-for-reports.pdf",
+  "license": "U.S. federal government work product (HUD/PD&R publication) -- public domain in the United States (17 U.S.C. 105).",
+  "primary_axis": "source_format:pdf_word_exported",
+  "secondary_axes": ["tables:false_positive_toc_dot_leaders", "heading_style:roman_numeral_numbered"],
+  "confidence": "medium",
+  "needs_human_review": true,
+  "review_reason": "Contains a multi-page Table of Contents using dot-leader formatting (heading text .......... page number), which is a plausible false-positive trigger for a column-alignment table heuristic -- flagged per the task's instruction that anything touching table false-positive risk needs explicit review. Also: I did not exhaustively verify every example table/exhibit the style guide itself illustrates (a style guide about report formatting plausibly includes its own example tables as illustrations) -- flagged confidence:medium/low on that specific point rather than assumed.",
+  "expected_headings": [
+    {"level": 1, "text": "Introduction", "confidence": "high"},
+    {"level": 1, "text": "I. Where and How to Begin", "confidence": "high"},
+    {"level": 1, "text": "II. Elements of a Report", "confidence": "high"},
+    {"level": 2, "text": "Covers", "confidence": "high"},
+    {"level": 2, "text": "Front Matter", "confidence": "high"},
+    {"level": 3, "text": "Disclaimer", "confidence": "high"},
+    {"level": 3, "text": "Title Page", "confidence": "high"},
+    {"level": 3, "text": "Acknowledgments", "confidence": "high"},
+    {"level": 3, "text": "Foreword", "confidence": "high"},
+    {"level": 3, "text": "Table of Contents", "confidence": "high"},
+    {"level": 3, "text": "List of Exhibits", "confidence": "high"},
+    {"level": 1, "text": "III. Preparing a Report", "confidence": "high"},
+    {"level": 2, "text": "Guidelines", "confidence": "high"},
+    {"level": 3, "text": "Headings", "confidence": "high"},
+    {"level": 3, "text": "Footnotes", "confidence": "high"},
+    {"level": 3, "text": "Fonts", "confidence": "high"},
+    {"level": 1, "text": "IV. Publishing a Report", "confidence": "high"},
+    {"level": 1, "text": "V. GPO Style Guide for PD&R Reports", "confidence": "high"},
+    {"level": 2, "text": "Capitalization", "confidence": "high"},
+    {"level": 2, "text": "Italics", "confidence": "high"},
+    {"level": 2, "text": "Numbers", "confidence": "high"},
+    {"level": 2, "text": "Punctuation", "confidence": "high"},
+    {"level": 1, "text": "VI. Citations and References for PD&R Reports", "confidence": "high"},
+    {"level": 2, "text": "References", "confidence": "high"},
+    {"level": 2, "text": "Authors", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [24, 35],
+  "expected_tables": [
+    {"location": "throughout section III/V (style guide is ABOUT formatting reports, including tables/exhibits)", "approx_rows": null, "approx_cols": null, "has_merged_cells": null, "has_borders": null, "confidence": "low", "notes": "A style guide about report preparation plausibly includes its own illustrative example tables/exhibits, but I did not exhaustively locate and verify specific example-table page numbers within the 46-page document beyond confirming a 'List of Exhibits' front-matter entry exists. Flagged low-confidence rather than guessed at specifics -- a human should page through the PDF directly (or run Pith and manually cross-check a sample) to enumerate any real embedded example tables."}
+  ],
+  "expected_no_table_zones": [
+    {"location": "Table of Contents, pages ii-iii (approx. lines corresponding to the 6 roman-numeral sections and their sub-entries)", "looks_like": "a two-column table (heading text | page number)", "reason": "Classic Word-exported dot-leader ToC formatting: each line is 'Heading text ................................ N' with the dots forming a long visually-aligned run and the page number right-aligned at a consistent column position across dozens of consecutive lines. Verified directly via pdftotext -layout: 6 top-level Roman-numeral entries (I-VI) plus numerous nested sub-entries, all following this exact dot-leader-plus-right-aligned-number pattern. A column-alignment table heuristic could plausibly misinterpret this consistent right-alignment as a 2-column table.", "confidence": "high"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation expected; this is an administrative style guide.",
+  "expected_noise_elements": [
+    "Roman-numeral page numbers in front matter (e.g. 'ii') vs. arabic numerals in the body -- a common Word-export pattern that can confuse page-number-based structure heuristics",
+    "Running header/footer likely present on each page (not individually verified per-page, but standard for this document type per HUD publication conventions)"
+  ],
+  "notes_for_implementer": "Word-exported PDFs (via 'Acrobat PDFMaker for Word', confirmed in PDF metadata) often preserve Word's own heading styles as PDF bookmarks/outline entries even though the visible page text has no special tagging -- worth checking whether Pith has access to the PDF's internal outline/bookmark tree (a much more reliable heading signal than font-size heuristics alone) and if so whether it uses it. Primary test target here is the dot-leader Table of Contents (pages ii-iii): verify Pith does not report this as a data table. The Roman-numeral top-level numbering (I, II, III, IV, V, VI) is also a useful check that heading-numbering heuristics aren't hardcoded to arabic digits only (see also fixture 02's letter-lettered appendices for the same concern in a different numbering style)."
+}

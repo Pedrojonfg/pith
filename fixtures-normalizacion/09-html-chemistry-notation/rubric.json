@@ -1,0 +1,28 @@
+{
+  "source_url": "https://en.wikipedia.org/wiki/Aspirin",
+  "license": "CC BY-SA 4.0 (Wikipedia text); excerpt (lead + Chemical properties + Physical properties sections) captured live for software-testing purposes.",
+  "primary_axis": "math_notation:chemistry_subsup_not_mathml",
+  "secondary_axes": ["tables:infobox_keyvalue_shape"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "The task explicitly calls out 'unvalidated math notation detection' as a named weak spot. This fixture reveals a concrete, specific way that detection can fail: Wikipedia chemistry articles represent chemical formulas using plain HTML <sub>/<sup> tags (e.g. C<sub>9</sub>H<sub>8</sub>O<sub>4</sub>), NOT LaTeX delimiters or MathML <math> tags (verified: zero <math> tags and zero 'mwe-math' rendered-image classes anywhere in this document). Any math-detector keyed specifically to LaTeX ($...$, \\(...\\)) or MathML will completely miss this chemical notation. This must not be rubber-stamped either way (present or absent) without a human confirming which behavior Pith actually intends.",
+  "expected_headings": [
+    {"level": 1, "text": "Aspirin", "confidence": "high"},
+    {"level": 2, "text": "Chemical properties", "confidence": "high"},
+    {"level": 3, "text": "Synthesis", "confidence": "high"},
+    {"level": 2, "text": "Physical properties", "confidence": "high"},
+    {"level": 3, "text": "Polymorphism", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [5, 6],
+  "expected_tables": [
+    {"location": "top-right infobox (chembox), spanning most of the document", "approx_rows": 25, "approx_cols": 2, "has_merged_cells": true, "has_borders": true, "confidence": "medium", "notes": "class='infobox' (Wikipedia's current chembox styling no longer uses a distinct 'chembox' CSS class name, contrary to older assumptions -- verified directly). Key-value shaped (property name / property value pairs: molar mass, density, melting point, etc.), not a multi-row dataset like fixture 08. Contains a nested plain <table style='width:100%'> for internal two-column layout of one infobox subsection. Whether this counts as 'a table' Pith should report, versus infobox metadata that should be excluded from table detection entirely, is a legitimate open question -- flagged low-to-medium confidence and needing human judgment, not a clear-cut answer either way."}
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": true,
+  "math_notes": "Chemical notation is present via HTML <sub>/<sup> tags only (3 <sub> + 2 <sup> occurrences confirmed directly in this excerpt): the molecular formula C9H8O4 (rendered as C<sub>9</sub>H<sub>8</sub>O<sub>4</sub>) inside the infobox, and unit exponents like 'g·mol<sup>−1</sup>' and 'g/cm<sup>3</sup>'. There is NO LaTeX and NO MathML anywhere in this document (confirmed: zero <math> tags, zero 'mwe-math' classes). This is a fundamentally different representation of 'math-like' content than fixtures 01/02 (LaTeX PDF equations) and is exactly the kind of notation the task's 'unvalidated math notation detection' weak spot is worried about missing.",
+  "expected_noise_elements": [
+    "mw-editsection ('[edit]') spans on the h2/h3 headings, same contamination mechanism as fixtures 05/06",
+    "Wikipedia citation superscript markers embedded within infobox data cells"
+  ],
+  "notes_for_implementer": "Central question for this fixture: does Pith's math-notation detector recognize chemical formulas expressed via nested <sub>/<sup> tags (C9H8O4) as 'math-like content', or does it only fire on LaTeX/MathML? Neither answer is obviously wrong, but it must be a deliberate design decision, not an accident of the detector only having been tested against LaTeX -- hence needs_human_review. Separately, note the corrected understanding that current Wikipedia chemistry infoboxes use class='infobox' generically, NOT a distinct 'chembox' class as commonly assumed from older Wikipedia HTML dumps -- any Pith logic hardcoded to look for a literal 'chembox' class string would fail to recognize this infobox at all."
+}

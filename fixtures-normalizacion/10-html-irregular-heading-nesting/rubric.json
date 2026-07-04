@@ -1,0 +1,32 @@
+{
+  "source_url": "https://www.smashingmagazine.com/2026/07/users-dont-need-more-tools-need-seamless-integrations/",
+  "license": "Copyrighted blog post (Smashing Magazine); captured as a live-site <article> excerpt strictly for software normalization-pipeline testing purposes.",
+  "primary_axis": "heading_style:irregular_nesting",
+  "secondary_axes": [],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "Users Don't Need More Tools: They Need Seamless Integrations", "confidence": "high"},
+    {"level": 4, "text": "About The Author", "confidence": "high"},
+    {"level": 4, "text": "Email Newsletter", "confidence": "high"},
+    {"level": 2, "text": "1. AI-First vs. Quiet AI #", "confidence": "high"},
+    {"level": 2, "text": "2. Folder Instructions For AI Actions #", "confidence": "high"},
+    {"level": 2, "text": "Wrapping Up #", "confidence": "high"},
+    {"level": 2, "text": "Meet \"Design Patterns For AI Interfaces\" #", "confidence": "high"},
+    {"level": 3, "text": "Video + UX Training", "confidence": "high"},
+    {"level": 3, "text": "Video only", "confidence": "high"},
+    {"level": 2, "text": "— Comments 0", "confidence": "medium"},
+    {"level": 3, "text": "Leave a comment", "confidence": "medium"}
+  ],
+  "expected_heading_count_range": [11, 11],
+  "expected_tables": [],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation present.",
+  "expected_noise_elements": [
+    "Trailing '#' permalink decoration on several H2s -- literal text content, not markup, so it will appear in extracted heading text unless specifically stripped",
+    "'0' embedded directly in the Comments heading text ('— Comments 0') -- a live comment-count number concatenated into the heading with no separator"
+  ],
+  "notes_for_implementer": "VERIFIED EXACT SEQUENCE (directly grepped, not paraphrased): H1 -> H4 -> H4 -> H2 -> H2 -> H2 -> H2 -> H3 -> H3 -> H2 -> H3. This is a real-world, non-monotonic heading level sequence: it jumps from H1 straight to H4 (skipping H2/H3 entirely) for the author-bio and newsletter boxes, THEN drops back down to H2 for the actual article sections, then to H3 for two promo sub-boxes, then BACK UP to H2 for the comments section, then down to H3 again. A structure-inference algorithm that assumes heading levels are monotonically non-decreasing in nesting depth (i.e., builds a strict tree assuming an H4 implies it is nested under the most recent H1/H2/H3) will misinfer the document outline here -- e.g., it might incorrectly nest 'About The Author' and 'Email Newsletter' three levels deep under the H1 title as if they were sub-sub-sections of the article, when they are actually sibling UI boxes at the same conceptual level as the article body. Correct handling requires either treating heading level jumps as independent signals (not forcing a single coherent outline tree) or explicitly flagging where the outline is discontinuous. This fixture isolates that exact phenomenon by extracting ONLY the <article> subtree (no surrounding nav/footer/cookie-banner noise -- see fixture 07 for the noise-inclusive version of the same source article)."
+}

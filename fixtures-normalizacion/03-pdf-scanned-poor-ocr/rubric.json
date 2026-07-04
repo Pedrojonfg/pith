@@ -1,0 +1,21 @@
+{
+  "source_url": "https://vault.fbi.gov/threats-against-members-of-congress/Threats%20Against%20Members%20of%20Congress-%202003%20%28Final%29/at_download/file",
+  "license": "U.S. federal government work product (FBI FOIA release) -- public domain in the United States (17 U.S.C. 105).",
+  "primary_axis": "source_format:pdf_scanned_NO_ocr_layer",
+  "secondary_axes": ["noise:foia_redaction_boilerplate"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "MISMATCH WITH FOLDER NAME: direct inspection (pdftotext + pdffonts + pdfimages) shows this PDF has ZERO embedded text -- it is a pure image scan (CCITT Group 4 fax-encoded stencil images, one per page, 'TIFF2PDF Utility for HighView' producer, no fonts, no text objects at all). This is NOT a 'good OCR' document as the folder name implies; it is a scanned document with NO OCR text layer whatsoever. This is arguably a MORE valuable and distinct test case (does Pith detect a text-less/image-only PDF and fail gracefully or flag it, rather than silently producing an empty/garbage markdown file?), but it does not fulfill the originally intended 'good-quality OCR text' axis. A human should decide whether to (a) keep this fixture as-is under a corrected understanding (rename folder to something like 03-pdf-scanned-no-ocr-layer in a future pass), or (b) source a replacement document that has an actual good-quality OCR text layer. Do not rubber-stamp this as 'good OCR' -- it has no OCR at all.",
+  "expected_headings": [],
+  "expected_heading_count_range": [0, 0],
+  "expected_tables": [],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No extractable text at all, so no math notation can be present in any text-based extraction. If Pith performs image-based OCR internally, actual page content is a mix of typewritten memos and a standard FBI 'FOIPA Deleted Page Information Sheet' redaction-notice page (checkbox-style boilerplate, page 2) -- no mathematical notation is expected anywhere in the underlying document based on visual page structure (not independently OCR'd by us; see notes.md).",
+  "expected_noise_elements": [
+    "Page 2: standard FBI 'FOIPA DELETED PAGE INFORMATION SHEET' boilerplate with checkbox-style exemption reasons -- this repeats verbatim across nearly all FBI Vault FOIA releases and is pure boilerplate noise, not content",
+    "Redaction blocks / blacked-out text regions on scanned pages (visual black boxes over exempted material) -- these are part of the scanned image and cannot be distinguished from real content by a text-based pipeline; only visually",
+    "Fax-transmission style artifacts typical of CCITT Group 4 scanned government documents (skew, speckle, faint stamps/date-received stamps)"
+  ],
+  "notes_for_implementer": "CRITICAL: pdftotext on this file returns completely empty output; pdffonts confirms zero embedded fonts; pdfimages confirms every page is a single full-page monochrome stencil image. This PDF is functionally identical to feeding Pith a stack of scanned photographs with no OCR pre-processing. The correct and most valuable test here is: does Pith's normalization pipeline (a) detect the complete absence of a text layer and either skip/flag the document or invoke its own OCR fallback, versus (b) silently emit an empty or near-empty markdown output without any warning? Either behavior should be intentional and documented, not accidental. If Pith has no built-in OCR, this fixture should produce a clearly-flagged 'no extractable text' result rather than a wall of nulls or a crash. See review_reason above for the naming mismatch that must be resolved by a human."
+}

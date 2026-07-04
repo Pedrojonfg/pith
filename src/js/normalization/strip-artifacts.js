@@ -2,6 +2,8 @@
  * Artifact removal: page numbers, running headers/footers (artifact-removal.md).
  */
 
+import { isPdfHeadingNoise } from "./heading-text.js";
+
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
 /** [debug-enrich] warn when artifact stripping removes more than this % of characters */
@@ -79,6 +81,7 @@ const PAGE_NUMBER_PATTERNS = [
   { re: /^p\.?\s*\d+$/i, code: "page_number_short" },
   { re: /^\d+\s*\/\s*\d+$/, code: "page_fraction" },
   { re: /^[ivxlcdm]+$/i, code: "page_number_roman" },
+  { re: /^\[Page\s+[ivxlcdm\d]+\]$/i, code: "page_marker_bracket" },
 ];
 
 const EDITORIAL_PATTERNS = [
@@ -89,6 +92,7 @@ const EDITORIAL_PATTERNS = [
   /\bspringer\b/i,
   /\belsevier\b/i,
   /cambridge university press/i,
+  /arXiv:\S+/i,
 ];
 
 export const ORNAMENT_PATTERN = /^[\s\W]{1,20}$/u;
@@ -104,6 +108,8 @@ export function isArtifact(block, frontMatterEnd = -1) {
   const trim = text.trim();
   if (ORNAMENT_PATTERN.test(text)) return true;
   if (ROMAN_ORNAMENT.test(trim)) return true;
+  if (/^contents$/i.test(trim) || /^abstract$/i.test(trim)) return false;
+  if (/^\d+(\.\d+)*\.?\s+[A-Za-z]/.test(trim)) return false;
   if (block.pageIndex <= frontMatterEnd && ISOLATED_ALLCAPS.test(trim)) return true;
   return false;
 }
@@ -168,6 +174,7 @@ function isInCentralZone(block, pageHeight) {
  */
 function isNumberedSection(line) {
   const trimmed = String(line || "").trim();
+  if (/^\d+\s+\S/.test(trimmed)) return true;
   if (!/^\d+(\.\d+)+\s+\S/.test(trimmed)) return false;
   const words = trimmed.split(/\s+/).filter(Boolean);
   return words.length >= 2;
@@ -193,6 +200,48 @@ function matchPageNumberRegex(line) {
 function matchEditorial(line) {
   const trimmed = String(line || "").trim();
   return EDITORIAL_PATTERNS.some((re) => re.test(trimmed));
+}
+
+/** Keep real section headings that PDF layout places in the header/footer margin zone. */
+function isProtectedSectionHeading(text) {
+  const t = String(text || "").trim();
+  if (!t || t.length > 120) return false;
+  if (/^[IVXLC]+\.\s+[A-Za-z]/.test(t)) return true;
+  if (/^\d+(\.\d+)+\.\s+\S/.test(t)) return true;
+  if (/^\d+\.\s+[A-Z]/.test(t)) return true;
+  if (/^(introduction|abstract|references|acknowledgments?|foreword|table of contents)$/i.test(t)) {
+    return true;
+  }
+  if (/^TABLE OF CONTENTS$/i.test(t)) return true;
+  return false;
+}
+
+/** RFC / IETF running header lines repeated on page breaks. */
+function isRfcRunningHeaderLine(line) {
+  const t = String(line || "").trim();
+  if (!t) return false;
+  if (/^RFC:\s*\d+$/i.test(t)) return true;
+  if (/^September \d{4}$/i.test(t)) return true;
+  if (/^Internet Protocol$/i.test(t)) return true;
+  if (/^Specification$/i.test(t)) return true;
+  if (/^Overview$/i.test(t)) return true;
+  if (/^\[\.\.\. document continues/i.test(t)) return true;
+  return false;
+}
+
+/** Keep single-page letterhead titles out of header-zone stripping. */
+function isLikelyLetterheadTitle(block) {
+  const t = String(block?.text || "").trim();
+  if ((block?.pageIndex ?? 0) !== 0) return false;
+  if (t.length < 10 || t.length > 90) return false;
+  if (isPdfHeadingNoise(t)) return false;
+  if (/middle school|high school|elementary|university|college|syllabus|department/i.test(t)) {
+    return true;
+  }
+  if (/^[A-Z][\w\s.'-]+$/.test(t) && t.split(/\s+/).length >= 3 && !/[,:]/.test(t)) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -250,6 +299,7 @@ export function stripArtifacts(blocks, opts = {}) {
 
   const result = blocks.map((block) => {
     if (block.kind === "artifact") return block;
+    if (block.kind === "heading") return block;
 
     if (isArtifact(block, frontMatterEnd)) {
       const mathHits = countMathIndicators(block.text); // [debug-enrich]
@@ -285,6 +335,8 @@ export function stripArtifacts(blocks, opts = {}) {
 
     if (protectedCentral) return block;
     if (headingIds.has(block.id)) return block;
+    if (isLikelyLetterheadTitle(block)) return block;
+    if (lines.length === 1 && isProtectedSectionHeading(block.text)) return block;
     if (lines.some((ln) => isNumberedSection(ln))) return block;
 
     let reason = null;
@@ -310,7 +362,7 @@ export function stripArtifacts(blocks, opts = {}) {
         code = pageCode;
         break;
       }
-      if (matchEditorial(trimmed) && (inZone || trimmed.length < 80)) {
+      if (matchEditorial(trimmed) && (inZone || trimmed.length < 120 || /arXiv:/i.test(trimmed))) {
         reason = "regex";
         code = "editorial_mark";
         break;
@@ -358,11 +410,27 @@ export function stripArtifacts(blocks, opts = {}) {
     return block;
   });
 
+  const cleaned = result.map((block) => {
+    if (block.kind === "artifact") return block;
+    const lines = String(block.text || "").split(/\n/);
+    const kept = lines.filter((ln) => {
+      const trimmed = ln.trim();
+      if (/arXiv:\S+/i.test(trimmed)) return false;
+      if (matchPageNumberRegex(trimmed)) return false;
+      if (opts.format === "txt" && isRfcRunningHeaderLine(trimmed)) return false;
+      return true;
+    });
+    if (kept.length === lines.length) return block;
+    const text = kept.join("\n").trim();
+    if (!text) return { ...block, kind: "artifact" };
+    return { ...block, text };
+  });
+
   if (bodyZoneRejections >= 5) {
     warnings.push("layout_complex");
   }
 
-  const charsAfterStrip = blockCharCount(result); // [debug-enrich]
+  const charsAfterStrip = blockCharCount(cleaned); // [debug-enrich]
   const removedChars = Math.max(0, charsBeforeStrip - charsAfterStrip);
   const removalPct = charsBeforeStrip > 0 ? Math.round((removedChars / charsBeforeStrip) * 100) : 0;
   console.info("[strip-artifacts.stripArtifacts] Done:", {
@@ -389,7 +457,7 @@ export function stripArtifacts(blocks, opts = {}) {
   }
 
   return {
-    blocks: result,
+    blocks: cleaned,
     artifactsRemoved,
     warnings,
   };

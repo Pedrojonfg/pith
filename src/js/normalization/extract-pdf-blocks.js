@@ -52,6 +52,105 @@ function countWords(text) {
   return String(text || "").trim().split(/\s+/).filter(Boolean).length;
 }
 
+const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s/i;
+const TABLE_CONTINUED_RE = /^Table\s+(\d+)\.\s.+-\s*Continued/i;
+
+/** @param {TextBlock} block */
+function isMarkdownTableBlock(block) {
+  return /^\| .+\|/m.test(String(block?.text || "").trim());
+}
+
+/**
+ * @param {string} base
+ * @param {string} addition
+ * @param {boolean} [dropHeader]
+ */
+function appendMarkdownTables(base, addition, dropHeader = true) {
+  const baseLines = String(base || "")
+    .trim()
+    .split(/\n/)
+    .filter((line) => line.trim().startsWith("|"));
+  const addLines = String(addition || "")
+    .trim()
+    .split(/\n/)
+    .filter((line) => line.trim().startsWith("|"));
+  let addStart = 0;
+  if (dropHeader && addLines.length >= 2 && /^\|\s*[-: |]+\|/.test(addLines[1])) {
+    addStart = 2;
+  }
+  return [...baseLines, ...addLines.slice(addStart)].join("\n");
+}
+
+/**
+ * Merge PDF tables whose caption repeats with "- Continued" on subsequent pages.
+ * @param {TextBlock[]} blocks
+ */
+function mergeCrossPageContinuationTables(blocks) {
+  if (!blocks?.length) return blocks;
+
+  /** @type {TextBlock[]} */
+  const result = [];
+  let i = 0;
+
+  while (i < blocks.length) {
+    const block = blocks[i];
+    const captionMatch = TABLE_CAPTION_RE.exec(String(block.text || "").trim());
+
+    if (captionMatch) {
+      const tableNum = captionMatch[1];
+      let tableIdx = -1;
+      for (let j = i + 1; j < blocks.length; j += 1) {
+        const between = String(blocks[j].text || "").trim();
+        if (TABLE_CAPTION_RE.test(between) && j !== i + 1 && !isMarkdownTableBlock(blocks[j])) {
+          break;
+        }
+        if (isMarkdownTableBlock(blocks[j])) {
+          tableIdx = j;
+          break;
+        }
+        if (blocks[j].pageIndex > block.pageIndex + 1) break;
+      }
+
+      if (tableIdx >= 0) {
+        let mergedText = blocks[tableIdx].text;
+        const mergedBlock = { ...blocks[tableIdx], text: mergedText };
+        i = tableIdx + 1;
+
+        while (i < blocks.length) {
+          const nextText = String(blocks[i].text || "").trim();
+          const contMatch = TABLE_CONTINUED_RE.exec(nextText);
+          if (!contMatch || contMatch[1] !== tableNum) break;
+
+          i += 1;
+          let nextTableIdx = -1;
+          const contPage = blocks[i - 1]?.pageIndex ?? -1;
+          for (let j = i; j < blocks.length; j += 1) {
+            if (blocks[j].pageIndex > contPage + 1) break;
+            if (isMarkdownTableBlock(blocks[j])) {
+              nextTableIdx = j;
+              break;
+            }
+            if (TABLE_CAPTION_RE.test(String(blocks[j].text || "").trim()) && j > i) break;
+          }
+          if (nextTableIdx < 0) break;
+
+          mergedText = appendMarkdownTables(mergedText, blocks[nextTableIdx].text, true);
+          mergedBlock.text = mergedText;
+          i = nextTableIdx + 1;
+        }
+
+        result.push(mergedBlock);
+        continue;
+      }
+    }
+
+    result.push(block);
+    i += 1;
+  }
+
+  return result;
+}
+
 /** [debug-enrich] math-notation diagnostics (PDF text-layer extraction can garble/drop symbols) */
 const MATH_INDICATOR_CHARS = new Set(
   [
@@ -713,5 +812,13 @@ export async function extractPdfBlocks(buffer) {
     visionFallbackPages: dppNormDbg()?.visionFallbackPages?.length ?? 0,
   });
 
-  return { blocks, pageHeights, doc };
+  const mergedBlocks = mergeCrossPageContinuationTables(blocks);
+  if (mergedBlocks.length !== blocks.length) {
+    console.debug("[extract-pdf-blocks.extractPdfBlocks] Cross-page table merge:", {
+      blocksBefore: blocks.length,
+      blocksAfter: mergedBlocks.length,
+    });
+  }
+
+  return { blocks: mergedBlocks, pageHeights, doc };
 }

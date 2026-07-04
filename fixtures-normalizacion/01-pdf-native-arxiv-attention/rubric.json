@@ -1,0 +1,49 @@
+{
+  "source_url": "https://arxiv.org/pdf/1706.03762",
+  "license": "arXiv.org perpetual non-exclusive license (author retains copyright); paper text/figures usable for scholarly/journalistic purposes per author-granted permission printed on page 1. Freely redistributable as a fixture for software-testing purposes.",
+  "primary_axis": "source_format:pdf_native_latex",
+  "secondary_axes": ["math_notation:heavy", "tables:bordered_native", "heading_style:numbered_semantic_via_font_only"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "Abstract", "confidence": "medium"},
+    {"level": 1, "text": "1 Introduction", "confidence": "high"},
+    {"level": 1, "text": "2 Background", "confidence": "high"},
+    {"level": 1, "text": "3 Model Architecture", "confidence": "high"},
+    {"level": 2, "text": "3.1 Encoder and Decoder Stacks", "confidence": "high"},
+    {"level": 2, "text": "3.2 Attention", "confidence": "high"},
+    {"level": 2, "text": "3.3 Position-wise Feed-Forward Networks", "confidence": "high"},
+    {"level": 2, "text": "3.4 Embeddings and Softmax", "confidence": "high"},
+    {"level": 2, "text": "3.5 Positional Encoding", "confidence": "high"},
+    {"level": 1, "text": "4 Why Self-Attention", "confidence": "high"},
+    {"level": 1, "text": "5 Training", "confidence": "high"},
+    {"level": 2, "text": "5.1 Training Data and Batching", "confidence": "high"},
+    {"level": 2, "text": "5.2 Hardware and Schedule", "confidence": "high"},
+    {"level": 2, "text": "5.3 Optimizer", "confidence": "high"},
+    {"level": 2, "text": "5.4 Regularization", "confidence": "high"},
+    {"level": 1, "text": "6 Results", "confidence": "high"},
+    {"level": 2, "text": "6.1 Machine Translation", "confidence": "high"},
+    {"level": 2, "text": "6.2 Model Variations", "confidence": "high"},
+    {"level": 2, "text": "6.3 English Constituency Parsing", "confidence": "high"},
+    {"level": 1, "text": "7 Conclusion", "confidence": "high"},
+    {"level": 1, "text": "References", "confidence": "medium"}
+  ],
+  "expected_heading_count_range": [19, 24],
+  "expected_tables": [
+    {"location": "page 4, within section 3.5/4", "approx_rows": 4, "approx_cols": 4, "has_merged_cells": false, "has_borders": true, "confidence": "high", "notes": "Table 1: maximum path length / per-layer complexity / sequential operations comparison across layer types (Self-Attention, Recurrent, Convolutional, Self-Attention restricted)."},
+    {"location": "page 8, section 6.1", "approx_rows": 5, "approx_cols": 5, "has_merged_cells": true, "has_borders": true, "confidence": "medium", "notes": "Table 2: BLEU scores and training cost comparison; has a grouped/merged header spanning BLEU and Training Cost (FLOPs) column groups."},
+    {"location": "page 9, section 6.2", "approx_rows": 11, "approx_cols": 9, "has_merged_cells": true, "has_borders": true, "confidence": "medium", "notes": "Table 3: architecture variations grid (rows A-E), wide table with many numeric columns, likely to wrap or split visually in a PDF-to-text pass."},
+    {"location": "page 10, section 6.3", "approx_rows": 6, "approx_cols": 4, "has_merged_cells": false, "has_borders": true, "confidence": "high", "notes": "Table 4: English constituency parsing F1 comparison."}
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": true,
+  "math_notes": "Heavy LaTeX-rendered math throughout section 3 (scaled dot-product attention formula, multi-head attention concat/projection formulas, positional encoding sinusoidal formulas in 3.5). Equations are embedded as inline PDF vector/glyph typesetting, not MathML or images, so any math-detection heuristic will only see them via raw glyph extraction (pdftotext renders them as garbled Unicode math-alphanumeric symbol runs, e.g. broken fraction bars and stacked subscripts) — a good stress test for whether math-detection is confused by numbered section headings that follow a similarly numeric pattern (e.g. is '3.2' a heading or part of an equation reference).",
+  "expected_noise_elements": [
+    "Page 1 footer/footnote block: Google permission-to-reproduce notice printed as a running footer on page 1 only",
+    "Author-contribution footnote (asterisk/dagger/double-dagger markers) spanning most of page 1",
+    "arXiv identifier vertical sidebar text 'arXiv:1706.03762v7 [cs.CL] 2 Aug 2023' printed sideways in the left margin of page 1 (may be extracted as garbled/rotated text by naive column-based text extraction)",
+    "NeurIPS conference footer line repeated at bottom of page 1"
+  ],
+  "notes_for_implementer": "This is a clean, well-formed LaTeX two-column academic PDF: headings are NOT tagged in any structural/semantic sense at the PDF level (PDF has no native heading concept) but ARE fully numbered and stylistically consistent (larger/bold font), so a font-size-and-numbering heuristic should succeed here. This fixture is a 'should mostly just work' native-PDF baseline for comparison against the scanned/exported PDF fixtures (03, 04, 16, 17, 18). Two-column layout means naive left-to-right, top-to-bottom text extraction (without column awareness) will interleave the two columns' text incorrectly mid-paragraph -- pdftotext -layout handles this reasonably but a naive extractor may not."
+}

@@ -1,0 +1,33 @@
+{
+  "source_url": "https://raw.githubusercontent.com/tiangolo/fastapi/master/README.md",
+  "license": "MIT License (FastAPI project); README text used verbatim as a software-testing fixture.",
+  "primary_axis": "tables:false_positive_ascii_box_diagram",
+  "secondary_axes": ["source_format:markdown_github_readme"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "This is a direct, concrete instance of the named weak spot: a column-alignment table-detection heuristic could misfire on the ASCII box-drawing terminal banner inside a fenced code block. Per task instructions, any entry related to false-positive table risk must be explicitly reviewed, not rubber-stamped.",
+  "expected_headings": [
+    {"level": 2, "text": "Requirements", "confidence": "high"},
+    {"level": 2, "text": "Installation", "confidence": "high"},
+    {"level": 2, "text": "Example", "confidence": "high"},
+    {"level": 3, "text": "Create it", "confidence": "high"},
+    {"level": 3, "text": "Run it", "confidence": "high"},
+    {"level": 3, "text": "Check it", "confidence": "high"},
+    {"level": 2, "text": "Performance", "confidence": "high"},
+    {"level": 2, "text": "Dependencies", "confidence": "high"},
+    {"level": 3, "text": "`standard` Dependencies", "confidence": "high"},
+    {"level": 3, "text": "Without `standard` Dependencies", "confidence": "high"},
+    {"level": 2, "text": "License", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [11, 11],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "lines 90-111, inside a ```console fenced code block under '### Run it'", "looks_like": "a bordered table or multi-column layout", "reason": "A genuine ASCII box-drawing UI mockup of the `fastapi dev` CLI startup banner, using Unicode box-drawing characters (U+2502 '│' vertical line, U+256D/U+2570 rounded corners, U+2500 horizontal line) to draw a single decorative box, NOT a table. Verified directly: the vertical bar character used is U+2502 (BOX DRAWINGS LIGHT VERTICAL), NOT the ASCII pipe U+007C used in real markdown tables -- a character-level check would correctly distinguish these, but a purely VISUAL/column-alignment heuristic (looking for repeated vertically-aligned delimiter-like characters across consecutive lines) could still misfire, since the │ characters genuinely do line up in vertical columns across 8 consecutive lines, which is structurally exactly what a column-alignment table heuristic looks for. This is the closest real-world analogue to the 'architecture diagrams' false-positive risk named explicitly in the task brief.", "confidence": "high"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation.",
+  "expected_noise_elements": [
+    "3 fenced code blocks total (console/Python/JSON), one of which is the ASCII diagram described above -- all code block content should be excluded from heading/table structural analysis entirely, being verbatim code, not document structure"
+  ],
+  "notes_for_implementer": "PRIMARY test target for named weak spot #2 in a non-HTML context: verify Pith does NOT report a table for the ASCII box-drawing banner in the '### Run it' section. The critical distinguishing signal available to Pith is that this entire block sits inside a fenced ```console code block -- if Pith's structure-inference runs on raw text without first respecting code-fence boundaries, it is much more likely to misinterpret the box-drawing characters as tabular columns. A correct implementation should treat fenced code block content as opaque/literal and never apply table or heading detection inside it at all. This is a cleaner, more isolated version of the same false-positive risk pattern found embedded in fixture 19's ASCII network-protocol diagrams (which are NOT inside a code fence, making that fixture a harder version of the same test)."
+}

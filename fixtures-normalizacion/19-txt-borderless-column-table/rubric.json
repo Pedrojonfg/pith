@@ -1,0 +1,31 @@
+{
+  "source_url": "https://www.rfc-editor.org/rfc/rfc791.txt (IETF RFC 791, 'INTERNET PROTOCOL', September 1981)",
+  "license": "IETF RFC -- freely redistributable per IETF Trust rules (RFCs are explicitly public/freely distributable technical documents).",
+  "primary_axis": "tables:false_positive_ascii_bit_field_diagrams",
+  "secondary_axes": ["tables:toc_dot_leaders", "noise:repeating_page_headers_footers"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "This fixture is a hand-assembled excerpt (title page + ToC + selected sections/figures + intentional gap marker) specifically constructed to contain multiple classic ASCII-art false-positive-table risks (bit-field diagrams, a box-drawing network diagram) alongside a genuine dot-leader Table of Contents. Per task instructions, anything touching table false-positive risk requires explicit human review, not automatic acceptance.",
+  "expected_headings": [
+    {"level": 1, "text": "INTERNET PROTOCOL / DARPA INTERNET PROGRAM / PROTOCOL SPECIFICATION", "confidence": "high"},
+    {"level": 1, "text": "TABLE OF CONTENTS", "confidence": "high"},
+    {"level": 2, "text": "2.4. Gateways", "confidence": "high"},
+    {"level": 1, "text": "3. SPECIFICATION", "confidence": "high"},
+    {"level": 2, "text": "3.1. Internet Header Format", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [4, 6],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "Table of Contents block near the top", "looks_like": "a two-column table (section title | page number)", "reason": "Classic RFC-style dot-leader ToC: 'PREFACE ........................................................ iii', '1.1 Motivation .................................................... 1', etc. Same false-positive pattern as fixture 16's Word-exported ToC, in a plain-text/monospace context instead of PDF.", "confidence": "high"},
+    {"location": "'Figure 3.' -- the Gateway Protocols diagram", "looks_like": "a bordered ASCII table with box-drawn cells", "reason": "A literal ASCII-art box diagram of network topology using +-+-+-+ and | characters to draw two boxes ('Internet Protocol & ICMP & GGP' and two 'Local Net' boxes) connected by lines -- this is THE canonical 'architecture diagram that looks like a table' example the original task brief named explicitly. It has clean rectangular borders made of +, -, and | characters, structurally very similar to a real ASCII/text-based table.", "confidence": "high"},
+    {"location": "'Figure 4.' -- the Internet Datagram Header bit-field diagram", "looks_like": "a wide multi-column data table with a header row of column numbers", "reason": "The famous IP header bit-layout diagram: a row of bit-position numbers (0 through 31, wrapped across 4 lines of 0-9 digit sequences) followed by rows of +-+-+-+ separator lines and |Version|IHL|Type of Service|...| field-name cells. This is EXTREMELY table-like in raw text form (regular column separators, header-like numeric top row, cell-like bracketed field names) but is semantically a bit-field diagram, not tabular data in the normal sense -- a very strong test of the column-alignment false-positive risk named in the task brief.", "confidence": "high"},
+    {"location": "Type of Service bit-field diagram (below section 3.1's field-by-field description)", "looks_like": "a small data table with a header row (0-7) and one data row of single-letter codes", "reason": "A second, smaller bit-field diagram: a row of bit positions 0-7 over a boxed row of |PRECEDENCE|D|T|R|0|0| -- same false-positive mechanism as Figure 4, at smaller scale.", "confidence": "high"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation (this is a networking protocol specification, not a math document); the bit-position numbering in the diagrams could be mistaken for numeric/math content by an overzealous detector, but it is diagram labeling, not math.",
+  "expected_noise_elements": [
+    "Repeating page header/footer on every page break: 'September 1981' / 'Internet Protocol' / 'Specification' and '[Page N]' page markers -- verified present at multiple points in this excerpt (e.g. '[Page i]', '[Page 7]', '[Page 9]', '[Page 11]', '[Page 12]')",
+    "An explicit, intentionally-inserted gap marker in this excerpt: '[... document continues; excerpt resumes at section 2.3-3.1 below ...]' -- this bracketed marker was added BY ME during fixture assembly to make an honest, visible seam where real RFC content was skipped for length; it is NOT part of the original RFC 791 text and should not be treated as a real heading or content"
+  ],
+  "notes_for_implementer": "This fixture concentrates THREE separate instances of the exact false-positive-table risk named in the original task brief ('architecture diagrams'), at three different levels of table-likeness: Figure 3 (a loosely box-drawn network diagram), Figure 4 (a highly regular, extremely table-like 32-bit header layout diagram), and the Type-of-Service bit diagram (a smaller version of the same pattern). None of these should be reported as tables by Pith. This is a hand-assembled excerpt, not a single contiguous download -- I combined the title page, Table of Contents, the Fragmentation/Gateways discussion, and the two header-format diagrams from the real RFC 791 text, with an explicit bracketed gap-marker (see expected_noise_elements) showing exactly where content was omitted. This curation approach is disclosed here and in notes.md rather than presented as if it were a single untouched excerpt."
+}

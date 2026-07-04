@@ -1,0 +1,37 @@
+{
+  "source_url": "https://raw.githubusercontent.com/chalk/chalk/main/readme.md",
+  "license": "MIT License (chalk project); README text used verbatim as a software-testing fixture.",
+  "primary_axis": "source_format:markdown_github_readme",
+  "secondary_axes": ["tables:markdown_gfm_pipe_table", "heading_style:mixed_html_and_markdown"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "(image-only, no text: raw <h1 align=\"center\"> wrapping only an <img> logo, no textual heading content)", "confidence": "high"},
+    {"level": 2, "text": "Info", "confidence": "high"},
+    {"level": 2, "text": "Highlights", "confidence": "high"},
+    {"level": 2, "text": "Install", "confidence": "high"},
+    {"level": 2, "text": "Usage", "confidence": "high"},
+    {"level": 2, "text": "API", "confidence": "high"},
+    {"level": 3, "text": "chalk.`<style>[.<style>...](string, [string...])`", "confidence": "high"},
+    {"level": 3, "text": "chalk.level", "confidence": "high"},
+    {"level": 3, "text": "supportsColor", "confidence": "high"},
+    {"level": 2, "text": "Styles", "confidence": "high"},
+    {"level": 3, "text": "Modifiers", "confidence": "high"},
+    {"level": 3, "text": "Colors", "confidence": "high"},
+    {"level": 2, "text": "Browser support", "confidence": "high"},
+    {"level": 2, "text": "Maintainers", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [13, 14],
+  "expected_tables": [
+    {"location": "under '### chalk.level', lines 84-89", "approx_rows": 5, "approx_cols": 2, "has_merged_cells": false, "has_borders": false, "confidence": "high", "notes": "Standard GFM pipe table with a center-aligned first column (':---:' delimiter) and left-aligned second column (':---' delimiter). Verified directly: header row + 4 data rows describing chalk.level values 0-3. Cell content includes inline code spans (backticks) which should survive table-cell parsing."}
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation.",
+  "expected_noise_elements": [
+    "Badge/shield images at the top (Coverage Status, npm dependents, Downloads) as markdown image-links -- common README noise that isn't part of the semantic content",
+    "6 fenced code blocks (```sh, ```js x2, plus closing fences) containing example code, which should be preserved as code blocks and NOT scanned for headings/tables even though they contain lines starting with characters that could superficially resemble markdown syntax"
+  ],
+  "notes_for_implementer": "The very first heading in this document is raw HTML (`<h1 align=\"center\">...<img ...>...</h1>`), not a markdown '#' heading, and it contains ONLY an image with no text content at all -- a genuine edge case for 'what is the document title' inference when the visually-obvious title is image-only. All subsequent headings use standard markdown '##'/'###' ATX syntax and are unambiguous. This is intended as a clean, low-risk markdown baseline (paired with fixture 12, which adds an ASCII-art terminal-banner false-positive-table risk on top of a similar README structure) -- not one of the two named weak-spot categories, so needs_human_review is false, but the image-only-H1 case is worth a spot-check regardless."
+}

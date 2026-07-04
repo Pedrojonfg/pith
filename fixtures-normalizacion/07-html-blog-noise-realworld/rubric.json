@@ -1,0 +1,38 @@
+{
+  "source_url": "https://www.smashingmagazine.com/2026/07/users-dont-need-more-tools-need-seamless-integrations/",
+  "license": "Copyrighted blog post (Smashing Magazine); captured as a live-site excerpt strictly for software normalization-pipeline testing purposes (fair-use-style technical evaluation, not redistribution of the article as content).",
+  "primary_axis": "noise:realworld_nav_cookie_footer",
+  "secondary_axes": ["heading_style:irregular_nesting_incidental"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "Users Don't Need More Tools: They Need Seamless Integrations", "confidence": "high"},
+    {"level": 2, "text": "1. AI-First vs. Quiet AI #", "confidence": "high"},
+    {"level": 2, "text": "2. Folder Instructions For AI Actions #", "confidence": "high"},
+    {"level": 2, "text": "Wrapping Up #", "confidence": "high"},
+    {"level": 2, "text": "Meet \"Design Patterns For AI Interfaces\" #", "confidence": "high"},
+    {"level": 4, "text": "About The Author", "confidence": "medium"},
+    {"level": 4, "text": "Email Newsletter", "confidence": "low"},
+    {"level": 3, "text": "Video + UX Training", "confidence": "low"},
+    {"level": 3, "text": "Video only", "confidence": "low"},
+    {"level": 2, "text": "Comments", "confidence": "low"},
+    {"level": 3, "text": "Leave a comment", "confidence": "low"}
+  ],
+  "expected_heading_count_range": [7, 11],
+  "expected_tables": [],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation present in this article.",
+  "expected_noise_elements": [
+    "Real cookie-consent banner markup: class='cookie-banner' / 'cookie-banner__container' with actual accept/customize buttons ('btn cookies--btn btn--green ...', 'btn--white--bordered cookies--btn ...') -- a genuine, currently-live cookie banner, not a synthetic placeholder",
+    "5 distinct <nav> elements in the page (primary site nav, breadcrumb-style nav, table-of-contents nav, footer nav(s)) -- real repeating navigational chrome, verified via direct tag count",
+    "'#' anchor-link decorations appended to every in-article H2 (Smashing Magazine appends a '#' permalink character to each heading, e.g. '1. AI-First vs. Quiet AI #') -- a realistic minor noise token that a heading-cleaner should probably strip but that also should not be confused with markdown H1 syntax",
+    "Email newsletter signup form embedded mid-content as an <h4 class=\"h2\">Email Newsletter</h4> -- note the deceptive class 'h2' on an actual <h4> tag, a realistic real-world case of CSS class name and semantic tag level disagreeing",
+    "'About The Author' bio box with an <h4> tag styled to look like a section heading",
+    "Book/course promotional call-to-action boxes ('Video + UX Training', 'Video only') using <h3> tags for what is essentially product-ad copy, not article structure",
+    "Comments section header using <h2 class=\"h1\"> (again a class/tag-level mismatch) followed by a comment form and its own <h3>",
+    "Footer topic-browse block with an <h4 class=\"footer__topics__title\">Browse All Smashing Magazine Topics #</h4>"
+  ],
+  "notes_for_implementer": "This fixture is a real, live production web page (not a hand-crafted test page), captured via in-browser Blob download of the full <body> so all real chrome is preserved: actual cookie-consent banner, actual nav elements, actual footer, actual comment form and newsletter signup widgets. The core question this fixture answers is whether Pith's normalizer can distinguish genuine ARTICLE headings (the 4 numbered/named H2s that structure the actual content) from incidental heading-tagged UI chrome (author bio, newsletter box, promo CTAs, comments, footer topics) that happens to use heading tags for styling reasons unrelated to document structure. A good implementation should either exclude non-article chrome entirely (if it does main-content extraction) or clearly demarcate it as boilerplate/noise rather than blending it into the article's heading outline at the same trust level as genuine section headings. Because this document shares its source article with fixture 10 (irregular-heading-nesting), the heading list above overlaps with fixture 10's -- fixture 07 emphasizes surrounding NOISE (nav/cookie-banner/footer), fixture 10 emphasizes the NESTING IRREGULARITY itself in isolation (just the <article> subtree, no surrounding chrome)."
+}

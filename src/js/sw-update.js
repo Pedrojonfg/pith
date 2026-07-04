@@ -1,6 +1,6 @@
 /** PWA service worker update UX — detect new versions and let users refresh safely. */
 
-export const SW_VERSION = "20260709_04";
+export const SW_VERSION = "20260710_05";
 
 export function getServiceWorkerUrl() {
   return `/sw.js?v=${SW_VERSION}`;
