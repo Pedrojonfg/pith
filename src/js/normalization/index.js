@@ -21,6 +21,21 @@ import { createTextBlock } from "./types.js";
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 /** @typedef {import("./types.js").StructureReport} StructureReport */
 
+/** [debug-enrich] */
+function sampleBlockTexts(blocks, limit = 5, maxLen = 80) {
+  return (blocks || []).slice(0, limit).map((b, i) => ({
+    index: i,
+    kind: b?.kind || "unknown",
+    textPreview: String(b?.text || "").replace(/\s+/g, " ").trim().slice(0, maxLen),
+    charLen: String(b?.text || "").length,
+  }));
+}
+
+/** [debug-enrich] */
+function countNonArtifactBlocks(blocks) {
+  return (blocks || []).filter((b) => b?.kind !== "artifact").length;
+}
+
 /**
  * @param {string} text
  * @param {"txt"|"md"} source
@@ -63,8 +78,10 @@ async function extractBlocks(rawContent, format) {
         }
       }
       console.debug("[normalization.extractBlocks] HTML with images path:", {
+        extractionPath: "extractHtmlBlocksWithImages",
         blockCount: withImages.blocks.length,
         pendingImages: withImages.pendingImages?.length ?? 0,
+        blockSamples: sampleBlockTexts(withImages.blocks),
       }); // [debug-enrich]
       return {
         blocks: withImages.blocks,
@@ -73,8 +90,14 @@ async function extractBlocks(rawContent, format) {
         pendingImages: withImages.pendingImages,
       };
     }
+    const fallbackBlocks = extractHtmlBlocks(html);
+    console.debug("[normalization.extractBlocks] HTML plain path (images path empty):", {
+      extractionPath: "extractHtmlBlocks",
+      blockCount: fallbackBlocks.length,
+      blockSamples: sampleBlockTexts(fallbackBlocks),
+    }); // [debug-enrich]
     return {
-      blocks: extractHtmlBlocks(html),
+      blocks: fallbackBlocks,
       pageHeights: [],
       doc: null,
       pendingImages: [],
@@ -146,8 +169,36 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     pageHeights,
     frontMatterEnd,
   });
+  const blocksAfterStrip = stripResult.blocks.length;
+  const nonArtifactAfterStrip = countNonArtifactBlocks(stripResult.blocks);
+  console.debug("[normalization.normalizeDocumentStructure] After stripArtifacts:", {
+    step: "stripArtifacts",
+    blocksIn: rawBlocks.length,
+    blocksOut: blocksAfterStrip,
+    nonArtifactBlocks: nonArtifactAfterStrip,
+    artifactsRemoved: stripResult.artifactsRemoved,
+    blocksRemoved: rawBlocks.length - nonArtifactAfterStrip,
+    mergeRule: "mark_kind_artifact_not_removed_from_array",
+  }); // [debug-enrich]
 
   const contentBlocks = stripResult.blocks.filter((b) => b.pageIndex > frontMatterEnd);
+  if (frontMatterEnd >= 0) {
+    console.debug("[normalization.normalizeDocumentStructure] After front-matter filter:", {
+      step: "frontMatterFilter",
+      blocksIn: blocksAfterStrip,
+      blocksOut: contentBlocks.length,
+      frontMatterEnd,
+      mergeRule: "filter_pageIndex_gt_frontMatterEnd",
+    }); // [debug-enrich]
+  }
+
+  const blocksForInference = stripResult.blocks;
+  console.debug("[normalization.normalizeDocumentStructure] Blocks for inferHeadings:", {
+    step: "inferHeadings_input",
+    blockCount: blocksForInference.length,
+    nonArtifactBlocks: countNonArtifactBlocks(blocksForInference),
+    blockSamples: sampleBlockTexts(blocksForInference),
+  }); // [debug-enrich]
 
   let outlineHeadings = [];
   let outlineCoverage = 0;

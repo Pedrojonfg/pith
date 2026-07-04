@@ -21,6 +21,101 @@ const PHASE_LABELS = [
 
 export { getValidItems, PHASE_LABELS };
 
+/**
+ * [debug-enrich] Diagnose which cloze pipeline phase produced zero valid items.
+ * @param {object} result - runClozePipelinePhases return value
+ * @param {object[]} allItems - full item list before getValidItems filter
+ */
+export function diagnoseClozePipelineFailure(result, allItems = []) {
+  const items = Array.isArray(allItems) ? allItems : [];
+  const diag = result?.diagnostics || {};
+  const graph = result?.epistemicGraph;
+  const analysis = result?.analysis;
+  const nodeCount = graph?.nodes?.length ?? 0;
+  const edgeCount = graph?.edges?.length ?? 0;
+  const nodeCandidates = analysis?.node_candidates?.length ?? 0;
+  const edgeCandidates = analysis?.edge_candidates?.length ?? 0;
+  const baseCount = diag.baseCount ?? 0;
+  const postDistractorCount = diag.postDistractorCount ?? 0;
+  const postQaCount = diag.postQaCount ?? 0;
+  const validCount = diag.validCount ?? 0;
+
+  /** @type {{ phase: string, phaseIndex: number, issue: string, detail: object } | null} */
+  let zeroPhase = null;
+
+  if (nodeCount === 0) {
+    zeroPhase = {
+      phase: "epistemic_graph",
+      phaseIndex: 0,
+      issue: "zero_graph_nodes",
+      detail: { nodeCount, edgeCount },
+    };
+  } else if (nodeCandidates === 0 && edgeCandidates === 0) {
+    zeroPhase = {
+      phase: "semantic_analysis",
+      phaseIndex: 1,
+      issue: "zero_semantic_candidates",
+      detail: { nodeCount, edgeCount, nodeCandidates, edgeCandidates },
+    };
+  } else if (baseCount === 0) {
+    zeroPhase = {
+      phase: "base_items",
+      phaseIndex: 2,
+      issue: "zero_base_items",
+      detail: { nodeCandidates, edgeCandidates, baseCount },
+    };
+  } else if (postDistractorCount === 0) {
+    zeroPhase = {
+      phase: "distractors",
+      phaseIndex: 3,
+      issue: "zero_items_with_four_options",
+      detail: { baseCount, postDistractorCount },
+    };
+  } else if (postQaCount === 0 || validCount === 0) {
+    const qaStatusCounts = {};
+    const rejectionNotes = {};
+    for (const item of items) {
+      const status = String(item?.qa_status || "missing");
+      qaStatusCounts[status] = (qaStatusCounts[status] || 0) + 1;
+      if (status === "rejected" || status === "weak") {
+        const note = String(item?.qa_notes || "unspecified").trim().slice(0, 80);
+        rejectionNotes[note] = (rejectionNotes[note] || 0) + 1;
+      }
+    }
+    const withFourOptions = items.filter((i) => Array.isArray(i?.options) && i.options.length === 4).length;
+    zeroPhase = {
+      phase: "qa_calibration",
+      phaseIndex: 4,
+      issue: validCount === 0 ? "all_items_rejected_or_weak_in_qa" : "zero_post_qa_items",
+      detail: {
+        postDistractorCount,
+        postQaCount,
+        validCount,
+        withFourOptions,
+        qaStatusCounts,
+        topRejectionNotes: Object.entries(rejectionNotes)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([note, count]) => ({ note, count })),
+      },
+    };
+  }
+
+  return {
+    zeroPhase,
+    phaseCounts: {
+      epistemicGraphNodes: nodeCount,
+      epistemicGraphEdges: edgeCount,
+      semanticNodeCandidates: nodeCandidates,
+      semanticEdgeCandidates: edgeCandidates,
+      baseItems: baseCount,
+      postDistractorWithFourOptions: postDistractorCount,
+      postQa: postQaCount,
+      valid: validCount,
+    },
+  };
+}
+
 export function getPhaseLabel(phaseIndex) {
   return PHASE_LABELS[phaseIndex] || `Fase ${phaseIndex + 1}`;
 }
@@ -410,13 +505,18 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
   }
 
   const validItems = getValidItems(items);
+  const failureAnalysis = diagnoseClozePipelineFailure(
+    { epistemicGraph, analysis, items, diagnostics: { baseCount, postDistractorCount, postQaCount, validCount: validItems.length } },
+    items,
+  );
   console.info("[cloze.runClozePipelinePhases] Item counts:", {
     docId: doc?.docId,
     baseCount,
     postDistractorCount,
     postQaCount,
     validCount: validItems.length,
-  });
+    ...(validItems.length === 0 ? { failureAnalysis } : {}),
+  }); // [debug-enrich]
   return {
     epistemicGraph,
     analysis,
