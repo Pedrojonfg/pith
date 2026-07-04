@@ -3,7 +3,7 @@
  */
 
 import { createTextBlock } from "../normalization/types.js";
-import { inferLevelFromElement } from "../normalization/extract-html-blocks.js";
+import { inferLevelFromElement, parseInlineFontSize } from "../normalization/extract-html-blocks.js";
 import { htmlTableToMarkdown } from "../normalization/table-markdown.js";
 import { formatPithImageToken, nextImageId } from "./tokens.js";
 
@@ -77,7 +77,7 @@ export async function extractHtmlBlocksWithImages(html) {
 
   const blockTags = new Set([
     "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
-    "li", "blockquote", "pre", "figure",
+    "li", "blockquote", "pre", "figure", "section",
   ]);
 
   /**
@@ -149,7 +149,7 @@ export async function extractHtmlBlocksWithImages(html) {
         blocks.push(
           createTextBlock({
             text: `## ${text}`,
-            fontSize: 0,
+            fontSize: 16,
             fontWeight: "heuristic",
             pageIndex: 0,
             lineIndex: 2,
@@ -168,12 +168,15 @@ export async function extractHtmlBlocksWithImages(html) {
       }
       const text = (clone.textContent || "").replace(/\s+/g, " ").trim();
       if (text) {
+        const style = el.getAttribute("style") || "";
         const { level: headingLevel, heuristic } = inferLevelFromElement(el);
         const mdText = headingLevel > 0 ? `${"#".repeat(headingLevel)} ${text}` : text;
+        const fontSize =
+          parseInlineFontSize(style) || (headingLevel > 0 ? Math.max(14, 18 - headingLevel) : 0);
         blocks.push(
           createTextBlock({
             text: mdText,
-            fontSize: 0,
+            fontSize,
             fontWeight: heuristic ? "heuristic" : "normal",
             pageIndex: 0,
             lineIndex: headingLevel > 0 ? headingLevel : lineIndex++,

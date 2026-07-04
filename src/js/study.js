@@ -679,7 +679,9 @@ async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOp
   }
   if (guard.decision === "waiting") {
     if (statusEl) statusEl.textContent = "Document preparation in progress…";
-    const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
+    const polled = await pollUntilConceptInventoryReady(() =>
+      doc?.docId ? reloadSessionForGuard(doc.docId) : getActiveSession(),
+    );
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
       doc = await ensureTier1Preparation(doc, {
