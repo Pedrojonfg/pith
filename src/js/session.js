@@ -11,6 +11,7 @@ import {
 } from "./config.js?v=20260625_02";
 import {
   getActiveSession as getActiveDocumentSession,
+  getSession,
   saveActiveSession as saveDocumentSession,
 } from "./session-store.js";
 import { writeThroughModeSlice } from "./block-store.js";
@@ -71,7 +72,7 @@ import {
   normalizePreparationState,
   setPreparationStatus,
   isTier1PreparationComplete,
-  hasTier1Artifacts,
+  hasTier1GateArtifacts,
 } from "./session-types.js";
 import { isDppRunActiveOnDevice } from "./dpp-persistence.js";
 
@@ -2770,6 +2771,22 @@ export async function scanStalePreparationSessions(sessions) {
   return out;
 }
 
+/** Max wait for concept inventory guard poll (post tier-1 gate). */
+export const DPP_GUARD_POLL_MAX_MS = 90_000;
+
+/**
+ * Fresh session read for guard/gate — store authoritative, with stuck-status repair.
+ * @param {string} docId
+ * @returns {Promise<object|null>}
+ */
+export async function reloadSessionForGuard(docId) {
+  const id = String(docId || "").trim();
+  if (!id) return null;
+  let session = await getSession(id);
+  if (!session) return null;
+  return repairStuckRunningPreparationIfNeeded(session);
+}
+
 /**
  * @deprecated Use markStalePreparationSession — no longer promotes running→ready.
  * @param {object} session
@@ -2784,7 +2801,7 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
 
   if (
     (prep.status === "running" || prep.status === "pending") &&
-    hasTier1Artifacts(session)
+    hasTier1GateArtifacts(session)
   ) {
     setPreparationStatus(
       prep,
@@ -2984,17 +3001,6 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     return { decision: "skip" };
   }
 
-  if (
-    (status === "running" || status === "pending") &&
-    hasTier1Artifacts(session)
-  ) {
-    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — tier-1 artifacts while in-flight status", {
-      ...guardCtx,
-      hasModeRec: Boolean(session?.shared?.modeRecommendation),
-    }); // [debug-enrich]
-    return { decision: "skip" };
-  }
-
   console.debug("[DPP-GUARD.evaluateConceptInventoryGuard] inventory not yet valid for skip", {
     ...guardCtx,
     inventoryValid: isConceptInventoryValid(session),
@@ -3024,6 +3030,13 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     const prepDocId = String(session?.docId || "").trim();
     const inFlight = isDppInFlight(prepDocId);
     const stale = isPreparationStale(prep, session);
+    if (!inFlight && hasTier1GateArtifacts(session)) {
+      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — gate artifacts present, pipeline not in flight", {
+        ...guardCtx,
+        runId: prep.runId ?? null,
+      }); // [debug-enrich]
+      return { decision: "skip" };
+    }
     if (inFlight) {
       console.info("[DPP-GUARD.evaluateConceptInventoryGuard] waiting — pipeline in flight", {
         ...guardCtx,
@@ -3070,7 +3083,7 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
  */
 export async function pollUntilConceptInventoryReady(reloadSession, options = {}) {
   const pollMs = options.pollMs ?? 2000;
-  const maxWaitMs = options.maxWaitMs ?? DPP_STALE_TIMEOUT_MS + 60_000;
+  const maxWaitMs = options.maxWaitMs ?? DPP_GUARD_POLL_MAX_MS;
   const started = Date.now();
   let iteration = 0;
   console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Start", { pollMs, maxWaitMs }); // [debug-enrich]
