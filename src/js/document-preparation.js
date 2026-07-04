@@ -12,6 +12,7 @@ import {
   generateEpistemicGraph,
   getValidItems,
   runClozePipelinePhases,
+  diagnoseClozePipelineFailure,
 } from "./cloze/pipeline.js";
 import { generatePhase0ForScope } from "./slow/phase0.js";
 import { generateRecallSliceForDoc } from "./recall-study.js";
@@ -119,7 +120,8 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     docId: doc.docId,
     tier: qualitySignal.tier,
     reasons: qualitySignal.reasons,
-  });
+    reasonDetails: qualitySignal.reasonDetails,
+  }); // [debug-enrich]
 
   if ((summary.replacementCharsFound || 0) > 0 || (summary.suspiciousStripRemovals || 0) > 0) {
     console.warn("[document-preparation] Normalization math diagnostics warning:", {
@@ -703,6 +705,12 @@ async function runPhaseT21(doc, ctx) {
   if (!validItems.length) {
     const prep = ensurePreparation(doc);
     prep.failReason = prep.failReason || "CLOZE_NO_VALID_ITEMS";
+    console.warn("[document-preparation.runPhaseT21] CLOZE_NO_VALID_ITEMS:", {
+      docId: doc.docId,
+      failReason: prep.failReason,
+      pipelineDiagnostics: result.diagnostics,
+      clozeFailureAnalysis: diagnoseClozePipelineFailure(result, allItems),
+    }); // [debug-enrich]
     return { partial: true, hash: hashPayload("cloze_degraded") };
   }
   return hashPayload(validItems.map((i) => i.id));

@@ -8,6 +8,7 @@ import {
   hashText,
   setCachedHierarchy,
 } from "./hierarchy-cache.js";
+import { snapToSentenceBoundary } from "../text-boundaries.js";
 
 const HEADING_RE = /^(#{1,3})\s+(.+)$/gm;
 const DELIMITER_L1_RE = /^❖\s*(.+)$/gm;
@@ -35,6 +36,8 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     console.info("[hierarchy.buildDocumentHierarchy] Deterministic from markdown headings:", {
       charCount: text.length,
       method: "deterministic",
+      pathReason: "has_markdown_headings",
+      llmAttempted: false,
     }); // [debug-enrich]
     return {
       method: "deterministic",
@@ -52,6 +55,8 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     console.info("[hierarchy.buildDocumentHierarchy] Deterministic from delimiters:", {
       charCount: text.length,
       method: "deterministic",
+      pathReason: "has_delimiter_headings",
+      llmAttempted: false,
     }); // [debug-enrich]
     return {
       method: "deterministic",
@@ -68,6 +73,8 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       charCount: text.length,
       minLlmChars,
       method: "trivial",
+      pathReason: "text_below_llm_threshold",
+      llmAttempted: false,
     }); // [debug-enrich]
     const bag = globalThis.__dppNormalizationDebug;
     if (bag) bag.hierarchyMethod = "trivial";
@@ -82,9 +89,24 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   }
 
   if (typeof llmFn !== "function") {
-    console.warn("[hierarchy.buildDocumentHierarchy] No LLM fn — returning null"); // [debug-enrich]
+    console.warn("[hierarchy.buildDocumentHierarchy] No LLM fn — returning null:", {
+      charCount: text.length,
+      pathReason: "llm_fn_unavailable",
+      llmAttempted: false,
+      hasMarkdownHeadings: hasMarkdownHeadings(text),
+      hasDelimiterHeadings: hasDelimiterHeadings(text),
+    }); // [debug-enrich]
     return null;
   }
+
+  console.info("[hierarchy.buildDocumentHierarchy] Attempting LLM hierarchy:", {
+    charCount: text.length,
+    minLlmChars,
+    hasMarkdownHeadings: hasMarkdownHeadings(text),
+    hasDelimiterHeadings: hasDelimiterHeadings(text),
+    includeSummary,
+    useCache,
+  }); // [debug-enrich]
 
   if (useCache) {
     const cached = getCachedHierarchy(textHash);
@@ -119,18 +141,33 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       maxTokens: 2000,
       signal: options.signal,
     });
-  } catch {
-    return deterministicFallback(text, textHash, generatedAt);
+  } catch (err) {
+    return deterministicFallback(text, textHash, generatedAt, {
+      fallbackTrigger: "llm_call_failed",
+      errorType: err?.name || "Error",
+      errorMessage: String(err?.message || err).slice(0, 200),
+      responseLength: 0,
+    });
   }
 
   const tree = parseLlmHierarchyTree(raw);
   if (!tree) {
-    return deterministicFallback(text, textHash, generatedAt);
+    return deterministicFallback(text, textHash, generatedAt, {
+      fallbackTrigger: "parse_failed",
+      responseLength: raw.length,
+      responsePreview: String(raw).trim().slice(0, 120),
+      parseResult: "null_tree",
+    });
   }
 
   const validation = validateHierarchy(tree, text.length);
   if (!validation.valid) {
-    return deterministicFallback(text, textHash, generatedAt);
+    return deterministicFallback(text, textHash, generatedAt, {
+      fallbackTrigger: "validation_failed",
+      responseLength: raw.length,
+      validationErrors: validation.errors.slice(0, 8),
+      rootCount: tree.length,
+    });
   }
 
   const pedagogicalMeta =
@@ -156,11 +193,21 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
  * @param {string} text
  * @param {string} textHash
  * @param {number} generatedAt
+ * @param {object} [meta]
  */
-function deterministicFallback(text, textHash, generatedAt) {
+function deterministicFallback(text, textHash, generatedAt, meta = {}) {
   console.warn("[hierarchy.buildDocumentHierarchy] LLM fallback to deterministic hierarchy:", {
     charCount: text.length,
     hasMarkdownHeadings: hasMarkdownHeadings(text),
+    hasDelimiterHeadings: hasDelimiterHeadings(text),
+    fallbackTrigger: meta.fallbackTrigger || "unknown",
+    errorType: meta.errorType || null,
+    errorMessage: meta.errorMessage || null,
+    responseLength: meta.responseLength ?? null,
+    responsePreview: meta.responsePreview || null,
+    parseResult: meta.parseResult || null,
+    validationErrors: meta.validationErrors || null,
+    rootCount: meta.rootCount ?? null,
   }); // [debug-enrich]
   const bag = globalThis.__dppNormalizationDebug;
   if (bag) bag.hierarchyMethod = "deterministic-fallback";
@@ -901,7 +948,11 @@ function hardSplit(section, text, maxSize) {
   let part = 1;
 
   while (start < end) {
-    const chunkEnd = Math.min(start + maxSize, end);
+    let chunkEnd = Math.min(start + maxSize, end);
+    if (chunkEnd < end) {
+      const snapped = snapToSentenceBoundary(text, chunkEnd, "start");
+      if (snapped > start && snapped < end) chunkEnd = snapped;
+    }
     chunks.push({
       title: part === 1 ? section.title : `${section.title} (part ${part})`,
       text: text.slice(start, chunkEnd),

@@ -6,6 +6,15 @@
 /** @typedef {"good"|"degraded"|"poor"} QualityTier */
 
 /**
+ * @typedef {{
+ *   code: string,
+ *   measured: string,
+ *   threshold: string,
+ *   actual: string|number|boolean,
+ * }} QualityReasonDetail
+ */
+
+/**
  * @param {{
  *   extractionConfidence?: "high"|"medium"|"low",
  *   totalPages?: number,
@@ -16,7 +25,7 @@
  *   headingsFallbackUsed?: boolean,
  *   charCount?: number,
  * }} inputs
- * @returns {{ tier: QualityTier, reasons: string[] }}
+ * @returns {{ tier: QualityTier, reasons: string[], reasonDetails: QualityReasonDetail[] }}
  */
 export function computeDocumentQualitySignal(inputs = {}) {
   const extractionConfidence = inputs.extractionConfidence || "low";
@@ -33,38 +42,86 @@ export function computeDocumentQualitySignal(inputs = {}) {
 
   /** @type {string[]} */
   const reasons = [];
+  /** @type {QualityReasonDetail[]} */
+  const reasonDetails = [];
+
+  const addReason = (code, measured, threshold, actual) => {
+    reasons.push(code);
+    reasonDetails.push({ code, measured, threshold, actual });
+  };
 
   if (totalPages >= 2 && lowCount > totalPages * 0.5) {
-    reasons.push("majority_low_extraction_pages");
+    addReason(
+      "majority_low_extraction_pages",
+      "lowExtractionPageCount",
+      "> 50% of totalPages",
+      { lowCount, totalPages, ratio: totalPages > 0 ? lowCount / totalPages : 0 },
+    );
   }
   if (totalPages >= 3 && charCount < 500) {
-    reasons.push("very_low_char_count");
+    addReason(
+      "very_low_char_count",
+      "charCount",
+      ">= 500 when totalPages >= 3",
+      { charCount, totalPages },
+    );
   }
   if (
     extractionConfidence === "low" &&
     headingsFallbackUsed &&
     charCount < 2000
   ) {
-    reasons.push("low_confidence_with_heading_fallback");
+    addReason(
+      "low_confidence_with_heading_fallback",
+      "extractionConfidence + headingsFallbackUsed + charCount",
+      "confidence=low AND heading fallback AND charCount < 2000",
+      { extractionConfidence, headingsFallbackUsed, charCount },
+    );
   }
 
   if (
     reasons.includes("majority_low_extraction_pages") ||
     reasons.includes("very_low_char_count")
   ) {
-    return { tier: "poor", reasons };
+    return { tier: "poor", reasons, reasonDetails };
   }
 
   if (tablesDetected > 0 && tablesEmittedOk === 0) {
-    reasons.push("tables_not_emitted");
+    addReason(
+      "tables_not_emitted",
+      "tablesEmittedOk",
+      "> 0 when tablesDetected > 0",
+      { tablesDetected, tablesEmittedOk },
+    );
   }
-  if (headingsFallbackUsed) reasons.push("heading_fallback");
-  if (lowCount > 0) reasons.push("some_low_extraction_pages");
-  if (extractionConfidence === "low") reasons.push("low_extraction_confidence");
+  if (headingsFallbackUsed) {
+    addReason(
+      "heading_fallback",
+      "headingsFallbackUsed",
+      "false",
+      headingsFallbackUsed,
+    );
+  }
+  if (lowCount > 0) {
+    addReason(
+      "some_low_extraction_pages",
+      "lowExtractionPageCount",
+      "0",
+      { lowCount, totalPages },
+    );
+  }
+  if (extractionConfidence === "low") {
+    addReason(
+      "low_extraction_confidence",
+      "extractionConfidence",
+      "high or medium",
+      extractionConfidence,
+    );
+  }
 
   if (reasons.length > 0) {
-    return { tier: "degraded", reasons };
+    return { tier: "degraded", reasons, reasonDetails };
   }
 
-  return { tier: "good", reasons: [] };
+  return { tier: "good", reasons: [], reasonDetails: [] };
 }

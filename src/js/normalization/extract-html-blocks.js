@@ -12,6 +12,32 @@ function dppNormDbg() {
   return globalThis.__dppNormalizationDebug;
 }
 
+/** [debug-enrich] */
+function sampleBlockTexts(blocks, limit = 5, maxLen = 80) {
+  return (blocks || []).slice(0, limit).map((b, i) => ({
+    index: i,
+    kind: b?.kind || "unknown",
+    textPreview: String(b?.text || "").replace(/\s+/g, " ").trim().slice(0, maxLen),
+    charLen: String(b?.text || "").length,
+  }));
+}
+
+/** [debug-enrich] */
+function domStructureDiagnostics(body) {
+  const directChildren = Array.from(body?.children || []);
+  const blockTagRe = /^(p|div|h[1-6]|li|blockquote|pre|section|table|article|main)$/i;
+  const directChildTags = directChildren.map((el) => String(el.tagName || "").toLowerCase());
+  const nestedBlockCount = body?.querySelectorAll
+    ? body.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, section, table").length
+    : 0;
+  return {
+    bodyDirectChildCount: directChildren.length,
+    bodyDirectChildTags: directChildTags.slice(0, 12),
+    bodyDirectBlockTagCount: directChildTags.filter((t) => blockTagRe.test(t)).length,
+    nestedBlockElementCount: nestedBlockCount,
+  };
+}
+
 const HEADING_CLASS_PATTERNS = [
   { re: /heading\s*1|h1|title/i, level: 1 },
   { re: /heading\s*2|h2|chapter/i, level: 2 },
@@ -141,6 +167,11 @@ export function extractHtmlBlocks(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(raw, "text/html");
   const body = doc.body || doc.documentElement;
+  const domDiag = domStructureDiagnostics(body); // [debug-enrich]
+  console.debug("[extract-html-blocks.extractHtmlBlocks] DOM parsed (pre-traversal):", {
+    htmlCharLen: raw.length,
+    ...domDiag,
+  }); // [debug-enrich]
   /** @type {TextBlock[]} */
   const blocks = [];
   let lineIndex = 0;
@@ -238,11 +269,15 @@ export function extractHtmlBlocks(html) {
   for (const child of Array.from(body.children || [])) walk(child);
 
   const tableCount = (raw.match(/<table\b/gi) || []).length;
-  console.info("[extract-html-blocks.extractHtmlBlocks] Done:", {
-    blockCount: blocks.length,
+  const preFallbackBlockCount = blocks.length; // [debug-enrich]
+  const preFallbackHeadingCount = blocks.filter((b) => b.kind === "heading").length; // [debug-enrich]
+  console.info("[extract-html-blocks.extractHtmlBlocks] Post-traversal (pre-fallback):", {
+    blockCount: preFallbackBlockCount,
+    headingBlocks: preFallbackHeadingCount,
     htmlTablesInSource: tableCount,
-    headingBlocks: blocks.filter((b) => b.kind === "heading").length,
-  });
+    ...domDiag,
+    blockSamples: sampleBlockTexts(blocks),
+  }); // [debug-enrich]
   const bag = dppNormDbg();
   if (bag && tableCount > 0) {
     bag.tablesDetected = tableCount;
@@ -251,6 +286,14 @@ export function extractHtmlBlocks(html) {
 
   if (!blocks.length) {
     const text = (body.innerText || body.textContent || "").trim();
+    console.warn("[extract-html-blocks.extractHtmlBlocks] Empty-block fallback:", {
+      reason: "no_block_tags_emitted_during_traversal",
+      blocksIn: 0,
+      blocksOut: text ? 1 : 0,
+      mergeRule: "single_body_text_fallback",
+      bodyTextCharLen: text.length,
+      ...domDiag,
+    }); // [debug-enrich]
     if (text) {
       blocks.push(
         createTextBlock({
@@ -263,6 +306,13 @@ export function extractHtmlBlocks(html) {
     }
   }
 
+  console.info("[extract-html-blocks.extractHtmlBlocks] Done:", {
+    blockCount: blocks.length,
+    preFallbackBlockCount,
+    htmlTablesInSource: tableCount,
+    headingBlocks: blocks.filter((b) => b.kind === "heading").length,
+    blockSamples: sampleBlockTexts(blocks),
+  }); // [debug-enrich]
   return blocks;
 }
 

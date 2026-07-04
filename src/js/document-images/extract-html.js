@@ -9,6 +9,32 @@ import { formatPithImageToken, nextImageId } from "./tokens.js";
 
 /** @typedef {import("./storage.js").PendingDocumentImage} PendingDocumentImage */
 
+/** [debug-enrich] */
+function sampleBlockTexts(blocks, limit = 5, maxLen = 80) {
+  return (blocks || []).slice(0, limit).map((b, i) => ({
+    index: i,
+    kind: b?.kind || "unknown",
+    textPreview: String(b?.text || "").replace(/\s+/g, " ").trim().slice(0, maxLen),
+    charLen: String(b?.text || "").length,
+  }));
+}
+
+/** [debug-enrich] */
+function domStructureDiagnostics(body) {
+  const directChildren = Array.from(body?.children || []);
+  const blockTagRe = /^(p|div|h[1-6]|li|blockquote|pre|section|table|article|main|figure)$/i;
+  const directChildTags = directChildren.map((el) => String(el.tagName || "").toLowerCase());
+  const nestedBlockCount = body?.querySelectorAll
+    ? body.querySelectorAll("p, div, h1, h2, h3, h4, h5, h6, li, blockquote, pre, section, table, figure").length
+    : 0;
+  return {
+    bodyDirectChildCount: directChildren.length,
+    bodyDirectChildTags: directChildTags.slice(0, 12),
+    bodyDirectBlockTagCount: directChildTags.filter((t) => blockTagRe.test(t)).length,
+    nestedBlockElementCount: nestedBlockCount,
+  };
+}
+
 /**
  * @param {string} src
  * @returns {Promise<{ bytes: ArrayBuffer, mimeType: string, width: number|null, height: number|null }|null>}
@@ -74,6 +100,11 @@ export async function extractHtmlBlocksWithImages(html) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(raw, "text/html");
   const body = doc.body || doc.documentElement;
+  const domDiag = domStructureDiagnostics(body); // [debug-enrich]
+  console.debug("[extract-html.extractHtmlBlocksWithImages] DOM parsed (pre-traversal):", {
+    htmlCharLen: raw.length,
+    ...domDiag,
+  }); // [debug-enrich]
 
   const blockTags = new Set([
     "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
@@ -202,11 +233,30 @@ export async function extractHtmlBlocksWithImages(html) {
     await walk(child);
   }
 
+  const preFallbackBlockCount = blocks.length; // [debug-enrich]
+  console.info("[extract-html.extractHtmlBlocksWithImages] Post-traversal (pre-fallback):", {
+    blockCount: preFallbackBlockCount,
+    pendingImages: pendingImages.length,
+    headingBlocks: blocks.filter((b) => b.kind === "heading").length,
+    ...domDiag,
+    blockSamples: sampleBlockTexts(blocks),
+  }); // [debug-enrich]
+
   if (!blocks.length) {
     for (const img of Array.from(body.querySelectorAll("img"))) {
       await walk(img);
     }
     const text = (body.textContent || "").replace(/\s+/g, " ").trim();
+    const blocksAfterImgPass = blocks.length; // [debug-enrich]
+    console.warn("[extract-html.extractHtmlBlocksWithImages] Empty-block fallback:", {
+      reason: "no_block_tags_emitted_during_traversal",
+      blocksIn: preFallbackBlockCount,
+      blocksAfterImgPass,
+      blocksOut: text ? blocksAfterImgPass + 1 : blocksAfterImgPass,
+      mergeRule: blocksAfterImgPass ? "img_only_blocks" : "single_body_text_fallback",
+      bodyTextCharLen: text.length,
+      ...domDiag,
+    }); // [debug-enrich]
     if (text) {
       blocks.push(
         createTextBlock({
@@ -218,6 +268,14 @@ export async function extractHtmlBlocksWithImages(html) {
       );
     }
   }
+
+  console.info("[extract-html.extractHtmlBlocksWithImages] Done:", {
+    blockCount: blocks.length,
+    preFallbackBlockCount,
+    pendingImages: pendingImages.length,
+    headingBlocks: blocks.filter((b) => b.kind === "heading").length,
+    blockSamples: sampleBlockTexts(blocks),
+  }); // [debug-enrich]
 
   return { blocks, pendingImages };
 }

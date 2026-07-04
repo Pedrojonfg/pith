@@ -38,8 +38,24 @@ export function makeHierarchyLlmFn(options = {}) {
  */
 export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) {
   const text = String(markdownText || "");
-  const needsLlm = text.length >= 3000 && !hasMarkdownHeadings(text);
+  const minLlmChars = 3000;
+  const hasHeadings = hasMarkdownHeadings(text);
+  const needsLlm = text.length >= minLlmChars && !hasHeadings;
   const llmFn = needsLlm ? makeHierarchyLlmFn(options) : null;
+  console.debug("[hierarchy-llm.buildDocumentHierarchyWithLlm] Path decision:", {
+    charCount: text.length,
+    minLlmChars,
+    hasMarkdownHeadings: hasHeadings,
+    needsLlm,
+    llmFnAvailable: typeof llmFn === "function",
+    skipLlmReason: hasHeadings
+      ? "markdown_headings_present"
+      : text.length < minLlmChars
+        ? "text_below_llm_threshold"
+        : typeof llmFn !== "function"
+          ? "no_api_key_or_llm_fn"
+          : null,
+  }); // [debug-enrich]
   return buildDocumentHierarchy(text, llmFn, {
     useCache: options.useCache !== false,
     signal: options.signal,
