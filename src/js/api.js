@@ -34,6 +34,7 @@ import {
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
 import { renderCoverageManifestForPrompt } from "./coverage-manifest.js";
+import { snapInteriorCharOffsets } from "./text-boundaries.js";
 import {
   ASSESSMENT_BATCH_SIZE,
   accumulateConceptCoverage,
@@ -936,19 +937,8 @@ export function buildCharFallbackInventoryChunks(rawMarkdown, charCount = 0) {
   const material = String(rawMarkdown || "");
   const chars = Math.max(0, Number(charCount) || material.length);
   if (chars < 50000) return null;
-  const SLICE_CHARS = INVENTORY_CHAR_FALLBACK_SLICE_CHARS;
-  /** @type {{ label: string, text: string, wordCount: number }[]} */
-  const chunks = [];
-  for (let start = 0; start < material.length; start += SLICE_CHARS) {
-    const text = material.slice(start, start + SLICE_CHARS).trim();
-    if (!text) continue;
-    chunks.push({
-      label: `Part ${chunks.length + 1}`,
-      text,
-      wordCount: countInventoryWords(text),
-    });
-  }
-  return chunks.length >= 2 ? chunks : null;
+  const offsets = snapInteriorCharOffsets(material, mechanicalCharFallbackOffsets(material.length));
+  return buildCharFallbackInventoryChunksFromOffsets(material, offsets);
 }
 
 /** Minimum chars per char-fallback slice after boundary refinement. */
@@ -2168,15 +2158,75 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
     throw new Error("No partial inventories to merge.");
   }
 
-  const treeMerged = mergeConceptInventoriesDeterministicTree(payload);
   const rawConceptCount = payload.reduce((n, p) => n + p.concepts.length, 0);
+
+  /** @type {{ label: string, concepts: object[] }[]} */
+  let effectivePayload = payload;
+  let forceLlmMergePath = false;
+  let embedInventoryModeSuffix = "";
+
+  const {
+    isEmbeddingAssistedInventoryMergeEnabled,
+    getInventoryMergeEmbedMode,
+  } = await import("./config/flags.js");
+
+  if (payload.length >= 2 && isEmbeddingAssistedInventoryMergeEnabled()) {
+    const {
+      runEmbeddingAssistedInventoryMerge,
+      conceptsToSinglePartial,
+      resetInventoryMergeArbitrationBudget,
+    } = await import("./vault/inventory-merge-embeddings.js");
+    resetInventoryMergeArbitrationBudget();
+    const embedMode = getInventoryMergeEmbedMode();
+    const embedResult = await runEmbeddingAssistedInventoryMerge(payload, {
+      mode: embedMode,
+      llmModel: model,
+    });
+
+    if (embedResult.inventoryMode) {
+      embedInventoryModeSuffix = embedResult.inventoryMode;
+    }
+
+    if (
+      embedResult.status === "success" &&
+      embedMode === "full" &&
+      Array.isArray(embedResult.concepts) &&
+      embedResult.concepts.length >= minRequired
+    ) {
+      const dedup = await runSemanticDedupPassOnInventory(embedResult.concepts, payload, {
+        llmModel: model,
+        language: lang,
+        charCount: charCount ?? 0,
+      });
+      const baseMode = embedResult.inventoryMode || "embed_full";
+      return {
+        concepts: dedup.concepts,
+        inventoryMode:
+          dedup.inventoryMode != null ? `${baseMode}+${dedup.inventoryMode}` : baseMode,
+      };
+    }
+
+    if (
+      embedResult.status === "success" &&
+      (embedMode === "auto" || embedMode === "full") &&
+      Array.isArray(embedResult.concepts) &&
+      embedResult.concepts.length > 0 &&
+      embedResult.concepts.length < rawConceptCount
+    ) {
+      effectivePayload = conceptsToSinglePartial(embedResult.concepts);
+      forceLlmMergePath = true;
+    }
+  }
+
+  const treeMerged = mergeConceptInventoriesDeterministicTree(effectivePayload);
   // Single-partial merge: deterministic title-key dedupe is enough. Map-reduce (2+ partials)
   // always needs LLM merge — count ≥ minRequired does not imply semantic dedup (FR-006 revised).
   if (
     Array.isArray(treeMerged) &&
     treeMerged.length >= minRequired &&
     mergePolish !== true &&
-    payload.length < 2
+    effectivePayload.length < 2 &&
+    !forceLlmMergePath
   ) {
     console.info("[inventory-merge] Deterministic tree accepted (single partial):", {
       conceptCount: treeMerged.length,
@@ -2185,10 +2235,12 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
     });
     return {
       concepts: treeMerged,
-      inventoryMode: "map_reduce_deterministic",
+      inventoryMode: embedInventoryModeSuffix
+        ? `${embedInventoryModeSuffix}+map_reduce_deterministic`
+        : "map_reduce_deterministic",
     };
   }
-  if (payload.length >= 2) {
+  if (effectivePayload.length >= 2) {
     console.info("[inventory-merge] Map-reduce merge — running LLM dedup:", {
       partialCount: payload.length,
       rawConceptCount,
@@ -2199,9 +2251,14 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
 
   const deterministicCount = Array.isArray(treeMerged) ? treeMerged.length : 0;
 
+  function suffixInventoryMode(mode) {
+    if (!embedInventoryModeSuffix) return mode;
+    return `${embedInventoryModeSuffix}+${mode}`;
+  }
+
   function tryAcceptSlimMerge(mergedSlim, inventoryMode, options = {}) {
     if (!Array.isArray(mergedSlim) || !mergedSlim.length) return null;
-    const rehydrated = rehydrateMergedConcepts(mergedSlim, payload);
+    const rehydrated = rehydrateMergedConcepts(mergedSlim, effectivePayload);
     if (!Array.isArray(rehydrated) || rehydrated.length < minRequired) return null;
 
     const slimCount = mergedSlim.length;
@@ -2224,7 +2281,7 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       deterministicCount,
       rawConceptCount,
     });
-    return { concepts: rehydrated, inventoryMode };
+    return { concepts: rehydrated, inventoryMode: suffixInventoryMode(inventoryMode) };
   }
 
   async function finalizeLlmMerge(accepted) {
@@ -2233,25 +2290,26 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       language: lang,
       charCount: charCount ?? 0,
     });
+    const baseMode = suffixInventoryMode(accepted.inventoryMode);
     const inventoryMode =
-      dedup.inventoryMode != null
-        ? `${accepted.inventoryMode}+${dedup.inventoryMode}`
-        : accepted.inventoryMode;
+      dedup.inventoryMode != null ? `${baseMode}+${dedup.inventoryMode}` : baseMode;
     return { concepts: dedup.concepts, inventoryMode };
   }
 
-  const slimPayload = slimPartialsForMerge(payload);
+  const slimPayload = slimPartialsForMerge(effectivePayload);
   const slimJson = JSON.stringify(slimPayload);
   const monolithicMaxTokens = mergeMaxTokensForConceptCount(deterministicCount || rawConceptCount);
 
-  if (payload.length >= 2) {
+  const runLlmMerge = effectivePayload.length >= 2 || forceLlmMergePath;
+
+  if (runLlmMerge) {
     console.info("[inventory-merge] Running pairwise slim merge tree (primary).");
-    const treeSlim = await mergeConceptInventoriesSlimTree(payload, splitOpts);
+    const treeSlim = await mergeConceptInventoriesSlimTree(effectivePayload, splitOpts);
     const treeAccepted = tryAcceptSlimMerge(treeSlim, "map_reduce_slim_tree");
     if (treeAccepted) return finalizeLlmMerge(treeAccepted);
   }
 
-  if (payload.length >= 2 && slimJson.length <= MERGE_SLIM_INPUT_MAX_CHARS) {
+  if (runLlmMerge && slimJson.length <= MERGE_SLIM_INPUT_MAX_CHARS) {
     console.info("[inventory-merge] Pairwise merge inconclusive — trying monolithic slim merge.");
     const slimSystem = buildSlimMergePairPrompt(lang, slimJson);
     for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
@@ -2292,7 +2350,7 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       const acceptedDespiteCount = tryAcceptSlimMerge(mergedSlim, "map_reduce_slim");
       if (acceptedDespiteCount) return finalizeLlmMerge(acceptedDespiteCount);
     }
-  } else if (payload.length >= 2) {
+  } else if (runLlmMerge) {
     console.info("[inventory-merge] Slim input too large for monolithic merge.", {
       slimJsonChars: slimJson.length,
     });
@@ -2303,23 +2361,22 @@ export async function deepSeekMergeConceptInventories(partials, splitOpts = {}) 
       conceptCount: treeMerged.length,
       minRequired,
     });
-    if (payload.length >= 2) {
+    if (effectivePayload.length >= 2 || forceLlmMergePath) {
       const dedup = await runSemanticDedupPassOnInventory(treeMerged, payload, {
         llmModel: model,
         language: lang,
         charCount: charCount ?? 0,
       });
+      const baseMode = suffixInventoryMode("map_reduce_deterministic");
       return {
         concepts: dedup.concepts,
         inventoryMode:
-          dedup.inventoryMode != null
-            ? `map_reduce_deterministic+${dedup.inventoryMode}`
-            : "map_reduce_deterministic",
+          dedup.inventoryMode != null ? `${baseMode}+${dedup.inventoryMode}` : baseMode,
       };
     }
     return {
       concepts: treeMerged,
-      inventoryMode: "map_reduce_deterministic",
+      inventoryMode: suffixInventoryMode("map_reduce_deterministic"),
     };
   }
 
