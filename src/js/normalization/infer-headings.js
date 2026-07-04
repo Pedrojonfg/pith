@@ -40,6 +40,27 @@ const NUMBERED_HEADING =
 const ROMAN_HEADING = /^([IVXLC]+)\.\s+([A-Z])/u;
 const MD_HEADING = /^(#{1,6})\s+(.+)$/;
 
+/** Browser-default body size when HTML blocks carry no inline font-size (common in saved pages). */
+const DEFAULT_BODY_FONT_SIZE = 12;
+
+/**
+ * @param {TextBlock} block
+ * @returns {boolean}
+ */
+function hasStrongHeadingPattern(block) {
+  const text = String(block?.text || "").trim();
+  if (!text) return false;
+  if (MD_HEADING.test(text)) return true;
+  if (NUMBERED_HEADING.test(text) || ROMAN_HEADING.test(text)) return true;
+  const lower = text.toLowerCase();
+  if (SECTION_KEYWORDS.some((kw) => lower === kw || lower.startsWith(`${kw} `))) return true;
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length >= 2 && words.length <= 10 && text === text.toUpperCase() && /[A-Z]/.test(text)) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * @param {TextBlock[]} blocks
  * @param {number} [minWords]
@@ -197,8 +218,11 @@ export function validateHeadingHierarchy(headings) {
 export function inferHeadings(blocks, opts = {}) {
   const pageHeights = opts.pageHeights || [];
   const defaultPageHeight = pageHeights[0] || 792;
-  const bodyFontSize = computeBodyFontSize(blocks);
+  const rawBodyFontSize = computeBodyFontSize(blocks);
+  const bodyFontSizeUnavailable = rawBodyFontSize <= 0;
+  const bodyFontSize = bodyFontSizeUnavailable ? DEFAULT_BODY_FONT_SIZE : rawBodyFontSize;
   const threshold = 35;
+  const patternOnlyThreshold = 25;
 
   /** @type {Record<string, number>} */
   const rejectionReasons = {};
@@ -245,8 +269,11 @@ export function inferHeadings(blocks, opts = {}) {
     }
     return {
       headings: validated,
-      bodyFontSize,
-      diagnostics: buildDiagnostics(validated, candidates.length, rejectionReasons),
+      bodyFontSize: rawBodyFontSize,
+      diagnostics: buildDiagnostics(validated, candidates.length, rejectionReasons, {
+        bodyFontSizeUnavailable,
+        bodyFontSizeFallback: bodyFontSizeUnavailable ? bodyFontSize : undefined,
+      }),
     };
   }
 
@@ -281,7 +308,9 @@ export function inferHeadings(blocks, opts = {}) {
     }
 
     const pageHeight = pageHeights[block.pageIndex] || defaultPageHeight;
-    const score = scoreBlock(block, bodyFontSize, pageHeight);
+    const score = scoreBlock(block, bodyFontSizeUnavailable ? 0 : bodyFontSize, pageHeight);
+    const acceptThreshold =
+      bodyFontSizeUnavailable && hasStrongHeadingPattern(block) ? patternOnlyThreshold : threshold;
 
     if (block.kind === "heading") {
       const htmlLevel = block.lineIndex >= 1 && block.lineIndex <= 6 ? block.lineIndex : 2;
@@ -304,19 +333,22 @@ export function inferHeadings(blocks, opts = {}) {
       continue;
     }
 
-    if (score >= threshold) {
+    if (score >= acceptThreshold || (bodyFontSizeUnavailable && hasStrongHeadingPattern(block))) {
       acceptedBlocks.push(block);
       candidates.push({
         label: labelFromBlock(block),
         level: 2,
         score,
-        source: bodyFontSize > 0 && block.fontSize >= bodyFontSize * 1.15 ? "font-size" : "pattern",
+        source:
+          !bodyFontSizeUnavailable && block.fontSize >= bodyFontSize * 1.15
+            ? "font-size"
+            : "pattern",
         blockId: block.id,
         charStart: 0,
         charEnd: 0,
       });
     } else {
-      bumpRejection("below_threshold");
+      bumpRejection(bodyFontSizeUnavailable ? "below_threshold_no_baseline" : "below_threshold");
     }
   }
 
@@ -358,10 +390,14 @@ export function inferHeadings(blocks, opts = {}) {
           : validated.length > 0
             ? "pattern"
             : "none";
-  const diagnostics = buildDiagnostics(validated, candidates.length, rejectionReasons);
+  const diagnostics = buildDiagnostics(validated, candidates.length, rejectionReasons, {
+    bodyFontSizeUnavailable,
+    bodyFontSizeFallback: bodyFontSizeUnavailable ? bodyFontSize : undefined,
+  });
   console.info("[infer-headings.inferHeadings] Done:", {
     headingCount: validated.length,
-    bodyFontSize,
+    bodyFontSize: rawBodyFontSize,
+    bodyFontSizeUnavailable,
     bySource,
     primaryMethod,
     outlineCoverage: opts.outlineCoverage ?? 0,
@@ -370,7 +406,8 @@ export function inferHeadings(blocks, opts = {}) {
   if (validated.length === 0) {
     console.warn("[infer-headings.inferHeadings] No headings inferred:", {
       blockCount: blocks.length,
-      bodyFontSize,
+      bodyFontSize: rawBodyFontSize,
+      bodyFontSizeUnavailable,
       format: opts.format || "unknown",
       candidateCount: diagnostics.candidateCount,
       rejectionReasons: diagnostics.rejectionReasons,
@@ -384,20 +421,23 @@ export function inferHeadings(blocks, opts = {}) {
     bag.headingInferenceDiagnostics = diagnostics;
   }
 
-  return { headings: validated, bodyFontSize, diagnostics };
+  return { headings: validated, bodyFontSize: rawBodyFontSize, diagnostics };
 }
 
 /**
  * @param {HeadingCandidate[]} validated
  * @param {number} candidateCount
  * @param {Record<string, number>} rejectionReasons
+ * @param {{ bodyFontSizeUnavailable?: boolean, bodyFontSizeFallback?: number }} [extra]
  */
-function buildDiagnostics(validated, candidateCount, rejectionReasons) {
+function buildDiagnostics(validated, candidateCount, rejectionReasons, extra = {}) {
   return {
     candidateCount,
     acceptedCount: validated.length,
     rejectionReasons,
     bySource: countHeadingsBySource(validated),
+    ...(extra.bodyFontSizeUnavailable ? { bodyFontSizeUnavailable: true } : {}),
+    ...(extra.bodyFontSizeFallback != null ? { bodyFontSizeFallback: extra.bodyFontSizeFallback } : {}),
   };
 }
 

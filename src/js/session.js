@@ -74,7 +74,7 @@ import {
   isTier1PreparationComplete,
   hasTier1GateArtifacts,
 } from "./session-types.js";
-import { isDppRunActiveOnDevice } from "./dpp-persistence.js";
+import { getActiveDppRunId, isDppRunActiveOnDevice } from "./dpp-persistence.js";
 
 /**
  * Call sites patched for DPP recalculation guard (20260622-fix-dpp-recalculation-guard):
@@ -2951,6 +2951,25 @@ function isPreparationStale(prep, session) {
   return docTs > 0 && Date.now() - docTs > DPP_PENDING_GRACE_MS;
 }
 
+/**
+ * True when store shows running/pending but the run is no longer active and gate artifacts exist.
+ * Uses runId + in-flight maps as the authoritative tiebreaker (R3).
+ * @param {object} session
+ * @param {object} prep
+ * @returns {boolean}
+ */
+function isSupersededRunningPreparation(session, prep) {
+  const docId = String(session?.docId || "").trim();
+  if (!docId) return false;
+  if (prep.status !== "running" && prep.status !== "pending") return false;
+  if (!hasTier1GateArtifacts(session)) return false;
+  if (isDppInFlight(docId)) return false;
+  if (isDppRunActiveOnDevice(docId, prep.runId)) return false;
+  const activeRunId = getActiveDppRunId(docId);
+  if (activeRunId && prep.runId && activeRunId !== prep.runId) return true;
+  return !activeRunId;
+}
+
 async function handlePreparationStaleRun(session) {
   if (!session.shared) session.shared = {};
   const prep = normalizePreparationState(session.shared.preparation);
@@ -3030,6 +3049,15 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     const prepDocId = String(session?.docId || "").trim();
     const inFlight = isDppInFlight(prepDocId);
     const stale = isPreparationStale(prep, session);
+    const superseded = isSupersededRunningPreparation(session, prep);
+    if (superseded) {
+      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — superseded running status (gate artifacts, run inactive)", {
+        ...guardCtx,
+        runId: prep.runId ?? null,
+        activeRunId: getActiveDppRunId(prepDocId),
+      }); // [debug-enrich]
+      return { decision: "skip" };
+    }
     if (!inFlight && hasTier1GateArtifacts(session)) {
       console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — gate artifacts present, pipeline not in flight", {
         ...guardCtx,

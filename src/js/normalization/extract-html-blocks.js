@@ -25,7 +25,7 @@ const HEADING_CLASS_PATTERNS = [
 /**
  * @param {string} style
  */
-function parseInlineFontSize(style) {
+export function parseInlineFontSize(style) {
   const m = String(style || "").match(/font-size\s*:\s*([\d.]+)(pt|px|em)?/i);
   if (!m) return 0;
   const val = parseFloat(m[1]);
@@ -198,7 +198,7 @@ export function extractHtmlBlocks(html) {
 
     const blockTags = new Set([
       "p", "div", "h1", "h2", "h3", "h4", "h5", "h6",
-      "li", "blockquote", "pre",
+      "li", "blockquote", "pre", "section",
     ]);
 
     if (blockTags.has(tag)) {
