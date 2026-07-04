@@ -157,6 +157,36 @@ export function getMaxContradictionChecksPerDppRun() {
   return VAULT_EMBEDDING_FLAGS.MAX_CONTRADICTION_CHECKS_PER_DPP_RUN;
 }
 
+/** Semantic concept anchoring (20260703-semantic-concept-anchoring). */
+export const CONCEPT_ANCHORING_FLAGS = Object.freeze({
+  SEMANTIC_ANCHORING_ENABLED: false,
+  CONCEPT_ANCHOR_COMPOSITION_ENABLED: true,
+});
+
+export function isSemanticAnchoringEnabled() {
+  return CONCEPT_ANCHORING_FLAGS.SEMANTIC_ANCHORING_ENABLED === true;
+}
+
+/** Embedding-assisted T1.2 inventory merge (20260710-embedding-inventory-dedup). */
+export const INVENTORY_MERGE_EMBED_FLAGS = Object.freeze({
+  EMBEDDING_ASSISTED_INVENTORY_MERGE_ENABLED: true,
+  /** shadow | auto | full — only when ENABLED */
+  INVENTORY_MERGE_EMBED_MODE: "shadow",
+});
+
+export function isEmbeddingAssistedInventoryMergeEnabled() {
+  return INVENTORY_MERGE_EMBED_FLAGS.EMBEDDING_ASSISTED_INVENTORY_MERGE_ENABLED === true;
+}
+
+export function getInventoryMergeEmbedMode() {
+  const mode = String(INVENTORY_MERGE_EMBED_FLAGS.INVENTORY_MERGE_EMBED_MODE || "shadow").trim();
+  return ["shadow", "auto", "full"].includes(mode) ? mode : "shadow";
+}
+
+export function isConceptAnchorCompositionEnabled() {
+  return CONCEPT_ANCHORING_FLAGS.CONCEPT_ANCHOR_COMPOSITION_ENABLED !== false;
+}
+
 /** Adaptive knowledge probing (20260630-adaptive-knowledge-probing). */
 export const ADAPTIVE_PROBING_FLAGS = Object.freeze({
   ADAPTIVE_PROBING_ENABLED: true,

@@ -1,0 +1,65 @@
+{
+  "description": "Hand-labeled concept pairs for inventory merge threshold calibration. duplicate=true means same concept, different wording.",
+  "pairs": [
+    {
+      "duplicate": true,
+      "a": { "title": "Attention mechanism", "scope_one_line": "Softmax-weighted value aggregation over keys." },
+      "b": { "title": "Scaled dot-product attention", "scope_one_line": "Query-key dot products scaled and softmaxed over values." }
+    },
+    {
+      "duplicate": true,
+      "a": { "title": "Transformer encoder", "scope_one_line": "Stack of self-attention and feed-forward blocks." },
+      "b": { "title": "Encoder stack", "scope_one_line": "Repeated layers of multi-head attention plus position-wise FFN." }
+    },
+    {
+      "duplicate": true,
+      "a": { "title": "Gradient descent", "scope_one_line": "Iterative parameter update along loss gradient." },
+      "b": { "title": "First-order optimization", "scope_one_line": "Update weights using the gradient of the objective." }
+    },
+    {
+      "duplicate": true,
+      "a": { "title": "Photosynthesis", "scope_one_line": "Plants convert light energy into chemical energy." },
+      "b": { "title": "Light-driven carbon fixation", "scope_one_line": "Chloroplast process turning sunlight into stored glucose." }
+    },
+    {
+      "duplicate": true,
+      "a": { "title": "Supply and demand", "scope_one_line": "Price equilibrates quantity supplied and demanded." },
+      "b": { "title": "Market equilibrium", "scope_one_line": "Intersection where suppliers and buyers agree on quantity and price." }
+    },
+    {
+      "duplicate": true,
+      "a": { "title": "HTTP request", "scope_one_line": "Client message to server with method, path, headers." },
+      "b": { "title": "Web request", "scope_one_line": "Browser-initiated call specifying verb, URL, and metadata." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "Attention mechanism", "scope_one_line": "Softmax-weighted value aggregation over keys." },
+      "b": { "title": "Recurrent neural network", "scope_one_line": "Sequential hidden state updated at each time step." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "Gradient descent", "scope_one_line": "Iterative parameter update along loss gradient." },
+      "b": { "title": "Momentum optimizer", "scope_one_line": "Gradient update with velocity from past gradients." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "Photosynthesis", "scope_one_line": "Plants convert light energy into chemical energy." },
+      "b": { "title": "Cellular respiration", "scope_one_line": "Mitochondria break glucose down for ATP." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "Supply and demand", "scope_one_line": "Price equilibrates quantity supplied and demanded." },
+      "b": { "title": "Price elasticity", "scope_one_line": "Responsiveness of quantity demanded to price changes." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "Transformer encoder", "scope_one_line": "Stack of self-attention and feed-forward blocks." },
+      "b": { "title": "Transformer decoder", "scope_one_line": "Masked self-attention plus cross-attention to encoder." }
+    },
+    {
+      "duplicate": false,
+      "a": { "title": "HTTP request", "scope_one_line": "Client message to server with method, path, headers." },
+      "b": { "title": "HTTP response", "scope_one_line": "Server reply with status code, headers, and body." }
+    }
+  ]
+}

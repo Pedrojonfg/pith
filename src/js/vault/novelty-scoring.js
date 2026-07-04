@@ -81,11 +81,14 @@ export async function scoreConceptNovelty(doc) {
       continue;
     }
     try {
-      const embedding = await embedText(text, {
-        conceptId,
-        projectId: projectId || null,
-        scopeType: "concept",
-      });
+      let embedding = Array.isArray(entry._embedding) && entry._embedding.length ? entry._embedding : null;
+      if (!embedding) {
+        embedding = await embedText(text, {
+          conceptId,
+          projectId: projectId || null,
+          scopeType: "concept",
+        });
+      }
       const nearest = await findNearestConcepts(embedding, {
         matchCount: 5,
         projectIds,
