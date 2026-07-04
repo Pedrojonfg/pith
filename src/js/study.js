@@ -225,6 +225,7 @@ import {
   isConceptInventoryValid,
   evaluateConceptInventoryGuard,
   pollUntilConceptInventoryReady,
+  reloadSessionForGuard,
   repairStuckRunningPreparationIfNeeded,
   resolveCreateSessionPrepStatus,
   markStalePreparationSession,
@@ -803,8 +804,10 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   let doc = null;
   if (preparedDoc?.docId) {
     doc = (await commitPreparedDocToStore(preparedDoc)) ?? preparedDoc;
+    doc = (await reloadSessionForGuard(preparedDoc.docId)) ?? doc;
   } else {
-    doc = await getActiveSession();
+    const active = await getActiveSession();
+    doc = active?.docId ? (await reloadSessionForGuard(active.docId)) ?? active : active;
   }
   console.info("[study.enterModeSelectAfterTier1Gate] Start:", {
     docId: doc?.docId || null,
@@ -836,7 +839,8 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
 
   if (guard.decision === "waiting") {
     showDocumentPreparingScreen("Document preparation in progress…");
-    const polled = await pollUntilConceptInventoryReady(() => getActiveSession());
+    const docId = doc.docId;
+    const polled = await pollUntilConceptInventoryReady(() => reloadSessionForGuard(docId));
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
       doc = await ensureTier1Preparation(doc, {
@@ -862,7 +866,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     if (guard.decision === "waiting") {
       renderPreparationFailedUi(
         doc,
-        "Document preparation is still in progress. Try again shortly.",
+        "Document preparation timed out. Check your connection and retry, or reload the page.",
       );
       enterModeSelectScreen();
       return;
