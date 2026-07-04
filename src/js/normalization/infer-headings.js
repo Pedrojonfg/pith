@@ -2,7 +2,7 @@
  * Heading inference: scoring, patterns, hierarchy validation (heading-detection.md).
  */
 
-import { normalizeHeadingLabel, isPdfHeadingNoise, compareHeadingLabels, collapsePdfSpacedTitle } from "./heading-text.js";
+import { normalizeHeadingLabel, isPdfHeadingNoise, compareHeadingLabels, collapsePdfSpacedTitle, isValidPdfTopLevelLabel } from "./heading-text.js";
 import { resolveOutlineLabel } from "./pdf-outline.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
@@ -36,6 +36,7 @@ const SECTION_KEYWORDS = [
   "appendix",
   "references",
   "acknowledgments",
+  "broader impact",
   "for more information",
 ];
 
@@ -550,8 +551,10 @@ export function inferHeadings(blocks, opts = {}) {
 
     const wordCount = text.split(/\s+/).filter(Boolean).length;
     if (block.source === "pdf" && /^\d+\.\s+[A-Za-z]/.test(text) && !/^\d+\.\d+/.test(text)) {
-      bumpRejection("pdf_numbered_list_item");
-      continue;
+      if (!isValidPdfTopLevelLabel(text)) {
+        bumpRejection("pdf_numbered_list_item");
+        continue;
+      }
     }
     if (block.source === "pdf" && /Input-Input|Layer\d+\b/i.test(text)) {
       bumpRejection("pdf_table_caption_noise");
@@ -651,27 +654,26 @@ export function inferHeadings(blocks, opts = {}) {
     }
   }
 
-  /** @type {HeadingCandidate[]} */
-  let workingCandidates = candidates;
   const outlineCandidateCount = candidates.filter((c) => c.source === "outline").length;
-  if (
+  const outlineHeavyPdf =
     outlineCandidateCount >= 15 &&
     (opts.outlineCoverage ?? 0) >= 0.25 &&
-    opts.format === "pdf"
-  ) {
+    opts.format === "pdf";
+
+  /** @type {HeadingCandidate[]} */
+  let workingCandidates = candidates;
+  if (outlineHeavyPdf) {
     workingCandidates = candidates.filter(
       (c) => c.source === "outline" || (c.source === "pattern" && c.score >= 90),
     );
   }
 
+  ensurePdfCanonicalSections(workingCandidates, blocks, opts.format);
+
   const deduped = dedupeHeadings(workingCandidates, blocks);
   const merged = mergeLetterheadHeadings(deduped, blocks);
-  const outlineHeavyPdf =
-    outlineCandidateCount >= 15 &&
-    (opts.outlineCoverage ?? 0) >= 0.25 &&
-    opts.format === "pdf";
   const sorted =
-    opts.format === "txt" || opts.format === "md" || outlineHeavyPdf
+    opts.format === "txt" || opts.format === "md" || opts.format === "html" || outlineHeavyPdf
       ? sortHeadingsByBlockOrder(merged, blocks)
       : sortHeadingsForOutput(merged, blocks);
   const validated = validateHeadingHierarchy(sorted, { blocks });
@@ -739,6 +741,113 @@ function buildDiagnostics(validated, candidateCount, rejectionReasons, extra = {
 }
 
 /**
+ * arXiv / NeurIPS papers use lettered appendices (A, B, …) in the PDF outline.
+ * @param {HeadingCandidate[]} candidates
+ */
+function pdfOutlineUsesLetterAppendices(candidates) {
+  return candidates.some(
+    (c) => c.source === "outline" && /^[A-D]\s+\S/i.test(c.label),
+  );
+}
+
+/**
+ * PDF bookmarks often omit Abstract / References / Broader Impact — add from body text.
+ * @param {HeadingCandidate[]} candidates
+ * @param {TextBlock[]} blocks
+ * @param {string} [format]
+ */
+function ensurePdfCanonicalSections(candidates, blocks, format) {
+  if (format !== "pdf") return;
+  const letterAppendixOutline = pdfOutlineUsesLetterAppendices(candidates);
+  const canonicalRes = [/^abstract$/i, /^references$/i, /^broader impact$/i];
+  const usedBlocks = new Set(candidates.map((c) => c.blockId));
+  for (const block of blocks) {
+    if (block.kind === "artifact" || block.source !== "pdf") continue;
+    const text = block.text.trim();
+    if (!canonicalRes.some((re) => re.test(text))) continue;
+    const existingIdx = candidates.findIndex((c) => c.blockId === block.id);
+    if (existingIdx >= 0) {
+      const existing = candidates[existingIdx];
+      const isReferences = /^references$/i.test(text);
+      const promoteToTopLevelPattern = letterAppendixOutline || !isReferences;
+      if (promoteToTopLevelPattern) {
+        candidates[existingIdx] = {
+          ...existing,
+          label: normalizeHeadingLabel(text),
+          level: 1,
+          score: Math.max(existing.score, 92),
+          source: "pattern",
+        };
+      } else {
+        candidates[existingIdx] = {
+          ...existing,
+          label: normalizeHeadingLabel(text),
+          score: Math.max(existing.score, 92),
+        };
+      }
+      continue;
+    }
+    if (usedBlocks.has(block.id)) continue;
+    candidates.push({
+      label: normalizeHeadingLabel(text),
+      level: 1,
+      score: 92,
+      source: "pattern",
+      blockId: block.id,
+      charStart: 0,
+      charEnd: 0,
+    });
+    usedBlocks.add(block.id);
+  }
+
+  ensurePdfParentSections(candidates, blocks, format);
+}
+
+/**
+ * Insert missing top-level numbered section headings when subsections exist (e.g. 4.1 without 4).
+ * @param {HeadingCandidate[]} candidates
+ * @param {TextBlock[]} blocks
+ * @param {string} [format]
+ */
+function ensurePdfParentSections(candidates, blocks, format) {
+  if (format !== "pdf") return;
+  /** @type {Set<string>} */
+  const parentNums = new Set();
+  for (const c of candidates) {
+    if (!isValidPdfTopLevelLabel(c.label)) continue;
+    const m = c.label.match(/^(\d+)\./);
+    if (m) parentNums.add(m[1]);
+  }
+  const usedBlocks = new Set(candidates.map((c) => c.blockId));
+  for (const c of candidates) {
+    const sub = c.label.match(/^(\d+)\.(\d+)/);
+    if (!sub) continue;
+    const top = sub[1];
+    if (parentNums.has(top)) continue;
+    const block = blocks.find((b) => {
+      if (b.kind === "artifact" || b.source !== "pdf") return false;
+      const t = b.text.trim();
+      if (!new RegExp(`^${top}\\.\\s+[A-Z\\p{Lu}]`, "u").test(t) || /^\d+\.\d+/.test(t)) return false;
+      if (t.split(/\s+/).filter(Boolean).length > 6) return false;
+      if (/[(),;=≈]/.test(t.replace(/^\d+\.\s+/, ""))) return false;
+      return true;
+    });
+    if (!block || usedBlocks.has(block.id)) continue;
+    candidates.push({
+      label: normalizeHeadingLabel(block.text.trim()),
+      level: 1,
+      score: 91,
+      source: "pattern",
+      blockId: block.id,
+      charStart: 0,
+      charEnd: 0,
+    });
+    usedBlocks.add(block.id);
+    parentNums.add(top);
+  }
+}
+
+/**
  * @param {HeadingCandidate[]} headings
  * @param {TextBlock[]} [blocks]
  */
@@ -756,7 +865,15 @@ function dedupeHeadings(headings, blocks = []) {
   for (const h of byBlock.values()) {
     const section = h.label.match(/^(\d+(?:\.\d+)*)/);
     const roman = h.label.match(/^([IVXLC]+)\./i);
-    const key = section ? section[1] : roman ? roman[1].toUpperCase() : h.label.toLowerCase();
+    const topLevelDotted =
+      /^\d+\.\s+[A-Z\p{Lu}]/u.test(h.label) && !/^\d+\.\d+/.test(h.label);
+    const key = topLevelDotted
+      ? `top:${h.label.toLowerCase()}`
+      : section
+        ? section[1]
+        : roman
+          ? roman[1].toUpperCase()
+          : h.label.toLowerCase();
     const existing = byLabel.get(key);
     const block = blocks.find((b) => b.id === h.blockId);
     const blockText = block?.text?.trim() || h.label;

@@ -2,7 +2,7 @@
  * PDF outline extraction and block matching (research R5).
  */
 
-import { normalizeHeadingLabel } from "./heading-text.js";
+import { normalizeHeadingLabel, isValidPdfTopLevelLabel } from "./heading-text.js";
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
@@ -271,6 +271,8 @@ function findBestOutlineBlock(entry, blocks) {
     if (pageDist > 10) return;
     if (pageDist > 5 && score < 100) return;
     const blockWords = blockText.split(/\s+/).filter(Boolean).length;
+    if (blockWords < 2 && title.split(/\s+/).filter(Boolean).length >= 2) return;
+    if (blockText.length < 4 && title.length >= 8) return;
     const titleNorm = title.toLowerCase();
     const blockNorm = blockText.toLowerCase();
     const titleAligned =
@@ -293,13 +295,22 @@ function findBestOutlineBlock(entry, blocks) {
   for (const pool of [pageBlocks, nearPageBlocks, active]) {
     const prefix = title.match(/^(\d+(?:\.\d+)*)/);
     if (prefix) {
+      const topNum = prefix[1].includes(".") ? null : prefix[1];
       const numbered = pool.filter((block) => {
         const t = block.text.trim();
+        if (topNum) {
+          return (
+            new RegExp(`^${topNum}\\.\\s+[A-Z\\p{Lu}]`, "u").test(t) &&
+            !/^\d+\.\d+/.test(t) &&
+            isValidPdfTopLevelLabel(t)
+          );
+        }
         return t.startsWith(`${prefix[1]} `) || t.startsWith(`${prefix[1]}.`);
       });
       if (numbered.length) {
-        const longest = [...numbered].sort((a, b) => b.text.length - a.text.length)[0];
-        consider(longest, 100);
+        const exact = numbered.find((b) => b.text.trim().toLowerCase() === title.toLowerCase());
+        const pick = exact || [...numbered].sort((a, b) => a.text.length - b.text.length)[0];
+        consider(pick, 100);
         if (best?.score >= 100) break;
       }
     }
