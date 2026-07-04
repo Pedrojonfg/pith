@@ -1,0 +1,25 @@
+{
+  "source_url": "Google Docs document exported via https://docs.google.com/document/d/1VLtdGcXIwfymYGy5dwRlRoafdzpB4G4V_dF-571_gq4/export?format=pdf (a publicly-shared/viewable Google Doc titled 'Syllabus Template')",
+  "license": "Publicly shared Google Doc; used here strictly as a real-world Google-Docs-PDF-export format sample for software-testing purposes, no claim of ownership over the syllabus content itself.",
+  "primary_axis": "source_format:pdf_google_docs_exported",
+  "secondary_axes": ["heading_style:run_in_labels_not_own_line", "tables:small_ambiguous_grading_scale"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "Direct inspection revealed the real content is a specific 7th-grade math class syllabus (Robert K. Shafer Middle School, Bensalem, PA), not generic placeholder template text as the source document's title ('Syllabus Template') might suggest. More importantly, ALL section labels in this document are RUN-IN labels embedded at the start of a paragraph (e.g. 'BASIC TEXT: Illustrative Math, Course 2. This is a soft cover...') rather than headings occupying their own line -- this is a distinct and realistic heading-detection failure mode not covered by any other fixture, worth explicit human attention.",
+  "expected_headings": [
+    {"level": 1, "text": "Robert K. Shafer Middle School", "confidence": "medium"},
+    {"level": 2, "text": "Seventh Grade Mathematics / Math 7 - Course 2", "confidence": "low"}
+  ],
+  "expected_heading_count_range": [0, 2],
+  "expected_tables": [
+    {"location": "within the 'EVALUATION PROCEDURES' paragraph, near the end", "approx_rows": 5, "approx_cols": 2, "has_merged_cells": false, "has_borders": false, "confidence": "low", "notes": "A grade-cutoff scale ('90-100 A', '80-89.99 B', ... '0-64.99 F') and a separate category-weighting list ('Assessments 80%', 'Learning Activities 20%') appear side by side, separated by tab/whitespace characters exported from a Google Docs two-column-ish layout, NOT an actual HTML/PDF table structure. Whether this constitutes 'a table' worth extracting as structured data, versus being left as plain text, is a genuine judgment call -- flagged low confidence rather than asserted either way."}
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No real mathematical notation; the document mentions math class topics ('square roots, fractions and exponents') in prose but does not contain equations.",
+  "expected_noise_elements": [
+    "Google Docs invisible/zero-width space characters (U+200B) scattered throughout the body text (visible as stray '\\u200b' artifacts between words in raw extraction) -- a very common real-world Google Docs export artifact from list/tab formatting, not intentional content",
+    "School header block (school name, address, phone/extension) at the top functioning as a letterhead rather than a document heading"
+  ],
+  "notes_for_implementer": "PRIMARY finding: none of this document's organizational labels (BASIC TEXT, COURSE CONTENT, REQUIRED MATERIALS, EVALUATION PROCEDURES, CLASSROOM RULES, HOMEWORK LATE POLICY, PROJECT LATE POLICY, COMMENTS, HOMEWORK, EXTRA HELP) are formatted as isolated heading lines -- verified directly via pdftotext -layout, every single one appears as 'LABEL: body text continues immediately after on the same line/paragraph'. This is a realistic and distinct heading-detection challenge: any heuristic requiring a heading to be the sole content of its line/block will find ZERO headings in the entire body of this document, even though a human reader clearly perceives these ALL-CAPS colon-terminated labels as informal section markers. Whether Pith should attempt to detect these run-in labels as pseudo-headings (and how) is an open, legitimate design question -- this fixture exists specifically to surface that question, not to assert a single correct answer. The small grading-scale/category-weight text block is a secondary, lower-priority ambiguous-table case."
+}

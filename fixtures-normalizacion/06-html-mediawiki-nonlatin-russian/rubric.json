@@ -1,0 +1,49 @@
+{
+  "source_url": "https://web.archive.org/web/20210116224638/https://ru.wikipedia.org/wiki/Тест_Тьюринга (Wayback Machine snapshot of the Russian Wikipedia 'Тест Тьюринга' / Turing test article)",
+  "license": "CC BY-SA 4.0 (Wikipedia text); excerpt captured via the Wayback Machine for software-testing purposes.",
+  "primary_axis": "non_latin_script:cyrillic",
+  "secondary_axes": ["heading_style:mediawiki_mw_headline_wrapper", "tables:false_positive_navbox_chrome"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "Same weak-spot #1 mechanism as fixture 05 (mw-headline wrapper contamination), now combined with non-Latin (Cyrillic) text, plus an additional legacy-anchor span layer not present in the English snapshot. Also contains navbox tables (weak-spot #2 territory). Flagged per task instructions for both named categories.",
+  "expected_headings": [
+    {"level": 2, "text": "История", "confidence": "high"},
+    {"level": 3, "text": "Философские предпосылки", "confidence": "high"},
+    {"level": 3, "text": "Алан Тьюринг", "confidence": "high"},
+    {"level": 3, "text": "Элиза и PARRY", "confidence": "high"},
+    {"level": 3, "text": "Китайская комната", "confidence": "high"},
+    {"level": 3, "text": "Коллоквиум Тьюринга", "confidence": "high"},
+    {"level": 3, "text": "Премия Лёбнера", "confidence": "high"},
+    {"level": 2, "text": "Варианты теста Тьюринга", "confidence": "high"},
+    {"level": 3, "text": "Имитационная игра", "confidence": "high"},
+    {"level": 3, "text": "Стандартная интерпретация", "confidence": "high"},
+    {"level": 2, "text": "Достоинства теста", "confidence": "high"},
+    {"level": 3, "text": "Ширина темы", "confidence": "high"},
+    {"level": 3, "text": "Уступчивость и простота", "confidence": "high"},
+    {"level": 2, "text": "Недостатки теста", "confidence": "high"},
+    {"level": 3, "text": "Человеческий разум и разум вообще", "confidence": "high"},
+    {"level": 3, "text": "Непрактичность", "confidence": "high"},
+    {"level": 2, "text": "Предсказания", "confidence": "high"},
+    {"level": 2, "text": "Вариации теста Тьюринга", "confidence": "high"},
+    {"level": 2, "text": "Другие тесты интеллекта", "confidence": "medium"},
+    {"level": 2, "text": "См. также", "confidence": "high"},
+    {"level": 2, "text": "Примечания", "confidence": "high"},
+    {"level": 2, "text": "Литература", "confidence": "high"},
+    {"level": 2, "text": "Ссылки", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [40, 43],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "near the bottom of the article body, before final navboxes", "looks_like": "a collapsible data table", "reason": "class='nowraplinks collapsible autocollapse navbox-inner' -- a collapsible MediaWiki navigation template, not data.", "confidence": "high"},
+    {"location": "bottom of article", "looks_like": "a multi-column data table", "reason": "class='nowraplinks hlist navbox-inner' -- standard bottom navbox template, same pattern as the English snapshot in fixture 05.", "confidence": "high"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation in this excerpt.",
+  "expected_noise_elements": [
+    "Every heading has TWO nested wrapper spans rather than one: a legacy empty anchor span with a percent-escaped Cyrillic id (e.g. id='.D0.92.D0.B0...', the old-style URL-encoded anchor MediaWiki used to generate for non-Latin section titles) immediately followed by the real 'mw-headline' span. A naive 'first span inside the heading tag' extraction strategy would grab the EMPTY legacy anchor span instead of the real heading text -- a materially different and more severe failure mode than fixture 05's English snapshot, where no such legacy anchor layer exists.",
+    "mw-editsection ('[править]'/edit) spans as siblings of mw-headline, same contamination risk as fixture 05",
+    "Table of contents block (id='mw-toc-heading') listing all headings again"
+  ],
+  "expected_no_table_zones_note": "same navbox/chrome pattern as fixture 05, independently confirmed by grepping class attributes on this document rather than assumed to be identical",
+  "notes_for_implementer": "This fixture adds a genuinely NEW failure mode beyond fixture 05: because the original Russian section titles contain non-ASCII characters, this MediaWiki snapshot generates an additional legacy empty anchor <span id='...'> (percent-encoded UTF-8 bytes of the Cyrillic title) BEFORE the real mw-headline span, inside the same heading tag. Verify Pith extracts the correct Cyrillic heading text (e.g. 'История', 'Алан Тьюринг') and does not instead extract an empty string or a garbled percent-encoded id string. Also verify UTF-8/Cyrillic text survives the full normalization pipeline without mojibake. Table false-positive risk is identical in kind to fixture 05 (navbox chrome), independently re-verified here rather than assumed."
+}

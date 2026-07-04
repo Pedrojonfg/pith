@@ -1,0 +1,13 @@
+# Fixture 05: html-mediawiki-nonsemantic-headings
+
+**Source:** English Wikipedia "Turing test" article, captured via the Wayback Machine (2020 snapshot, pre-dating Wikipedia's ~2024-2025 migration away from `mw-headline` spans to the newer `mw-heading` div wrapper). Retrieved live in-browser and saved via a same-page Blob download (not web-scraped through a text-stripping fetcher), so the raw MediaWiki markup is fully intact.
+
+**Inspection method:** Direct grep/regex inspection of the raw HTML — counted `mw-headline` spans, `<h2>`/`<h3>` tags, `mw-editsection` spans, and `<table>` elements with their class attributes.
+
+**The concrete mechanism behind weak spot #1:** 44 total heading tags exist in the raw markup (13 `<h2>`, 31 `<h3>`), of which 43 are real article headings wrapped around an `mw-headline` span and 1 is the "Contents" ToC heading (`<h2 id="mw-toc-heading">`, no `mw-headline` span). All 43 real headings ARE wrapped in genuine semantic heading tags — so a purely tag-based heading detector would actually find them fine. The real failure mode is subtler and more interesting: each `<h2>`/`<h3>` contains the `mw-headline` span (the real heading text) as a SIBLING of an `mw-editsection` span (MediaWiki's injected "[edit]" link), both inside the same heading tag. A naive `.textContent` extraction on the whole heading element will produce contaminated text like `"History[edit]"` instead of clean `"History"`. I verified this by grepping the raw markup directly (129 `mw-editsection` occurrences, roughly 3 per heading for the bracket/link/bracket sub-spans).
+
+**Correction from independent verification:** an earlier draft of this fixture's rubric/notes stated "12 h2 + 31 h3 = 43" and omitted the 44th tag (the ToC's own `<h2>`). A verification pass counted 13 `<h2>` tags directly and caught the off-by-one. Corrected here and in rubric.json rather than silently fixed — the ToC heading is real markup Pith will encounter, even though it's intentionally excluded from `expected_headings` since it's navigation chrome, not an article section.
+
+**Bonus finding — weak spot #2 also present here:** This document also contains 3 `<table>` elements, none of which are real data tables — they're MediaWiki navigation/UI chrome: a `vertical-navbox` topic sidebar, a `sistersitebox` (explicitly marked `role="presentation"` in the source itself), and a bottom `navbox-inner` template. A naive "any `<table>` tag is a table" detector would report 3 false-positive tables here.
+
+**Confidence:** High on all structural claims (directly grepped, not inferred). `needs_human_review: true` per the task's blanket instruction for both weak-spot categories, since this fixture hits both.

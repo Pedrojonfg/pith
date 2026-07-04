@@ -1,0 +1,53 @@
+{
+  "source_url": "https://web.archive.org/web/2020/https://en.wikipedia.org/wiki/Turing_test (Wayback Machine 2020 snapshot of the English Wikipedia 'Turing test' article)",
+  "license": "CC BY-SA 4.0 (Wikipedia text); excerpt captured via the Wayback Machine for software-testing purposes.",
+  "primary_axis": "heading_style:mediawiki_mw_headline_wrapper",
+  "secondary_axes": ["tables:false_positive_navbox_chrome"],
+  "confidence": "high",
+  "needs_human_review": true,
+  "review_reason": "This fixture is the primary named weak-spot #1 test case (non-semantic MediaWiki heading markup) AND incidentally also exercises named weak-spot #2 (false-positive table detection), so per the task instructions every entry here must be treated as needing human sign-off rather than accepted automatically.",
+  "expected_headings": [
+    {"level": 2, "text": "History", "confidence": "high"},
+    {"level": 3, "text": "Philosophical background", "confidence": "high"},
+    {"level": 3, "text": "Alan Turing", "confidence": "high"},
+    {"level": 3, "text": "ELIZA and PARRY", "confidence": "high"},
+    {"level": 3, "text": "The Chinese room", "confidence": "high"},
+    {"level": 3, "text": "Loebner Prize", "confidence": "high"},
+    {"level": 2, "text": "Versions", "confidence": "high"},
+    {"level": 3, "text": "Imitation game", "confidence": "high"},
+    {"level": 3, "text": "Standard interpretation", "confidence": "high"},
+    {"level": 3, "text": "Imitation game vs. standard Turing test", "confidence": "high"},
+    {"level": 3, "text": "Should the interrogator know about the computer?", "confidence": "high"},
+    {"level": 2, "text": "Strengths", "confidence": "high"},
+    {"level": 3, "text": "Tractability and simplicity", "confidence": "high"},
+    {"level": 3, "text": "Breadth of subject matter", "confidence": "high"},
+    {"level": 3, "text": "Emphasis on emotional and aesthetic intelligence", "confidence": "high"},
+    {"level": 2, "text": "Weaknesses", "confidence": "high"},
+    {"level": 3, "text": "Human intelligence vs. intelligence in general", "confidence": "high"},
+    {"level": 3, "text": "Consciousness vs. the simulation of consciousness", "confidence": "high"},
+    {"level": 3, "text": "Naïveté of interrogators and the anthropomorphic fallacy", "confidence": "medium"},
+    {"level": 3, "text": "Human misidentification", "confidence": "high"},
+    {"level": 2, "text": "Variations", "confidence": "high"},
+    {"level": 2, "text": "Predictions", "confidence": "medium"},
+    {"level": 2, "text": "Conferences", "confidence": "medium"},
+    {"level": 2, "text": "See also", "confidence": "high"},
+    {"level": 2, "text": "Notes", "confidence": "high"},
+    {"level": 2, "text": "References", "confidence": "high"},
+    {"level": 2, "text": "Further reading", "confidence": "medium"},
+    {"level": 2, "text": "External links", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [43, 44],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "right-floated sidebar near top of article", "looks_like": "a bordered data table (has <table> tag, border/background styling, spans multiple rows)", "reason": "This is a MediaWiki 'vertical-navbox' template (class='vertical-navbox nowraplinks hlist') -- a topic-navigation sidebar (e.g. links to related Artificial Intelligence articles), not tabular data. It uses <table> purely as a CSS layout container, a very common real-world MediaWiki pattern.", "confidence": "high"},
+    {"location": "small box near References/External links section", "looks_like": "a small data table", "reason": "This is the MediaWiki 'sistersitebox' template (role='presentation', class='mbox-small plainlinks sistersitebox') linking to Wikimedia Commons/Wikidata -- explicitly marked role='presentation' in the HTML itself, meaning even the source acknowledges this is NOT semantic tabular data, just layout.", "confidence": "high"},
+    {"location": "bottom of article, before final closing tags", "looks_like": "a wide multi-column table", "reason": "This is a MediaWiki bottom navbox template (class='nowraplinks hlist navbox-inner') linking to related topic articles in a grid -- again a navigation/UI table, not data.", "confidence": "high"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation in this excerpt.",
+  "expected_noise_elements": [
+    "129 'mw-editsection' spans (the '[edit]' links MediaWiki injects into every heading) -- each is a SIBLING of the mw-headline span WITHIN THE SAME <h2>/<h3> tag, e.g. <h2><span class=\"mw-headline\">History</span><span class=\"mw-editsection\">[edit]</span></h2>. A naive '.textContent of h2' extraction will produce contaminated heading text like 'History[edit]' rather than clean 'History' -- this is the core, concrete mechanism behind named weak spot #1, not just an abstract concern.",
+    "MediaWiki table-of-contents block near the top (id='mw-toc-heading') -- a self-referential list of the very same headings, which could be double-counted as content if not recognized as TOC chrome. NOTE: this ToC block itself is wrapped in an <h2 id='mw-toc-heading'> tag reading 'Contents' -- this is a REAL 13th h2 tag in the raw markup (independently re-verified: 13 h2 + 31 h3 = 44 total heading tags, not 12+31=43 as an earlier draft of this rubric stated), but it is TOC/navigation chrome, not an article section heading, so it is deliberately excluded from the expected_headings list above even though Pith will genuinely encounter it in the markup."
+  ],
+  "notes_for_implementer": "Concrete, verified mechanism for weak spot #1: every real article heading in this document IS wrapped in a real semantic <h2>/<h3> tag (13 h2 + 31 h3 = 44 total heading tags in the raw markup, one of which is the 'Contents' ToC heading rather than an article section -- corrected after independent re-verification found an earlier draft undercounted h2 as 12; the 43 mw-headline spans match 44 heading tags minus the 1 ToC heading, which has no mw-headline span of its own), so a tag-based heading detector alone should actually succeed at finding headings -- the failure mode is specifically in HEADING TEXT EXTRACTION: naive '.textContent' or similar on the h2/h3 element will include the sibling '[edit]' mw-editsection text, contaminating every single heading's extracted text. The correct behavior is to extract text ONLY from the '.mw-headline' span (or equivalent), not the whole h2/h3. Verify Pith's output headings read as clean 'History', 'Alan Turing', etc., NOT 'History[edit]' or similar. Separately, the 3 <table> elements in this document are 100% chrome/navigation, not data -- Pith must report zero tables for this document; any table reported is a false positive of exactly the kind named as weak spot #2."
+}

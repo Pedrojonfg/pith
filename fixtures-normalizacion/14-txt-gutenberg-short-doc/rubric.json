@@ -1,0 +1,21 @@
+{
+  "source_url": "https://www.gutenberg.org/cache/epub/1/pg1.txt (Project Gutenberg eBook #1, The Declaration of Independence), Gutenberg boilerplate trimmed since it is not part of the document itself",
+  "license": "Public domain (U.S. government founding document, no copyright; Project Gutenberg text also freely redistributable).",
+  "primary_axis": "length:very_short_document",
+  "secondary_axes": ["source_format:plain_txt", "structure:repetitive_list_no_headings"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": "RESOLVED after re-fetching the live Gutenberg source directly to check: this excerpt ends immediately after '...our Lives, our Fortunes and our sacred Honor' with no signatories block, and this is CORRECT and COMPLETE, not a truncation. Project Gutenberg eBook #1's own transcriber's note (present in the source, trimmed here along with other boilerplate) explicitly states the transcriber found discrepancies in signer names/placement across source facsimiles and deliberately left the signatures out of this specific edition ('which names I have left out'). So input.txt faithfully and completely reproduces the operative text of this Gutenberg edition -- there is no missing content to add. An earlier verification pass flagged the absence of signatures as an undisclosed gap; re-checking the actual live source resolved this as a non-issue rather than a real defect, and needs_human_review has been set back to false accordingly.",
+  "expected_headings": [
+    {"level": 1, "text": "THE DECLARATION OF INDEPENDENCE OF THE UNITED STATES OF AMERICA", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [1, 1],
+  "expected_tables": [],
+  "expected_no_table_zones": [
+    {"location": "the central grievances section (~26 consecutive paragraphs)", "looks_like": "a bulleted/numbered list or even a table of short entries", "reason": "26 consecutive short paragraphs almost all begin with the repeated phrase 'He has ...' or 'For ...' (a rhetorical anaphora device), verified directly via grep. This repetitive structural pattern could tempt a structure-inference heuristic into treating each as a list item (reasonable) or, more concerningly, into treating the repeated leading tokens as if they were a column of a table or a set of headings (less reasonable, but a real risk for pattern-matching heuristics that key off repeated line-start tokens). The correct reading is that these are ordinary prose paragraphs forming a single continuous rhetorical list, not a table.", "confidence": "medium"}
+  ],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation. (Note: contains the date 'July 4, 1776' and enumerable grievances, but no arithmetic/equations.)",
+  "expected_noise_elements": [],
+  "notes_for_implementer": "This is the deliberately short/minimal-structure fixture (8,218 bytes, 166 lines, exactly ONE heading -- the title). Gutenberg's license boilerplate header/footer was deliberately trimmed since it is not part of 'the document' being tested (it's Gutenberg packaging, not Declaration content) -- this is a curation decision, flagged here for transparency rather than silently done. The main structural interest is the ~26-paragraph anaphoric grievance list ('He has...', 'For...') -- verify Pith treats this as plain prose/paragraphs (optionally recognized as a list), not as a table or as spurious headings, since the repeated sentence-initial tokens are the kind of surface-level pattern a naive heuristic might latch onto incorrectly."
+}

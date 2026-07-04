@@ -1,0 +1,27 @@
+{
+  "source_url": "https://en.wikipedia.org/wiki/Rosalind_Franklin",
+  "license": "CC BY-SA 4.0 (Wikipedia text); excerpt (lead section + References section, truncated to 35 of 340 total citations) captured live for software-testing purposes.",
+  "primary_axis": "noise:heavy_footnotes_citations",
+  "secondary_axes": [],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "folder_name_disclosure": "This folder is named '15-txt-gutenberg-heavy-footnotes' but its actual content is a Wikipedia HTML excerpt (input.html), NOT a Gutenberg plain-text file. The name reflects an earlier plan (a Gutenberg book with heavy footnotes) that had to be abandoned when two independent research attempts failed to locate accessible footnote text within a Gutenberg book through the available tools -- both attempts honestly reported 'not found' rather than fabricating content, and the approach was pivoted to Wikipedia's citation-heavy 'Rosalind Franklin' article instead, which genuinely exercises the same 'heavy citations/footnotes' axis. Flagging this naming mismatch explicitly per instructions rather than quietly renaming or hiding it.",
+  "expected_headings": [
+    {"level": 1, "text": "Rosalind Franklin", "confidence": "high"},
+    {"level": 2, "text": "References", "confidence": "high"},
+    {"level": 3, "text": "Citations", "confidence": "high"},
+    {"level": 3, "text": "Sources", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [4, 5],
+  "expected_tables": [],
+  "expected_no_table_zones": [],
+  "expected_math_present": false,
+  "math_notes": "No mathematical notation in this excerpt.",
+  "expected_noise_elements": [
+    "An extra synthetic <h2> reading 'References (truncated: showing 35 of 340 total)' was inserted BY ME during fixture authoring (via a JavaScript extraction script) purely as a marker for whoever inspects this fixture -- it is NOT real Wikipedia content and should NOT be counted as a genuine document heading. I'm flagging this explicitly so it isn't mistaken for either real content or a Pith bug if it shows up oddly in output.",
+    "35 numbered citation list items (<li id='cite_note-...'>) out of 340 total on the live article, each containing a mix of book/journal citation metadata, external links, and 'mw-cite-backlink' return-arrows -- heavy reference-list noise is the entire point of this fixture",
+    "One empty paragraph (<p class='mw-empty-elt'>) in the lead -- a genuinely empty element that should not produce a spurious blank content block"
+  ],
+  "notes_for_implementer": "5 total <p> tags in the lead (1 empty, 4 with content) -- confirmed directly. This fixture's core purpose is testing how Pith handles a document dominated by a huge, heavily-formatted citation/reference list (real count on the live article: 340 citations; this excerpt keeps only the first 35 for size, verified via grep on 'cite_note' id occurrences). Verify Pith doesn't attempt to treat the citation list as a table (it is a <ol class='mw-references references'> ordered list, not a table -- no <table> tags are present in this document at all) and correctly separates the small amount of lead-paragraph prose from the much larger volume of citation-list markup. IMPORTANT: disregard the synthetic 'References (truncated...)' h2 described in expected_noise_elements above when scoring heading-detection accuracy -- it's fixture-authoring metadata, not test input content in the semantic sense (though it IS literally present in the HTML file, so Pith will see it; just don't count it as a 'real Wikipedia heading' when judging correctness)."
+}

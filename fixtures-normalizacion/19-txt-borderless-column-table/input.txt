@@ -1,0 +1,210 @@
+RFC:  791
+
+                           INTERNET PROTOCOL
+
+                         DARPA INTERNET PROGRAM
+
+                         PROTOCOL SPECIFICATION
+
+
+                             September 1981
+
+                              prepared for
+
+               Defense Advanced Research Projects Agency
+                Information Processing Techniques Office
+                         1400 Wilson Boulevard
+                       Arlington, Virginia  22209
+
+                                   by
+
+                     Information Sciences Institute
+                   University of Southern California
+                           4676 Admiralty Way
+                   Marina del Rey, California  90291
+
+September 1981
+                                                       Internet Protocol
+
+                           TABLE OF CONTENTS
+
+    PREFACE ........................................................ iii
+
+1.  INTRODUCTION ..................................................... 1
+
+  1.1  Motivation .................................................... 1
+  1.2  Scope ......................................................... 1
+  1.3  Interfaces .................................................... 1
+  1.4  Operation ..................................................... 2
+
+2.  OVERVIEW ......................................................... 5
+
+  2.1  Relation to Other Protocols ................................... 9
+  2.2  Model of Operation ............................................ 5
+  2.3  Function Description .......................................... 7
+  2.4  Gateways ...................................................... 9
+
+3.  SPECIFICATION ................................................... 11
+
+  3.1  Internet Header Format ....................................... 11
+  3.2  Discussion ................................................... 23
+  3.3  Interfaces ................................................... 31
+
+APPENDIX A:  Examples & Scenarios ................................... 34
+APPENDIX B:  Data Transmission Order ................................ 39
+
+GLOSSARY ............................................................ 41
+
+REFERENCES .......................................................... 45
+
+                                                                [Page i]
+
+
+                                                          September 1981
+Internet Protocol
+
+[... document continues; excerpt resumes at section 2.3-3.1 below ...]
+
+    Examples of address mappings may be found in "Address Mappings" [5].
+
+  Fragmentation
+
+    Fragmentation of an internet datagram is necessary when it
+    originates in a local net that allows a large packet size and must
+    traverse a local net that limits packets to a smaller size to reach
+    its destination.
+
+    An internet datagram can be marked "don't fragment."  Any internet
+    datagram so marked is not to be internet fragmented under any
+    circumstances.  If internet datagram marked don't fragment cannot be
+    delivered to its destination without fragmenting it, it is to be
+    discarded instead.
+
+    The internet fragmentation and reassembly procedure needs to be able
+    to break a datagram into an almost arbitrary number of pieces that
+    can be later reassembled.  The receiver of the fragments uses the
+    identification field to ensure that fragments of different datagrams
+    are not mixed.
+
+                                                                [Page 7]
+
+
+                                                          September 1981
+Internet Protocol
+Overview
+
+2.4.  Gateways
+
+  Gateways implement internet protocol to forward datagrams between
+  networks.  Gateways also implement the Gateway to Gateway Protocol
+  (GGP) [7] to coordinate routing and other internet control
+  information.
+
+  In a gateway the higher level protocols need not be implemented and
+  the GGP functions are added to the IP module.
+
+
+                   +-------------------------------+
+                   | Internet Protocol & ICMP & GGP|
+                   +-------------------------------+
+                           |                 |
+                 +---------------+   +---------------+
+                 |   Local Net   |   |   Local Net   |
+                 +---------------+   +---------------+
+
+                           Gateway Protocols
+
+                               Figure 3.
+
+
+                                                                [Page 9]
+
+
+                                                          September 1981
+Internet Protocol
+
+
+                           3.  SPECIFICATION
+
+3.1.  Internet Header Format
+
+  A summary of the contents of the internet header follows:
+
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |Version|  IHL  |Type of Service|          Total Length         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |         Identification        |Flags|      Fragment Offset    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Time to Live |    Protocol   |         Header Checksum       |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                       Source Address                          |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                    Destination Address                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                    Options                    |    Padding    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                    Example Internet Datagram Header
+
+                               Figure 4.
+
+  Note that each tick mark represents one bit position.
+
+  Version:  4 bits
+
+    The Version field indicates the format of the internet header.  This
+    document describes version 4.
+
+  IHL:  4 bits
+
+    Internet Header Length is the length of the internet header in 32
+    bit words, and thus points to the beginning of the data.  Note that
+    the minimum value for a correct header is 5.
+
+
+                                                               [Page 11]
+
+
+                                                          September 1981
+Internet Protocol
+Specification
+
+  Type of Service:  8 bits
+
+    The Type of Service provides an indication of the abstract
+    parameters of the quality of service desired.
+
+      Bits 0-2:  Precedence.
+      Bit    3:  0 = Normal Delay,      1 = Low Delay.
+      Bits   4:  0 = Normal Throughput, 1 = High Throughput.
+      Bits   5:  0 = Normal Relibility, 1 = High Relibility.
+      Bit  6-7:  Reserved for Future Use.
+
+         0     1     2     3     4     5     6     7
+      +-----+-----+-----+-----+-----+-----+-----+-----+
+      |                 |     |     |     |     |     |
+      |   PRECEDENCE    |  D  |  T  |  R  |  0  |  0  |
+      |                 |     |     |     |     |     |
+      +-----+-----+-----+-----+-----+-----+-----+-----+
+
+        Precedence
+
+          111 - Network Control
+          110 - Internetwork Control
+          101 - CRITIC/ECP
+          100 - Flash Override
+          011 - Flash
+          010 - Immediate
+          001 - Priority
+          000 - Routine
+
+
+[Page 12]
+
+
+September 1981
+                                                       Internet Protocol
+                                                           Specification

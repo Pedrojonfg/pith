@@ -2,6 +2,8 @@
  * Emit normalized markdown with headings (#–######).
  */
 
+import { reorderBlocksForHeadingSequence } from "./heading-text.js";
+
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
@@ -131,6 +133,24 @@ export function dehyphenate(text) {
   return String(text || "").replace(/(\w)-\n([a-z])/gu, "$1$2");
 }
 
+/** Detect ASCII box diagrams that look like GFM tables when pipe lines are trimmed. */
+function isAsciiArtBlock(text) {
+  const lines = String(text || "").split(/\n/);
+  const hasBoxLine = lines.some((ln) => /^\s*\+[-=+]+\+/.test(ln));
+  const pipeLines = lines.filter((ln) => /^\s*\|/.test(ln)).length;
+  const hasBitHeader = lines.some((ln) => /^\s*0\s+1\s+2\s+3/.test(ln));
+  return (hasBoxLine && pipeLines >= 2) || (hasBitHeader && hasBoxLine);
+}
+
+/** Escape pipe characters so GFM table heuristics do not treat diagrams as tables. */
+function neutralizeAsciiTablePipes(text) {
+  if (!isAsciiArtBlock(text)) return text;
+  return String(text)
+    .split("\n")
+    .map((ln) => (/^\s*\|/.test(ln) ? ln.replace(/\|/g, "\\|") : ln))
+    .join("\n");
+}
+
 /**
  * @param {TextBlock[]} blocks
  * @param {HeadingCandidate[]} headings
@@ -145,7 +165,13 @@ export function emitMarkdown(blocks, headings, opts = {}) {
   const withOffsets = [];
   let offset = 0;
 
-  const activeBlocks = blocks.filter((b) => b.kind !== "artifact" && b.text.trim());
+  const filtered = blocks.filter((b) => b.kind !== "artifact" && b.text.trim());
+  const allOutlineHeadings =
+    headings.length > 0 && headings.every((h) => h.source === "outline");
+  const activeBlocks =
+    filtered.some((b) => b.source === "pdf") && headings.length > 1 && !allOutlineHeadings
+      ? reorderBlocksForHeadingSequence(filtered, headings)
+      : filtered;
 
   // [debug-enrich] open question: no dedicated table-to-markdown-table path exists in this emitter
   console.debug("[emit-markdown.emitMarkdown] Start:", {
@@ -172,6 +198,9 @@ export function emitMarkdown(blocks, headings, opts = {}) {
     } else {
       let text = dehyphenate(block.text.trim());
       if (!text) continue;
+      if (isAsciiArtBlock(text)) {
+        text = neutralizeAsciiTablePipes(text);
+      }
       if (block.kind === "list-item") {
         text = `- ${text}`;
       }

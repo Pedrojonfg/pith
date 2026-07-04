@@ -1,0 +1,47 @@
+{
+  "source_url": "https://arxiv.org/pdf/2006.11239",
+  "license": "arXiv.org perpetual non-exclusive license (author retains copyright); used here as a freely accessible preprint for software-testing purposes only.",
+  "primary_axis": "math_notation:heavy_probabilistic",
+  "secondary_axes": ["source_format:pdf_native_latex", "tables:bordered_native", "length:long_with_appendices"],
+  "confidence": "high",
+  "needs_human_review": false,
+  "review_reason": null,
+  "expected_headings": [
+    {"level": 1, "text": "Abstract", "confidence": "medium"},
+    {"level": 1, "text": "1 Introduction", "confidence": "high"},
+    {"level": 1, "text": "2 Background", "confidence": "high"},
+    {"level": 1, "text": "3 Diffusion models and denoising autoencoders", "confidence": "high"},
+    {"level": 2, "text": "3.1 Forward process and L_T", "confidence": "high"},
+    {"level": 2, "text": "3.2 Reverse process and L_1:T-1", "confidence": "high"},
+    {"level": 2, "text": "3.3 Data scaling, reverse process decoder, and L_0", "confidence": "high"},
+    {"level": 2, "text": "3.4 Simplified training objective", "confidence": "high"},
+    {"level": 1, "text": "4 Experiments", "confidence": "high"},
+    {"level": 2, "text": "4.1 Sample quality", "confidence": "high"},
+    {"level": 2, "text": "4.2 Reverse process parameterization and training objective ablation", "confidence": "high"},
+    {"level": 2, "text": "4.3 Progressive coding", "confidence": "high"},
+    {"level": 2, "text": "4.4 Interpolation", "confidence": "high"},
+    {"level": 1, "text": "5 Related Work", "confidence": "high"},
+    {"level": 1, "text": "Broader Impact", "confidence": "high"},
+    {"level": 1, "text": "References", "confidence": "high"},
+    {"level": 1, "text": "A Extended derivations", "confidence": "high"},
+    {"level": 1, "text": "B Experimental details", "confidence": "high"},
+    {"level": 1, "text": "C Discussion on related work", "confidence": "high"},
+    {"level": 1, "text": "D Samples", "confidence": "high"}
+  ],
+  "expected_heading_count_range": [19, 24],
+  "expected_tables": [
+    {"location": "page ~7, section 4.1", "approx_rows": 6, "approx_cols": 4, "has_merged_cells": false, "has_borders": true, "confidence": "high", "notes": "Table 1: CIFAR10 Inception/FID/NLL results, includes negative numbers and scientific-style decimal alignment."},
+    {"location": "page ~7-8, section 4.1/4.2", "approx_rows": 3, "approx_cols": 4, "has_merged_cells": false, "has_borders": true, "confidence": "medium", "notes": "Table 2: unconditional CIFAR10 reverse process / ablation table, small."},
+    {"location": "page ~14, appendix/section 4", "approx_rows": 4, "approx_cols": 3, "has_merged_cells": false, "has_borders": true, "confidence": "medium", "notes": "Table 3: LSUN FID scores across bedroom/church/cat categories."},
+    {"location": "page ~15", "approx_rows": 5, "approx_cols": 3, "has_merged_cells": false, "has_borders": true, "confidence": "low", "notes": "Table 4: rate-distortion values accompanying Figure 5; not independently re-verified beyond caption grep, flagged low confidence on exact row/col count."}
+  ],
+  "expected_no_table_zones": [],
+  "expected_math_present": true,
+  "math_notes": "Extremely math-dense: full derivation of the variational lower bound, KL-divergence terms, Gaussian transition kernels, noise schedules (beta_t, alpha_t), and a simplified L_simple training loss, concentrated especially in section 3 and Appendix A. Multi-line/stacked equations and subscripted process-indexing notation (L_T, L_1:T-1, L_0) appear inside section HEADINGS themselves (e.g. '3.1 Forward process and L_T') -- this is a specifically interesting stress case: a heading-detector that strips 'non-alphanumeric' characters aggressively could mangle these headings, and a math-detector scanning heading text could misfire on headings that are legitimately headings, not equations.",
+  "expected_noise_elements": [
+    "arXiv identifier vertical sidebar text on page 1",
+    "NeurIPS 2020 conference footer line on page 1",
+    "Figure captions with embedded inline math (e.g. 'CelebA-HQ 256 x 256')"
+  ],
+  "notes_for_implementer": "Like fixture 01, this is a clean two-column LaTeX PDF -- included as a second, MORE math-heavy native-PDF data point precisely because several section headings themselves contain mathematical notation (L_T, L_1:T-1, L_0). This directly probes the boundary between 'math notation detector' and 'heading detector': Pith should still recognize '3.1 Forward process and L_T' as a heading (not as a stray equation), while independently flagging the genuine equation blocks in the body text as math. Appendices A-D use letter-numbering instead of digit-numbering, which is a useful check that the heading-numbering heuristic isn't hardcoded to digits only."
+}
