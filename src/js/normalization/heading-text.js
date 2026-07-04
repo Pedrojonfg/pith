@@ -4,10 +4,20 @@
 
 /** Normalize unicode punctuation in heading labels for stable matching. */
 export function normalizeHeadingLabel(text) {
-  return String(text || "")
+  const raw = String(text || "")
     .replace(/\u00a0/g, " ")
     .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u201c\u201d]/g, '"');
+  const leadDash = raw.match(/^([\u2014\u2013])\s+(.*)$/s);
+  if (leadDash) {
+    return `${leadDash[1]} ${normalizeHeadingLabelInner(leadDash[2])}`;
+  }
+  return normalizeHeadingLabelInner(raw);
+}
+
+/** @param {string} text */
+function normalizeHeadingLabelInner(text) {
+  return String(text || "")
     .replace(/\u2212|\u2013|\u2014/g, "-")
     .replace(/\s+/g, " ")
     .replace(/\bL\s+1\s*:\s*T\s*-\s*1\b/gi, "L_1:T-1")
@@ -17,6 +27,15 @@ export function normalizeHeadingLabel(text) {
     .replace(/\band\s+L_0\b/i, "and L_0")
     .replace(/,\s*reverse process decoder,\s*and\s+L_0/i, ", reverse process decoder, and L_0")
     .trim();
+}
+
+/** Short PDF top-level section title (e.g. "4 Experiments"), not a prose list item. */
+export function isValidPdfTopLevelLabel(label) {
+  const t = String(label || "").trim();
+  if (!/^\d+\.\s+[A-Z\p{Lu}]/u.test(t) || /^\d+\.\d+/.test(t)) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 6) return false;
+  if (/[(),;=≈]/.test(t.replace(/^\d+\.\s+/, ""))) return false;
+  return true;
 }
 
 /** @param {string} label */
@@ -91,7 +110,81 @@ export function extractHeadingTextFromElement(el) {
     node.replaceWith(clone.ownerDocument.createTextNode(linkText ? ` ${linkText}` : ""));
   }
   const text = (clone.textContent || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-  return normalizeHeadingLabel(text);
+  const normalized = normalizeHeadingLabel(text);
+  if (fullPageChromeHeadingContext(clone) && /^[\u2014\u2013]?\s*Comments\b/i.test(normalized)) {
+    return "Comments";
+  }
+  return normalized;
+}
+
+/** @param {Element} el */
+function fullPageChromeHeadingContext(el) {
+  const doc = el.ownerDocument;
+  return Boolean(doc?.querySelector(".global-header, header.subnav__header"));
+}
+
+/**
+ * Serialize element text, preserving chemistry-style <sub>/<sup> tags.
+ * @param {Element} el
+ */
+/**
+ * @param {Element} sup
+ */
+function shouldPreserveUnitSuperscript(sup) {
+  const inner = (sup.textContent || "").replace(/\s+/g, " ").trim();
+  if (!/^[−\-–]?\d+(?:\/\d+)?$/.test(inner)) return false;
+  let prev = "";
+  const prevNode = sup.previousSibling;
+  if (prevNode?.nodeType === Node.TEXT_NODE) {
+    prev = String(prevNode.textContent || "").slice(-4);
+  } else if (prevNode?.nodeType === Node.ELEMENT_NODE) {
+    prev = String(/** @type {Element} */ (prevNode).textContent || "").slice(-4);
+  }
+  return /(?:\/|·|mol|cm|\^)$/i.test(prev);
+}
+
+/**
+ * Flatten Wikipedia-style citation superscripts to plain text (keep chemistry sub/sup).
+ * @param {Element} el
+ */
+export function flattenCitationSupMarkers(el) {
+  const clone = /** @type {Element} */ (el.cloneNode(true));
+  for (const sup of clone.querySelectorAll("sup")) {
+    const inner = (sup.textContent || "").replace(/\s+/g, " ").trim();
+    const cls = String(sup.className || "");
+    const isCitation =
+      !shouldPreserveUnitSuperscript(sup) &&
+      (/\bmw-ref\b/i.test(cls) ||
+        /\breference\b/i.test(cls) ||
+        /^(\[\w+\]|\d{1,3})$/.test(inner) ||
+        /^\[[^\]]{1,120}\]$/.test(inner) ||
+        /^[a-z]$/i.test(inner) ||
+        /^\d{1,2}$/.test(inner) ||
+        /citation needed|источник|source not/i.test(inner));
+    if (isCitation) {
+      sup.replaceWith(clone.ownerDocument.createTextNode(inner));
+    }
+  }
+  return clone;
+}
+
+export function elementTextPreservingSubSup(el) {
+  const normalized = flattenCitationSupMarkers(el);
+  if (!normalized?.querySelector?.("sub, sup")) {
+    return (normalized.innerText || normalized.textContent || "").replace(/\s+/g, " ").trim();
+  }
+  /** @param {Node} node */
+  const walk = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent || "";
+    if (node.nodeType !== Node.ELEMENT_NODE) return "";
+    const tag = String(/** @type {Element} */ (node).tagName || "").toLowerCase();
+    if (tag === "sub" || tag === "sup") {
+      const inner = Array.from(node.childNodes).map(walk).join("");
+      return `<${tag}>${inner}</${tag}>`;
+    }
+    return Array.from(node.childNodes).map(walk).join("");
+  };
+  return walk(normalized).replace(/\s+/g, " ").trim();
 }
 
 /** @param {Element} body */

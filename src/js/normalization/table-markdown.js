@@ -2,6 +2,8 @@
  * Shared markdown table formatting for HTML and PDF extraction paths.
  */
 
+import { elementTextPreservingSubSup, flattenCitationSupMarkers } from "./heading-text.js";
+
 /**
  * @param {string} text
  * @returns {string}
@@ -94,7 +96,9 @@ export function htmlTableToMarkdown(tableEl) {
     /** @type {string[]} */
     const cells = [];
     for (const cell of Array.from(tr.querySelectorAll("th,td"))) {
-      const text = escapeMarkdownTableCell(cell.textContent || "");
+      const text = escapeMarkdownTableCell(
+        elementTextPreservingSubSup(flattenCitationSupMarkers(cell)),
+      );
       const colspan = Math.max(1, parseInt(cell.getAttribute("colspan") || "1", 10) || 1);
       const rowspan = Math.max(1, parseInt(cell.getAttribute("rowspan") || "1", 10) || 1);
       if (rowspan > 1) {

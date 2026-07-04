@@ -13,7 +13,8 @@ export function getFrontMatterPageRange(outline) {
   const filtered = (outline || []).filter((e) => !SKIP_TITLES.test(String(e.title || "")));
   const sorted = [...filtered].sort((a, b) => a.pageIndex - b.pageIndex);
   const firstContentPage = sorted[0]?.pageIndex ?? 0;
-  return { skip: Math.max(0, firstContentPage - 1), source: /** @type {const} */ ("outline") };
+  const skip = firstContentPage > 0 ? firstContentPage - 1 : -1;
+  return { skip, source: /** @type {const} */ ("outline") };
 }
 
 /**

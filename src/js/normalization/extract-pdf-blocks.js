@@ -151,7 +151,19 @@ function mergeCrossPageContinuationTables(blocks) {
   return result;
 }
 
-/** [debug-enrich] math-notation diagnostics (PDF text-layer extraction can garble/drop symbols) */
+/** Count non-separator rows in the largest markdown table block. */
+function largestMarkdownTableRowCount(blocks) {
+  let maxRows = 0;
+  for (const block of blocks || []) {
+    const text = String(block.text || "").trim();
+    if (!text.startsWith("|")) continue;
+    const rows = text
+      .split("\n")
+      .filter((line) => /^\|/.test(line.trim()) && !/^\|\s*[-:|\s]+\|$/.test(line.trim()));
+    maxRows = Math.max(maxRows, rows.length);
+  }
+  return maxRows;
+}
 const MATH_INDICATOR_CHARS = new Set(
   [
     "α",
@@ -367,6 +379,41 @@ function isLikelyPdfFooterLine(cells, pageWidth) {
 }
 
 /**
+ * OCR garbage often lacks word spaces; column alignment then false-positives tables.
+ * @param {{ parts: { text: string }[] }[]} lines
+ */
+export function isLikelyPoorOcrLines(lines) {
+  const texts = (lines || [])
+    .map((line) => (line.parts || []).map((p) => p.text).join(" ").trim())
+    .filter(Boolean);
+  if (texts.length < 15) return false;
+  const longNoSpace = texts.filter((t) => t.length >= 8 && !/\s/.test(t)).length;
+  const alphaDense = texts.filter((t) => /[A-Za-z]{10,}/.test(t) && !/\s/.test(t)).length;
+  const ratio = Math.max(longNoSpace, alphaDense) / texts.length;
+  return ratio > 0.08;
+}
+
+/** @param {import("./types.js").TextBlock[]} blocks */
+function flattenPdfTableBlocks(blocks) {
+  for (const block of blocks) {
+    const text = String(block.text || "").trim();
+    if (!text.startsWith("|")) continue;
+    block.text = text
+      .split("\n")
+      .filter((line) => !/^\|\s*[-:]+/.test(line.trim()))
+      .map((line) =>
+        line
+          .replace(/^\|\s*/, "")
+          .replace(/\s*\|$/, "")
+          .replace(/\s*\|\s*/g, " ")
+          .trim(),
+      )
+      .filter(Boolean)
+      .join("\n");
+  }
+}
+
+/**
  * Detect consecutive aligned rows and return markdown table segments.
  * @param {{ y: number, parts: { x: number, text: string, fontSize: number }[] }[]} lines
  * @param {number} [pageWidth]
@@ -462,6 +509,7 @@ function clusterGlyphsIntoLines(glyphs) {
  * @param {import("./pdf-ruling-lines.js").RulingLineTable[]} [rulingTables]
  * @param {number} [pageNum]
  * @param {Array<{ page: number, method: PdfTableDetectionMethod, preview: string }>} [detectionLog]
+ * @param {boolean} [skipTableDetection]
  * @returns {{ blocks: TextBlock[], tablesDetected: number }}
  */
 function buildBlocksFromGlyphs(
@@ -472,11 +520,14 @@ function buildBlocksFromGlyphs(
   rulingTables = [],
   pageNum = 0,
   detectionLog = null,
+  skipTableDetection = false,
 ) {
   if (!glyphs.length) return { blocks: [], tablesDetected: 0 };
 
   const lines = clusterGlyphsIntoLines(glyphs);
-  const rawSegments = segmentLinesForTables(lines, pageWidth);
+  const rawSegments = skipTableDetection
+    ? lines.map((_, lineIndex) => ({ type: /** @type {const} */ ("line"), lineIndex }))
+    : segmentLinesForTables(lines, pageWidth);
   const alignmentTables = rawSegments.filter((s) => s.type === "table");
   const mergedTables = mergeTableDetections(alignmentTables, rulingTables, lines);
 
@@ -591,7 +642,7 @@ export function clusterTextItemsToBlocks(items, pageIndex, pageHeight = 792, pag
  * @param {{ width: number, height: number }} viewport
  * @param {number} pageNum 1-based page number for logging
  */
-async function buildPageBlocksFromContent(content, page, pdfjs, pageIndex, viewport, pageNum) {
+async function buildPageBlocksFromContent(content, page, pdfjs, pageIndex, viewport, pageNum, skipTableDetection = false) {
   const glyphs = itemsToGlyphs(content.items);
   const layout = detectColumnLayout(glyphs, viewport.width);
   /** @type {typeof glyphs[]} */
@@ -606,7 +657,9 @@ async function buildPageBlocksFromContent(content, page, pdfjs, pageIndex, viewp
   const detectionLog = [];
 
   for (const groupGlyphs of groups) {
-    const rulingTables = await detectTablesFromRulingLines(page, pdfjs, groupGlyphs, viewport);
+    const rulingTables = skipTableDetection
+      ? []
+      : await detectTablesFromRulingLines(page, pdfjs, groupGlyphs, viewport);
     const built = buildBlocksFromGlyphs(
       groupGlyphs,
       pageIndex,
@@ -615,6 +668,7 @@ async function buildPageBlocksFromContent(content, page, pdfjs, pageIndex, viewp
       rulingTables,
       pageNum,
       detectionLog,
+      skipTableDetection,
     );
     blocks.push(...built.blocks);
     tablesDetected += built.tablesDetected;
@@ -635,6 +689,7 @@ export async function extractPdfBlocks(buffer) {
   const blocks = [];
   /** @type {number[]} */
   const pageHeights = [];
+  let skipPdfTableDetection = false;
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum += 1) {
     const page = await doc.getPage(pageNum);
@@ -655,6 +710,14 @@ export async function extractPdfBlocks(buffer) {
       extractionPath = "bicolumn-split";
     }
 
+    if (!skipPdfTableDetection && pageNum <= 5) {
+      const probeGlyphs = itemsToGlyphs(content.items || []);
+      const probeLines = clusterGlyphsIntoLines(probeGlyphs);
+      if (isLikelyPoorOcrLines(probeLines)) {
+        skipPdfTableDetection = true;
+      }
+    }
+
     const clustered = await buildPageBlocksFromContent(
       content,
       page,
@@ -662,6 +725,7 @@ export async function extractPdfBlocks(buffer) {
       pageNum - 1,
       viewport,
       pageNum,
+      skipPdfTableDetection,
     );
     let pageBlocks = clustered.blocks;
     const pageTablesDetected = clustered.tablesDetected;
@@ -818,6 +882,17 @@ export async function extractPdfBlocks(buffer) {
       blocksBefore: blocks.length,
       blocksAfter: mergedBlocks.length,
     });
+  }
+
+  const tableLikeBlocks = mergedBlocks.filter((b) =>
+    String(b.text || "").trim().startsWith("|"),
+  ).length;
+  const largestTableRows = largestMarkdownTableRowCount(mergedBlocks);
+  if (
+    skipPdfTableDetection ||
+    (tableLikeBlocks > 12 && largestTableRows < 20)
+  ) {
+    flattenPdfTableBlocks(mergedBlocks);
   }
 
   return { blocks: mergedBlocks, pageHeights, doc };

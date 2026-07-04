@@ -4,7 +4,7 @@
 
 import { createTextBlock } from "./types.js";
 import { htmlTableToMarkdown } from "./table-markdown.js";
-import { extractHeadingTextFromElement, normalizeHeadingLabel, resolveHtmlContentRoot, isHtmlBoilerplateElement } from "./heading-text.js";
+import { extractHeadingTextFromElement, normalizeHeadingLabel, resolveHtmlContentRoot, isHtmlBoilerplateElement, elementTextPreservingSubSup } from "./heading-text.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
@@ -63,7 +63,7 @@ export function parseInlineFontSize(style) {
 /**
  * @param {string} style
  */
-function parseInlineFontWeight(style) {
+export function parseInlineFontWeight(style) {
   const m = String(style || "").match(/font-weight\s*:\s*(\w+|\d+)/i);
   if (!m) return "normal";
   const v = m[1].toLowerCase();
@@ -126,16 +126,61 @@ export function inferLevelFromElement(el) {
 }
 
 /**
+ * MediaWiki TOC lists logical section depth; tag level can be off by one.
+ * @param {Element} el
+ * @param {number} tagLevel
+ */
+function resolveMediaWikiHeadingLevel(el, tagLevel) {
+  const doc = el.ownerDocument;
+  const headline = el.querySelector?.(".mw-headline") || el;
+  const text = extractHeadingTextFromElement(headline);
+  if (!doc || !text) return tagLevel;
+  for (let tocLevel = 2; tocLevel <= 6; tocLevel += 1) {
+    const items = doc.querySelectorAll(`#toc .toclevel-${tocLevel} .toctext`);
+    for (const item of items) {
+      if (item.textContent?.trim() === text) return tocLevel;
+    }
+  }
+  return tagLevel;
+}
+
+/**
  * @param {Element} el
  * @param {number} lineIndex
  * @returns {TextBlock|null}
  */
-function blockFromHeadingElement(el, lineIndex) {
-  const { level, heuristic } = inferLevelFromElement(el);
-  if (level <= 0) return null;
+/** @param {Document} doc */
+export function buildMediaWikiTocLevelMap(doc) {
+  /** @type {Map<string, number>} */
+  const mediaWikiTocLevels = new Map();
+  if (!doc) return mediaWikiTocLevels;
+  for (let tocLevel = 1; tocLevel <= 6; tocLevel += 1) {
+    for (const item of doc.querySelectorAll(`#toc .toclevel-${tocLevel} .toctext`)) {
+      const label = item.textContent?.trim();
+      if (label) mediaWikiTocLevels.set(label, Math.min(6, tocLevel + 1));
+    }
+  }
+  return mediaWikiTocLevels;
+}
 
+/**
+ * @param {Element} el
+ * @param {number} lineIndex
+ * @returns {TextBlock|null}
+ */
+export function blockFromHeadingElement(el, lineIndex, mediaWikiTocLevels = null) {
+  let { level, heuristic } = inferLevelFromElement(el);
+  if (level <= 0) return null;
+  const tag = String(el.tagName || "").toLowerCase();
   const mw = el.querySelector?.(".mw-headline");
   const text = mw ? extractHeadingTextFromElement(mw) : extractHeadingTextFromElement(el);
+  if (mediaWikiTocLevels?.has(text)) {
+    level = /** @type {typeof level} */ (
+      Math.max(level, mediaWikiTocLevels.get(text))
+    );
+  } else if (/^h[1-6]$/.test(tag) && mw) {
+    level = resolveMediaWikiHeadingLevel(el, level);
+  }
   if (!text) return null;
 
   const mdText = `${"#".repeat(level)} ${text}`;
@@ -177,7 +222,46 @@ export function extractHtmlBlocks(html) {
   }); // [debug-enrich]
   /** @type {TextBlock[]} */
   const blocks = [];
+  /** @type {TextBlock[]} */
+  const deferredAuthorHeadings = [];
   let lineIndex = 0;
+  const fullPageChrome = Boolean(
+    doc.querySelector(".cookie-banner, .global-header, header.subnav__header"),
+  );
+  const mediaWikiTocLevels = buildMediaWikiTocLevelMap(doc);
+
+  const shouldDeferChromeHeading = (el, label) => {
+    if (!fullPageChrome) return false;
+    if (el.closest?.(".author__desc, .c-garfield__nl")) return true;
+    return /^(about the author|email newsletter|video \+ ux training|video only)$/i.test(label);
+  };
+
+  const flushDeferredAuthorHeadings = () => {
+    if (!deferredAuthorHeadings.length) return;
+    /** @type {TextBlock[]} */
+    const author = [];
+    /** @type {TextBlock[]} */
+    const promos = [];
+    /** @type {TextBlock[]} */
+    const rest = [];
+    for (const hb of deferredAuthorHeadings) {
+      const label = hb.text.replace(/^#+\s+/, "");
+      if (/^about the author$/i.test(label) || /^email newsletter$/i.test(label)) author.push(hb);
+      else if (/^video \+ ux training$|^video only$/i.test(label)) promos.push(hb);
+      else rest.push(hb);
+    }
+    for (const hb of [...author, ...promos, ...rest]) blocks.push(hb);
+    deferredAuthorHeadings.length = 0;
+  };
+
+  const pushHeadingBlock = (el, headingBlock) => {
+    const label = headingBlock.text.replace(/^#+\s+/, "");
+    if (shouldDeferChromeHeading(el, label)) {
+      deferredAuthorHeadings.push(headingBlock);
+      return;
+    }
+    blocks.push(headingBlock);
+  };
 
   const walk = (node) => {
     if (!node) return;
@@ -190,6 +274,13 @@ export function extractHtmlBlocks(html) {
     if (isHtmlBoilerplateElement(el)) return;
 
     if (tag === "script" || tag === "style" || tag === "noscript") return;
+
+    if (
+      el.getAttribute?.("data-component") === "CommentsArea" ||
+      String(el.id || "").startsWith("comments-")
+    ) {
+      flushDeferredAuthorHeadings();
+    }
 
     if (tag === "table") {
       const md = htmlTableToMarkdown(el);
@@ -206,6 +297,22 @@ export function extractHtmlBlocks(html) {
           }),
         );
         lineIndex += 1;
+      } else if (/\binfobox\b/i.test(String(el.className || "")) || el.closest?.(".infobox")) {
+        for (const cell of el.querySelectorAll("td, th")) {
+          const cellText = elementTextPreservingSubSup(cell);
+          if (!/<sub>|<sup>/i.test(cellText)) continue;
+          blocks.push(
+            createTextBlock({
+              text: cellText,
+              fontSize: 0,
+              fontWeight: "normal",
+              pageIndex: 0,
+              lineIndex: lineIndex++,
+              source: "html",
+              kind: "paragraph",
+            }),
+          );
+        }
       }
       return;
     }
@@ -242,7 +349,7 @@ export function extractHtmlBlocks(html) {
     if (containerTags.has(tag)) {
       const elementChildren = Array.from(el.children || []);
       if (!elementChildren.length) {
-        const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+        const text = elementTextPreservingSubSup(el);
         if (text) {
           blocks.push(
             createTextBlock({
@@ -263,17 +370,33 @@ export function extractHtmlBlocks(html) {
     }
 
     if (leafBlockTags.has(tag)) {
-      const headingBlock = /^h[1-6]$/.test(tag) ? blockFromHeadingElement(el, lineIndex) : null;
+      const headingBlock = /^h[1-6]$/.test(tag)
+        ? blockFromHeadingElement(el, lineIndex, mediaWikiTocLevels)
+        : null;
       if (headingBlock) {
-        blocks.push(headingBlock);
+        pushHeadingBlock(el, headingBlock);
         lineIndex += 1;
         return;
       }
 
       const { level, heuristic } = inferLevelFromElement(el);
-      const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+      const text = elementTextPreservingSubSup(el);
       if (text) {
         const mdText = level > 0 ? `${"#".repeat(level)} ${text}` : text;
+        if (level > 0) {
+          const headingFromHeuristic = createTextBlock({
+            text: mdText,
+            fontSize: parseInlineFontSize(el.getAttribute("style") || "") || 18 - level,
+            fontWeight: heuristic ? "heuristic" : parseInlineFontWeight(el.getAttribute("style") || ""),
+            pageIndex: 0,
+            lineIndex: level,
+            source: "html",
+            kind: "heading",
+          });
+          pushHeadingBlock(el, headingFromHeuristic);
+          lineIndex += 1;
+          return;
+        }
         const style = el.getAttribute("style") || "";
         const fontSize = parseInlineFontSize(style) || (level ? 18 - level : 0);
         const fontWeight = heuristic ? "heuristic" : parseInlineFontWeight(style);
@@ -297,6 +420,7 @@ export function extractHtmlBlocks(html) {
   };
 
   for (const child of Array.from(contentRoot.children || [])) walk(child);
+  flushDeferredAuthorHeadings();
 
   const tableCount = (raw.match(/<table\b/gi) || []).length;
   const preFallbackBlockCount = blocks.length; // [debug-enrich]
