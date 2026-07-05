@@ -1,6 +1,6 @@
 import { hasGeneratedBlockContent, normalizeStudyMode, isConceptInventoryValid } from "./session.js";
 import { createClozeSession, createSlowSession } from "./study.js";
-import { normalizePreparationState, isTier1PreparationComplete } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete, resolveScopedMarkdown } from "./session-types.js";
 import { getValidItems } from "./cloze/pipeline.js";
 
 /**
@@ -242,7 +242,7 @@ export function resolveModeEntryState(doc, mode) {
 export function buildModeSliceFromShared(doc, mode, options = {}) {
   const modeKey = String(mode || "").trim() || "rsvp";
   const slot = modeKey === "review" ? "rsvp" : normalizeStudyMode(modeKey);
-  const normalizedText = String(doc.shared?.rawMarkdown || "");
+  const normalizedText = String(resolveScopedMarkdown(doc) || doc.shared?.rawMarkdown || "");
   const meta = resolveMaterialMeta(doc);
   const common = {
     normalizedText,

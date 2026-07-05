@@ -7,6 +7,7 @@ import {
 import { renderMarkdown } from "./markdown.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { SOURCE_FIDELITY_RULES } from "./source-fidelity.js";
+import { resolveChatScopeFields } from "./session-types.js";
 import { getBlockChunkFromIndex } from "./session.js";
 
 function safeJsonParse(raw) {
@@ -94,6 +95,22 @@ export function clearGuideChatStorage({ sessionId, removeAllStored = false } = {
     // ignore
   }
   paintChatHistory([]);
+}
+
+let guideScopePromptBlock = "";
+
+/** Cache scope dual-context block from document session (R12–R14 chat-only). */
+export function setGuideScopeFromDocument(doc) {
+  const { scopedMarkdown, backgroundMarkdown, scopeContext } = resolveChatScopeFields(doc);
+  if (!scopedMarkdown || !backgroundMarkdown) {
+    guideScopePromptBlock = "";
+    return;
+  }
+  guideScopePromptBlock =
+    `\n\nIN SCOPE — what the user is studying:\n${scopedMarkdown}\n\n` +
+    `BACKGROUND CONTEXT — not part of the user's study material:\n${backgroundMarkdown}` +
+    (scopeContext ? `\n\nScope note: ${scopeContext}` : "") +
+    "\n\nIf your answer draws on BACKGROUND CONTEXT, prefix the sentence with [OUT_OF_SCOPE].";
 }
 
 function resolveFullMaterialText(activeSession) {
@@ -321,7 +338,7 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
     `Author definitions prevail over generic domain knowledge.\n\n` +
     `${GUIDE_SIDEBAR_STYLE}\n\n` +
     `Respond in the same language as the student's latest message.\n\n` +
-    `COMPLETE SESSION CONTEXT:\n${sessionContext}${documentExcerptSection}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
+    `COMPLETE SESSION CONTEXT:\n${sessionContext}${guideScopePromptBlock}${documentExcerptSection}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
 
   return systemPrompt;
 }

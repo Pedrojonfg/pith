@@ -47,6 +47,15 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * User-selected document scope (partial study material).
+ * @typedef {object} ScopeSelection
+ * @property {string[]} sectionIds — docHierarchy node ids in document order
+ * @property {boolean} contiguous — true when sectionIds form one contiguous run
+ * @property {number} selectedAt — epoch ms
+ * @property {number} charCount — scopedMarkdown length
+ */
+
+/**
  * @typedef {'philosophical'|'scientific_theoretical'|'scientific_empirical'|'essay'|'lecture_notes'|'textbook_chapter'|'unknown'} PedagogicalGenre
  */
 
@@ -296,8 +305,12 @@ export function validateDocumentSession(session) {
   if (!session || typeof session !== "object") {
     return { ok: false, errors: ["session must be an object"] };
   }
-  if (session.schemaVersion !== 2 && session.schemaVersion !== 3) {
-    errors.push("schemaVersion must be 2 or 3");
+  if (
+    session.schemaVersion !== 2 &&
+    session.schemaVersion !== 3 &&
+    session.schemaVersion !== 4
+  ) {
+    errors.push("schemaVersion must be 2, 3, or 4");
   }
   if (!session.docId || typeof session.docId !== "string" || !session.docId.trim()) {
     errors.push("docId must be a non-empty string");
@@ -335,6 +348,34 @@ export function validateDocumentSession(session) {
       if (!sh.rawMarkdownRef.storageKey || typeof sh.rawMarkdownRef.storageKey !== "string") {
         errors.push("rawMarkdownRef.storageKey required");
       }
+    }
+    if (sh.scopeSelection != null) {
+      const sel = sh.scopeSelection;
+      if (typeof sel !== "object" || Array.isArray(sel)) {
+        errors.push("shared.scopeSelection must be object or null");
+      } else {
+        if (!Array.isArray(sel.sectionIds) || sel.sectionIds.length === 0) {
+          errors.push("scopeSelection.sectionIds must be a non-empty array");
+        }
+        if (typeof sel.contiguous !== "boolean") {
+          errors.push("scopeSelection.contiguous must be boolean");
+        }
+        if (!Number.isFinite(sel.selectedAt)) {
+          errors.push("scopeSelection.selectedAt must be a finite number");
+        }
+        if (!Number.isFinite(sel.charCount) || sel.charCount < 0) {
+          errors.push("scopeSelection.charCount must be a non-negative number");
+        }
+      }
+    }
+    if (sh.scopedMarkdown != null && typeof sh.scopedMarkdown !== "string") {
+      errors.push("shared.scopedMarkdown must be string when present");
+    }
+    if (sh.scopeContext != null && typeof sh.scopeContext !== "string") {
+      errors.push("shared.scopeContext must be string or null");
+    }
+    if (sh.scopeResolvedAt != null && !Number.isFinite(sh.scopeResolvedAt)) {
+      errors.push("shared.scopeResolvedAt must be finite number or null");
     }
     if (sh.modeRecommendation != null) {
       const rec = sh.modeRecommendation;
@@ -631,6 +672,79 @@ export function normalizePreparationState(raw) {
     }
   }
   return base;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {ScopeSelection|null}
+ */
+export function normalizeScopeSelection(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const sectionIds = Array.isArray(raw.sectionIds)
+    ? raw.sectionIds.map((id) => String(id).trim()).filter(Boolean)
+    : [];
+  if (!sectionIds.length) return null;
+  return {
+    sectionIds,
+    contiguous: raw.contiguous === true,
+    selectedAt: Number.isFinite(raw.selectedAt) ? raw.selectedAt : Date.now(),
+    charCount: Number.isFinite(raw.charCount) ? Math.max(0, raw.charCount) : 0,
+  };
+}
+
+/**
+ * Resolve study markdown — scoped when set, otherwise full raw markdown.
+ * @param {unknown} session
+ * @returns {string}
+ */
+export function resolveScopedMarkdown(session) {
+  const sh = session?.shared;
+  if (!sh) return "";
+  if (typeof sh.scopedMarkdown === "string" && sh.scopedMarkdown.length > 0) {
+    return sh.scopedMarkdown;
+  }
+  return String(sh.rawMarkdown || "");
+}
+
+/**
+ * Chat/tutor dual-context fields when partial scope is active (R12–R15).
+ * @param {unknown} session
+ */
+export function resolveChatScopeFields(session) {
+  const sh = session?.shared;
+  if (!sh?.scopeSelection) {
+    return { scopedMarkdown: "", backgroundMarkdown: "", scopeContext: "" };
+  }
+  return {
+    scopedMarkdown: resolveScopedMarkdown(session),
+    backgroundMarkdown: String(sh.rawMarkdown || ""),
+    scopeContext: String(sh.scopeContext || ""),
+  };
+}
+
+/**
+ * True when user confirmed scope (or legacy session already prepared).
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function isScopeGateResolved(session) {
+  const sh = session?.shared;
+  if (!sh) return false;
+  if (Number.isFinite(sh.scopeResolvedAt) && sh.scopeResolvedAt > 0) return true;
+  const inv = sh.conceptInventory;
+  return Array.isArray(inv) && inv.length > 0;
+}
+
+/**
+ * True when T0.1–T1.1 artifacts exist (structure ready for scope picker).
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function isScopeStructureReady(session) {
+  const sh = session?.shared;
+  if (!sh) return false;
+  const tree = sh.docHierarchy?.tree;
+  return Array.isArray(tree) && tree.length > 0;
 }
 
 /**

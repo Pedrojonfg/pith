@@ -1450,7 +1450,27 @@
           </div>
         </section>
 
-        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
+        <section
+          id="screenScopeSelection"
+          class="screen scope-selection-screen"
+          aria-hidden="true"
+          aria-label="Document scope"
+        >
+          <div class="scope-selection-shell">
+            <h1>Study scope</h1>
+            <p class="hint">
+              Choose which sections to include. Concept inventory and study modes use only the selected material.
+            </p>
+            <div id="scopeSelectionCharCount" class="hint" aria-live="polite"></div>
+            <ul id="scopeSelectionList" class="scope-selection-list" role="listbox" aria-label="Document sections"></ul>
+            <div class="row scope-selection-actions">
+              <button type="button" id="scopeSelectionFullBtn" class="btn-secondary">Entire document</button>
+              <button type="button" id="scopeSelectionConfirmBtn" class="btn-primary" disabled>Continue</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope" hidden>
           <div class="card slow-card">
             <h1>Reading scope</h1>
             <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
@@ -1493,6 +1513,18 @@
             <h1>Orientation (Phase 0)</h1>
             <p class="hint">
               Before you read, AI summarizes the thesis, argument map, key concepts, and a guide question.
+            </p>
+            <label class="slow-scope-fillable-toggle" for="slowPhase0FillableMap">
+              <input type="checkbox" id="slowPhase0FillableMap" />
+              Fillable argument map
+            </label>
+            <p class="hint" id="slowPhase0FillableHint">Fill in premises and conclusion as you read (Phase 1).</p>
+            <label class="slow-scope-fillable-toggle" for="slowPhase0Checkpoints">
+              <input type="checkbox" id="slowPhase0Checkpoints" checked />
+              Section checkpoints
+            </label>
+            <p class="hint" id="slowPhase0CheckpointsHint">
+              Brief questions at the end of each section while reading (always optional).
             </p>
             <div id="slowPhase0Progress" class="hint" hidden></div>
             <button type="button" id="slowPhase0CollapseBtn" class="slow-phase0-collapse-btn" hidden>Expand orientation</button>
@@ -1919,7 +1951,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260710_09";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260705_01";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260625_02";
       initSplash();
 
@@ -1945,7 +1977,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260710_09");
+        await import("./src/js/main.js?v=20260705_01");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

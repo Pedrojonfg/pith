@@ -645,6 +645,12 @@ export const els = {
   clozeStudyMeta: document.getElementById("clozeStudyMeta"),
   clozeStudyBackBtn: document.getElementById("clozeStudyBackBtn"),
 
+  screenAssessmentGate: document.getElementById("screenAssessmentGate"),
+  screenScopeSelection: document.getElementById("screenScopeSelection"),
+  scopeSelectionList: document.getElementById("scopeSelectionList"),
+  scopeSelectionCharCount: document.getElementById("scopeSelectionCharCount"),
+  scopeSelectionFullBtn: document.getElementById("scopeSelectionFullBtn"),
+  scopeSelectionConfirmBtn: document.getElementById("scopeSelectionConfirmBtn"),
   screenSlowScope: document.getElementById("screenSlowScope"),
   screenSlowPhase0: document.getElementById("screenSlowPhase0"),
   screenSlowReader: document.getElementById("screenSlowReader"),
@@ -666,6 +672,10 @@ export const els = {
   slowScopeCheckpoints: document.getElementById("slowScopeCheckpoints"),
   slowScopeCheckpointsHint: document.getElementById("slowScopeCheckpointsHint"),
   slowPhase0Progress: document.getElementById("slowPhase0Progress"),
+  slowPhase0FillableMap: document.getElementById("slowPhase0FillableMap"),
+  slowPhase0FillableHint: document.getElementById("slowPhase0FillableHint"),
+  slowPhase0Checkpoints: document.getElementById("slowPhase0Checkpoints"),
+  slowPhase0CheckpointsHint: document.getElementById("slowPhase0CheckpointsHint"),
   slowPhase0CollapseBtn: document.getElementById("slowPhase0CollapseBtn"),
   slowPhase0Content: document.getElementById("slowPhase0Content"),
   slowPhase0Error: document.getElementById("slowPhase0Error"),
@@ -1400,6 +1410,7 @@ export function showScreen(which) {
   const showPrePackingAssessment = which === "prePackingAssessment";
   const showPrePackingResults = which === "prePackingResults";
   const showAssessmentGate = which === "assessmentGate";
+  const showScopeSelection = which === "scopeSelection";
   const showBlocks = which === "blocks";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
@@ -1434,6 +1445,7 @@ export function showScreen(which) {
     [els.screenPlaceholder, showCreate],
     [els.screenPrePackingAssessment, showPrePackingAssessment],
     [els.screenAssessmentGate, showAssessmentGate],
+    [els.screenScopeSelection, showScopeSelection],
     [els.screenPrePackingResults, showPrePackingResults],
     [els.screenBlocksList, showBlocks],
     [els.screenSessionReady, showReady],
