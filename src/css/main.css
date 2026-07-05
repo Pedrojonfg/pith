@@ -1298,6 +1298,32 @@ body.paced-reader-active {
   padding: 8px 12px;
 }
 
+.read-mode-content {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: #111318;
+  color: var(--text);
+}
+
+.read-mode-visual {
+  margin: 16px 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: rgba(94, 184, 184, 0.06);
+  border: 1px solid rgba(94, 184, 184, 0.2);
+  overflow-x: auto;
+}
+
+.read-mode-visual--image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
 .test-question {
   font-size: clamp(20px, 2.4vw, 30px);
   font-weight: 600;

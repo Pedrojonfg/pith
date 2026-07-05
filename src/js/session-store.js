@@ -131,6 +131,13 @@ function rehydrateSessionModes(session) {
       changed = true;
     }
   }
+  if (modes.read) {
+    const next = rehydrateBlocks(modes.read, docId);
+    if (next !== modes.read) {
+      modes.read = next;
+      changed = true;
+    }
+  }
   return changed ? { ...session, modes } : session;
 }
 
@@ -149,6 +156,10 @@ function normalizeSessionModes(session) {
   let changed = false;
   if (!("recall" in modes)) {
     modes.recall = null;
+    changed = true;
+  }
+  if (!("read" in modes)) {
+    modes.read = null;
     changed = true;
   }
   if (modes.recall && typeof modes.recall === "object") {
@@ -242,6 +253,9 @@ async function stripMarkdownForPersist(session, userId) {
   }
   if (clone.modes?.questions) {
     clone.modes.questions = stripBlocksForPersist(clone.modes.questions, docId);
+  }
+  if (clone.modes?.read) {
+    clone.modes.read = stripBlocksForPersist(clone.modes.read, docId);
   }
 
   const sh = clone.shared;
@@ -350,7 +364,7 @@ export async function createSession(rawMarkdown, options = {}) {
       blockRecommendation: null,
       slowOrientation: null,
     },
-    modes: { rsvp: null, slow: null, cloze: null, questions: null, recall: null },
+    modes: { rsvp: null, slow: null, cloze: null, questions: null, recall: null, read: null },
   };
   const v = validateDocumentSession(session);
   if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);

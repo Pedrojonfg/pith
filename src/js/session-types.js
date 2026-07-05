@@ -151,7 +151,7 @@ export const PROJECT_STORE_SCHEMA = 1;
  * @property {number} answeredAt
  */
 
-const MODE_KEYS = ["rsvp", "slow", "cloze", "questions", "recall"];
+const MODE_KEYS = ["rsvp", "slow", "cloze", "questions", "recall", "read"];
 
 const STOPWORDS = new Set([
   "a", "an", "the", "el", "la", "los", "las", "de", "del", "en", "y", "o", "un", "una",

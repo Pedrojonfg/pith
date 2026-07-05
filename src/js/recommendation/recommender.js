@@ -6,6 +6,7 @@
 /** @type {Record<string, (n: number) => number>} */
 export const TIME_FACTORS = {
   rsvp: (words) => Math.ceil(words / 400),
+  read: (words) => Math.ceil(words / 350),
   slow: (words) => Math.ceil(words / 120),
   recall: (words) => Math.ceil(words / 600),
   cloze: (items) => Math.ceil(items * 0.5),
@@ -34,6 +35,10 @@ const MODE_TEMPLATES = {
     label: "RSVP speed reading",
     description: "Skim the text at a steady pace before self-testing",
   },
+  read: {
+    label: "Read mode",
+    description: "Read full block text with optional diagrams, then answer questions",
+  },
   cloze: {
     label: "Cloze practice",
     description: "Fill gaps to consolidate key concepts",
@@ -52,7 +57,7 @@ const MODE_TEMPLATES = {
   },
 };
 
-/** @typedef {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} StudyMode */
+/** @typedef {'rsvp'|'read'|'slow'|'cloze'|'questions'|'recall'|'review'} StudyMode */
 
 const MIN_RECALL_SIGNALS = 2;
 
@@ -149,7 +154,7 @@ function resolveDecision(pedagogicalMeta, textMetrics, knowledgeProfile = null) 
   if (argumentativeDensity >= 4 || genre === "philosophical") {
     base = {
       primaryModes: ["slow", "recall", "cloze", "review"],
-      quickModes: ["rsvp", "questions"],
+      quickModes: ["rsvp", "read", "questions"],
       reasoning:
         "Dense argumentative text. Deep reading, then recall synthesis, before cloze practice.",
     };
@@ -161,21 +166,21 @@ function resolveDecision(pedagogicalMeta, textMetrics, knowledgeProfile = null) 
     };
   } else if (genre === "scientific_empirical" || (hasBibliography && !philosophical)) {
     base = {
-      primaryModes: ["rsvp", "questions", "cloze"],
-      quickModes: ["rsvp", "questions"],
+      primaryModes: ["rsvp", "read", "questions", "cloze"],
+      quickModes: ["rsvp", "read", "questions"],
       reasoning:
         "Structured empirical text. RSVP works well here; use Cloze for the key concepts.",
     };
   } else if (genre === "lecture_notes" || firstPersonRatio > 0.03) {
     base = {
-      primaryModes: ["rsvp", "questions"],
+      primaryModes: ["rsvp", "read", "questions"],
       quickModes: ["questions"],
       reasoning: "Personal notes: you already processed this once. Go straight to retrieval.",
     };
   } else if (genre === "textbook_chapter") {
     base = {
-      primaryModes: ["rsvp", "cloze", "questions"],
-      quickModes: ["rsvp", "questions"],
+      primaryModes: ["rsvp", "read", "cloze", "questions"],
+      quickModes: ["rsvp", "read", "questions"],
       reasoning:
         "Structured textbook material. Skim first, practice with cloze, then check comprehension with questions.",
     };
@@ -187,14 +192,14 @@ function resolveDecision(pedagogicalMeta, textMetrics, knowledgeProfile = null) 
     };
   } else if (primaryLearningGoal === "learn_procedure") {
     base = {
-      primaryModes: ["rsvp", "questions"],
+      primaryModes: ["rsvp", "read", "questions"],
       quickModes: ["questions"],
       reasoning:
         "Procedural material. Structured review is more efficient than deep reading.",
     };
   } else {
     base = {
-      primaryModes: ["rsvp", "questions"],
+      primaryModes: ["rsvp", "read", "questions"],
       quickModes: ["questions"],
       reasoning: "Conservative default flow.",
     };
@@ -203,7 +208,7 @@ function resolveDecision(pedagogicalMeta, textMetrics, knowledgeProfile = null) 
   const masteryRatio = computeLearnerMasteryRatio(knowledgeProfile);
   if (masteryRatio >= 0.5) {
     const prioritizeRetrieval = (modes) => {
-      const retrievalFirst = ["questions", "recall", "review", "cloze", "rsvp", "slow"];
+      const retrievalFirst = ["questions", "recall", "review", "cloze", "read", "rsvp", "slow"];
       return [...modes].sort(
         (a, b) => retrievalFirst.indexOf(a) - retrievalFirst.indexOf(b),
       );
@@ -246,7 +251,7 @@ export function computeStepTimes(textMetrics, steps) {
     const mode = step.mode;
     let estimatedTimeMin = 1;
 
-    if (mode === "rsvp" || mode === "slow" || mode === "questions" || mode === "recall") {
+    if (mode === "rsvp" || mode === "read" || mode === "slow" || mode === "questions" || mode === "recall") {
       const factor = TIME_FACTORS[mode];
       estimatedTimeMin = Math.max(1, factor(words));
     } else if (mode === "cloze" || mode === "review") {

@@ -82,7 +82,7 @@ function hasConceptInventory(doc) {
 
 /**
  * @param {object | null | undefined} slice
- * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'} slot
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'} slot
  * @returns {boolean}
  */
 function isSliceResumable(slice, slot) {
@@ -90,7 +90,7 @@ function isSliceResumable(slice, slot) {
   if (slot === "recall") {
     return String(slice.status || "").trim() === "in_progress";
   }
-  if (slot === "rsvp" || slot === "questions") {
+  if (slot === "rsvp" || slot === "questions" || slot === "read") {
     const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
     const nBlocks = Math.floor(Number(slice.n_blocks) || 0);
     if (nBlocks > 0 && blocks.length > 0) return true;
@@ -130,7 +130,7 @@ function resolveMaterialMeta(doc) {
 
 /**
  * @param {import('./session-types.js').DocumentSession | null} doc
- * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} mode
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'|'review'} mode
  * @returns {{
  *   kind: 'resume' | 'bootstrap' | 'generate_fresh' | 'upload_required',
  *   mode: string,
@@ -235,7 +235,7 @@ export function resolveModeEntryState(doc, mode) {
 
 /**
  * @param {import('./session-types.js').DocumentSession} doc
- * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'review'} mode
+ * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'|'review'} mode
  * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
  * @returns {object}
  */
@@ -276,7 +276,8 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
     return slice;
   }
 
-  const studyMode = slot === "questions" ? "questions" : "rsvp";
+  const studyMode =
+    slot === "questions" ? "questions" : slot === "read" ? "read" : "rsvp";
   const nBlocksDefault = doc.shared?.blockRecommendation?.nBlocks;
   return {
     studyMode,

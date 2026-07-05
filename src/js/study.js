@@ -241,6 +241,7 @@ import {
   getPrefetchedBlock,
   hasGeneratedBlockContent,
   isQuestionsStudyMode,
+  isReadStudyMode,
   normalizeBlockJson,
   ensureSessionResponseState,
   gapLabelsForBlock,
@@ -393,6 +394,9 @@ import {
 } from "./vault/vault-upload-queue.js";
 import { isAutoDraftNotesEnabled, loadVaultSettings, saveVaultSettings } from "./vault/vault-settings.js";
 import { FACET_LABELS } from "./session-types.js";
+import { renderReadBlockContent } from "./read-mode.js";
+import { setOnReadVisualResolved, triggerReadVisualPrefetch } from "./read-visuals.js";
+import { findPithImageTokenIds } from "./document-images/tokens.js";
 
 let blocksListJsonCache = "";
 
@@ -1213,6 +1217,7 @@ const FLOW_MODE_SHORT_LABELS = {
   cloze: "Cloze",
   review: "Review",
   rsvp: "RSVP",
+  read: "Read",
   questions: "Questions",
 };
 
@@ -1665,6 +1670,7 @@ function getStudyModeLabel(mode) {
   if (mode === "cloze") return "Cloze Detection";
   if (mode === "questions") return "Questions";
   if (mode === "recall") return "Recall";
+  if (mode === "read") return "Read";
   return "RSVP";
 }
 
@@ -3540,6 +3546,7 @@ export async function enterModeWithContinuity(mode) {
     if (normalized === "slow") resumeSlowSession(entry.slice);
     else if (normalized === "cloze") resumeClozeSession(entry.slice);
     else if (normalized === "questions") resumeQuestionsSession(entry.slice);
+    else if (normalized === "read") resumeReadSession(entry.slice);
     else if (normalized === "recall") void getRecallController().enterRecall(entry);
     else resumeRsvpSession(entry.slice);
     return;
@@ -3603,20 +3610,22 @@ function syncRsvpAssessmentToggleFromPreference() {
 function updateCreateScreenModeVisibility(mode) {
   const isSlow = mode === "slow";
   const isRsvp = mode === "rsvp";
+  const isRead = mode === "read";
+  const isBlockPackMode = isRsvp || isRead;
   const isCloze = mode === "cloze";
   const isQuestions = mode === "questions";
-  const showComments = isRsvp || isQuestions;
+  const showComments = isBlockPackMode || isQuestions;
   if (els.generateBlocksForm) {
     els.generateBlocksForm.classList.toggle("create-form--slow", isSlow);
   }
   if (els.rsvpOfflinePackRow) els.rsvpOfflinePackRow.hidden = !isRsvp;
-  if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isRsvp;
+  if (els.rsvpBlocksCountGroup) els.rsvpBlocksCountGroup.hidden = !isBlockPackMode;
   if (els.rsvpCommentsGroup) els.rsvpCommentsGroup.hidden = !showComments;
   if (els.rsvpAssessmentOption) {
     els.rsvpAssessmentOption.hidden = true;
   }
   if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
-  if (els.blocksInput) els.blocksInput.required = isRsvp;
+  if (els.blocksInput) els.blocksInput.required = isBlockPackMode;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   else void maybeAutoRecommendBlockCount();
   if (els.generateBlocksBtn) {
@@ -3627,7 +3636,7 @@ function updateCreateScreenModeVisibility(mode) {
       els.generateBlocksBtn.textContent = "Generate questions";
     } else {
       els.generateBlocksBtn.textContent =
-        isSlow || isCloze ? "Upload and continue…" : "Generate blocks";
+        isSlow || isCloze ? "Upload and continue…" : isRead ? "Generate blocks" : "Generate blocks";
     }
   }
   setOfflinePackButtonVisibility(isRsvp && !isOfflineMode());
@@ -3809,6 +3818,18 @@ async function resumeRsvpSession(session) {
   const n = Math.max(1, Number(session?.n_blocks) || 1);
   if (els.sessionReadyMeta) {
     els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
+  }
+  setFullPackEntryCta(n);
+  showScreen("ready");
+}
+
+async function resumeReadSession(session) {
+  state.activeSession = session;
+  state.studyMode = "read";
+  await storeActiveSession(session);
+  const n = Math.max(1, Number(session?.n_blocks) || 1);
+  if (els.sessionReadyMeta) {
+    els.sessionReadyMeta.textContent = `Read session ready. Blocks: ${n}`;
   }
   setFullPackEntryCta(n);
   showScreen("ready");
@@ -6539,6 +6560,15 @@ async function ensureBlockGenerated(blockIndex) {
       prevBlockSummaryForConnection = extractConnectionHookFromExplanation(prev?.explanation);
     }
 
+    const docForImages = await getActiveSession();
+    const imageIds = findPithImageTokenIds(materialChunk);
+    const knownImages = new Set(
+      (Array.isArray(docForImages?.shared?.images) ? docForImages.shared.images : []).map((img) =>
+        String(img?.imageId || ""),
+      ),
+    );
+    const sectionHasImages = imageIds.some((id) => knownImages.has(id));
+
     const blockRequest = {
       llmModel,
       blocksListText,
@@ -6558,6 +6588,7 @@ async function ensureBlockGenerated(blockIndex) {
       questionScope,
       prevBlockSummaryForConnection,
       claimCoverageMin: state.activeSession?._meta?.pipelineLevers?.claimCoverageMin,
+      sectionHasImages,
     };
 
     let obj = null;
@@ -6984,8 +7015,54 @@ function beginPacedReadForCurrentBlock({ onDone }) {
 }
 
 function beginBlockReading({ onDone }) {
-  if (isPacedReaderPreferred()) beginPacedReadForCurrentBlock({ onDone });
+  if (isReadStudyMode(state.activeSession)) beginReadForCurrentBlock({ onDone });
+  else if (isPacedReaderPreferred()) beginPacedReadForCurrentBlock({ onDone });
   else beginRsvpForCurrentBlock({ onDone });
+}
+
+async function renderCurrentReadBlock(block) {
+  if (!els.testReadContent) return;
+  const doc = await getActiveSession();
+  await renderReadBlockContent(els.testReadContent, {
+    ...block,
+    explanationText: block?.explanation || "",
+    images: doc?.shared?.images || [],
+  });
+}
+
+function beginReadForCurrentBlock({ onDone }) {
+  const blocks = getBlocksSafe();
+  const block = blocks[state.activeBlockIndex];
+  if (!block) {
+    setTestError("Missing block.");
+    showScreen("test");
+    return;
+  }
+  if (!blockHasReadableExplanation(block)) {
+    if (typeof onDone === "function") {
+      onDone();
+      return;
+    }
+    setTestError("This block has no reading text. Regenerate the block or skip to questions.");
+    showScreen("test");
+    return;
+  }
+  setBlockReadSidebarAvailable(false);
+  els.testRsvpView.hidden = true;
+  els.testQaView.hidden = true;
+  if (els.testReadView) els.testReadView.hidden = false;
+  if (els.testReadContinueBtn) {
+    els.testReadContinueBtn.onclick = () => {
+      if (els.testReadView) els.testReadView.hidden = true;
+      if (typeof onDone === "function") onDone();
+    };
+  }
+  void renderCurrentReadBlock(block);
+  triggerReadVisualPrefetch(state.activeBlockIndex, block, {
+    llmModel: getSessionLlmModel(state.activeSession),
+    language: getStudyLanguage(),
+    activeSession: state.activeSession,
+  });
 }
 
 function switchBlockReadingToPaced() {
@@ -7029,6 +7106,7 @@ async function startTestBlock() {
   clearMarkdownContainer(els.testQuestionText);
   els.testQaView.hidden = true;
   els.testRsvpView.hidden = false;
+  if (els.testReadView) els.testReadView.hidden = true;
   if (els.testRsvpWord) els.testRsvpWord.textContent = "";
   els.testRsvpStatus.textContent = "Generating block…";
 
@@ -10348,10 +10426,26 @@ export async function wireStudyHandlers() {
   wirePacedReaderHandlers({ onSwitchToRsvp: switchBlockReadingToRsvp });
   els.rsvpSwitchToPacedBtn?.addEventListener("click", switchBlockReadingToPaced);
 
-  setOnPrefetchReady(() => {
+  setOnPrefetchReady(({ blockIndex }) => {
     refreshUiOnPrefetchReady();
     syncExportButtonsEnabled();
     syncPersistenceHealthBanner();
+    if (!isReadStudyMode(state.activeSession)) return;
+    const block = getBlock(blockIndex);
+    if (!block) return;
+    triggerReadVisualPrefetch(blockIndex, block, {
+      llmModel: getSessionLlmModel(state.activeSession),
+      language: getStudyLanguage(),
+      activeSession: state.activeSession,
+    });
+  });
+
+  setOnReadVisualResolved((blockIndex) => {
+    if (!isReadStudyMode(state.activeSession)) return;
+    if (blockIndex !== state.activeBlockIndex) return;
+    if (els.testReadView?.hidden) return;
+    const block = getBlock(blockIndex);
+    if (block) void renderCurrentReadBlock(block);
   });
 
   setOnBridgeReady(() => {

@@ -25,6 +25,7 @@ import {
   warnQuestionsOnlyCountMismatch,
 } from "./api.js?v=20260625_02";
 import { assignAlignedChunksSequential } from "./chunk-alignment.js";
+import { findPithImageTokenIds } from "./document-images/tokens.js";
 import {
   buildSharedKnowledgeProfile,
   resolvePackKnowledgeProfile,
@@ -384,13 +385,14 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'} */
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'} */
 export function normalizeStudyMode(mode) {
   const m = String(mode || "").trim();
   if (m === "slow") return "slow";
   if (m === "cloze") return "cloze";
   if (m === "questions") return "questions";
   if (m === "recall") return "recall";
+  if (m === "read") return "read";
   return "rsvp";
 }
 
@@ -404,8 +406,18 @@ export function isQuestionsStudyMode(sessionOrMode) {
   return normalizeStudyMode(raw) === "questions";
 }
 
+export function isReadStudyMode(sessionOrMode) {
+  const raw =
+    typeof sessionOrMode === "string"
+      ? sessionOrMode
+      : sessionOrMode?.studyMode != null
+        ? sessionOrMode.studyMode
+        : state.studyMode;
+  return normalizeStudyMode(raw) === "read";
+}
+
 export function emptySessionsByMode() {
-  return { rsvp: null, slow: null, cloze: null, questions: null, recall: null };
+  return { rsvp: null, slow: null, cloze: null, questions: null, recall: null, read: null };
 }
 
 export function parseSessionsByModeRaw(raw) {
@@ -419,6 +431,7 @@ export function parseSessionsByModeRaw(raw) {
       cloze: obj.cloze && typeof obj.cloze === "object" ? obj.cloze : null,
       questions: obj.questions && typeof obj.questions === "object" ? obj.questions : null,
       recall: obj.recall && typeof obj.recall === "object" ? obj.recall : null,
+      read: obj.read && typeof obj.read === "object" ? obj.read : null,
     };
   } catch {
     return null;
@@ -842,6 +855,14 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   }
 
   const blockTitle = getBlockTitleFromList(idx);
+  const doc = await getActiveDocumentSession();
+  const imageIds = findPithImageTokenIds(materialChunk);
+  const knownImages = new Set(
+    (Array.isArray(doc?.shared?.images) ? doc.shared.images : []).map((img) =>
+      String(img?.imageId || ""),
+    ),
+  );
+  const sectionHasImages = imageIds.some((id) => knownImages.has(id));
   const blockRequest = {
     llmModel,
     blocksListText,
@@ -855,6 +876,7 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     explanation_profile: cfg.explanation_profile,
     gap_focus: cfg.gap_focus,
     include_connection_questions: cfg.include_connection_questions,
+    sectionHasImages,
   };
 
   let obj = null;
@@ -4142,7 +4164,7 @@ async function persistActiveRsvpSlice(slice, { bumpRev } = {}) {
   if (!slice.studyMode) slice.studyMode = mode;
 
   const doc = await getActiveDocumentSession();
-  if (doc?.docId && (mode === "rsvp" || mode === "questions")) {
+  if (doc?.docId && (mode === "rsvp" || mode === "questions" || mode === "read")) {
     const result = await writeThroughModeSlice(doc, mode, slice);
     if (!result.ok) notifyPersistFailure(result.error);
     return result;
