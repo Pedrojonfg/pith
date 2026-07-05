@@ -32,6 +32,7 @@ import {
   inferDocMeta,
   normalizeConceptLabel,
   normalizeMarkdownForHash,
+  normalizeScopeSelection,
   PROJECT_STORE_SCHEMA,
   validateDocumentSession,
 } from "./session-types.js";
@@ -177,7 +178,9 @@ function normalizeSessionModes(session) {
 }
 
 function normalizeLoadedSession(session) {
-  return migrateSessionV3(normalizeSessionModes(normalizeSessionSmItems(session)));
+  return migrateSessionV4(
+    migrateSessionV3(normalizeSessionModes(normalizeSessionSmItems(session))),
+  );
 }
 
 function migrateSessionV3(session) {
@@ -240,6 +243,47 @@ function migrateSessionV3(session) {
   if (version < 3) {
     changed = true;
     session.schemaVersion = 3;
+  }
+  return changed ? { ...session, shared: sh } : session;
+}
+
+function migrateSessionV4(session) {
+  if (!session?.shared) return session;
+  let changed = false;
+  const sh = session.shared;
+
+  if (!("scopeSelection" in sh)) {
+    sh.scopeSelection = null;
+    changed = true;
+  } else if (sh.scopeSelection != null) {
+    const normalized = normalizeScopeSelection(sh.scopeSelection);
+    if (JSON.stringify(normalized) !== JSON.stringify(sh.scopeSelection)) {
+      sh.scopeSelection = normalized;
+      changed = true;
+    }
+  }
+
+  const rawMd = typeof sh.rawMarkdown === "string" ? sh.rawMarkdown : "";
+  if (!("scopedMarkdown" in sh) || (sh.scopedMarkdown == null && rawMd)) {
+    sh.scopedMarkdown = rawMd;
+    changed = true;
+  }
+
+  if (!("scopeContext" in sh)) {
+    sh.scopeContext = null;
+    changed = true;
+  }
+
+  if (!("scopeResolvedAt" in sh)) {
+    const hasInventory = Array.isArray(sh.conceptInventory) && sh.conceptInventory.length > 0;
+    sh.scopeResolvedAt = hasInventory ? (session.updatedAt || Date.now()) : null;
+    changed = true;
+  }
+
+  const version = Number(session.schemaVersion) || 2;
+  if (version < 4) {
+    changed = true;
+    session.schemaVersion = 4;
   }
   return changed ? { ...session, shared: sh } : session;
 }
@@ -332,12 +376,16 @@ export async function createSession(rawMarkdown, options = {}) {
   }
   const session = {
     docId,
-    schemaVersion: 3,
+    schemaVersion: 4,
     ...(options.projectId ? { projectId: String(options.projectId) } : {}),
     createdAt: now,
     updatedAt: now,
     shared: {
       rawMarkdown: markdown,
+      scopedMarkdown: markdown,
+      scopeSelection: null,
+      scopeContext: null,
+      scopeResolvedAt: null,
       docMeta: inferDocMeta(markdown),
       docHierarchy: null,
       conceptInventory: [],

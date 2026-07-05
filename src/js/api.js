@@ -686,8 +686,23 @@ export async function deepSeekSocraticTutor({
   blockTitle,
   question,
   studentAnswer,
+  scopedMarkdown = "",
+  backgroundMarkdown = "",
+  scopeContext = "",
 }) {
+  // R14: generative DPP contracts stay scoped-only; dual-context is chat-only.
+  let scopeBlock = "";
+  if (scopedMarkdown && backgroundMarkdown) {
+    scopeBlock =
+      `\n\nIN SCOPE — what the student is studying:\n${scopedMarkdown}\n\n` +
+      `BACKGROUND CONTEXT — not part of the student's study material:\n${backgroundMarkdown}`;
+    if (scopeContext) scopeBlock += `\n\nScope note: ${scopeContext}`;
+    scopeBlock +=
+      "\n\nIf your answer draws on BACKGROUND CONTEXT, prefix the sentence with [OUT_OF_SCOPE].";
+  }
+
   const systemPrompt = `You are a Socratic tutor. The student just studied this block: {block.title}.
+${scopeBlock}
 
 Structure your reply in two parts (use these exact headings, in the same language as the question):
 
@@ -716,6 +731,50 @@ Be concise overall. Respond in the same language as the question and student ans
     ],
     temperature: 0.6,
   });
+}
+
+/** Max output tokens for scope context blurb (1–3 sentences). */
+const SCOPE_CONTEXT_MAX_TOKENS = 150;
+
+/**
+ * Generate a short blurb describing selected scope within the full document.
+ * @param {{ llmModel?: string, docHierarchy: object, selectedTitles: string[], language?: string }} params
+ */
+export async function generateScopeContext({
+  llmModel,
+  docHierarchy,
+  selectedTitles,
+  language = "English",
+}) {
+  const titles = (Array.isArray(selectedTitles) ? selectedTitles : [])
+    .map((t) => String(t).trim())
+    .filter(Boolean);
+  if (!titles.length) return "";
+  const structureLines = [];
+  const walk = (nodes, depth = 0) => {
+    for (const node of nodes || []) {
+      structureLines.push(`${"  ".repeat(depth)}- ${node.title}`);
+      if (node.children?.length) walk(node.children, depth + 1);
+    }
+  };
+  walk(docHierarchy?.tree || []);
+  const systemPrompt =
+    "You write 1–3 concise sentences explaining what the full document is about and " +
+    "what role the user's selected sections play within it. No bullet lists. " +
+    `Respond in ${language}.`;
+  const userPrompt =
+    `Document outline:\n${structureLines.join("\n")}\n\n` +
+    `Selected sections:\n${titles.map((t) => `- ${t}`).join("\n")}`;
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.4,
+    max_tokens: SCOPE_CONTEXT_MAX_TOKENS,
+  });
+  return String(raw || "").trim();
 }
 
 export async function deepSeekSummarySoFar({ llmModel, apiKey: _legacyApiKey, language, userPrompt }) {

@@ -55,6 +55,8 @@ import {
   isTier1PreparationComplete,
   hasTier1Artifacts,
   hasTier1GateArtifacts,
+  isScopeStructureReady,
+  resolveScopedMarkdown,
   setPreparationStatus,
 } from "./session-types.js";
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
@@ -148,6 +150,8 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
   return summary;
 }
 
+/** Phases through T1.1 — structure ready for universal scope gate. */
+const SCOPE_PRE_PHASE_IDS = ["T0.1", "T0.2", "T1.1"];
 const TIER1_PHASES = new Set(["T1.1", "T1.2", "T1.3", "T1.4", "T1.5", "T1.6", "T1.7", "T1.8", "T1.9"]);
 /** Gate-critical Tier 1 — unlocks assessment gate (T1.5 runs after gate). */
 const TIER1_GATE_PHASE_IDS = ["T0.1", "T0.2", "T1.1", "T1.2", "T1.4"];
@@ -205,10 +209,19 @@ function djb2Hex(str) {
  * @param {{ studyNotes?: string }} [options]
  */
 export function computePreparationFingerprint(doc, options = {}) {
-  const markdown = String(doc?.shared?.rawMarkdown || "");
+  const markdown = resolveScopedMarkdown(doc) || String(doc?.shared?.rawMarkdown || "");
   const notes = String(options.studyNotes ?? "").trim();
   const normalized = normalizeMarkdownForHash(markdown);
   return djb2Hex(`${normalized}#${notes}`);
+}
+
+function getRawMarkdown(doc) {
+  return String(doc?.shared?.rawMarkdown || "").trim();
+}
+
+/** Study material for T1.2+ — scoped when user restricted scope. */
+function getStudyMarkdown(doc) {
+  return resolveScopedMarkdown(doc).trim();
 }
 
 function hashPayload(value) {
@@ -217,10 +230,6 @@ function hashPayload(value) {
   } catch {
     return djb2Hex(String(value));
   }
-}
-
-function getMarkdown(doc) {
-  return String(doc?.shared?.rawMarkdown || "").trim();
 }
 
 /** Finalize preparation status and persist — sole exit write for a DPP run. */
@@ -293,7 +302,7 @@ function resolveFinalStatus(prep, doc, stopAfterTier) {
 }
 
 async function runPhaseT01(doc, ctx) {
-  const text = getMarkdown(doc);
+  const text = getRawMarkdown(doc);
   if (!text) throw new Error("T0.1: empty document");
   console.info("[document-preparation.runPhaseT01] Normalized markdown present:", {
     docId: doc.docId,
@@ -305,7 +314,7 @@ async function runPhaseT01(doc, ctx) {
 }
 
 async function runPhaseT02(doc, ctx) {
-  const metrics = analyzeText(getMarkdown(doc));
+  const metrics = analyzeText(getRawMarkdown(doc));
   doc.shared.textMetrics = metrics;
   console.info("[document-preparation.runPhaseT02] Text metrics:", {
     docId: doc.docId,
@@ -318,7 +327,7 @@ async function runPhaseT02(doc, ctx) {
 }
 
 async function runPhaseT11(doc, ctx) {
-  const text = getMarkdown(doc);
+  const text = getRawMarkdown(doc);
   const hierarchy = await buildDocumentHierarchyWithLlm(text, {
     useCache: true,
     llmModel: ctx.llmModel,
@@ -370,7 +379,7 @@ async function runPhaseT12(doc, ctx) {
     await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(inv.length);
   }
-  const text = getMarkdown(doc);
+  const text = getStudyMarkdown(doc);
   const charCount =
     Number(doc.shared?.docMeta?.charCount) ||
     Number(doc.shared?.textMetrics?.charCount) ||
@@ -422,7 +431,7 @@ async function runPhaseT12(doc, ctx) {
     prep.failReason = null;
   }
   if (inventory.length && isDeterministicFactualQuestionsEnabled()) {
-    const sourceText = getMarkdown(doc);
+    const sourceText = getStudyMarkdown(doc);
     const flags = getPedagogicalFlags();
     const { inventory: classified, ambiguous } = classifyInventoryHeuristic(
       inventory,
@@ -442,7 +451,7 @@ async function runPhaseT12(doc, ctx) {
 }
 
 async function runPhaseT13(doc, ctx) {
-  const graph = await generateEpistemicGraph(getMarkdown(doc), {
+  const graph = await generateEpistemicGraph(getStudyMarkdown(doc), {
     llmModel: ctx.llmModel,
     signal: ctx.signal,
   });
@@ -453,7 +462,7 @@ async function runPhaseT13(doc, ctx) {
 
 async function runPhaseT14(doc) {
   const inventory = doc.shared.conceptInventory || [];
-  const textMetrics = doc.shared.textMetrics || analyzeText(getMarkdown(doc));
+  const textMetrics = doc.shared.textMetrics || analyzeText(getStudyMarkdown(doc));
   const hierarchy = doc.shared.docHierarchy;
   const pedagogicalMeta =
     hierarchy?.pedagogical_meta || buildDeterministicPedagogicalMeta(textMetrics);
@@ -488,7 +497,7 @@ async function runPhaseT15(doc, ctx) {
  * @param {{ knowledgeProfile?: object | null, force?: boolean }} [options]
  */
 export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
-  const text = getMarkdown(doc);
+  const text = getStudyMarkdown(doc);
   const textMetrics = doc.shared.textMetrics || analyzeText(text);
   const hierarchy = doc.shared.docHierarchy;
   const pedagogicalMeta =
@@ -643,7 +652,7 @@ async function runPhaseT19(doc) {
 }
 
 async function runPhaseT21(doc, ctx) {
-  const text = getMarkdown(doc);
+  const text = getStudyMarkdown(doc);
   const meta = doc.shared?.uploadMeta || {};
   const session = {
     studyMode: "cloze",
@@ -730,7 +739,7 @@ async function runPhaseT23(doc, ctx) {
   if (isInterviewOriginSession(doc)) {
     return hashPayload("skipped-interview-origin");
   }
-  const text = getMarkdown(doc);
+  const text = getStudyMarkdown(doc);
   const meta = doc.shared?.uploadMeta || {};
   const slowSession = {
     studyMode: "slow",
@@ -772,8 +781,9 @@ const PHASE_RUNNERS = {
   "T2.3": runPhaseT23,
 };
 
-function phasesForStopTier(stopAfterTier) {
+function phasesForStopTier(stopAfterTier, options = {}) {
   const all = Object.keys(PHASE_RUNNERS);
+  if (options.stopAfterScopeGate) return [...SCOPE_PRE_PHASE_IDS];
   if (stopAfterTier <= 0) return all.filter((id) => id.startsWith("T0."));
   if (stopAfterTier === 1) return [...TIER1_GATE_PHASE_IDS];
   return all;
@@ -883,7 +893,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     };
   }
 
-  const phaseIds = phasesForStopTier(stopAfterTier);
+  const phaseIds = phasesForStopTier(stopAfterTier, options);
   const waves = buildWaves(phaseIds);
   prep.waves = waves.map((phaseIdsInWave, i) => ({ wave: i + 1, phaseIds: phaseIdsInWave }));
   let tier1CheckpointDone = false;
@@ -1053,6 +1063,8 @@ export function getPreparationBadgeLabel(doc) {
 const TIER2_PHASE_IDS = ["T2.1", "T2.2", "T2.3"];
 /** @type {Map<string, Promise<{ doc?: object } | object>>} */
 const tier1InFlight = new Map();
+/** @type {Map<string, Promise<{ doc?: object } | object>>} */
+const scopeStructureInFlight = new Map();
 
 function tier2PhasesPending(doc, fingerprint) {
   const prep = ensurePreparation(doc);
@@ -1062,6 +1074,33 @@ function tier2PhasesPending(doc, fingerprint) {
 function deferredTier1PhasesPending(doc, fingerprint) {
   const prep = ensurePreparation(doc);
   return TIER1_DEFERRED_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
+}
+
+/**
+ * Await T0.1–T1.1 only (structure for universal scope picker).
+ * @param {object} doc
+ * @param {object} [options]
+ */
+export async function ensureScopeStructurePreparation(doc, options = {}) {
+  if (!doc?.docId) return null;
+  if (isScopeStructureReady(doc)) return doc;
+  const docId = doc.docId;
+  let flight = scopeStructureInFlight.get(docId);
+  if (!flight) {
+    flight = runDocumentPreparationPipeline(doc, {
+      ...options,
+      stopAfterScopeGate: true,
+    }).finally(() => {
+      scopeStructureInFlight.delete(docId);
+    });
+    scopeStructureInFlight.set(docId, flight);
+  }
+  const result = await flight;
+  const prepared = result?.doc ?? doc;
+  let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
+  reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
+  hydrateCallerDocFromPrepared(doc, reconciled);
+  return reconciled;
 }
 
 /**

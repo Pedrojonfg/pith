@@ -10,6 +10,7 @@ import {
   synthesizeAssessmentGaps,
   generatePrePackingAssessmentItems,
   generateHolisticPrePackingAssessmentItems,
+  generateScopeContext,
   buildInventoryChunks,
   evaluatePrePackingAssessmentResponses,
   extractVaultCandidates,
@@ -76,6 +77,7 @@ import {
   runDocumentPreparationPipeline,
   PHASE_LABELS,
   ensureTier1Preparation,
+  ensureScopeStructurePreparation,
   kickoffTier2PreparationInBackground,
   hasPendingTier2Preparation,
   runPostCacheUserPhases,
@@ -114,7 +116,9 @@ import {
 } from "./interview/origin.js";
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
-import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, setPreparationStatus } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, isScopeGateResolved, isScopeStructureReady, resolveChatScopeFields, setPreparationStatus } from "./session-types.js";
+import { setGuideScopeFromDocument } from "./guide-chat.js";
+import { buildScopedMarkdown, buildScopeSelection, listSelectableHierarchyNodes } from "./scope-selection.js";
 import { MAX_SOURCE_FILES, sliceMarkdownForSourceFile } from "./source-provenance.js";
 import {
   resolveRsvpInventoryForPack,
@@ -806,6 +810,149 @@ function showDocumentPreparingScreen(initialLabel = "Processing document…") {
   showScreen("reviewGenerating");
 }
 
+/** @type {Set<string>} */
+let scopePickerSelectedIds = new Set();
+let scopePickerFullDocument = true;
+
+function renderScopeSelectionScreen(doc) {
+  const sh = doc?.shared;
+  if (!sh) return;
+  const raw = String(sh.rawMarkdown || "");
+  const entries = listSelectableHierarchyNodes(sh.docHierarchy?.tree || []);
+  const listEl = els.scopeSelectionList;
+  if (!listEl) return;
+  listEl.innerHTML = "";
+
+  scopePickerFullDocument = sh.scopeSelection == null;
+  scopePickerSelectedIds = new Set(sh.scopeSelection?.sectionIds || []);
+
+  for (const { node, id } of entries) {
+    const li = document.createElement("li");
+    const label = document.createElement("label");
+    label.className = "scope-selection-item";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = id;
+    cb.checked = scopePickerFullDocument || scopePickerSelectedIds.has(id);
+    cb.disabled = scopePickerFullDocument;
+    cb.addEventListener("change", () => {
+      scopePickerFullDocument = false;
+      if (cb.checked) scopePickerSelectedIds.add(id);
+      else scopePickerSelectedIds.delete(id);
+      updateScopeSelectionUi(doc, raw);
+    });
+    const span = document.createElement("span");
+    span.textContent = `${node.title} (${formatCharCount(node.endOffset - node.startOffset)})`;
+    label.append(cb, span);
+    li.appendChild(label);
+    listEl.appendChild(li);
+  }
+
+  updateScopeSelectionUi(doc, raw);
+}
+
+function updateScopeSelectionUi(doc, rawMarkdown) {
+  const raw = rawMarkdown || String(doc?.shared?.rawMarkdown || "");
+  let charCount = raw.length;
+  let canConfirm = scopePickerFullDocument;
+
+  if (!scopePickerFullDocument) {
+    const ids = [...scopePickerSelectedIds];
+    const built = buildScopedMarkdown(raw, doc?.shared?.docHierarchy, ids);
+    charCount = built.scopedMarkdown.length;
+    canConfirm = ids.length > 0 && charCount > 0;
+    for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
+      cb.disabled = false;
+    }
+  } else {
+    for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
+      cb.disabled = true;
+      cb.checked = true;
+    }
+  }
+
+  if (els.scopeSelectionCharCount) {
+    els.scopeSelectionCharCount.textContent = scopePickerFullDocument
+      ? `Entire document (${formatCharCount(charCount)} characters)`
+      : `Selected scope: ${formatCharCount(charCount)} characters`;
+  }
+  if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = !canConfirm;
+}
+
+async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
+  const raw = String(doc.shared?.rawMarkdown || "");
+  if (fullDocument) {
+    doc.shared.scopeSelection = null;
+    doc.shared.scopedMarkdown = raw;
+    doc.shared.scopeContext = null;
+  } else {
+    const ids = (sectionIds || []).map((id) => String(id).trim()).filter(Boolean);
+    const { scopedMarkdown } = buildScopedMarkdown(raw, doc.shared.docHierarchy, ids);
+    doc.shared.scopedMarkdown = scopedMarkdown;
+    doc.shared.scopeSelection = buildScopeSelection(raw, doc.shared.docHierarchy, ids);
+    const titleById = new Map(
+      listSelectableHierarchyNodes(doc.shared.docHierarchy?.tree || []).map((e) => [
+        e.id,
+        e.node.title,
+      ]),
+    );
+    const selectedTitles = ids.map((id) => titleById.get(id)).filter(Boolean);
+    try {
+      doc.shared.scopeContext = await generateScopeContext({
+        llmModel: getSessionLlmModel(),
+        docHierarchy: doc.shared.docHierarchy,
+        selectedTitles,
+        language: getStudyLanguage(),
+      });
+    } catch (err) {
+      console.warn("[scope] scopeContext generation failed:", err?.message || err);
+      doc.shared.scopeContext = null;
+    }
+  }
+  doc.shared.scopeResolvedAt = Date.now();
+  doc.updatedAt = Date.now();
+  setGuideScopeFromDocument(doc);
+  await saveDocumentSession(doc);
+}
+
+async function maybeEnterScopeSelectionGate(doc) {
+  if (isScopeGateResolved(doc)) return false;
+  if (!isScopeStructureReady(doc)) return false;
+  renderScopeSelectionScreen(doc);
+  showScreen("scopeSelection");
+  return true;
+}
+
+function wireScopeSelectionHandlers() {
+  if (els.scopeSelectionFullBtn?._wired) return;
+  if (els.scopeSelectionFullBtn) els.scopeSelectionFullBtn._wired = true;
+
+  els.scopeSelectionFullBtn?.addEventListener("click", async () => {
+    const doc = await getActiveSession();
+    if (!doc) return;
+    scopePickerFullDocument = true;
+    scopePickerSelectedIds = new Set();
+    updateScopeSelectionUi(doc, doc.shared?.rawMarkdown);
+  });
+
+  els.scopeSelectionConfirmBtn?.addEventListener("click", async () => {
+    const doc = await getActiveSession();
+    if (!doc) return;
+    if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = true;
+    try {
+      await applyScopeSelectionToDoc(doc, {
+        fullDocument: scopePickerFullDocument,
+        sectionIds: [...scopePickerSelectedIds],
+      });
+      const refreshed = (await getActiveSession()) || doc;
+      await enterModeSelectAfterTier1Gate(refreshed);
+    } catch (err) {
+      console.error("[scope] confirm failed:", err);
+      if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = false;
+    }
+  });
+}
+
 async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   let doc = null;
   if (preparedDoc?.docId) {
@@ -842,6 +989,19 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     enterModeSelectScreen();
     return;
   }
+
+  if (!isScopeStructureReady(doc)) {
+    showDocumentPreparingScreen("Analyzing document structure…");
+    doc = await ensureScopeStructurePreparation(doc, {
+      ...preparationGateOptions((msg) => {
+        if (els.reviewGeneratingLabel) {
+          els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+        }
+      }),
+    });
+  }
+
+  if (await maybeEnterScopeSelectionGate(doc)) return;
 
   if (guard.decision === "waiting") {
     showDocumentPreparingScreen("Document preparation in progress…");
@@ -948,6 +1108,7 @@ function shouldOfferSharedAssessmentGate(doc) {
 }
 
 async function finalizeModeSelectEntry(doc) {
+  setGuideScopeFromDocument(doc);
   console.info("[study.finalizeModeSelectEntry] Start:", {
     docId: doc?.docId || null,
     hasModeRec: Boolean(doc?.shared?.modeRecommendation),
@@ -1632,7 +1793,7 @@ export function createSlowSession({
       normalizedTextFull: String(normalizedText || ""),
       normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
       readingScope: null,
-      phase: "scope",
+      phase: "phase0",
       criticalMode: Boolean(criticalMode),
       fillableMapMode: false,
       checkpointsEnabled: true,
@@ -3494,11 +3655,13 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
       slice.docHierarchy = doc.shared.docHierarchy;
       await storeActiveSession(slice);
     }
+    slice.slow.phase = "phase0";
+    slice.slow.readingScope = null;
+    prepareSlowPhase0Entry(slice);
     setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
     updateCreateScreenModeVisibility(mode);
-    showScreen("slowScope");
-    renderSlowScopeScreen(slice);
+    enterSlowPhase0(slice);
     return;
   }
 
@@ -3799,7 +3962,10 @@ async function resumeSlowSession(session) {
   state.studyMode = "slow";
   await storeActiveSession(session);
   if (String(session?.slow?.phase || "") === "scope") {
-    renderSlowScopeScreen(session);
+    session.slow.phase = "phase0";
+    prepareSlowPhase0Entry(session);
+    enterSlowPhase0(session);
+    return;
   }
   if (String(session?.slow?.phase || "") === "phase0") {
     enterSlowPhase0(session);
@@ -4683,7 +4849,13 @@ async function wireSlowPhase0Handlers() {
 
 function prepareSlowPhase0Entry(session) {
   const slow = session?.slow;
-  if (!slow?.readingScope) return;
+  if (!slow) return;
+  if (els.slowPhase0FillableMap) {
+    slow.fillableMapMode = Boolean(els.slowPhase0FillableMap.checked);
+  }
+  if (els.slowPhase0Checkpoints) {
+    slow.checkpointsEnabled = Boolean(els.slowPhase0Checkpoints.checked);
+  }
   const seenKey = getPhase0SeenKeyForSession(session);
   slow.phase0SeenKey = seenKey;
   slow.phase0SeenReread = isPhase0Reread(seenKey);
@@ -9127,6 +9299,7 @@ export async function wireStudyHandlers() {
   });
   els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());
   wireSlowScopeHandlers();
+  wireScopeSelectionHandlers();
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
   wireMaterialGraphHandlers();
@@ -10196,11 +10369,14 @@ export async function wireStudyHandlers() {
     setSocraticLoading(true);
     els.socraticStatus.textContent = getLlmCallingLabel(llmModel);
     try {
+      const doc = await getActiveSession();
+      const scopeFields = resolveChatScopeFields(doc);
       const resp = await deepSeekSocraticTutor({
         llmModel,
         blockTitle: String(block.title || `Block ${state.activeBlockIndex + 1}`),
         question: String(q.question),
         studentAnswer: answer,
+        ...scopeFields,
       });
 
       els.socraticResponseBox.hidden = false;

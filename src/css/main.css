@@ -3852,3 +3852,33 @@ button[disabled],
     transition-duration: 0.01ms !important;
   }
 }
+
+.scope-selection-screen {
+  padding: var(--space-lg);
+  max-width: 42rem;
+}
+
+.scope-selection-shell h1 {
+  margin-bottom: var(--space-sm);
+}
+
+.scope-selection-list {
+  list-style: none;
+  margin: var(--space-md) 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.scope-selection-item {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  padding: var(--space-xs) 0;
+  cursor: pointer;
+}
+
+.scope-selection-actions {
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
