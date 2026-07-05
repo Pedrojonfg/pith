@@ -2,6 +2,10 @@ import { LS_ACTIVE_DOC_ID_KEY, LS_DOC_SESSIONS_KEY, LS_DOC_TEXT_PREFIX } from ".
 import { getOAuthRedirectUrl } from "./config/supabase.js";
 import { supabase } from "./supabase-client.js";
 import { upsertSessionRow, uploadMarkdown, getAuthUserId } from "./session-persist-supabase.js";
+import {
+  hydrateUserStoresFromSupabase,
+  migrateUserStoresToSupabase,
+} from "./user-store-sync.js";
 import { validateDocumentSession } from "./session-types.js";
 
 const MIGRATION_FLAG = "pith_supabase_migrated";
@@ -41,17 +45,9 @@ function docTextKey(docId) {
   return `${LS_DOC_TEXT_PREFIX}${docId}`;
 }
 
-/**
- * One-time localStorage → Supabase migration after first authenticated boot.
- */
-export async function migrateLocalStorageToSupabase() {
-  if (localStorage.getItem(MIGRATION_FLAG) === "true") return;
-
+async function migrateLegacySessions(userId) {
   const raw = localStorage.getItem(LS_DOC_SESSIONS_KEY);
-  if (!raw?.trim()) {
-    localStorage.setItem(MIGRATION_FLAG, "true");
-    return;
-  }
+  if (!raw?.trim()) return;
 
   let sessions = [];
   try {
@@ -59,11 +55,8 @@ export async function migrateLocalStorageToSupabase() {
     if (!Array.isArray(sessions)) sessions = [];
   } catch (err) {
     console.warn("[auth] corrupt local sessions during migration", err);
-    localStorage.setItem(MIGRATION_FLAG, "true");
     return;
   }
-
-  const userId = await getAuthUserId();
 
   for (const session of sessions) {
     if (!session?.docId) continue;
@@ -90,6 +83,25 @@ export async function migrateLocalStorageToSupabase() {
       await upsertSessionRow(userId, docId, clone, null);
     }
   }
+}
 
-  localStorage.setItem(MIGRATION_FLAG, "true");
+/**
+ * One-time localStorage → Supabase migration after first authenticated boot.
+ * Store migrations run idempotently on every boot (handles users who migrated sessions earlier).
+ */
+export async function migrateLocalStorageToSupabase() {
+  let userId;
+  try {
+    userId = await getAuthUserId();
+  } catch {
+    return;
+  }
+
+  if (localStorage.getItem(MIGRATION_FLAG) !== "true") {
+    await migrateLegacySessions(userId);
+    localStorage.setItem(MIGRATION_FLAG, "true");
+  }
+
+  await migrateUserStoresToSupabase();
+  await hydrateUserStoresFromSupabase(userId);
 }

@@ -5767,7 +5767,7 @@ let persistHealthDismissed = false;
 
 async function syncPersistenceHealthBanner() {
   const doc = await getActiveSession();
-  const health = computePersistenceHealth(doc);
+  const health = await computePersistenceHealth(doc);
   const banners = [
     {
       el: document.getElementById("persistHealthBanner"),

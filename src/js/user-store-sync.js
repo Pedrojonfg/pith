@@ -1,0 +1,246 @@
+import {
+  LS_ACTIVE_DOC_ID_KEY,
+  LS_DOC_BLOCKS_PREFIX,
+  LS_DOC_RESPONSES_PREFIX,
+  LS_PROJECTS_KEY,
+} from "./config.js";
+import { getAuthUserId } from "./session-persist-supabase.js";
+import {
+  fetchUserConceptRegistry,
+  fetchUserPrefs,
+  fetchUserProjects,
+  fetchUserVault,
+  uploadBlocksJson,
+  uploadResponsesJson,
+  upsertUserConceptRegistry,
+  upsertUserPrefs,
+  upsertUserProjects,
+  upsertUserVault,
+} from "./user-data-persist-supabase.js";
+import { isOfflineMode } from "./offline.js";
+
+const REGISTRY_STORAGE_KEY = "mylearning_concept_registry";
+const VAULT_STORAGE_KEY = "pith_knowledge_vault";
+const VAULT_DATA_KEY = "pith_knowledge_vault_data";
+
+/** @type {Promise<void>} */
+let syncQueue = Promise.resolve();
+
+/**
+ * @param {() => Promise<void>} fn
+ */
+export function scheduleUserDataSync(fn) {
+  syncQueue = syncQueue
+    .then(fn)
+    .catch((err) => console.warn("[user-store-sync]", err));
+}
+
+async function tryGetUserId() {
+  try {
+    return await getAuthUserId();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} userId
+ */
+export async function hydrateUserStoresFromSupabase(userId) {
+  const uid = userId || (await tryGetUserId());
+  if (!uid) return;
+
+  const projects = await fetchUserProjects(uid);
+  if (projects?.data) {
+    localStorage.setItem(LS_PROJECTS_KEY, JSON.stringify(projects.data));
+  }
+
+  const vault = await fetchUserVault(uid);
+  if (vault?.data) {
+    hydrateVaultLocal(vault.data);
+  }
+
+  const registry = await fetchUserConceptRegistry(uid);
+  if (registry?.data) {
+    localStorage.setItem(REGISTRY_STORAGE_KEY, JSON.stringify(registry.data));
+  }
+
+  const prefs = await fetchUserPrefs(uid);
+  if (prefs?.active_doc_id) {
+    localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, prefs.active_doc_id);
+  }
+}
+
+/**
+ * Restore vault meta + optional externalized entries into localStorage.
+ * @param {object} data merged vault from loadVault-shaped payload
+ */
+export function hydrateVaultLocal(data) {
+  if (!data || typeof data !== "object") return;
+  const entries = Array.isArray(data.entries) ? data.entries : [];
+  const meta = { ...data };
+  delete meta.entries;
+
+  const inline = JSON.stringify({ ...meta, entries });
+  const threshold = 300 * 1024;
+  if (inline.length > threshold) {
+    localStorage.setItem(VAULT_DATA_KEY, JSON.stringify(entries));
+    localStorage.setItem(
+      VAULT_STORAGE_KEY,
+      JSON.stringify({
+        ...meta,
+        entriesRef: { storageKey: VAULT_DATA_KEY, entryCount: entries.length },
+      }),
+    );
+  } else {
+    try {
+      localStorage.removeItem(VAULT_DATA_KEY);
+    } catch {
+      // ignore
+    }
+    localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify({ ...meta, entries }));
+  }
+}
+
+export function scheduleProjectsSync(store) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId || !store) return;
+    await upsertUserProjects(userId, store, store.schemaVersion || 1);
+  });
+}
+
+export function scheduleVaultSync(vaultData) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId || !vaultData) return;
+    await upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3);
+  });
+}
+
+export function scheduleRegistrySync(registryData) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId || !registryData) return;
+    await upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2);
+  });
+}
+
+export function scheduleActiveDocSync(docId) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId) return;
+    await upsertUserPrefs(userId, docId || null);
+  });
+}
+
+export function scheduleBlocksUpload(docId, blocksJson) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId || !docId || !blocksJson) return;
+    await uploadBlocksJson(userId, docId, blocksJson);
+  });
+}
+
+export function scheduleResponsesUpload(docId, respJson) {
+  if (isOfflineMode()) return;
+  scheduleUserDataSync(async () => {
+    const userId = await tryGetUserId();
+    if (!userId || !docId || !respJson) return;
+    await uploadResponsesJson(userId, docId, respJson);
+  });
+}
+
+/**
+ * Idempotent local→remote for users who migrated sessions before this feature.
+ */
+export async function migrateUserStoresToSupabase() {
+  const userId = await tryGetUserId();
+  if (!userId) return;
+
+  const localProjects = localStorage.getItem(LS_PROJECTS_KEY);
+  if (localProjects?.trim()) {
+    const remote = await fetchUserProjects(userId);
+    if (!remote?.data) {
+      try {
+        await upsertUserProjects(userId, JSON.parse(localProjects), 1);
+      } catch (err) {
+        console.warn("[user-store-sync] projects migration failed", err);
+      }
+    }
+  }
+
+  const localVault = localStorage.getItem(VAULT_STORAGE_KEY);
+  if (localVault?.trim()) {
+    const remote = await fetchUserVault(userId);
+    if (!remote?.data) {
+      try {
+        const meta = JSON.parse(localVault);
+        let entries = Array.isArray(meta.entries) ? meta.entries : [];
+        if (meta.entriesRef?.storageKey) {
+          const ext = localStorage.getItem(meta.entriesRef.storageKey);
+          if (ext) entries = JSON.parse(ext);
+        }
+        await upsertUserVault(userId, { ...meta, entries }, meta.schemaVersion || 3);
+      } catch (err) {
+        console.warn("[user-store-sync] vault migration failed", err);
+      }
+    }
+  }
+
+  const localRegistry = localStorage.getItem(REGISTRY_STORAGE_KEY);
+  if (localRegistry?.trim()) {
+    const remote = await fetchUserConceptRegistry(userId);
+    if (!remote?.data) {
+      try {
+        await upsertUserConceptRegistry(userId, JSON.parse(localRegistry), 2);
+      } catch (err) {
+        console.warn("[user-store-sync] registry migration failed", err);
+      }
+    }
+  }
+
+  const activeDoc = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
+  if (activeDoc?.trim()) {
+    const remote = await fetchUserPrefs(userId);
+    if (!remote?.active_doc_id) {
+      try {
+        await upsertUserPrefs(userId, activeDoc);
+      } catch (err) {
+        console.warn("[user-store-sync] prefs migration failed", err);
+      }
+    }
+  }
+
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (key.startsWith(LS_DOC_BLOCKS_PREFIX)) {
+      const docId = key.slice(LS_DOC_BLOCKS_PREFIX.length);
+      const json = localStorage.getItem(key);
+      if (docId && json) {
+        try {
+          await uploadBlocksJson(userId, docId, json);
+        } catch (err) {
+          console.warn(`[user-store-sync] blocks migration ${docId} failed`, err);
+        }
+      }
+    }
+    if (key.startsWith(LS_DOC_RESPONSES_PREFIX)) {
+      const docId = key.slice(LS_DOC_RESPONSES_PREFIX.length);
+      const json = localStorage.getItem(key);
+      if (docId && json) {
+        try {
+          await uploadResponsesJson(userId, docId, json);
+        } catch (err) {
+          console.warn(`[user-store-sync] responses migration ${docId} failed`, err);
+        }
+      }
+    }
+  }
+}
