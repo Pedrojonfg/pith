@@ -6,6 +6,7 @@
 export const PROJECT_ERROR_CYCLE = "Cannot move a project into its own subproject";
 export const PROJECT_ERROR_DELETE_BLOCKED =
   "Move subprojects and documents out before deleting";
+export const PROJECT_ERROR_PROTECTED = "This project cannot be deleted";
 export const PROJECT_ERROR_EMPTY_NAME = "Project name cannot be empty";
 export const PROJECT_ERROR_INVALID_PROJECT = "Project not found";
 
@@ -210,6 +211,44 @@ export function deleteProject(store, id, sessions) {
     return { ok: false, error: PROJECT_ERROR_DELETE_BLOCKED };
   }
   store.projects = (store.projects || []).filter((p) => p?.id !== id);
+  return { ok: true };
+}
+
+/**
+ * Plan cascade delete: all descendant projects and assigned sessions.
+ * @param {import("./session-types.js").ProjectStore} store
+ * @param {string} id
+ * @param {object[]} sessions
+ * @returns {{ ok: true, projectIds: string[], sessionIds: string[] }|{ ok: false, error: string }}
+ */
+export function planProjectDeletion(store, id, sessions) {
+  const pid = String(id || "").trim();
+  if (!pid) return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
+  if (pid === "misc") return { ok: false, error: PROJECT_ERROR_PROTECTED };
+  const project = getProject(store, pid);
+  if (!project) return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
+
+  const projectIds = getDescendantIds(store, pid, { includeSelf: true });
+  const sortedProjectIds = [...projectIds].sort(
+    (a, b) =>
+      getDescendantIds(store, a, { includeSelf: true }).length -
+      getDescendantIds(store, b, { includeSelf: true }).length,
+  );
+  const sessionIds = getSessionsByProject(store, sessions, pid, { includeDescendants: true }).map(
+    (s) => String(s?.docId || "").trim(),
+  ).filter(Boolean);
+  return { ok: true, projectIds: sortedProjectIds, sessionIds };
+}
+
+/**
+ * Remove project rows after sessions are deleted.
+ * @param {import("./session-types.js").ProjectStore} store
+ * @param {string[]} projectIds — leaf-first order from planProjectDeletion
+ */
+export function commitProjectDeletion(store, projectIds) {
+  const remove = new Set((projectIds || []).map((id) => String(id).trim()).filter(Boolean));
+  if (!remove.size) return { ok: false, error: PROJECT_ERROR_INVALID_PROJECT };
+  store.projects = (store.projects || []).filter((p) => !remove.has(p?.id));
   return { ok: true };
 }
 

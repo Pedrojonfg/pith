@@ -1,9 +1,9 @@
 import { isPwaStandalone } from "./pwa-install.js";
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260625_02";
 import {
-  getAssessmentBeforePackingPreference,
+  getSharedAssessmentGatePreference,
   getSourceFidelityStrictPreference,
-  saveAssessmentBeforePackingPreference,
+  saveSharedAssessmentGatePreference,
 } from "./config/flags.js";
 import { renderMarkdown } from "./markdown.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
@@ -426,6 +426,7 @@ export const els = {
   btnNewProject: document.getElementById("btnNewProject"),
   btnNewSubproject: document.getElementById("btnNewSubproject"),
   btnCreateProjectSession: document.getElementById("btnCreateProjectSession"),
+  btnDeleteProject: document.getElementById("btnDeleteProject"),
   modeSelectBreadcrumb: document.getElementById("modeSelectBreadcrumb"),
   sessionHubActions: document.getElementById("sessionHubActions"),
   btnUploadToVault: document.getElementById("btnUploadToVault"),
@@ -1213,11 +1214,11 @@ export function initSharedAssessmentGateSettingsUi() {
   const toggle = els.sharedAssessmentGateToggle;
   if (!toggle || toggle.dataset.sharedAssessmentGateWired === "1") return;
   toggle.dataset.sharedAssessmentGateWired = "1";
-  toggle.checked = getAssessmentBeforePackingPreference() === true;
+  toggle.checked = getSharedAssessmentGatePreference() === true;
   toggle.addEventListener("change", () => {
     const enabled = toggle.checked === true;
     console.info("[ui.initSharedAssessmentGateSettingsUi] Preference changed:", { enabled }); // [debug-enrich]
-    saveAssessmentBeforePackingPreference(enabled);
+    saveSharedAssessmentGatePreference(enabled);
   });
 }
 

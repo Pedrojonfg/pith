@@ -14,12 +14,13 @@ import {
 } from "./session-store.js";
 import {
   assignSessionToProject,
+  commitProjectDeletion,
   createProject,
-  deleteProject,
   getAncestorChain,
   getChildren,
   getProject,
   moveProject,
+  planProjectDeletion,
   PROJECT_ERROR_CYCLE,
   PROJECT_ERROR_DELETE_BLOCKED,
   renameProject,
@@ -306,13 +307,31 @@ function promptRenameProject(projectId) {
 async function promptDeleteProject(projectId) {
   const store = getProjectStore();
   const sessions = await getAllSessions();
-  const result = deleteProject(store, projectId, sessions);
-  if (!result.ok && result.error !== PROJECT_ERROR_DELETE_BLOCKED) {
-    if (result.error) showProjectToast(result.error);
+  const plan = planProjectDeletion(store, projectId, sessions);
+  if (!plan.ok) {
+    if (plan.error) showProjectToast(plan.error);
     return;
   }
+
+  const project = getProject(store, projectId);
+  const sessionCount = plan.sessionIds.length;
+  const subCount = Math.max(0, plan.projectIds.length - 1);
+  let message = `Delete "${project?.name || "this project"}"?`;
+  if (sessionCount || subCount) {
+    const parts = [];
+    if (sessionCount) parts.push(`${sessionCount} session${sessionCount === 1 ? "" : "s"}`);
+    if (subCount) parts.push(`${subCount} subproject${subCount === 1 ? "" : "s"}`);
+    message += ` This will permanently delete ${parts.join(" and ")}.`;
+  }
+  message += " This cannot be undone.";
+  if (!window.confirm(message)) return;
+
+  for (const docId of plan.sessionIds) {
+    await deleteSession(docId);
+  }
+  const result = commitProjectDeletion(store, plan.projectIds);
   if (!result.ok) {
-    showProjectToast(result.error);
+    if (result.error) showProjectToast(result.error);
     return;
   }
   persistProjectStore(store);
@@ -335,6 +354,7 @@ export function renderProjectLibraryView() {
   if (els.btnNewProject) els.btnNewProject.hidden = Boolean(projectId);
   if (els.btnNewSubproject) els.btnNewSubproject.hidden = !projectId;
   if (els.btnCreateProjectSession) els.btnCreateProjectSession.hidden = !projectId;
+  if (els.btnDeleteProject) els.btnDeleteProject.hidden = !projectId;
 
   renderProjectRows(store, parentForList, els.docLibraryProjectList, (id) => {
     projectLibraryState.currentProjectId = id;
@@ -381,6 +401,10 @@ export function wireProjectLibraryHandlers() {
     if (typeof projectLibraryCallbacks.onCreateSessionInProject === "function") {
       projectLibraryCallbacks.onCreateSessionInProject(projectId);
     }
+  });
+  els.btnDeleteProject?.addEventListener("click", () => {
+    const projectId = projectLibraryState.currentProjectId;
+    if (projectId) void promptDeleteProject(projectId);
   });
   els.docLibraryBackBtn?.addEventListener("click", () => {
     if (projectLibraryState.currentProjectId) {
