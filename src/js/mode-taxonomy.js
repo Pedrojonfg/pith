@@ -6,7 +6,7 @@
 /** @typedef {'exposure'|'retrieval'} ModeRole */
 /** @typedef {'document'|'vault'} ModeScope */
 
-/** @typedef {'rsvp'|'slow'|'questions'|'cloze'|'recall'|'review'} TaxonomyModeKey */
+/** @typedef {'rsvp'|'slow'|'questions'|'read'|'cloze'|'recall'|'review'} TaxonomyModeKey */
 
 /**
  * @typedef {object} ModeTaxonomyEntry
@@ -23,6 +23,12 @@ export const MODE_TAXONOMY = {
     scope: "document",
     label: "RSVP",
     hint: "Fast blocks with embedded questions.",
+  },
+  read: {
+    role: "exposure",
+    scope: "document",
+    label: "Read",
+    hint: "Textbook-style blocks with optional diagrams, then questions.",
   },
   slow: {
     role: "exposure",

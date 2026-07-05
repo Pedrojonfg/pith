@@ -2941,6 +2941,11 @@ const BLOCK_JSON_SCHEMA = `{
   id: number,
   title: string,
   explanation: string (markdown),
+  visualNeed?: {
+    type: "diagram" | "image" | null,
+    reason: string,
+    insertionAnchor: string
+  },
   questions: [{
     type: "test" | "socratic",
     question: string,
@@ -3295,6 +3300,8 @@ export function buildBlockGenerationSystemPrompt({
   avoidOverlapWith = null,
   prevBlockSummaryForConnection = "",
   vaultHint = "",
+  includeVisualNeed = false,
+  sectionHasImages = false,
 }) {
   const nTest = Math.max(0, Math.min(MAX_N_TEST, Math.round(Number(n_test))));
   const nSocratic = Math.max(0, Math.min(MAX_N_SOCRATIC, Math.round(Number(n_socratic))));
@@ -3390,7 +3397,17 @@ If a term appears in ALREADY TAUGHT, advance the argument without repeating its 
       : ""
   }`;
   const withVault = vaultHint ? `${basePrompt}${vaultHint}` : basePrompt;
-  return mergeFidelityIntoSystemPrompt(withVault, { strictMode, extractedClaims });
+  const visualSection = includeVisualNeed
+    ? `
+
+Visual aid flag (visualNeed field):
+After the explanation, indicate whether a visual aid would meaningfully help a reader understand this specific block.
+Only set type to "diagram" or "image" when the content describes a process, hierarchy, comparison, or relationship easier to grasp visually than in prose.
+Do not mark for purely definitional or narrative content.
+If type is non-null, insertionAnchor MUST be the exact verbatim substring of your explanation after which the visual should appear.
+${sectionHasImages ? 'The source section contains real document figures — you may choose type "image" when a figure matches.' : 'Choose only "diagram" or null for type — no document figures in this section.'}`
+    : "";
+  return mergeFidelityIntoSystemPrompt(`${withVault}${visualSection}`, { strictMode, extractedClaims });
 }
 
 export function buildBlockGenerationUserContent({
@@ -3681,6 +3698,8 @@ export async function deepSeekGenerateBlockExplanation({
   conceptIds = null,
   docTopics = null,
   vaultSession = null,
+  includeVisualNeed = true,
+  sectionHasImages = false,
 }) {
   let vaultHint = "";
   const sessionForVault =
@@ -3713,6 +3732,8 @@ export async function deepSeekGenerateBlockExplanation({
     questionScope,
     avoidOverlapWith,
     vaultHint,
+    includeVisualNeed,
+    sectionHasImages,
   });
 
   const userContent = buildBlockGenerationUserContent({
@@ -3736,6 +3757,24 @@ export async function deepSeekGenerateBlockExplanation({
       obj.explanation = enforceExplanationParagraphs(obj.explanation, paragraphOpts);
     }
     obj.questions = [];
+    if (includeVisualNeed && obj.visualNeed != null) {
+      const vn = obj.visualNeed;
+      if (vn && typeof vn === "object") {
+        const t = vn.type;
+        const type = t === "diagram" || t === "image" ? t : null;
+        obj.visualNeed = type
+          ? {
+              type,
+              reason: String(vn.reason || "").trim(),
+              insertionAnchor: String(vn.insertionAnchor || "").trim(),
+            }
+          : null;
+      } else {
+        delete obj.visualNeed;
+      }
+    } else {
+      delete obj.visualNeed;
+    }
     return obj;
   };
 
@@ -3867,6 +3906,7 @@ export async function deepSeekGenerateBlockJson({
   claimCoverageMin = null,
   conceptIds = null,
   docTopics = null,
+  sectionHasImages = false,
 }) {
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
@@ -3900,6 +3940,8 @@ export async function deepSeekGenerateBlockJson({
     claimCoverageMin,
     conceptIds,
     docTopics,
+    includeVisualNeed: true,
+    sectionHasImages,
   });
 
   if (strictMode && Array.isArray(claims) && claims.length) {
@@ -3951,6 +3993,58 @@ export async function deepSeekGenerateBlockJson({
   }
 
   return blockObj;
+}
+
+/** Mermaid diagrams are short (~8 nodes); 500 tokens is sufficient headroom. */
+const MAX_TOKENS_DIAGRAM_GENERATION = 500;
+
+const DIAGRAM_SYSTEM_PROMPT = `You write small Mermaid diagrams for study blocks.
+Rules:
+- Output JSON only: { "mermaidSource": string }
+- Use flowchart, graph, or sequenceDiagram only
+- Keep under 8 nodes for mobile readability
+- Use short node labels
+- No styling directives beyond diagram type
+- English labels only`;
+
+/**
+ * @param {{ llmModel?: string, blockText?: string, conceptLabels?: string[], reason?: string, language?: string }} opts
+ */
+export async function generateBlockDiagram({
+  llmModel,
+  blockText = "",
+  conceptLabels = [],
+  reason = "",
+  language = "English",
+}) {
+  const labels = (Array.isArray(conceptLabels) ? conceptLabels : [])
+    .map((l) => String(l || "").trim())
+    .filter(Boolean)
+    .slice(0, 12);
+  const user = `Language: ${String(language || "English").trim() || "English"}
+Reason for visual: ${String(reason || "").trim() || "illustrate key relationships"}
+Key concepts: ${labels.length ? labels.join(", ") : "(none)"}
+
+Block text:
+${String(blockText || "").trim().slice(0, 6000)}
+
+Return JSON with mermaidSource only.`;
+
+  const raw = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: DIAGRAM_SYSTEM_PROMPT },
+      { role: "user", content: user },
+    ],
+    temperature: 0.1,
+    max_tokens: MAX_TOKENS_DIAGRAM_GENERATION,
+  });
+  const obj = parseModelJsonObject(raw);
+  if (!obj || typeof obj !== "object") {
+    throw new Error("Diagram generation returned invalid JSON.");
+  }
+  return { mermaidSource: String(obj.mermaidSource || "").trim() };
 }
 
 export async function generateBlockFromChunk(block, chunk, config = {}, language = "English") {

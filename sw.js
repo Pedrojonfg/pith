@@ -1,5 +1,5 @@
 // Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and index.html script ?v= neighbors.
-const CACHE_NAME = "pith-v135";
+const CACHE_NAME = "pith-v136";
 
 const STATIC_ASSETS = [
   "/",
@@ -56,6 +56,7 @@ const STATIC_ASSETS = [
 ];
 
 const MARKED_URL = "https://cdn.jsdelivr.net/npm/marked@15/marked.min.js";
+const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js";
 
 const MATHJAX_URLS = [
   "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js",
@@ -67,7 +68,7 @@ const MATHJAX_URLS = [
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([...STATIC_ASSETS, MARKED_URL, ...MATHJAX_URLS]).catch((err) => {
+      return cache.addAll([...STATIC_ASSETS, MARKED_URL, MERMAID_URL, ...MATHJAX_URLS]).catch((err) => {
         console.warn("SW cache failed for some assets:", err);
       });
     }),
