@@ -24,7 +24,6 @@ import {
   INTERVIEW_MIN_ANSWERED_TURNS,
   isAssessmentQuestionsUiEnabled,
   isHolisticAssessmentEnabled,
-  isPrePackingAssessmentEnabled,
   isSharedPreModeAssessmentEnabled,
   isAdaptiveProbingEnabled,
   isBookLookupEnabled,
@@ -915,7 +914,21 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
   await saveDocumentSession(doc);
 }
 
+async function autoResolveScopeWhenNoHeadings(doc) {
+  if (isScopeGateResolved(doc) || isScopeStructureReady(doc)) return doc;
+  const raw = String(doc.shared?.rawMarkdown || "");
+  doc.shared.scopeSelection = null;
+  doc.shared.scopedMarkdown = raw;
+  doc.shared.scopeContext = null;
+  doc.shared.scopeResolvedAt = Date.now();
+  setGuideScopeFromDocument(doc);
+  await saveDocumentSession(doc);
+  return doc;
+}
+
 async function maybeEnterScopeSelectionGate(doc) {
+  if (isScopeGateResolved(doc)) return false;
+  doc = await autoResolveScopeWhenNoHeadings(doc);
   if (isScopeGateResolved(doc)) return false;
   if (!isScopeStructureReady(doc)) return false;
   renderScopeSelectionScreen(doc);
@@ -1609,20 +1622,14 @@ export async function recommendFlowFromUploadedFile(file) {
   state.materialBootstrapActive = false;
 
   showDocumentPreparingScreen();
-  const prepared = await ensureTier1Preparation(doc, {
+  const prepared = await ensureScopeStructurePreparation(doc, {
     ...preparationGateOptions((msg) => {
       if (els.reviewGeneratingLabel) {
         els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
       }
     }),
   });
-  if (!isTier1PreparationComplete(prepared)) {
-    throw new Error("Document preparation incomplete. Add an API key in Settings or retry.");
-  }
-
-  const refreshed = (await getActiveSession()) || prepared;
-  if (await maybeEnterSharedAssessmentGate(refreshed)) return refreshed?.shared?.modeRecommendation ?? null;
-  await finalizeModeSelectEntry(refreshed);
+  await enterModeSelectAfterTier1Gate(prepared);
   const after = await getActiveSession();
   return after?.shared?.modeRecommendation ?? null;
 }
@@ -2443,11 +2450,10 @@ async function handleInterviewFinish(fromCap = false) {
       );
       return;
     }
-    kickoffTier2PreparationInBackground(prepared, preparationGateOptions());
     if (fromCap && els.interviewCaptureStatus) {
       els.interviewCaptureStatus.textContent = "Interview complete — round cap reached.";
     }
-    enterModeSelectScreen();
+    await enterModeSelectAfterTier1Gate(prepared);
   } catch (err) {
     if (runId !== interviewCaptureState.runId) return;
     showScreen("interviewCapture");
@@ -2623,7 +2629,7 @@ async function processCreateSessionStagedUpload(title) {
     mountModeSelectBreadcrumb(doc);
     showDocumentPreparingScreen("Preparing document…");
     const prepared = await startDocumentPreparation(doc, {
-      stopAfterTier: 1,
+      stopAfterScopeGate: true,
       ...preparationGateOptions((msg) => {
         if (runId !== createSessionStartRunId) return;
         if (els.reviewGeneratingLabel) {
@@ -3572,8 +3578,17 @@ export function enterDocLibraryScreen() {
 
 async function reopenDocumentFromLibrary(docId) {
   const id = String(docId || "").trim();
-  if (!id || !(await getSession(id))) return;
+  const session = id ? await getSession(id) : null;
+  if (!session) return;
   await setActiveSession(id);
+  if (
+    !isScopeGateResolved(session) ||
+    shouldOfferSharedAssessmentGate(session) ||
+    !isTier1PreparationComplete(session)
+  ) {
+    await enterModeSelectAfterTier1Gate(session);
+    return;
+  }
   enterModeSelectScreen();
 }
 

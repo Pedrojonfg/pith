@@ -1,6 +1,6 @@
 /** Feature flags — RSVP assessment reposition (20260611-rsvp-assessment-reposition). */
 
-import { LS_ASSESSMENT_BEFORE_PACKING_KEY, LS_SOURCE_FIDELITY_STRICT_KEY } from "../config.js";
+import { LS_ASSESSMENT_BEFORE_PACKING_KEY, LS_SHARED_ASSESSMENT_GATE_KEY, LS_SOURCE_FIDELITY_STRICT_KEY } from "../config.js";
 
 export const ASSESSMENT_FLAGS = Object.freeze({
   /** @deprecated Use getAssessmentBeforePackingPreference / isPrePackingAssessmentEnabled instead. */
@@ -24,6 +24,26 @@ export function isHolisticAssessmentEnabled() {
   );
 }
 
+export function getSharedAssessmentGatePreference() {
+  try {
+    const pref = localStorage.getItem(LS_SHARED_ASSESSMENT_GATE_KEY);
+    if (pref !== null) return JSON.parse(pref) === true;
+    const legacy = localStorage.getItem(LS_ASSESSMENT_BEFORE_PACKING_KEY);
+    if (legacy !== null) return JSON.parse(legacy) === true;
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+export function saveSharedAssessmentGatePreference(enabled) {
+  try {
+    localStorage.setItem(LS_SHARED_ASSESSMENT_GATE_KEY, JSON.stringify(enabled === true));
+  } catch {
+    // ignore
+  }
+}
+
 export function getAssessmentBeforePackingPreference() {
   try {
     const pref = localStorage.getItem(LS_ASSESSMENT_BEFORE_PACKING_KEY);
@@ -42,13 +62,14 @@ export function saveAssessmentBeforePackingPreference(enabled) {
   }
 }
 
+/** RSVP pre-packing assessment is disabled; knowledge check runs only via the shared pre-mode gate. */
 export function isPrePackingAssessmentEnabled() {
-  return getAssessmentBeforePackingPreference() === true;
+  return false;
 }
 
 /** Shared pre-mode assessment gate (20260702-shared-pre-mode-assessment). */
 export function isSharedPreModeAssessmentEnabled() {
-  return isPrePackingAssessmentEnabled();
+  return getSharedAssessmentGatePreference() === true;
 }
 
 export function isAssessmentQuestionsUiEnabled() {

@@ -730,9 +730,7 @@ export function resolveChatScopeFields(session) {
 export function isScopeGateResolved(session) {
   const sh = session?.shared;
   if (!sh) return false;
-  if (Number.isFinite(sh.scopeResolvedAt) && sh.scopeResolvedAt > 0) return true;
-  const inv = sh.conceptInventory;
-  return Array.isArray(inv) && inv.length > 0;
+  return Number.isFinite(sh.scopeResolvedAt) && sh.scopeResolvedAt > 0;
 }
 
 /**

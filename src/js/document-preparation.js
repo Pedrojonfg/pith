@@ -56,6 +56,7 @@ import {
   hasTier1Artifacts,
   hasTier1GateArtifacts,
   isScopeStructureReady,
+  isScopeGateResolved,
   resolveScopedMarkdown,
   setPreparationStatus,
 } from "./session-types.js";
@@ -1110,6 +1111,12 @@ export async function ensureScopeStructurePreparation(doc, options = {}) {
  */
 export async function ensureTier1Preparation(doc, options = {}) {
   if (!doc?.docId) return null;
+  if (!options.forceRerun && isScopeStructureReady(doc) && !isScopeGateResolved(doc)) {
+    console.info("[DPP-GUARD.ensureTier1Preparation] blocked — awaiting scope selection", {
+      docId: doc.docId,
+    }); // [debug-enrich]
+    return doc;
+  }
   if (!options.forceRerun && isTier1PreparationComplete(doc)) {
     console.info("[DPP-GUARD.ensureTier1Preparation] skip — tier-1 already complete", {
       docId: doc.docId,
