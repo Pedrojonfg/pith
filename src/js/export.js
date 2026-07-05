@@ -99,7 +99,7 @@ async function resolveDocumentSessionForExport(doc) {
   for (const mode of modeOrder) {
     const raw = doc.modes?.[mode];
     if (!raw || typeof raw !== "object") continue;
-    const slice = rehydrateBlocks(JSON.parse(JSON.stringify(raw)), docId);
+    const slice = await rehydrateBlocks(JSON.parse(JSON.stringify(raw)), docId);
     slice.studyMode = slice.studyMode || mode;
 
     if (mode === "slow" && slice.slow) return slice;
@@ -874,7 +874,7 @@ async function resolveSessionSliceForOffline() {
   const doc = await getActiveDocumentSession();
   const raw = (await loadSessionForMode(mode)) || (await loadSessionForMode("rsvp"));
   if (!raw) return null;
-  return doc?.docId ? rehydrateBlocks(raw, doc.docId) : raw;
+  return doc?.docId ? await rehydrateBlocks(raw, doc.docId) : raw;
 }
 
 export async function resolveSessionForExport() {
@@ -895,7 +895,7 @@ export async function resolveSessionForExport() {
 
   for (const raw of candidates) {
     if (!raw || typeof raw !== "object") continue;
-    const slice = docId ? rehydrateBlocks(raw, docId) : raw;
+    const slice = docId ? await rehydrateBlocks(raw, docId) : raw;
     const blocks = Array.isArray(slice.blocks) ? slice.blocks : [];
     if (blocks.some(hasGeneratedBlockContent)) return slice;
   }

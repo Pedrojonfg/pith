@@ -37,6 +37,7 @@ import {
   validateDocumentSession,
 } from "./session-types.js";
 import { persistPendingImages } from "./document-images/storage.js";
+import { scheduleActiveDocSync, scheduleProjectsSync } from "./user-store-sync.js";
 
 export {
   computeCanonicalId,
@@ -113,27 +114,27 @@ async function rehydrateMarkdown(session, markdownRef) {
   }
 }
 
-function rehydrateSessionModes(session) {
+async function rehydrateSessionModes(session) {
   if (!session?.docId) return session;
   const docId = session.docId;
   const modes = session.modes && typeof session.modes === "object" ? { ...session.modes } : {};
   let changed = false;
   if (modes.rsvp) {
-    const next = rehydrateBlocks(modes.rsvp, docId);
+    const next = await rehydrateBlocks(modes.rsvp, docId);
     if (next !== modes.rsvp) {
       modes.rsvp = next;
       changed = true;
     }
   }
   if (modes.questions) {
-    const next = rehydrateBlocks(modes.questions, docId);
+    const next = await rehydrateBlocks(modes.questions, docId);
     if (next !== modes.questions) {
       modes.questions = next;
       changed = true;
     }
   }
   if (modes.read) {
-    const next = rehydrateBlocks(modes.read, docId);
+    const next = await rehydrateBlocks(modes.read, docId);
     if (next !== modes.read) {
       modes.read = next;
       changed = true;
@@ -443,6 +444,7 @@ export async function getActiveSession() {
 export function clearActiveDocumentPointer() {
   try {
     localStorage.removeItem(LS_ACTIVE_DOC_ID_KEY);
+    scheduleActiveDocSync(null);
   } catch {
     // ignore
   }
@@ -455,6 +457,7 @@ export async function setActiveSession(docId) {
   const id = String(docId || "").trim();
   if (!(await getSession(id))) throw new Error("session not found");
   localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
+  scheduleActiveDocSync(id);
 }
 
 /**
@@ -468,6 +471,7 @@ export async function saveActiveSession(session) {
   const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
   if (activeId === updated.docId) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, updated.docId);
+    scheduleActiveDocSync(updated.docId);
   }
 }
 
@@ -779,6 +783,7 @@ export function loadProjectStore() {
  */
 export function saveProjectStore(store) {
   localStorage.setItem(LS_PROJECTS_KEY, JSON.stringify(store));
+  scheduleProjectsSync(store);
 }
 
 /**

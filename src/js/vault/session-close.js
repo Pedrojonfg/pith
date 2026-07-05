@@ -100,7 +100,7 @@ export async function collectObservations(session, mode, docId) {
     let slice = session?.modes?.[m];
     if (!slice) slice = await loadSessionForMode(m);
     if (!slice) continue;
-    slice = rehydrateBlocks(slice, docId);
+    slice = await rehydrateBlocks(slice, docId);
 
     const profile = slice?._meta?.knowledge_profile;
     const items = Array.isArray(profile?.items) ? profile.items : [];

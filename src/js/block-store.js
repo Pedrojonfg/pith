@@ -6,6 +6,9 @@ import {
   LS_V1_BACKUP_KEY,
 } from "./config.js";
 import { saveActiveSession } from "./session-store.js";
+import { downloadBlocksJson, downloadResponsesJson } from "./user-data-persist-supabase.js";
+import { getAuthUserId } from "./session-persist-supabase.js";
+import { scheduleBlocksUpload, scheduleResponsesUpload } from "./user-store-sync.js";
 
 const GUIDE_CHAT_KEY_PREFIX = "guide_chat_";
 
@@ -39,6 +42,7 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
   if (blocks.length > 0 && blocksJson.length > BLOCKS_INLINE_THRESHOLD) {
     const storageKey = docBlocksKey(id);
     localStorage.setItem(storageKey, blocksJson);
+    scheduleBlocksUpload(id, blocksJson);
     delete clone.blocks;
     clone.blocksRef = {
       storageKey,
@@ -53,6 +57,7 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
     if (respJson.length > BLOCKS_INLINE_THRESHOLD) {
       const storageKey = docResponsesKey(id);
       localStorage.setItem(storageKey, respJson);
+      scheduleResponsesUpload(id, respJson);
       delete clone._responses;
       clone.responsesRef = { storageKey };
     }
@@ -61,7 +66,27 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
   return clone;
 }
 
-export function rehydrateBlocks(rsvpSlice, docId) {
+async function readExternalJson(storageKey, docId, downloadFn) {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw != null) return raw;
+  } catch {
+    // ignore
+  }
+  try {
+    const userId = await getAuthUserId();
+    const remote = await downloadFn(userId, docId);
+    if (remote != null) {
+      localStorage.setItem(storageKey, remote);
+      return remote;
+    }
+  } catch (err) {
+    console.warn("[block-store] storage fetch failed", err);
+  }
+  return null;
+}
+
+export async function rehydrateBlocks(rsvpSlice, docId) {
   if (!rsvpSlice || typeof rsvpSlice !== "object") return rsvpSlice;
   const id = String(docId || "").trim();
   let slice = rsvpSlice;
@@ -70,7 +95,7 @@ export function rehydrateBlocks(rsvpSlice, docId) {
   const hasInlineBlocks = Array.isArray(slice.blocks) && slice.blocks.length > 0;
   if (blocksRef?.storageKey && !hasInlineBlocks) {
     try {
-      const raw = localStorage.getItem(blocksRef.storageKey);
+      const raw = await readExternalJson(blocksRef.storageKey, id, downloadBlocksJson);
       if (raw != null) {
         const blocks = JSON.parse(raw);
         if (Array.isArray(blocks)) slice = { ...slice, blocks };
@@ -82,7 +107,7 @@ export function rehydrateBlocks(rsvpSlice, docId) {
 
   if (slice.responsesRef?.storageKey && !slice._responses) {
     try {
-      const raw = localStorage.getItem(slice.responsesRef.storageKey);
+      const raw = await readExternalJson(slice.responsesRef.storageKey, id, downloadResponsesJson);
       if (raw != null) slice = { ...slice, _responses: JSON.parse(raw) };
     } catch (err) {
       console.warn("[block-store] rehydrate responses failed", err);
@@ -153,9 +178,9 @@ function hasDictionaryEntries() {
   }
 }
 
-export function computePersistenceHealth(doc) {
+export async function computePersistenceHealth(doc) {
   const rsvp = doc?.modes?.rsvp;
-  const hydrated = rsvp && doc?.docId ? rehydrateBlocks(rsvp, doc.docId) : rsvp;
+  const hydrated = rsvp && doc?.docId ? await rehydrateBlocks(rsvp, doc.docId) : rsvp;
   const blocks = Array.isArray(hydrated?.blocks) ? hydrated.blocks : [];
   const blocksWithContent = blocks.filter(blockHasContent).length;
   const nBlocks = Math.max(Number(hydrated?.n_blocks) || 0, blocks.length);

@@ -2,6 +2,7 @@
 
 import { hydrateMastery } from "./mastery-model.js";
 import { addPrerequisiteSafe, recomputeImportanceScores } from "./prerequisite-graph.js";
+import { scheduleVaultSync } from "../user-store-sync.js";
 
 export const VAULT_STORAGE_KEY = "pith_knowledge_vault";
 export const VAULT_DATA_KEY = "pith_knowledge_vault_data";
@@ -314,6 +315,7 @@ export function saveVault(vault) {
       JSON.stringify({ ...metaPayload, entries: stripped }),
     );
   }
+  scheduleVaultSync({ ...metaPayload, entries: stripped });
 }
 
 /**

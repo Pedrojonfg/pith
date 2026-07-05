@@ -12,6 +12,7 @@ function newConceptId() {
 }
 
 import { normalizeConnections } from "./connection-types.js";
+import { scheduleRegistrySync } from "../user-store-sync.js";
 
 function emptyRegistry() {
   return {
@@ -57,6 +58,7 @@ export function saveRegistry(registry) {
     lastUpdated: Date.now(),
   };
   localStorage.setItem(REGISTRY_STORAGE_KEY, JSON.stringify(payload));
+  scheduleRegistrySync(payload);
 }
 
 /**
