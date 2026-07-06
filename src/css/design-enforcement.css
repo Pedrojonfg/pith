@@ -89,6 +89,7 @@ body.recall-active .screen > .card {
 /* §11 — hub ambient glow (full-bleed hub screens) */
 .app-home-screen[aria-hidden="false"],
 .mode-select-screen[aria-hidden="false"],
+.scope-selection-screen[aria-hidden="false"],
 .retrieval-hub-screen[aria-hidden="false"],
 .vault-branch-screen[aria-hidden="false"] {
   background-image: radial-gradient(

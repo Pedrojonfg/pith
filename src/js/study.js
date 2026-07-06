@@ -818,6 +818,7 @@ function renderScopeSelectionScreen(doc) {
   if (!sh) return;
   const raw = String(sh.rawMarkdown || "");
   const entries = listSelectableHierarchyNodes(sh.docHierarchy?.tree || []);
+  const orderedIds = entries.map((e) => e.id);
   const listEl = els.scopeSelectionList;
   if (!listEl) return;
   listEl.innerHTML = "";
@@ -833,11 +834,14 @@ function renderScopeSelectionScreen(doc) {
     cb.type = "checkbox";
     cb.value = id;
     cb.checked = scopePickerFullDocument || scopePickerSelectedIds.has(id);
-    cb.disabled = scopePickerFullDocument;
     cb.addEventListener("change", () => {
-      scopePickerFullDocument = false;
+      if (scopePickerFullDocument) {
+        scopePickerFullDocument = false;
+        scopePickerSelectedIds = new Set(orderedIds);
+      }
       if (cb.checked) scopePickerSelectedIds.add(id);
       else scopePickerSelectedIds.delete(id);
+      maybePromoteScopePickerToFullDocument(orderedIds);
       updateScopeSelectionUi(doc, raw);
     });
     const span = document.createElement("span");
@@ -850,6 +854,16 @@ function renderScopeSelectionScreen(doc) {
   updateScopeSelectionUi(doc, raw);
 }
 
+function maybePromoteScopePickerToFullDocument(orderedIds) {
+  if (
+    orderedIds.length > 0 &&
+    orderedIds.every((sid) => scopePickerSelectedIds.has(sid))
+  ) {
+    scopePickerFullDocument = true;
+    scopePickerSelectedIds = new Set();
+  }
+}
+
 function updateScopeSelectionUi(doc, rawMarkdown) {
   const raw = rawMarkdown || String(doc?.shared?.rawMarkdown || "");
   let charCount = raw.length;
@@ -860,12 +874,8 @@ function updateScopeSelectionUi(doc, rawMarkdown) {
     const built = buildScopedMarkdown(raw, doc?.shared?.docHierarchy, ids);
     charCount = built.scopedMarkdown.length;
     canConfirm = ids.length > 0 && charCount > 0;
-    for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
-      cb.disabled = false;
-    }
   } else {
     for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
-      cb.disabled = true;
       cb.checked = true;
     }
   }
