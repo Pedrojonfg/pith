@@ -1459,7 +1459,7 @@
           aria-hidden="true"
           aria-label="Document scope"
         >
-          <div class="scope-selection-shell">
+          <div class="card scope-selection-card">
             <h1>Study scope</h1>
             <p class="hint">
               Choose which sections to include. Concept inventory and study modes use only the selected material.
@@ -1954,7 +1954,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260710_13";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260710_14";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -1980,7 +1980,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260710_13");
+        await import("./src/js/main.js?v=20260710_14");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
