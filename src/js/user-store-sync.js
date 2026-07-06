@@ -18,6 +18,7 @@ import {
   upsertUserVault,
 } from "./user-data-persist-supabase.js";
 import { isOfflineMode } from "./offline.js";
+import { withKeyedRetry } from "./net/retry.js";
 
 const REGISTRY_STORAGE_KEY = "mylearning_concept_registry";
 const VAULT_STORAGE_KEY = "pith_knowledge_vault";
@@ -107,7 +108,9 @@ export function scheduleProjectsSync(store) {
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !store) return;
-    await upsertUserProjects(userId, store, store.schemaVersion || 1);
+    await withKeyedRetry(`projects:${userId}`, () =>
+      upsertUserProjects(userId, store, store.schemaVersion || 1),
+    );
   });
 }
 
@@ -116,7 +119,9 @@ export function scheduleVaultSync(vaultData) {
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !vaultData) return;
-    await upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3);
+    await withKeyedRetry(`vault:${userId}`, () =>
+      upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3),
+    );
   });
 }
 
@@ -125,7 +130,9 @@ export function scheduleRegistrySync(registryData) {
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !registryData) return;
-    await upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2);
+    await withKeyedRetry(`registry:${userId}`, () =>
+      upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2),
+    );
   });
 }
 

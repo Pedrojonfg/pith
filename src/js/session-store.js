@@ -37,6 +37,7 @@ import {
   validateDocumentSession,
 } from "./session-types.js";
 import { persistPendingImages } from "./document-images/storage.js";
+import { withKeyedRetry } from "./net/retry.js";
 import { scheduleActiveDocSync, scheduleProjectsSync } from "./user-store-sync.js";
 
 export {
@@ -316,11 +317,18 @@ async function stripMarkdownForPersist(session, userId) {
 
 async function upsertSessionInStore(session) {
   const userId = await getAuthUserId();
-  const { sessionData, markdownRef } = await stripMarkdownForPersist(session, userId);
-  await upsertSessionRow(userId, session.docId, sessionData, markdownRef);
+  const docId = session.docId;
+  const key = `session:${docId}`;
+  const result = await withKeyedRetry(key, async () => {
+    const stripped = await stripMarkdownForPersist(session, userId);
+    await upsertSessionRow(userId, docId, stripped.sessionData, stripped.markdownRef);
+    return stripped;
+  });
+  if (!result) return;
+  const { sessionData, markdownRef } = result;
   if (!rowCache) rowCache = new Map();
-  rowCache.set(session.docId, {
-    id: session.docId,
+  rowCache.set(docId, {
+    id: docId,
     session_data: sessionData,
     markdown_ref: markdownRef,
   });
