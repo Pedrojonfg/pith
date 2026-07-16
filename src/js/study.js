@@ -911,6 +911,14 @@ function updateScopeSelectionUi(doc, rawMarkdown) {
 
 async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
   const raw = String(doc.shared?.rawMarkdown || "");
+  // [debug-enrich]
+  console.info('[study.applyScopeSelectionToDoc] Applying scope:', {
+    docId: doc.docId ?? null,
+    fullDocument: Boolean(fullDocument),
+    sectionIdCount: Array.isArray(sectionIds) ? sectionIds.length : 0,
+    rawLen: raw.length,
+    hasHierarchy: Boolean(doc.shared?.docHierarchy),
+  });
   if (fullDocument) {
     doc.shared.scopeSelection = null;
     doc.shared.scopedMarkdown = raw;
@@ -920,6 +928,12 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
     const { scopedMarkdown } = buildScopedMarkdown(raw, doc.shared.docHierarchy, ids);
     doc.shared.scopedMarkdown = scopedMarkdown;
     doc.shared.scopeSelection = buildScopeSelection(raw, doc.shared.docHierarchy, ids);
+    // [debug-enrich]
+    console.info('[study.applyScopeSelectionToDoc] Scoped markdown built:', {
+      docId: doc.docId ?? null,
+      scopedLen: scopedMarkdown?.length ?? 0,
+      selectedCount: ids.length,
+    });
     const titleById = new Map(
       listSelectableHierarchyNodes(doc.shared.docHierarchy?.tree || []).map((e) => [
         e.id,
@@ -943,10 +957,20 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
   doc.updatedAt = Date.now();
   setGuideScopeFromDocument(doc);
   await saveDocumentSession(doc);
+  // [debug-enrich]
+  console.info('[study.applyScopeSelectionToDoc] Scope persisted:', {
+    docId: doc.docId ?? null,
+    scopedLen: doc.shared?.scopedMarkdown?.length ?? 0,
+    hasScopeContext: Boolean(doc.shared?.scopeContext),
+  });
 }
 
 async function autoResolveScopeWhenNoHeadings(doc) {
   if (isScopeGateResolved(doc) || isScopeStructureReady(doc)) return doc;
+  // [debug-enrich]
+  console.info('[study.autoResolveScopeWhenNoHeadings] Auto full-document scope:', {
+    docId: doc.docId ?? null,
+  });
   const raw = String(doc.shared?.rawMarkdown || "");
   doc.shared.scopeSelection = null;
   doc.shared.scopedMarkdown = raw;
@@ -958,10 +982,26 @@ async function autoResolveScopeWhenNoHeadings(doc) {
 }
 
 async function maybeEnterScopeSelectionGate(doc) {
-  if (isScopeGateResolved(doc)) return false;
+  if (isScopeGateResolved(doc)) {
+    // [debug-enrich]
+    console.debug('[study.maybeEnterScopeSelectionGate] Already resolved — skip');
+    return false;
+  }
   doc = await autoResolveScopeWhenNoHeadings(doc);
-  if (isScopeGateResolved(doc)) return false;
-  if (!isScopeStructureReady(doc)) return false;
+  if (isScopeGateResolved(doc)) {
+    // [debug-enrich]
+    console.debug('[study.maybeEnterScopeSelectionGate] Resolved after auto — skip UI');
+    return false;
+  }
+  if (!isScopeStructureReady(doc)) {
+    // [debug-enrich]
+    console.debug('[study.maybeEnterScopeSelectionGate] Structure not ready — skip UI');
+    return false;
+  }
+  // [debug-enrich]
+  console.info('[study.maybeEnterScopeSelectionGate] Entering scope selection UI:', {
+    docId: doc.docId ?? null,
+  });
   renderScopeSelectionScreen(doc);
   showScreen("scopeSelection");
   return true;
