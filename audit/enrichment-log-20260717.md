@@ -41,3 +41,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `dpp-t0.1-normalize-marker` | skipped | already adequate — info log with char/word/image counts present |
 | `dpp-t0.2-text-metrics` | skipped | already adequate — info log with metrics/sizeCategory present |
 | `dpp-t1.5-mode-recommendation` | done | info compute/skip/result (method, primaryFlow, profile flags) |
+| `dpp-scope-structure` | done | info ensure start (flight join); info done (prepStatus, hierarchy); warn missing docId |

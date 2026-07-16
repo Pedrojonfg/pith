@@ -1140,10 +1140,26 @@ function deferredTier1PhasesPending(doc, fingerprint) {
  * @param {object} [options]
  */
 export async function ensureScopeStructurePreparation(doc, options = {}) {
-  if (!doc?.docId) return null;
-  if (isScopeStructureReady(doc)) return doc;
+  if (!doc?.docId) {
+    // [debug-enrich]
+    console.warn('[document-preparation.ensureScopeStructurePreparation] Missing docId');
+    return null;
+  }
+  if (isScopeStructureReady(doc)) {
+    // [debug-enrich]
+    console.debug('[document-preparation.ensureScopeStructurePreparation] Already ready:', {
+      docId: doc.docId,
+    });
+    return doc;
+  }
   const docId = doc.docId;
   let flight = scopeStructureInFlight.get(docId);
+  const joinedExisting = Boolean(flight);
+  // [debug-enrich]
+  console.info('[document-preparation.ensureScopeStructurePreparation] Ensuring T0.1–T1.1:', {
+    docId,
+    joinedExistingFlight: joinedExisting,
+  });
   if (!flight) {
     flight = runDocumentPreparationPipeline(doc, {
       ...options,
@@ -1158,6 +1174,13 @@ export async function ensureScopeStructurePreparation(doc, options = {}) {
   let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
   hydrateCallerDocFromPrepared(doc, reconciled);
+  // [debug-enrich]
+  console.info('[document-preparation.ensureScopeStructurePreparation] Done:', {
+    docId,
+    prepStatus: reconciled?.shared?.preparation?.status ?? null,
+    hasHierarchy: Boolean(reconciled?.shared?.docHierarchy),
+    scopeReady: isScopeStructureReady(reconciled),
+  });
   return reconciled;
 }
 
