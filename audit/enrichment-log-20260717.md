@@ -34,3 +34,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-proxy-client` | done | debug request; info success; warn retry; error auth/network/status (no token logged) |
 | `llm-chat-deepseek` | done | debug start (msg count, max_tokens); info content len/usage; error missing content |
 | `llm-c-socratic-tutor` | done | info start (lens/scope flags); info reply shape; error on failure |
+| `pwa-sw-fetch` | done | debug strategy choice + networkFirst/cache hit-miss; warn network fail; CACHE_NAME→pith-v151 |

@@ -1,5 +1,5 @@
 // Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and index.html script ?v= neighbors.
-const CACHE_NAME = "pith-v150";
+const CACHE_NAME = "pith-v151";
 
 const STATIC_ASSETS = [
   "/",
@@ -123,15 +123,36 @@ function isNetworkFirstAsset(url) {
 }
 
 function networkFirst(req) {
+  const url = new URL(req.url);
+  // [debug-enrich]
+  console.debug('[sw.networkFirst] Fetching:', { pathname: url.pathname });
   return fetch(req)
     .then((res) => {
       if (res.ok) {
         const copy = res.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
+        // [debug-enrich]
+        console.debug('[sw.networkFirst] Network ok + cached:', {
+          pathname: url.pathname,
+          status: res.status,
+        });
+      } else {
+        // [debug-enrich]
+        console.warn('[sw.networkFirst] Network non-ok:', {
+          pathname: url.pathname,
+          status: res.status,
+        });
       }
       return res;
     })
-    .catch(() => caches.match(req));
+    .catch((err) => {
+      // [debug-enrich]
+      console.warn('[sw.networkFirst] Network failed — trying cache:', {
+        pathname: url.pathname,
+        message: err?.message ?? String(err),
+      });
+      return caches.match(req);
+    });
 }
 
 self.addEventListener("fetch", (event) => {
@@ -141,21 +162,36 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
 
   if (isApiRequest(url)) {
+    // [debug-enrich]
+    console.debug('[sw.fetch] API passthrough (no SW intercept):', { hostname: url.hostname });
     return;
   }
 
   if (isNetworkFirstAsset(url)) {
+    // [debug-enrich]
+    console.debug('[sw.fetch] Network-first asset:', { pathname: url.pathname });
     event.respondWith(networkFirst(req));
     return;
   }
 
   if (isStaticAsset(url) || isMathJaxAsset(url)) {
+    // [debug-enrich]
+    console.debug('[sw.fetch] Cache-first static/mathjax:', { pathname: url.pathname });
     event.respondWith(
       caches.match(req).then((cached) => {
-        if (cached) return cached;
+        if (cached) {
+          // [debug-enrich]
+          console.debug('[sw.fetch] Cache hit:', { pathname: url.pathname });
+          return cached;
+        }
         return fetch(req).then((res) => {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
+          // [debug-enrich]
+          console.debug('[sw.fetch] Cache miss — fetched and stored:', {
+            pathname: url.pathname,
+            status: res.status,
+          });
           return res;
         });
       }),
@@ -163,5 +199,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // [debug-enrich]
+  console.debug('[sw.fetch] Default network-first:', { pathname: url.pathname });
   event.respondWith(networkFirst(req));
 });
