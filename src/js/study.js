@@ -7676,6 +7676,15 @@ function renderTestQuestion() {
 
 async function handleTestAnswer({ chosen, correct, feedback }) {
   testMcAnswered = true;
+  // [debug-enrich]
+  console.info('[study.handleTestAnswer] MCQ answer:', {
+    chosen,
+    correctAnswer: correct != null ? String(correct).slice(0, 8) : null,
+    isCorrect: String(chosen || "") === String(correct || ""),
+    blockIndex: state.activeBlockIndex,
+    questionIndex: state.activeQuestionIndex,
+    isAssessment: isPrePackingAssessmentRunner(),
+  });
   if (isPrePackingAssessmentRunner()) {
     handleAssessmentTestAnswer({ chosen, correct, feedback });
     return;
