@@ -174,17 +174,43 @@ export async function writeThroughRsvpBlocks(doc, rsvpSlice) {
 export async function writeThroughModeSlice(doc, modeSlot, slice) {
   const id = String(doc?.docId || "").trim();
   if (!id || !slice || typeof slice !== "object") {
+    // [debug-enrich]
+    console.warn('[block-store.writeThroughModeSlice] Invalid args:', {
+      docId: id || null,
+      modeSlot,
+      hasSlice: Boolean(slice),
+    });
     return { ok: false, error: "invalid" };
   }
+  // [debug-enrich]
+  console.debug('[block-store.writeThroughModeSlice] Writing through:', {
+    docId: id,
+    modeSlot,
+    blockCount: Array.isArray(slice.blocks) ? slice.blocks.length : null,
+    hasBlocksRef: Boolean(slice.blocksRef),
+  });
   try {
     if (!doc.modes || typeof doc.modes !== "object") doc.modes = {};
     doc.modes[modeSlot] = slice;
     await saveActiveSession(doc);
     lastWriteErrorByDocId[id] = null;
+    // [debug-enrich]
+    console.info('[block-store.writeThroughModeSlice] Write-through ok:', {
+      docId: id,
+      modeSlot,
+    });
     return { ok: true };
   } catch (err) {
     const error = isQuotaError(err) ? "quota" : "persist_failed";
     lastWriteErrorByDocId[id] = error;
+    // [debug-enrich]
+    console.error('[block-store.writeThroughModeSlice] Write-through failed:', {
+      docId: id,
+      modeSlot,
+      error,
+      message: err?.message ?? String(err),
+      name: err?.name ?? null,
+    });
     return { ok: false, error };
   }
 }
