@@ -38,3 +38,6 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `row-cache-sessions` | done | debug cache hit/miss; info row count on populate; error on fetch failure |
 | `auth-google-oauth` | done | info OAuth start (redirect host); error on OAuth/UI failure |
 | `auth-session-listen` | done | info auth events + boot start/complete; error on boot fail (notes stuck appBooted) |
+| `dpp-t0.1-normalize-marker` | skipped | already adequate — info log with char/word/image counts present |
+| `dpp-t0.2-text-metrics` | skipped | already adequate — info log with metrics/sizeCategory present |
+| `dpp-t1.5-mode-recommendation` | done | info compute/skip/result (method, primaryFlow, profile flags) |
