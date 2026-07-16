@@ -34,6 +34,8 @@ const EDGE_COLORS = {
   associated: "#3b82f6",
   exemplifies: "#8b5cf6",
   part_of: "#14b8a6",
+  influenced: "#f97316",
+  INFLUENCED: "#f97316",
 };
 
 const EDGE_DASH_SOLID = new Set([
@@ -52,6 +54,8 @@ const EDGE_DASH_SOLID = new Set([
   "exemplifies",
 ]);
 const EDGE_DASH_HEAVY = new Set(["contradicts", "refuta", "cuestiona"]);
+/** Registry INFLUENCED — dotted; distinct from solid academic `influences`. */
+const EDGE_DASH_INFLUENCED = new Set(["influenced", "INFLUENCED"]);
 
 function weightStrokeScale(weight) {
   const w = Number(weight);
@@ -68,10 +72,18 @@ function edgeStrokeAttrs(type) {
   if (EDGE_DASH_HEAVY.has(edgeType)) {
     return { dasharray: "8 4", width: 2.5 };
   }
+  if (EDGE_DASH_INFLUENCED.has(edgeType)) {
+    return { dasharray: "2 6", width: 2 };
+  }
   if (EDGE_DASH_SOLID.has(edgeType)) {
     return { dasharray: "none", width: 2 };
   }
   return { dasharray: "4 4", width: 2 };
+}
+
+/** @param {string} [type] */
+export function getEdgeStrokeAttrsForTest(type) {
+  return edgeStrokeAttrs(type);
 }
 
 function escapeHtml(text) {

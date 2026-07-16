@@ -281,6 +281,7 @@ export async function updateVaultFromSession(session, mode) {
       docTopics,
       docId,
       session?.shared?.uploadMeta?.bookMeta || null,
+      session?.projectId || null,
     );
     normalizationMap = { ...normalizationMap, ...merged };
   }
@@ -313,6 +314,14 @@ export async function updateVaultFromSession(session, mode) {
 
   vault.lastUpdated = Date.now();
   saveVault(vault);
+
+  try {
+    const { enqueueVaultMetadataExtraction } = await import("./metadata-extraction.js");
+    const promotedIds = Object.values(normalizationMap || {}).filter(Boolean);
+    enqueueVaultMetadataExtraction(promotedIds);
+  } catch (err) {
+    console.warn("[session-close] metadata extraction enqueue failed", err?.message || err);
+  }
 
   for (const topic of docTopics) {
     const label = String(topic || "").trim();

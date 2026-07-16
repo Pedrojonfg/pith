@@ -1560,6 +1560,18 @@
           <div class="card slow-card">
             <h1 id="materialGraphTitle">Material graph</h1>
             <p class="hint" id="materialGraphHint">Concepts, blocks, and links from your study material.</p>
+            <div id="vaultGraphChrome" class="vault-graph-chrome" hidden>
+              <div class="vault-graph-mode-switch" role="tablist" aria-label="Graph view mode">
+                <button type="button" class="vault-graph-mode-btn is-active" data-mode="node" role="tab" aria-selected="true">Nodes</button>
+                <button type="button" class="vault-graph-mode-btn" data-mode="timeline" role="tab" aria-selected="false">Timeline</button>
+                <button type="button" class="vault-graph-mode-btn" data-mode="map" role="tab" aria-selected="false">Map</button>
+                <button type="button" class="vault-graph-mode-btn" data-mode="influence_tree" role="tab" aria-selected="false">Influence</button>
+              </div>
+              <fieldset class="vault-graph-project-filter">
+                <legend class="hint">Projects</legend>
+                <div id="vaultGraphProjectFilters" class="vault-graph-project-filters"></div>
+              </fieldset>
+            </div>
             <div id="slowGraphLayout" class="material-graph-layout">
               <div id="slowGraphContent" class="slow-graph-content material-graph-content"></div>
               <aside id="vaultGraphDetailPanel" class="vault-graph-detail-panel" hidden aria-hidden="true"></aside>
@@ -1954,7 +1966,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_02";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_03";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -1980,7 +1992,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260716_02");
+        await import("./src/js/main.js?v=20260716_03");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

@@ -1,8 +1,9 @@
 /** Merge LLM normalization mappings into the vault. */
 
 import { newVaultId } from "./vault-store.js";
+import { mergeProjectIdsOntoEntry } from "./project-membership.js";
 
-function appendSource(entry, docId, conceptId, now) {
+function appendSource(entry, docId, conceptId, now, projectId = null) {
   if (!entry || !docId || !conceptId) return;
   if (!Array.isArray(entry.sources)) entry.sources = [];
   const exists = entry.sources.some(
@@ -12,6 +13,10 @@ function appendSource(entry, docId, conceptId, now) {
     entry.sources.push({ docId, conceptId, addedAt: now });
   }
   entry.lastSeen = now;
+  // ponytail: denormalize project for filter resilience if session later missing
+  if (projectId != null && String(projectId).trim()) {
+    mergeProjectIdsOntoEntry(entry, projectId);
+  }
 }
 
 /**
@@ -29,6 +34,7 @@ export function mergeNormalizationResult(
   docTopics,
   docId,
   bookSource = null,
+  projectId = null,
 ) {
   const map = /** @type {Record<string, string>} */ ({});
   const topic =
@@ -61,7 +67,7 @@ export function mergeNormalizationResult(
     if (action === "merge" && targetId) {
       const entry = vault.entries.find((e) => String(e?.id || "") === targetId);
       if (entry) {
-        appendSource(entry, docId, conceptId, now);
+        appendSource(entry, docId, conceptId, now, projectId);
         applyBookSource(entry);
         map[conceptId] = targetId;
         continue;
@@ -73,7 +79,7 @@ export function mergeNormalizationResult(
       if (entry) {
         if (!Array.isArray(entry.aliases)) entry.aliases = [];
         if (title && !entry.aliases.includes(title)) entry.aliases.push(title);
-        appendSource(entry, docId, conceptId, now);
+        appendSource(entry, docId, conceptId, now, projectId);
         applyBookSource(entry);
         map[conceptId] = targetId;
         continue;
@@ -102,7 +108,15 @@ export function mergeNormalizationResult(
       observations: [],
       definitions: [],
       facetCoverage: {},
+      projectIds: [],
+      influences: [],
+      temporalRange: null,
+      geoLocation: null,
+      metadataExtractedAt: null,
     };
+    if (projectId != null && String(projectId).trim()) {
+      mergeProjectIdsOntoEntry(newEntry, projectId);
+    }
     applyBookSource(newEntry);
     vault.entries.push(newEntry);
     map[conceptId] = entryId;

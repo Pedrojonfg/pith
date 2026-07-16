@@ -361,6 +361,7 @@ import {
   getSession,
   getSmItemsDueToday,
   getVaultReviewDueCount,
+  loadProjectStore,
   saveActiveSession as saveDocumentSession,
   setActiveSession,
   setUploadMeta,
@@ -374,10 +375,13 @@ import {
 import { getCurrentMastery, PRESUMED_KNOWN_THRESHOLD } from "./vault/mastery-model.js";
 import { importFromDocument } from "./vault/import.js";
 import {
-  mountVaultGraphScreen,
   renderVaultGraphTopicPicker,
+  renderVaultGraphMode,
+  listProjectsForVaultGraphFilter,
+  buildSessionsByDocIdMap,
   VAULT_GRAPH_MIN_ENTRIES,
   VAULT_GRAPH_TOPIC_FILTER_THRESHOLD,
+  VAULT_GRAPH_MODES,
 } from "./vault/vault-graph.js";
 import { mountConceptRegistryGraph } from "./concept-registry/graph-mount.js";
 import { getConceptById } from "./concept-registry/registry-store.js";
@@ -8067,6 +8071,12 @@ let lastMaterialGraph = null;
 let materialGraphSource = "session";
 /** @type {string|null} */
 let recallFocusGlobalConceptId = null;
+/** Ephemeral vault graph UI state (reset on each open). */
+let vaultGraphRenderMode = "node";
+/** @type {Set<string>|null} */
+let vaultGraphCheckedProjects = null;
+/** @type {string} */
+let vaultGraphTopicFilter = "all";
 
 function resetVaultGraphChrome() {
   document.getElementById("slowGraphLayout")?.classList.remove("vault-graph-active");
@@ -8078,6 +8088,74 @@ function resetVaultGraphChrome() {
   }
   const exportBtn = document.getElementById("slowGraphExportBtn");
   if (exportBtn) exportBtn.hidden = false;
+  const chrome = document.getElementById("vaultGraphChrome");
+  if (chrome) chrome.hidden = true;
+}
+
+function syncVaultGraphModeButtons() {
+  document.querySelectorAll(".vault-graph-mode-btn").forEach((btn) => {
+    const mode = btn.getAttribute("data-mode");
+    const active = mode === vaultGraphRenderMode;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function renderVaultProjectFilterCheckboxes(projects) {
+  const host = document.getElementById("vaultGraphProjectFilters");
+  if (!host) return;
+  host.innerHTML = projects
+    .map((p) => {
+      const checked = !vaultGraphCheckedProjects || vaultGraphCheckedProjects.has(p.id);
+      return `<label class="vault-graph-project-check"><input type="checkbox" data-project-id="${p.id}" ${checked ? "checked" : ""}/> ${p.name}</label>`;
+    })
+    .join("");
+  host.querySelectorAll("input[type=checkbox]").forEach((input) => {
+    input.addEventListener("change", () => {
+      const next = new Set();
+      host.querySelectorAll("input[type=checkbox]").forEach((el) => {
+        if (el.checked) next.add(el.getAttribute("data-project-id"));
+      });
+      vaultGraphCheckedProjects = next;
+      void refreshVaultGraphView();
+    });
+  });
+}
+
+async function refreshVaultGraphView() {
+  const host = document.getElementById("slowGraphContent");
+  const detailHost = document.getElementById("vaultGraphDetailPanel");
+  if (!host || materialGraphSource !== "vault") return;
+  const vault = loadVault();
+  const sessions = await getAllSessions();
+  const sessionsByDocId = buildSessionsByDocIdMap(sessions);
+  lastMaterialGraph = await renderVaultGraphMode(host, detailHost, {
+    mode: vaultGraphRenderMode,
+    vault,
+    topicFilter: vaultGraphTopicFilter,
+    projectIds: vaultGraphCheckedProjects,
+    sessionsByDocId,
+    onSelectEntry: (id) => {
+      if (!detailHost) return;
+      const entry = getEntryById(id);
+      if (entry) renderDetail(detailHost, entry);
+    },
+  });
+}
+
+function wireVaultGraphChromeOnce() {
+  const chrome = document.getElementById("vaultGraphChrome");
+  if (!chrome || chrome.dataset.wired === "1") return;
+  chrome.dataset.wired = "1";
+  chrome.querySelectorAll(".vault-graph-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.getAttribute("data-mode");
+      if (!VAULT_GRAPH_MODES.includes(mode)) return;
+      vaultGraphRenderMode = mode;
+      syncVaultGraphModeButtons();
+      void refreshVaultGraphView();
+    });
+  });
 }
 
 function updateMaterialGraphScreenCopy({ title, hint } = {}) {
@@ -8138,7 +8216,7 @@ async function openMaterialGraphScreen({
  * Open Knowledge Vault prerequisite graph (Post A+ T12).
  * @param {{ topicFilter?: string }} [options]
  */
-export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
+export async function openVaultGraphScreen({ topicFilter = "all" } = {}) {
   const host = document.getElementById("slowGraphContent");
   const detailHost = document.getElementById("vaultGraphDetailPanel");
   const layout = document.getElementById("slowGraphLayout");
@@ -8154,15 +8232,26 @@ export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
   const exportBtn = document.getElementById("slowGraphExportBtn");
   if (exportBtn) exportBtn.hidden = true;
 
+  vaultGraphTopicFilter = topicFilter || "all";
+  vaultGraphRenderMode = "node";
+  const projects = listProjectsForVaultGraphFilter(loadProjectStore());
+  vaultGraphCheckedProjects = new Set(projects.map((p) => p.id));
+  wireVaultGraphChromeOnce();
+  const chrome = document.getElementById("vaultGraphChrome");
+  if (chrome) chrome.hidden = false;
+  renderVaultProjectFilterCheckboxes(projects);
+  syncVaultGraphModeButtons();
+
   updateMaterialGraphScreenCopy({
     title: "Knowledge Vault graph",
-    hint: "Nodes colored by mastery. Click a node for concept details.",
+    hint: "Nodes, timeline, map, or influence tree. Filter by project.",
   });
 
   if (
     (vault.entries || []).length > VAULT_GRAPH_TOPIC_FILTER_THRESHOLD &&
     (!topicFilter || topicFilter === "all")
   ) {
+    if (chrome) chrome.hidden = true;
     renderVaultGraphTopicPicker(host, vault, (topic) => openVaultGraphScreen({ topicFilter: topic }));
     if (detailHost) {
       detailHost.hidden = true;
@@ -8172,15 +8261,7 @@ export function openVaultGraphScreen({ topicFilter = "all" } = {}) {
     return;
   }
 
-  lastMaterialGraph = mountVaultGraphScreen(host, detailHost, {
-    vault,
-    topicFilter,
-    onNodeClick: (node) => {
-      if (!detailHost) return;
-      const entry = getEntryById(node.vaultEntryId || node.id);
-      if (entry) renderDetail(detailHost, entry);
-    },
-  });
+  await refreshVaultGraphView();
   showScreen("slowGraph");
 }
 

@@ -369,6 +369,14 @@ export function commitVaultCurationItem({ session, mapping, payload, batchContex
   const vaultEntryId = normMap[conceptId];
   if (!vaultEntryId) throw new Error("Could not resolve vault entry");
 
+  void import("./metadata-extraction.js")
+    .then(({ enqueueVaultMetadataExtraction }) => {
+      enqueueVaultMetadataExtraction([vaultEntryId]);
+    })
+    .catch((err) => {
+      console.warn("[vault-curation] metadata extraction enqueue failed", err?.message || err);
+    });
+
   const entry = vault.entries.find((e) => String(e?.id || "") === vaultEntryId);
   if (!entry) throw new Error("Vault entry missing after normalization");
 

@@ -5802,6 +5802,176 @@ Rules:
   }
 }
 
+/** ~1 object with years + short label; sized for small structured JSON. */
+export const MAX_TOKENS_TEMPORAL_SPATIAL_EXTRACTION = 400;
+
+/** ~8 influence triples with ids + weight; sized for neighbor-scoped detection. */
+export const MAX_TOKENS_INFLUENCE_DETECTION = 800;
+
+/**
+ * Extract optional temporal range and place for one vault concept.
+ * @param {{ title: string, topic?: string, definition?: string, llmModel?: string }} params
+ * @returns {Promise<{ temporalRange: {startYear:number,endYear:number,label:string}|null, geoLocation: {placeName:string}|null }>}
+ */
+export async function extractVaultTemporalSpatial(params = {}) {
+  const title = String(params?.title || "").trim();
+  if (!title) return { temporalRange: null, geoLocation: null };
+
+  const systemPrompt = `You extract optional historical date range and geographic place for a single learning concept.
+Return JSON only:
+{"temporalRange":{"startYear":0,"endYear":0,"label":"..."}|null,"geoLocation":{"placeName":"..."}|null}
+
+Rules:
+- Years use astronomical year numbering (negative = BCE). endYear >= startYear. Year-level only.
+- Prefer null over guessing when the concept has no clear date or place.
+- placeName is a real-world place string (city, region, country); omit coordinates.
+- label is the original phrase (e.g. "circa 1200 BCE").
+- Respond in English for labels unless the concept title is clearly non-English — then match title language.`;
+
+  const userPrompt = `Concept title: ${title}
+Topic: ${String(params?.topic || "").trim() || "general"}
+Definition/context: ${String(params?.definition || "").trim() || "(none)"}`;
+
+  const content = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(params?.llmModel ?? null),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.1,
+    max_tokens: MAX_TOKENS_TEMPORAL_SPATIAL_EXTRACTION,
+  });
+
+  if (looksLikeTruncatedModelJson(content)) {
+    const err = new Error("TRUNCATED");
+    err.code = "TRUNCATED";
+    throw err;
+  }
+
+  let parsed;
+  try {
+    parsed = parseModelJsonValue(content);
+  } catch (e) {
+    const err = new Error("PARSE_ERROR");
+    err.code = "PARSE_ERROR";
+    err.cause = e;
+    throw err;
+  }
+
+  return normalizeTemporalSpatialPayload(parsed);
+}
+
+/**
+ * @param {unknown} parsed
+ */
+export function normalizeTemporalSpatialPayload(parsed) {
+  let temporalRange = null;
+  const tr = parsed?.temporalRange;
+  if (tr && typeof tr === "object") {
+    const startYear = Number(tr.startYear);
+    const endYear = Number(tr.endYear);
+    const label = String(tr.label || "").trim();
+    if (Number.isFinite(startYear) && Number.isFinite(endYear) && endYear >= startYear && label) {
+      temporalRange = { startYear, endYear, label };
+    }
+  }
+
+  let geoLocation = null;
+  const geo = parsed?.geoLocation;
+  if (geo && typeof geo === "object") {
+    const placeName = String(geo.placeName || "").trim();
+    if (placeName) geoLocation = { placeName };
+  }
+
+  return { temporalRange, geoLocation };
+}
+
+/**
+ * Detect directed INFLUENCED edges between a concept and neighbors.
+ * @param {{ concept: {id:string,title:string}, neighbors: Array<{id:string,title:string}>, llmModel?: string }} params
+ * @returns {Promise<Array<{ from: string, to: string, weight: number }>>}
+ */
+export async function detectVaultInfluenceEdges(params = {}) {
+  const concept = params?.concept;
+  const neighbors = Array.isArray(params?.neighbors) ? params.neighbors : [];
+  const conceptId = String(concept?.id || "").trim();
+  const title = String(concept?.title || "").trim();
+  if (!conceptId || !title || !neighbors.length) return [];
+
+  const validIds = new Set([conceptId, ...neighbors.map((n) => String(n?.id || "").trim()).filter(Boolean)]);
+
+  const systemPrompt = `You detect directed influence relationships among learning concepts.
+Return JSON only:
+{"edges":[{"from":"id","to":"id","weight":0.0}]}
+
+Rules:
+- from influenced to (causal / inspirational), not prerequisite, contradicts, exemplifies, part_of, or associated.
+- Only use the provided ids. Prefer [] over guessing.
+- weight in 0.05..1.0.
+- Do not duplicate other relationship types.`;
+
+  const neighborLines = neighbors
+    .map((n) => `- ${String(n.id)}: ${String(n.title || n.id)}`)
+    .join("\n");
+  const userPrompt = `Focus concept: ${conceptId}: ${title}
+Neighbors:
+${neighborLines}`;
+
+  const content = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(params?.llmModel ?? null),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.1,
+    max_tokens: MAX_TOKENS_INFLUENCE_DETECTION,
+  });
+
+  if (looksLikeTruncatedModelJson(content)) {
+    const err = new Error("TRUNCATED");
+    err.code = "TRUNCATED";
+    throw err;
+  }
+
+  let parsed;
+  try {
+    parsed = parseModelJsonValue(content);
+  } catch (e) {
+    const err = new Error("PARSE_ERROR");
+    err.code = "PARSE_ERROR";
+    err.cause = e;
+    throw err;
+  }
+
+  return normalizeInfluenceEdgesPayload(parsed, validIds);
+}
+
+/**
+ * @param {unknown} parsed
+ * @param {Set<string>} validIds
+ */
+export function normalizeInfluenceEdgesPayload(parsed, validIds) {
+  const edges = Array.isArray(parsed?.edges) ? parsed.edges : Array.isArray(parsed) ? parsed : [];
+  const out = [];
+  const seen = new Set();
+  for (const row of edges) {
+    const from = String(row?.from || row?.fromId || "").trim();
+    const to = String(row?.to || row?.toId || "").trim();
+    let weight = Number(row?.weight);
+    if (!from || !to || from === to) continue;
+    if (!validIds.has(from) || !validIds.has(to)) continue;
+    if (!Number.isFinite(weight)) weight = 0.3;
+    weight = Math.max(0.05, Math.min(1, weight));
+    const key = `${from}|${to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ from, to, weight });
+  }
+  return out;
+}
+
 export {
   buildRecallQuestionsSystemPrompt,
   deepSeekRecallTutor,
