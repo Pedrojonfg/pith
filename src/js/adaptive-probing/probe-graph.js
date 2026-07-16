@@ -44,8 +44,9 @@ function collectPrerequisiteEdges(inventory, conceptGraph) {
   if (conceptGraph?.edges?.length) {
     for (const raw of conceptGraph.edges) {
       if (!raw || typeof raw !== "object") continue;
-      const from = String(raw.from || raw.sourceId || "").trim();
-      const to = String(raw.to || raw.targetId || "").trim();
+      // ponytail: DPP/cloze emit source_id/target_id; keep from/to + camelCase for fixtures
+      const from = String(raw.source_id || raw.from || raw.sourceId || "").trim();
+      const to = String(raw.target_id || raw.to || raw.targetId || "").trim();
       if (!from || !to) continue;
       const type = mapEpistemicTypeToRegistry(raw.type || raw.relation, raw.registry_type);
       if (type !== CONNECTION_TYPES.PREREQUISITE) continue;
