@@ -10552,6 +10552,15 @@ export async function wireStudyHandlers() {
   });
 
   els.confirmBlocksBtn.addEventListener("click", async () => {
+    // [debug-enrich]
+    console.info('[study.confirmBlocks] Confirm clicked:', {
+      offlineMode: window.offlineMode === true,
+      lastNBlocks: state.lastNBlocks ?? null,
+      lastBlockIndexLen: Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex.length : 0,
+      indexWasImported: Boolean(window.indexWasImported),
+      hasOriginalMaterial: Boolean(state.originalMaterialText?.trim?.()),
+      studyMode: state.studyMode ?? null,
+    });
     clearConfirmError();
     els.confirmBlocksStatus.textContent = "";
 
@@ -10783,8 +10792,19 @@ export async function wireStudyHandlers() {
         prePackingDraftMeta = null;
       }
 
+      // [debug-enrich]
+      console.info('[study.confirmBlocks] Session initialized from blocks:', {
+        nBlocks,
+        docId: sessionObj?.docId ?? null,
+        studyMode: sessionObj?.studyMode ?? null,
+        mergedCount: merged.length,
+      });
       goAfterBlocksConfirmed(nBlocks);
     } catch (err) {
+      // [debug-enrich]
+      console.error('[study.confirmBlocks] Confirm failed:', {
+        message: err?.message ?? String(err),
+      });
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
       setConfirmLoading(false);

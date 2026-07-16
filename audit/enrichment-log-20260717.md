@@ -44,3 +44,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `dpp-scope-structure` | done | info ensure start (flight join); info done (prepStatus, hierarchy); warn missing docId |
 | `dpp-final-persist` | done | info attempt/applied; enriched stale-skip warns with docId |
 | `gate-universal-scope` | done | info apply/auto/enter UI; debug skip reasons; scoped lengths |
+| `rsvp-confirm-session` | done | info confirm click + session init; error on confirm failure |
