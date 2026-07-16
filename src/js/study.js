@@ -9023,6 +9023,18 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   const finalIndex = packed.blockIndex;
   const splitRunMeta = packed.splitRunMeta;
   const inventory = conceptInventory || packed.conceptInventory || [];
+  // [debug-enrich]
+  console.info('[study.applyPackedBlocksToEditor] Applying packed blocks to editor:', {
+    blockCount: Array.isArray(finalIndex) ? finalIndex.length : null,
+    inventoryCount: Array.isArray(inventory) ? inventory.length : 0,
+    pipeline: splitRunMeta?.pipeline ?? null,
+    packFallback: splitRunMeta?.pack_fallback_reason ?? null,
+    hasPacked: Boolean(packed),
+  });
+  if (!Array.isArray(finalIndex) || !finalIndex.length) {
+    // [debug-enrich]
+    console.warn('[study.applyPackedBlocksToEditor] Empty or missing blockIndex — editor may be blank');
+  }
   state.lastBlockIndex = finalIndex;
   state.lastNBlocks = finalIndex.length;
   window.blockIndex = finalIndex;
@@ -9033,6 +9045,8 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   renderBlockIndexEditor(finalIndex, { readOnly: false });
   setBlocksListJsonCache(formatBlockIndexForConfirmation(finalIndex));
   showScreen("blocks");
+  // [debug-enrich]
+  console.debug('[study.applyPackedBlocksToEditor] Blocks screen shown');
 }
 
 async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
