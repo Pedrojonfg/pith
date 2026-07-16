@@ -9865,6 +9865,13 @@ export async function wireStudyHandlers() {
 
   function goToSessionReady(nBlocks) {
     const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
+    // [debug-enrich]
+    console.info('[study.goToSessionReady] Showing session ready:', {
+      nBlocksRequested: nBlocks,
+      nBlocksResolved: n,
+      studyMode: state.studyMode ?? null,
+      docId: state.activeSession?.docId ?? null,
+    });
     setFullPackEntryCta(n);
     if (els.sessionReadyMeta) {
       els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
