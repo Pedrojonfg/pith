@@ -293,6 +293,17 @@ function migrateSessionV4(session) {
 async function stripMarkdownForPersist(session, userId) {
   const clone = JSON.parse(JSON.stringify(session));
   const docId = clone.docId;
+  // [debug-enrich]
+  console.debug('[session-store.stripMarkdownForPersist] Stripping for persist:', {
+    docId,
+    hasUserId: Boolean(userId),
+    hasRawMarkdown: typeof clone.shared?.rawMarkdown === "string",
+    rawMarkdownLen: typeof clone.shared?.rawMarkdown === "string"
+      ? clone.shared.rawMarkdown.length
+      : 0,
+    hasRsvp: Boolean(clone.modes?.rsvp),
+    hasQuestions: Boolean(clone.modes?.questions),
+  });
 
   if (clone.modes?.rsvp) {
     clone.modes.rsvp = stripBlocksForPersist(clone.modes.rsvp, docId);
@@ -307,10 +318,31 @@ async function stripMarkdownForPersist(session, userId) {
   const sh = clone.shared;
   let markdownRef = null;
   if (sh && typeof sh.rawMarkdown === "string" && sh.rawMarkdown.length > 0) {
-    markdownRef = await uploadMarkdown(userId, docId, sh.rawMarkdown);
-    const charCount = sh.rawMarkdown.length;
-    delete sh.rawMarkdown;
-    sh.rawMarkdownRef = { storageKey: markdownRef, charCount };
+    try {
+      markdownRef = await uploadMarkdown(userId, docId, sh.rawMarkdown);
+      const charCount = sh.rawMarkdown.length;
+      delete sh.rawMarkdown;
+      sh.rawMarkdownRef = { storageKey: markdownRef, charCount };
+      // [debug-enrich]
+      console.info('[session-store.stripMarkdownForPersist] Markdown uploaded:', {
+        docId,
+        charCount,
+        storageKey: markdownRef,
+      });
+    } catch (err) {
+      // [debug-enrich]
+      console.error('[session-store.stripMarkdownForPersist] Markdown upload failed:', {
+        docId,
+        message: err?.message ?? String(err),
+      });
+      throw err;
+    }
+  } else {
+    // [debug-enrich]
+    console.debug('[session-store.stripMarkdownForPersist] No inline markdown to upload', {
+      docId,
+      existingRef: sh?.rawMarkdownRef?.storageKey ?? null,
+    });
   }
   return { sessionData: clone, markdownRef };
 }

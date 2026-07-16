@@ -22,3 +22,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `sm2-ingest-mcq` | done | debug call; info upsert/gate-block; error on missing session or ids |
 | `persist-session-save` | done | debug entry; info saved; error on validation/upsert failure |
 | `persist-active-pointer` | done | info on set (prev/new); error if session missing |
+| `persist-markdown-externalize` | done | debug strip; info upload ok; error on storage upload failure |
