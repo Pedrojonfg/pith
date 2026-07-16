@@ -39,27 +39,70 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
   const blocks = Array.isArray(clone.blocks) ? clone.blocks : [];
   const blocksJson = JSON.stringify(blocks);
 
+  // [debug-enrich]
+  console.debug('[block-store.stripBlocksForPersist] Evaluating externalize:', {
+    docId: id,
+    blockCount: blocks.length,
+    blocksJsonLen: blocksJson.length,
+    threshold: BLOCKS_INLINE_THRESHOLD,
+    willExternalizeBlocks:
+      blocks.length > 0 && blocksJson.length > BLOCKS_INLINE_THRESHOLD,
+  });
+
   if (blocks.length > 0 && blocksJson.length > BLOCKS_INLINE_THRESHOLD) {
     const storageKey = docBlocksKey(id);
-    localStorage.setItem(storageKey, blocksJson);
-    scheduleBlocksUpload(id, blocksJson);
-    delete clone.blocks;
-    clone.blocksRef = {
-      storageKey,
-      blockCount: blocks.length,
-      charCount: blocksJson.length,
-      schemaVersion: 1,
-    };
+    try {
+      localStorage.setItem(storageKey, blocksJson);
+      scheduleBlocksUpload(id, blocksJson);
+      delete clone.blocks;
+      clone.blocksRef = {
+        storageKey,
+        blockCount: blocks.length,
+        charCount: blocksJson.length,
+        schemaVersion: 1,
+      };
+      // [debug-enrich]
+      console.info('[block-store.stripBlocksForPersist] Blocks externalized:', {
+        docId: id,
+        blockCount: blocks.length,
+        charCount: blocksJson.length,
+        storageKey,
+      });
+    } catch (err) {
+      // [debug-enrich]
+      console.error('[block-store.stripBlocksForPersist] localStorage write failed:', {
+        docId: id,
+        message: err?.message ?? String(err),
+        name: err?.name ?? null,
+      });
+      throw err;
+    }
   }
 
   if (clone._responses && typeof clone._responses === "object") {
     const respJson = JSON.stringify(clone._responses);
     if (respJson.length > BLOCKS_INLINE_THRESHOLD) {
       const storageKey = docResponsesKey(id);
-      localStorage.setItem(storageKey, respJson);
-      scheduleResponsesUpload(id, respJson);
-      delete clone._responses;
-      clone.responsesRef = { storageKey };
+      try {
+        localStorage.setItem(storageKey, respJson);
+        scheduleResponsesUpload(id, respJson);
+        delete clone._responses;
+        clone.responsesRef = { storageKey };
+        // [debug-enrich]
+        console.info('[block-store.stripBlocksForPersist] Responses externalized:', {
+          docId: id,
+          charCount: respJson.length,
+          storageKey,
+        });
+      } catch (err) {
+        // [debug-enrich]
+        console.error('[block-store.stripBlocksForPersist] Responses localStorage write failed:', {
+          docId: id,
+          message: err?.message ?? String(err),
+          name: err?.name ?? null,
+        });
+        throw err;
+      }
     }
   }
 
