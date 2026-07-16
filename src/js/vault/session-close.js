@@ -77,6 +77,15 @@ function isAnswerCorrect(response) {
 export async function collectObservations(session, mode, docId) {
   const observations = [];
   const now = Date.now();
+  // [debug-enrich]
+  console.info('[vault.session-close.collectObservations] Collecting:', {
+    docId,
+    mode: mode ?? null,
+    signalCount: Array.isArray(session?.shared?.assessmentSignals)
+      ? session.shared.assessmentSignals.length
+      : 0,
+    modeSlotsPresent: ["rsvp", "questions", "cloze"].filter((m) => Boolean(session?.modes?.[m])),
+  });
 
   const signals = Array.isArray(session?.shared?.assessmentSignals)
     ? session.shared.assessmentSignals
@@ -184,6 +193,16 @@ export async function collectObservations(session, mode, docId) {
     }
   }
 
+  // [debug-enrich]
+  console.info('[vault.session-close.collectObservations] Collected:', {
+    docId,
+    observationCount: observations.length,
+    byType: observations.reduce((acc, o) => {
+      const t = o.type || "unknown";
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {}),
+  });
   return observations;
 }
 
