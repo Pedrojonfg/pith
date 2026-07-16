@@ -77,7 +77,12 @@ function wireAuthUi() {
     try {
       await signInWithGoogle();
     } catch (err) {
-      console.error("[auth] sign-in failed", err);
+      console.error("[auth] sign-in failed", err); // legacy
+      // [debug-enrich]
+      console.error('[main.wireAuthUi] Sign-in click failed:', {
+        message: err?.message ?? String(err),
+        status: err?.status ?? null,
+      });
       if (els.authStatus) {
         els.authStatus.textContent = "Sign-in failed. Try again.";
       }

@@ -24,11 +24,34 @@ export async function getSupabaseAuthSession() {
 
 export async function signInWithGoogle() {
   const redirectTo = getOAuthRedirectUrl();
+  // [debug-enrich]
+  console.info('[auth.signInWithGoogle] Starting OAuth:', {
+    hasRedirectTo: Boolean(redirectTo),
+    redirectHost: redirectTo
+      ? (() => {
+          try {
+            return new URL(redirectTo).host;
+          } catch {
+            return "(invalid-url)";
+          }
+        })()
+      : null,
+  });
   const { error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: redirectTo ? { redirectTo } : {},
   });
-  if (error) throw error;
+  if (error) {
+    // [debug-enrich]
+    console.error('[auth.signInWithGoogle] OAuth start failed:', {
+      message: error.message ?? String(error),
+      status: error.status ?? null,
+      name: error.name ?? null,
+    });
+    throw error;
+  }
+  // [debug-enrich]
+  console.debug('[auth.signInWithGoogle] OAuth redirect initiated (no error)');
 }
 
 export async function signOut() {
