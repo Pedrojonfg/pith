@@ -42,3 +42,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `dpp-t0.2-text-metrics` | skipped | already adequate — info log with metrics/sizeCategory present |
 | `dpp-t1.5-mode-recommendation` | done | info compute/skip/result (method, primaryFlow, profile flags) |
 | `dpp-scope-structure` | done | info ensure start (flight join); info done (prepStatus, hierarchy); warn missing docId |
+| `dpp-final-persist` | done | info attempt/applied; enriched stale-skip warns with docId |

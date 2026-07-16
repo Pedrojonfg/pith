@@ -227,13 +227,31 @@ export async function persistCheckpoint(doc) {
  * @returns {Promise<boolean>} whether the final write was applied
  */
 export async function persistFinal(doc) {
-  if (!doc?.docId) throw new Error("persistFinal requires docId");
+  if (!doc?.docId) {
+    // [debug-enrich]
+    console.error('[dpp-persistence.persistFinal] Missing docId');
+    throw new Error("persistFinal requires docId");
+  }
   const runId = doc?.shared?.preparation?.runId;
   const docId = doc.docId;
   const activeOnDevice = getActiveDppRunId(docId);
 
+  // [debug-enrich]
+  console.info('[dpp-persistence.persistFinal] Final persist attempt:', {
+    docId,
+    runId: runId ?? null,
+    activeOnDevice: activeOnDevice ?? null,
+    prepStatus: doc?.shared?.preparation?.status ?? null,
+  });
+
   if (activeOnDevice && runId && activeOnDevice !== runId) {
     console.warn("[DPP] stale run, skipping final write", runId);
+    // [debug-enrich]
+    console.warn('[dpp-persistence.persistFinal] Stale vs activeOnDevice — skip write', {
+      docId,
+      runId,
+      activeOnDevice,
+    });
     clearDppRun(docId);
     return false;
   }
@@ -253,6 +271,13 @@ export async function persistFinal(doc) {
       runId,
       storeRunId,
     });
+    // [debug-enrich]
+    console.warn('[dpp-persistence.persistFinal] Store runId mismatch — skip', {
+      docId,
+      runId,
+      storeRunId,
+      forceTerminalWrite,
+    });
     clearDppRun(docId);
     return false;
   }
@@ -271,5 +296,11 @@ export async function persistFinal(doc) {
   } catch (err) {
     console.warn("[DPP] shared cache upsert skipped:", err?.message || err);
   }
+  // [debug-enrich]
+  console.info('[dpp-persistence.persistFinal] Final write applied:', {
+    docId,
+    runId: runId ?? null,
+    prepStatus,
+  });
   return true;
 }
