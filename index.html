@@ -1584,6 +1584,34 @@
         </section>
 
         <section
+          id="screenPackConceptEditor"
+          class="screen pack-concept-editor-screen"
+          aria-hidden="true"
+          aria-label="Edit pack concept graph"
+          hidden
+        >
+          <header class="pack-concept-editor-toolbar">
+            <button type="button" id="packConceptEditorBackBtn" class="create-back-btn">← Library</button>
+            <h1 class="pack-concept-editor-title">Edit pack concepts</h1>
+            <p id="packConceptEditorStatus" class="hint pack-concept-editor-status" role="status"></p>
+          </header>
+          <div class="pack-concept-editor-actions row">
+            <button type="button" id="packConceptAddBtn" class="btn-secondary">+ Concept</button>
+            <button type="button" id="packConceptAddEdgeBtn" class="btn-secondary">+ Relation</button>
+            <label class="pack-concept-include-source create-checkbox-label">
+              <input type="checkbox" id="packConceptIncludeSource" checked />
+              Include source document
+            </label>
+            <button type="button" id="packConceptPublishBtn" class="btn-primary">Publish</button>
+          </div>
+          <p id="packConceptEditorError" class="error pack-concept-editor-error" role="alert" hidden></p>
+          <div id="packConceptGraphMount" class="pack-concept-graph-mount material-graph-content"></div>
+          <p class="hint pack-concept-editor-hint">
+            Click a concept to rename or delete. Click a relation to remove it. Edits apply to this pack draft only.
+          </p>
+        </section>
+
+        <section
           id="screenRecall"
           class="screen recall-screen"
           aria-hidden="true"
@@ -1966,7 +1994,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_04";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_05";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -1992,7 +2020,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260716_04");
+        await import("./src/js/main.js?v=20260716_05");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

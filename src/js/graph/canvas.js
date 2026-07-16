@@ -237,6 +237,7 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
   const idToNode = new Map(nodes.map((n) => [n.id, n]));
   const interactive = typeof options.onNodeClick === "function";
 
+  const edgeInteractive = typeof options.onEdgeClick === "function";
   const edgeSvg = edges
     .map((e) => {
       const from = idToNode.get(e.from);
@@ -249,7 +250,10 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
       const strokeOpacity = Number.isFinite(e.weight) ? weightScale.opacity : 1;
       const dashAttr =
         stroke.dasharray === "none" ? "" : ` stroke-dasharray="${stroke.dasharray}"`;
-      return `<path class="material-graph-edge" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashAttr} marker-end="url(#material-graph-arrow)"/>`;
+      const edgeClass = edgeInteractive
+        ? ' class="material-graph-edge material-graph-edge-clickable"'
+        : ' class="material-graph-edge"';
+      return `<path${edgeClass} data-edge-from="${escapeHtml(e.from)}" data-edge-to="${escapeHtml(e.to)}" data-edge-type="${escapeHtml(e.type)}" d="${edgePath(from, to)}" stroke="${color}" fill="none" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashAttr} marker-end="url(#material-graph-arrow)"/>`;
     })
     .join("");
 
@@ -312,6 +316,19 @@ export function renderGraphCanvas(graph, containerEl, options = {}) {
         const nodeId = el.getAttribute("data-node-id");
         const node = nodes.find((n) => n.id === nodeId);
         if (node) options.onNodeClick(node, annId);
+      });
+    });
+  }
+
+  if (edgeInteractive) {
+    containerEl.querySelectorAll(".material-graph-edge-clickable").forEach((el) => {
+      el.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        options.onEdgeClick({
+          from: el.getAttribute("data-edge-from"),
+          to: el.getAttribute("data-edge-to"),
+          type: el.getAttribute("data-edge-type"),
+        });
       });
     });
   }

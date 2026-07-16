@@ -228,3 +228,12 @@
   font-size: 11px;
 }
 
+
+.material-graph-edge-clickable {
+  cursor: pointer;
+  stroke-width: 3;
+}
+.material-graph-edge-clickable:hover {
+  stroke-opacity: 1;
+  filter: brightness(1.25);
+}
