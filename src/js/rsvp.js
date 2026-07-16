@@ -1344,6 +1344,16 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   rsvpState.countdownActive = true;
   rsvpState.wordsSinceComprehensionPause = 0;
 
+  // [debug-enrich]
+  console.info('[rsvp.startRsvpForText] Starting playback:', {
+    explanationLen: rsvpState.sourceExplanation.length,
+    chunkCount: rsvpState.chunks.length,
+    wpm: rsvpState.wpm,
+    wordsPerFlash: rsvpState.wordsPerFlash,
+    skipCountdown,
+    playbackGen: rsvpState.playbackGen,
+  });
+
   hideSidebar();
   setRsvpOverlayActive(true);
   syncRsvpFocusMode();
@@ -1352,6 +1362,8 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   syncRsvpBlockTitleUi();
 
   if (!rsvpState.chunks.length) {
+    // [debug-enrich]
+    console.warn('[rsvp.startRsvpForText] No chunks — empty reading text');
     els.rsvpChunk.textContent = "No reading text for this block.";
     rsvpState.playing = false;
     rsvpState.countdownActive = false;
@@ -1366,6 +1378,11 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
     rsvpContainerEl ||
     els.rsvpOverlay.querySelector(".rsvp-container");
   if (container && (container.offsetWidth < 300 || container.offsetHeight < 80)) {
+    // [debug-enrich]
+    console.debug('[rsvp.startRsvpForText] Resizing undersized RSVP container', {
+      offsetWidth: container.offsetWidth,
+      offsetHeight: container.offsetHeight,
+    });
     container.style.width = "500px";
     container.style.height = "150px";
   }
@@ -1387,6 +1404,8 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
     rsvpState.countdownActive = false;
     els.rsvpPlayPauseBtn.textContent = "Pause";
     syncRsvpFocusMode();
+    // [debug-enrich]
+    console.debug('[rsvp.startRsvpForText] Skipping countdown — beginPlaybackLoop');
     beginPlaybackLoop();
     return;
   }
@@ -1397,7 +1416,11 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   let i = 0;
   const countdownGen = rsvpState.playbackGen;
   const tick = () => {
-    if (countdownGen !== rsvpState.playbackGen) return;
+    if (countdownGen !== rsvpState.playbackGen) {
+      // [debug-enrich]
+      console.debug('[rsvp.startRsvpForText] Countdown aborted — playbackGen changed');
+      return;
+    }
     if (i >= steps.length) {
       els.rsvpChunk.textContent = "";
       rsvpState.playing = true;
