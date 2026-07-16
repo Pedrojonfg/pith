@@ -139,15 +139,20 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * How a concept entered the knowledge profile (additive; packing still uses mastery+confidence).
+ * @typedef {"tested"|"inferred"|"presumed_known_vault"} AssessmentStatus
+ */
+
+/**
  * Pre-packing knowledge profile keyed by concept coverage.
  * @typedef {object} ConceptCoverageKnowledgeProfile
- * @property {Record<string, { assessed: boolean, correct?: boolean }>} byConceptId
+ * @property {Record<string, { assessed: boolean, correct?: boolean, assessmentStatus?: AssessmentStatus }>} byConceptId
  * @property {number} assessedCount
  * @property {number} notAssessedCount
  * @property {number} correctCount
  * @property {number} generatedAt
  * @property {string} [assessed_at]
- * @property {Array<{ concept_id: string, mastery: string, confidence: number }>} [items]
+ * @property {Array<{ concept_id: string, mastery: string, confidence: number, assessmentStatus?: AssessmentStatus }>} [items]
  * @property {number} [coverage]
  */
 
