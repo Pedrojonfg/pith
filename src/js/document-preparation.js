@@ -477,7 +477,27 @@ async function runPhaseT14(doc) {
     firstPersonRatio: textMetrics.contentSignals?.firstPersonRatio || 0,
     sizeCategory: textMetrics.sizeCategory,
   };
+  // [debug-enrich]
+  console.info('[document-preparation.runPhaseT14] Computing block recommendation:', {
+    docId: doc.id ?? null,
+    conceptCount: signals.conceptCount,
+    wordCount: signals.wordCount,
+    sectionCount: signals.sectionCount,
+    sizeCategory: signals.sizeCategory,
+    conceptualLoad: signals.conceptualLoad,
+    genre: signals.genre,
+    hasHierarchy: Boolean(hierarchy),
+  });
   const recommendation = computeBlockCountRecommendation(signals);
+  // [debug-enrich]
+  console.info('[document-preparation.runPhaseT14] Block recommendation result:', {
+    docId: doc.id ?? null,
+    nBlocks: recommendation?.nBlocks ?? null,
+    rationalePresent: recommendation?.rationale != null,
+    reasoningPresent: recommendation?.reasoning != null,
+    factors: recommendation?.factors ?? null,
+    signalsUsed: recommendation?.signalsUsed ?? null,
+  });
   doc.shared.blockRecommendation = {
     nBlocks: recommendation.nBlocks,
     rationale: recommendation.rationale,

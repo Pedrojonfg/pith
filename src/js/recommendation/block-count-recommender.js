@@ -163,6 +163,14 @@ function buildReasoning(normalized, ctx) {
  */
 export function computeBlockCountRecommendation(signals) {
   const normalized = normalizeSignals(signals);
+  // [debug-enrich]
+  console.debug('[block-count-recommender.computeBlockCountRecommendation] Normalized signals:', {
+    conceptCount: normalized.conceptCount,
+    wordCount: normalized.wordCount,
+    sectionCount: normalized.sectionCount,
+    sizeCategory: normalized.sizeCategory,
+    conceptualLoad: normalized.conceptualLoad,
+  });
 
   const targetConceptsPerBlock =
     BASE_CONCEPTS_PER_BLOCK - (normalized.conceptualLoad - 1) * 0.75;
@@ -205,6 +213,15 @@ export function computeBlockCountRecommendation(signals) {
   });
 
   const reasoning = buildReasoning(normalized, { nBlocks, multiplier });
+
+  // [debug-enrich]
+  console.debug('[block-count-recommender.computeBlockCountRecommendation] Result:', {
+    nBlocks,
+    tinyCapApplied,
+    multiplier,
+    multiplierReason,
+    factors,
+  });
 
   return {
     computedAt: Date.now(),
