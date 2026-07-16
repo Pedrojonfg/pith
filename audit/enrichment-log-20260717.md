@@ -24,3 +24,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-active-pointer` | done | info on set (prev/new); error if session missing |
 | `persist-markdown-externalize` | done | debug strip; info upload ok; error on storage upload failure |
 | `persist-blocks-externalize` | done | debug threshold check; info when externalized; error on localStorage write |
+| `persist-blocks-write-through` | done | debug entry; info ok; warn invalid; error with quota vs persist_failed |
