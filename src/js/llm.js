@@ -13,7 +13,23 @@ let cachedAccessToken = null;
  * @param {import('@supabase/supabase-js').Session | null} session
  */
 export function syncPlatformLlmAccessFromSession(session) {
-  cachedAccessToken = session?.access_token ?? null;
+  const hadToken = Boolean(cachedAccessToken);
+  const prevToken = cachedAccessToken;
+  const nextToken = session?.access_token ?? null;
+  const hasToken = Boolean(nextToken);
+  cachedAccessToken = nextToken;
+  // [debug-enrich]
+  console.info('[llm.syncPlatformLlmAccessFromSession] Token cache synced:', {
+    hadToken,
+    hasToken,
+    tokenChanged: prevToken !== nextToken,
+    userId: session?.user?.id ?? null,
+    expiresAt: session?.expires_at ?? null,
+  });
+  if (!hasToken) {
+    // [debug-enrich]
+    console.warn('[llm.syncPlatformLlmAccessFromSession] Cleared LLM access token — proxy calls will fail until re-auth');
+  }
 }
 
 /**
