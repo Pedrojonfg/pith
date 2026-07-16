@@ -187,8 +187,39 @@ export async function commitPreparedDocToStore(preparedDoc) {
  * @param {object} doc
  */
 export async function persistCheckpoint(doc) {
-  if (!doc?.docId) throw new Error("persistCheckpoint requires docId");
-  await saveActiveSession(doc);
+  if (!doc?.docId) {
+    // [debug-enrich]
+    console.error('[dpp-persistence.persistCheckpoint] Missing docId — cannot persist');
+    throw new Error("persistCheckpoint requires docId");
+  }
+  // [debug-enrich]
+  console.info('[dpp-persistence.persistCheckpoint] Writing checkpoint:', {
+    docId: doc.docId,
+    prepStatus: doc?.shared?.preparation?.status ?? null,
+    runId: doc?.shared?.preparation?.runId ?? null,
+    currentPhase: doc?.shared?.preparation?.currentPhase ?? null,
+    phaseResultKeys: doc?.shared?.preparation?.phaseResults
+      ? Object.keys(doc.shared.preparation.phaseResults)
+      : [],
+    hasInventory: Array.isArray(doc?.shared?.conceptInventory),
+    inventoryCount: Array.isArray(doc?.shared?.conceptInventory)
+      ? doc.shared.conceptInventory.length
+      : 0,
+    hasHierarchy: Boolean(doc?.shared?.docHierarchy),
+  });
+  try {
+    await saveActiveSession(doc);
+    // [debug-enrich]
+    console.info('[dpp-persistence.persistCheckpoint] Checkpoint saved:', { docId: doc.docId });
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[dpp-persistence.persistCheckpoint] Checkpoint save failed:', {
+      docId: doc.docId,
+      message: err?.message ?? String(err),
+      name: err?.name ?? null,
+    });
+    throw err;
+  }
 }
 
 /**
