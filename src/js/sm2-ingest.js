@@ -45,12 +45,32 @@ export const RECALL_QUALITY_TO_SM2 = {
  * @returns {object}
  */
 export async function registerOrUpdateSmItem(docId, params) {
+  // [debug-enrich]
+  console.debug('[sm2-ingest.registerOrUpdateSmItem] Call:', {
+    docId,
+    sourceType: params?.sourceType ?? null,
+    sourceId: params?.sourceId ?? null,
+    quality: params?.quality ?? null,
+    conceptIdCount: Array.isArray(params?.conceptIds) ? params.conceptIds.length : 0,
+  });
   const session = await getSession(docId);
-  if (!session) throw new Error("session not found");
+  if (!session) {
+    // [debug-enrich]
+    console.error('[sm2-ingest.registerOrUpdateSmItem] Session not found:', { docId });
+    throw new Error("session not found");
+  }
 
   const sourceType = params.sourceType;
   const sourceId = String(params.sourceId || "").trim();
-  if (!sourceType || !sourceId) throw new Error("registerOrUpdateSmItem requires sourceType and sourceId");
+  if (!sourceType || !sourceId) {
+    // [debug-enrich]
+    console.error('[sm2-ingest.registerOrUpdateSmItem] Missing sourceType/sourceId:', {
+      docId,
+      sourceType: sourceType ?? null,
+      hasSourceId: Boolean(sourceId),
+    });
+    throw new Error("registerOrUpdateSmItem requires sourceType and sourceId");
+  }
 
   const conceptIds = Array.isArray(params.conceptIds)
     ? params.conceptIds.map((id) => String(id || "").trim()).filter(Boolean)
@@ -58,6 +78,13 @@ export async function registerOrUpdateSmItem(docId, params) {
 
   if (isComprehensionGateEnabled() && conceptIds.length) {
     if (!mayScheduleSm2ForConcepts(session, conceptIds)) {
+      // [debug-enrich]
+      console.info('[sm2-ingest.registerOrUpdateSmItem] Comprehension gate blocked scheduling:', {
+        docId,
+        sourceType,
+        sourceId,
+        conceptIds,
+      });
       return null;
     }
   }
@@ -95,6 +122,17 @@ export async function registerOrUpdateSmItem(docId, params) {
   }
 
   await upsertSmItem(docId, item);
+  // [debug-enrich]
+  console.info('[sm2-ingest.registerOrUpdateSmItem] Upserted:', {
+    docId,
+    itemId: item.id,
+    sourceType: item.sourceType,
+    sourceId: item.sourceId,
+    wasExisting: Boolean(existing),
+    quality: params.quality ?? null,
+    interval: item.interval,
+    scheduledDue: item.scheduledDue,
+  });
   return item;
 }
 
