@@ -82,15 +82,26 @@ export function createSmItem(params = {}) {
   const now = Date.now();
   const sourceType = resolveSourceType(params) || params.sourceType;
   if (!sourceType || !SOURCE_TYPES.has(sourceType)) {
+    // [debug-enrich]
+    console.error('[sm2.createSmItem] Invalid sourceType:', {
+      sourceType: params.sourceType ?? null,
+      resolved: sourceType ?? null,
+    });
     throw new Error("createSmItem requires valid sourceType");
   }
   const sourceId = String(params.sourceId || "").trim();
   const docId = String(params.docId || "").trim();
   if (!sourceId || !docId) {
+    // [debug-enrich]
+    console.error('[sm2.createSmItem] Missing sourceId or docId:', {
+      hasSourceId: Boolean(sourceId),
+      hasDocId: Boolean(docId),
+      sourceType,
+    });
     throw new Error("createSmItem requires sourceId and docId");
   }
 
-  return {
+  const item = {
     id: String(params.id || crypto.randomUUID()),
     sourceType,
     sourceId,
@@ -106,6 +117,15 @@ export function createSmItem(params = {}) {
     createdAt: Number.isFinite(params.createdAt) ? params.createdAt : now,
     reviewProvenance: resolveReviewProvenance(params),
   };
+  // [debug-enrich]
+  console.debug('[sm2.createSmItem] Created:', {
+    id: item.id,
+    sourceType: item.sourceType,
+    sourceId: item.sourceId,
+    docId: item.docId,
+    reviewProvenance: item.reviewProvenance,
+  });
+  return item;
 }
 
 /**
@@ -200,6 +220,18 @@ export function updateSmItem(item, quality, now = Date.now()) {
   const daysEarly =
     early && scheduledDue > now ? (scheduledDue - now) / MS_PER_DAY : 0;
 
+  // [debug-enrich]
+  console.debug('[sm2.updateSmItem] Updating:', {
+    itemId: item?.id ?? null,
+    qualityRaw: quality,
+    qualityClamped: q,
+    early,
+    daysEarly: Math.round(daysEarly * 100) / 100,
+    intervalBefore: Number(item?.interval) || 0,
+    easeBefore: Number(item?.easeFactor) || 0,
+    repsBefore: Number(item?.repetitions) || 0,
+  });
+
   const observation = {
     timestamp: now,
     quality: q,
@@ -215,6 +247,10 @@ export function updateSmItem(item, quality, now = Date.now()) {
   };
 
   if (early) {
+    // [debug-enrich]
+    console.debug('[sm2.updateSmItem] Early review — schedule unchanged', {
+      itemId: item?.id ?? null,
+    });
     return updated;
   }
 
@@ -242,6 +278,14 @@ export function updateSmItem(item, quality, now = Date.now()) {
   updated.interval = interval;
   updated.repetitions = repetitions;
   updated.scheduledDue = now + interval * MS_PER_DAY;
+  // [debug-enrich]
+  console.debug('[sm2.updateSmItem] Schedule updated:', {
+    itemId: item?.id ?? null,
+    interval,
+    easeFactor,
+    repetitions,
+    scheduledDue: updated.scheduledDue,
+  });
   return updated;
 }
 
@@ -282,7 +326,15 @@ export function buildReviewQueue(items, now = Date.now(), options = {}) {
     })
     .map(({ item }) => ({ ...item }));
 
-  if (!applyCap) return sorted;
+  if (!applyCap) {
+    // [debug-enrich]
+    console.debug('[sm2.buildReviewQueue] Built (no cap):', {
+      inputCount: Array.isArray(items) ? items.length : 0,
+      normalizedCount: normalized.length,
+      queueLength: sorted.length,
+    });
+    return sorted;
+  }
 
   let gapFillCount = 0;
   const capped = [];
@@ -293,6 +345,14 @@ export function buildReviewQueue(items, now = Date.now(), options = {}) {
     }
     capped.push(item);
   }
+  // [debug-enrich]
+  console.debug('[sm2.buildReviewQueue] Built:', {
+    inputCount: Array.isArray(items) ? items.length : 0,
+    normalizedCount: normalized.length,
+    queueLength: capped.length,
+    gapFillInQueue: gapFillCount,
+    maxGapFill,
+  });
   return capped;
 }
 
