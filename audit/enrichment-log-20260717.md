@@ -25,3 +25,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-markdown-externalize` | done | debug strip; info upload ok; error on storage upload failure |
 | `persist-blocks-externalize` | done | debug threshold check; info when externalized; error on localStorage write |
 | `persist-blocks-write-through` | done | debug entry; info ok; warn invalid; error with quota vs persist_failed |
+| `persist-supabase-upsert` | done | debug entry; info ok; error with code/details/hint on failure |

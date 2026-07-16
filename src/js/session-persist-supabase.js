@@ -84,6 +84,14 @@ export async function fetchSessionRows(userId) {
  * @param {string|null} markdownRef
  */
 export async function upsertSessionRow(userId, docId, sessionData, markdownRef) {
+  // [debug-enrich]
+  console.debug('[session-persist-supabase.upsertSessionRow] Upserting:', {
+    docId,
+    hasUserId: Boolean(userId),
+    markdownRef: markdownRef ?? null,
+    prepStatus: sessionData?.shared?.preparation?.status ?? null,
+    hasModes: Boolean(sessionData?.modes),
+  });
   const { error } = await supabase.from("document_sessions").upsert(
     {
       id: docId,
@@ -94,7 +102,19 @@ export async function upsertSessionRow(userId, docId, sessionData, markdownRef) 
     },
     { onConflict: "id,user_id" },
   );
-  if (error) throw error;
+  if (error) {
+    // [debug-enrich]
+    console.error('[session-persist-supabase.upsertSessionRow] Upsert failed:', {
+      docId,
+      message: error.message ?? String(error),
+      code: error.code ?? null,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+    });
+    throw error;
+  }
+  // [debug-enrich]
+  console.info('[session-persist-supabase.upsertSessionRow] Upsert ok:', { docId });
 }
 
 /**
