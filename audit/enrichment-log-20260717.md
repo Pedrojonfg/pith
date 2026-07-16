@@ -20,3 +20,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `review-sm2-item-grade` | done | debug render; info on grade; error if originDocId missing (grade dropped); warn missing session |
 | `sm2-core-update` | done | debug create/update/queue; error on invalid create params |
 | `sm2-ingest-mcq` | done | debug call; info upsert/gate-block; error on missing session or ids |
+| `persist-session-save` | done | debug entry; info saved; error on validation/upsert failure |
