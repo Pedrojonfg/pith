@@ -31,3 +31,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `registry-identity-resolve` | done | debug resolve; info exact/fuzzy/create paths; error on empty name |
 | `registry-ingest-study` | done | info MCQ promote entry; warn missing session / per-concept fail; debug ok/fail counts |
 | `vault-spaced-review-sync` | done | info sync start/pool rebuild counts; warn missing docId/shared |
+| `llm-proxy-client` | done | debug request; info success; warn retry; error auth/network/status (no token logged) |
