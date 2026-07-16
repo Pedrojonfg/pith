@@ -16,6 +16,11 @@ import { normalizeSmItem } from "./sm2.js";
  */
 export async function getReviewableItemsForProject(projectId, opts = {}) {
   const includeDescendants = opts.includeDescendants !== false;
+  // [debug-enrich]
+  console.info('[review-project-scope.getReviewableItemsForProject] Filtering:', {
+    projectId,
+    includeDescendants,
+  });
   const sessions = await getAllSessions();
   const vault = loadVault();
 
@@ -29,7 +34,15 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
     const vaultPool = (vault.reviewItems || [])
       .map((item) => normalizeVaultReviewItemForQueue(item))
       .filter(Boolean);
-    return [...smPool.filter((i) => i?.id), ...vaultPool];
+    const result = [...smPool.filter((i) => i?.id), ...vaultPool];
+    // [debug-enrich]
+    console.info('[review-project-scope.getReviewableItemsForProject] All-projects pool:', {
+      sessionCount: sessions.length,
+      smCount: smPool.filter((i) => i?.id).length,
+      vaultCount: vaultPool.length,
+      total: result.length,
+    });
+    return result;
   }
 
   const store = getProjectStore();
@@ -39,25 +52,46 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
       : [projectId],
   );
 
-  const smPoolItems = sessions
-    .filter((s) => s?.projectId && scopeIds.has(String(s.projectId)))
-    .flatMap((session) =>
-      (session.shared?.smItems || []).map((raw) => ({
-        ...normalizeSmItem({ ...raw, docId: session.docId }),
-        source: "session",
-      })),
-    );
+  const scopedSessions = sessions.filter(
+    (s) => s?.projectId && scopeIds.has(String(s.projectId)),
+  );
+  const smPoolItems = scopedSessions.flatMap((session) =>
+    (session.shared?.smItems || []).map((raw) => ({
+      ...normalizeSmItem({ ...raw, docId: session.docId }),
+      source: "session",
+    })),
+  );
 
   const vaultPoolItems = [];
+  let vaultSkippedNoOrigin = 0;
+  let vaultSkippedOutOfScope = 0;
   for (const item of vault.reviewItems || []) {
     const origin = await getSession(item?.sourceDocId);
-    if (!origin) continue;
-    if (!origin?.projectId || !scopeIds.has(String(origin.projectId))) continue;
+    if (!origin) {
+      vaultSkippedNoOrigin += 1;
+      continue;
+    }
+    if (!origin?.projectId || !scopeIds.has(String(origin.projectId))) {
+      vaultSkippedOutOfScope += 1;
+      continue;
+    }
     const normalized = normalizeVaultReviewItemForQueue(item);
     if (normalized) vaultPoolItems.push(normalized);
   }
 
-  return [...smPoolItems.filter((i) => i?.id), ...vaultPoolItems];
+  const result = [...smPoolItems.filter((i) => i?.id), ...vaultPoolItems];
+  // [debug-enrich]
+  console.info('[review-project-scope.getReviewableItemsForProject] Scoped pool:', {
+    projectId,
+    scopeIdCount: scopeIds.size,
+    scopedSessionCount: scopedSessions.length,
+    smCount: smPoolItems.filter((i) => i?.id).length,
+    vaultCount: vaultPoolItems.length,
+    vaultSkippedNoOrigin,
+    vaultSkippedOutOfScope,
+    total: result.length,
+  });
+  return result;
 }
 
 export function filterDueSmItems(items) {
