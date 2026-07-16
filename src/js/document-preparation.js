@@ -528,7 +528,22 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
     options.knowledgeProfile !== undefined
       ? options.knowledgeProfile
       : doc.shared?.knowledgeProfile ?? null;
+  // [debug-enrich]
+  console.info('[document-preparation.runModeRecommendationPhase] Computing:', {
+    docId: doc.docId ?? null,
+    method,
+    force: Boolean(options.force),
+    hasExisting: Boolean(doc.shared?.modeRecommendation),
+    hasKnowledgeProfile: Boolean(knowledgeProfile),
+    sizeCategory: textMetrics?.sizeCategory ?? null,
+    genre: pedagogicalMeta?.genre ?? null,
+  });
   if (doc.shared?.modeRecommendation && !options.force) {
+    // [debug-enrich]
+    console.info('[document-preparation.runModeRecommendationPhase] Skipping — already set:', {
+      docId: doc.docId ?? null,
+      primaryFlow: doc.shared.modeRecommendation.primaryFlow ?? null,
+    });
     return hashPayload(doc.shared.modeRecommendation.primaryFlow);
   }
   const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, {
@@ -536,6 +551,14 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
     knowledgeProfile,
   });
   doc.shared.modeRecommendation = recommendation;
+  // [debug-enrich]
+  console.info('[document-preparation.runModeRecommendationPhase] Recommendation set:', {
+    docId: doc.docId ?? null,
+    primaryFlow: recommendation?.primaryFlow ?? null,
+    rationale: recommendation?.rationale
+      ? String(recommendation.rationale).slice(0, 120)
+      : null,
+  });
   return hashPayload(recommendation.primaryFlow);
 }
 
