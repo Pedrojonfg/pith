@@ -79,18 +79,47 @@ export async function callViaProxy(
   { service, endpoint, body, signal } = {},
   retryAttempt = 0,
 ) {
-  const token = await getSupabaseAuthToken();
-  if (!token) throw new Error("Not authenticated — cannot call LLM proxy.");
-
-  const res = await fetch(PROXY_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({ service, endpoint, body }),
-    signal,
+  // [debug-enrich]
+  console.debug('[llm.callViaProxy] Request:', {
+    service,
+    endpoint,
+    retryAttempt,
+    hasSignal: Boolean(signal),
+    bodyKeys: body && typeof body === "object" ? Object.keys(body) : [],
   });
+  const token = await getSupabaseAuthToken();
+  if (!token) {
+    // [debug-enrich]
+    console.error('[llm.callViaProxy] Not authenticated — aborting proxy call', {
+      service,
+      endpoint,
+    });
+    throw new Error("Not authenticated — cannot call LLM proxy.");
+  }
+
+  let res;
+  try {
+    res = await fetch(PROXY_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ service, endpoint, body }),
+      signal,
+    });
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[llm.callViaProxy] Network/fetch error:', {
+      service,
+      endpoint,
+      retryAttempt,
+      message: err?.message ?? String(err),
+      name: err?.name ?? null,
+      aborted: Boolean(signal?.aborted),
+    });
+    throw err;
+  }
 
   if (!res.ok) {
     if (
@@ -99,15 +128,38 @@ export async function callViaProxy(
       !signal?.aborted
     ) {
       const delay = PROXY_RETRY_BASE_MS * 2 ** retryAttempt;
+      // [debug-enrich]
+      console.warn('[llm.callViaProxy] Retryable status — backing off:', {
+        service,
+        endpoint,
+        status: res.status,
+        retryAttempt,
+        delayMs: delay,
+      });
       await new Promise((resolve) => setTimeout(resolve, delay));
       return callViaProxy({ service, endpoint, body, signal }, retryAttempt + 1);
     }
     const err = await res.text().catch(() => "");
+    // [debug-enrich]
+    console.error('[llm.callViaProxy] Proxy error response:', {
+      service,
+      endpoint,
+      status: res.status,
+      retryAttempt,
+      bodyPreview: String(err).slice(0, 300),
+    });
     const apiErr = new Error(`LLM proxy error ${res.status}: ${err.slice(0, 300)}`);
     apiErr.status = res.status;
     throw apiErr;
   }
 
+  // [debug-enrich]
+  console.info('[llm.callViaProxy] Success:', {
+    service,
+    endpoint,
+    status: res.status,
+    retryAttempt,
+  });
   return res.json();
 }
 
