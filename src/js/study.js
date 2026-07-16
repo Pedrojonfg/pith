@@ -9880,6 +9880,11 @@ export async function wireStudyHandlers() {
   }
 
   async function startStudyingNow() {
+    // [debug-enrich]
+    console.info('[study.startStudyingNow] Start studying clicked:', {
+      studyModeRadio: getSelectedStudyModeRadio(),
+      stateStudyMode: state.studyMode ?? null,
+    });
     els.startStudyingError.hidden = true;
     els.startStudyingError.textContent = "";
     els.startStudyingStatus.textContent = "";
@@ -9888,6 +9893,8 @@ export async function wireStudyHandlers() {
     await applyFlowRecommendationOnEnterMode(studyMode);
     state.activeSession = await loadActiveSession();
     if (!state.activeSession) {
+      // [debug-enrich]
+      console.error('[study.startStudyingNow] No active session — returning to create');
       els.startStudyingError.hidden = false;
       els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
       returnToCreateScreen();
@@ -9919,6 +9926,17 @@ export async function wireStudyHandlers() {
     ) {
       state.activeBlockIndex = state.questionsStudyOrder[0];
     }
+    // [debug-enrich]
+    console.info('[study.startStudyingNow] Entering study loop:', {
+      docId: state.activeSession?.docId ?? null,
+      studyMode: state.activeSession?.studyMode ?? studyMode,
+      activeBlockIndex: state.activeBlockIndex,
+      activeQuestionIndex: state.activeQuestionIndex,
+      nTest: state.nTest,
+      nSocratic: state.nSocratic,
+      totalBlocks: getTotalBlocksSafe(),
+      studyStartedAt: state.activeSession?._meta?.study_started_at ?? null,
+    });
     updateStudyProgressUi();
     startBlock(state.activeBlockIndex);
   }
