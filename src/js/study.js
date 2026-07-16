@@ -6901,11 +6901,23 @@ function attachQuestionCountDiagnostics(block, cfg, counts) {
 async function ensureBlockGenerated(blockIndex) {
   const existing = getBlock(blockIndex);
   const needsReaderText = !isQuestionsStudyMode(state.activeSession);
+  // [debug-enrich]
+  console.debug('[study.ensureBlockGenerated] Check:', {
+    blockIndex,
+    needsReaderText,
+    hasExisting: Boolean(existing),
+    hasReadable: existing ? blockHasReadableExplanation(existing) : false,
+    hasGenerated: existing ? hasGeneratedBlockContent(existing) : false,
+  });
   if (needsReaderText) {
     if (blockHasReadableExplanation(existing) && hasGeneratedBlockContent(existing)) {
+      // [debug-enrich]
+      console.debug('[study.ensureBlockGenerated] Cache hit (with explanation)');
       return existing;
     }
   } else if (hasGeneratedBlockContent(existing)) {
+    // [debug-enrich]
+    console.debug('[study.ensureBlockGenerated] Cache hit (questions mode)');
     return existing;
   }
   if (isOfflineMode()) {
@@ -6982,11 +6994,28 @@ async function ensureBlockGenerated(blockIndex) {
       sectionHasImages,
     };
 
+    // [debug-enrich]
+    console.info('[study.ensureBlockGenerated] Generating block via LLM:', {
+      blockIndex,
+      blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
+      n_test: cfg.n_test,
+      n_socratic: cfg.n_socratic,
+      materialLen: materialChunk ? String(materialChunk).length : 0,
+      strictMode,
+      sectionHasImages,
+    });
+
     let obj = null;
     try {
       obj = await deepSeekGenerateBlockJson(blockRequest);
     } catch (err) {
       const message = err?.message ? String(err.message) : String(err);
+      // [debug-enrich]
+      console.warn('[study.ensureBlockGenerated] First gen attempt failed:', {
+        blockIndex,
+        message,
+        willRetryJson: message.includes("valid JSON"),
+      });
       if (!message.includes("valid JSON")) throw err;
       obj = await deepSeekGenerateBlockJson(blockRequest);
     }
