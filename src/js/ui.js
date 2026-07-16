@@ -657,6 +657,15 @@ export const els = {
   screenSlowReader: document.getElementById("screenSlowReader"),
   screenSlowPhase3: document.getElementById("screenSlowPhase3"),
   screenSlowGraph: document.getElementById("screenSlowGraph"),
+  screenPackConceptEditor: document.getElementById("screenPackConceptEditor"),
+  packConceptEditorBackBtn: document.getElementById("packConceptEditorBackBtn"),
+  packConceptEditorStatus: document.getElementById("packConceptEditorStatus"),
+  packConceptAddBtn: document.getElementById("packConceptAddBtn"),
+  packConceptAddEdgeBtn: document.getElementById("packConceptAddEdgeBtn"),
+  packConceptIncludeSource: document.getElementById("packConceptIncludeSource"),
+  packConceptPublishBtn: document.getElementById("packConceptPublishBtn"),
+  packConceptEditorError: document.getElementById("packConceptEditorError"),
+  packConceptGraphMount: document.getElementById("packConceptGraphMount"),
   slowScopeList: document.getElementById("slowScopeList"),
   slowScopeFileLabel: document.getElementById("slowScopeFileLabel"),
   slowScopeFileSelect: document.getElementById("slowScopeFileSelect"),
@@ -1427,6 +1436,7 @@ export function showScreen(which) {
   const showSlowReader = which === "slowReader";
   const showSlowPhase3 = which === "slowPhase3";
   const showSlowGraph = which === "slowGraph";
+  const showPackConceptEditor = which === "packConceptEditor";
   const showClozeStudy = which === "clozeStudy";
   const showRecall = which === "recall";
   const showStudyProgress = showSocratic || showTest;
@@ -1463,6 +1473,7 @@ export function showScreen(which) {
     [els.screenSlowReader, showSlowReader],
     [els.screenSlowPhase3, showSlowPhase3],
     [els.screenSlowGraph, showSlowGraph],
+    [els.screenPackConceptEditor, showPackConceptEditor],
     [els.screenClozeStudy, showClozeStudy],
     [els.screenRecall, showRecall],
     [els.studyProgress, showStudyProgress],

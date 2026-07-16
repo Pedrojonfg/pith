@@ -204,6 +204,43 @@ export async function createPackDraft(docId, ownerUserId, deps = {}) {
 }
 
 /**
+ * Persist edited snapshot on a draft pack (status must remain draft).
+ * @param {string} packDraftId
+ * @param {object} snapshot
+ * @param {{ supabase?: object }} [deps]
+ */
+export async function updatePackDraftSnapshot(packDraftId, snapshot, deps = {}) {
+  const packId = String(packDraftId || "").trim();
+  if (!packId) throw new Error("updatePackDraftSnapshot: packDraftId required");
+  if (snapshot == null || typeof snapshot !== "object") {
+    throw new Error("updatePackDraftSnapshot: snapshot required");
+  }
+
+  const db = deps.supabase || supabase;
+  const { data: row, error: loadErr } = await db
+    .from("shared_packs")
+    .select("*")
+    .eq("id", packId)
+    .maybeSingle();
+
+  if (loadErr) throw loadErr;
+  if (!row) throw new Error(`updatePackDraftSnapshot: pack not found (${packId})`);
+  if (row.status !== "draft") {
+    throw new Error("updatePackDraftSnapshot: pack is not a draft");
+  }
+
+  const { data: updated, error: updErr } = await db
+    .from("shared_packs")
+    .update({ snapshot: deepCloneJson(snapshot) })
+    .eq("id", packId)
+    .select()
+    .single();
+
+  if (updErr) throw updErr;
+  return updated;
+}
+
+/**
  * @param {string} packDraftId
  * @param {boolean} includeSourceDocument
  * @param {{ supabase?: object, llmChatCompletions?: Function }} [deps]

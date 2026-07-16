@@ -319,6 +319,19 @@ import {
   renderGraphUnlockButtonHtml,
   wireMaterialGraphScreen,
 } from "./graph/view.js?v=20260625_02";
+import {
+  addConcept,
+  addEdge,
+  createDebouncedPackSaver,
+  deleteConcept,
+  PACK_EDITOR_EDGE_LABELS,
+  PACK_EDITOR_EDGE_TYPES,
+  removeEdge,
+  renameConcept,
+  toCanvasGraph,
+} from "./pack-concept-editor.js";
+import { createPackDraft, finalizePack, updatePackDraftSnapshot } from "./pack-export.js";
+import { getAuthUserId } from "./session-persist-supabase.js";
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260625_02";
 import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260625_02";
 import {
@@ -4934,6 +4947,9 @@ function wireDocLibraryHandlers() {
     setUploadProjectContext(projectId);
     enterCreateSessionStartScreen();
   };
+  projectLibraryCallbacks.onCreatePack = (docId) => {
+    void enterPackConceptEditorFromDoc(docId);
+  };
 
   els.btnAppHomeVault?.addEventListener("click", () => enterVaultBranch());
   els.btnAppHomeSessions?.addEventListener("click", () => enterDocLibraryScreen());
@@ -8300,6 +8316,240 @@ export async function openConceptRegistryGraphScreen(options = {}) {
     },
   });
   showScreen("slowGraph");
+}
+
+/** Working state for pack concept graph editor (draft only). */
+const packConceptEditorState = {
+  packId: null,
+  sourceDocId: null,
+  snapshot: null,
+  saver: null,
+  edgePickFrom: null,
+  linking: false,
+  wired: false,
+};
+
+function setPackConceptEditorError(message) {
+  const el = els.packConceptEditorError;
+  if (!el) return;
+  if (!message) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = message;
+}
+
+function setPackConceptEditorStatus(message) {
+  if (els.packConceptEditorStatus) els.packConceptEditorStatus.textContent = message || "";
+}
+
+async function persistPackConceptSnapshot(snapshot) {
+  if (!packConceptEditorState.packId) return;
+  try {
+    await updatePackDraftSnapshot(packConceptEditorState.packId, snapshot);
+    setPackConceptEditorStatus("Saved");
+    setPackConceptEditorError("");
+  } catch (err) {
+    setPackConceptEditorStatus("Save failed");
+    setPackConceptEditorError(String(err?.message || err || "Could not save draft"));
+    throw err;
+  }
+}
+
+function applyPackConceptSnapshot(nextSnapshot) {
+  packConceptEditorState.snapshot = nextSnapshot;
+  packConceptEditorState.saver?.schedule(nextSnapshot);
+  remountPackConceptGraph();
+}
+
+function remountPackConceptGraph() {
+  const host = els.packConceptGraphMount;
+  if (!host || !packConceptEditorState.snapshot) return;
+  const canvasGraph = toCanvasGraph(packConceptEditorState.snapshot);
+  mountMaterialGraphScreen(null, host, {
+    graph: canvasGraph,
+    onNodeClick: (node) => {
+      void handlePackConceptNodeClick(node);
+    },
+    onEdgeClick: (edge) => {
+      void handlePackConceptEdgeClick(edge);
+    },
+  });
+}
+
+async function handlePackConceptNodeClick(node) {
+  const conceptId = String(node?.id || "").trim();
+  if (!conceptId || !packConceptEditorState.snapshot) return;
+
+  if (packConceptEditorState.linking) {
+    if (!packConceptEditorState.edgePickFrom) {
+      packConceptEditorState.edgePickFrom = conceptId;
+      setPackConceptEditorStatus(`From ${conceptId} — click the target concept`);
+      setPackConceptEditorError("");
+      return;
+    }
+    const fromId = packConceptEditorState.edgePickFrom;
+    packConceptEditorState.edgePickFrom = null;
+    packConceptEditorState.linking = false;
+    setPackConceptEditorStatus("");
+    if (fromId === conceptId) {
+      setPackConceptEditorError("Pick a different concept for the relation.");
+      return;
+    }
+    const labels = PACK_EDITOR_EDGE_TYPES.map(
+      (t) => `${t} (${PACK_EDITOR_EDGE_LABELS[t] || t})`,
+    ).join(", ");
+    const raw = window.prompt(`Relation type from ${fromId} → ${conceptId}\nOne of: ${labels}`, "requires");
+    if (raw == null) return;
+    const type = String(raw).trim().split(/\s+/)[0];
+    try {
+      applyPackConceptSnapshot(addEdge(packConceptEditorState.snapshot, fromId, conceptId, type));
+      setPackConceptEditorError("");
+    } catch (err) {
+      setPackConceptEditorError(String(err?.message || err));
+    }
+    return;
+  }
+
+  const current =
+    packConceptEditorState.snapshot.conceptInventory?.find(
+      (c) => String(c?.canonicalId || c?.id || c?.concept_id || "") === conceptId,
+    )?.title ||
+    node.label ||
+    "";
+  const action = window.prompt(
+    `Rename concept (or type DELETE to remove).\nCurrent: ${current}`,
+    current,
+  );
+  if (action == null) return;
+  const trimmed = String(action).trim();
+  if (!trimmed) {
+    setPackConceptEditorError("Name cannot be empty.");
+    return;
+  }
+  if (trimmed.toUpperCase() === "DELETE") {
+    if (!window.confirm(`Delete concept "${current}"? Incident relations will be removed.`)) return;
+    // Physical delete; hanging conceptId refs in modes content are an accepted v1 limitation.
+    applyPackConceptSnapshot(deleteConcept(packConceptEditorState.snapshot, conceptId));
+    return;
+  }
+  try {
+    applyPackConceptSnapshot(renameConcept(packConceptEditorState.snapshot, conceptId, trimmed));
+    setPackConceptEditorError("");
+  } catch (err) {
+    setPackConceptEditorError(String(err?.message || err));
+  }
+}
+
+async function handlePackConceptEdgeClick(edge) {
+  if (!packConceptEditorState.snapshot) return;
+  const from = String(edge?.from || "").trim();
+  const to = String(edge?.to || "").trim();
+  const type = String(edge?.type || "").trim();
+  if (!from || !to) return;
+  if (!window.confirm(`Remove relation ${from} → ${to} (${type})?`)) return;
+  applyPackConceptSnapshot(removeEdge(packConceptEditorState.snapshot, from, to, type));
+}
+
+/**
+ * Create a pack draft from a library document and open the concept editor.
+ * @param {string} docId
+ */
+export async function enterPackConceptEditorFromDoc(docId) {
+  const id = String(docId || "").trim();
+  if (!id) return;
+  setPackConceptEditorError("");
+  setPackConceptEditorStatus("Creating draft…");
+  try {
+    const ownerUserId = await getAuthUserId();
+    const draft = await createPackDraft(id, ownerUserId);
+    await enterPackConceptEditor(draft);
+  } catch (err) {
+    setPackConceptEditorStatus("");
+    window.alert(String(err?.message || err || "Could not create pack draft"));
+  }
+}
+
+/**
+ * @param {object} draftRow shared_packs draft row
+ */
+export async function enterPackConceptEditor(draftRow) {
+  if (!draftRow?.id) return;
+  if (draftRow.status && draftRow.status !== "draft") {
+    window.alert("This pack is already published. Create a new draft to edit.");
+    return;
+  }
+  packConceptEditorState.packId = draftRow.id;
+  packConceptEditorState.sourceDocId = draftRow.source_doc_id || null;
+  packConceptEditorState.snapshot = draftRow.snapshot || { conceptInventory: [], conceptGraph: { nodes: [], edges: [] } };
+  packConceptEditorState.edgePickFrom = null;
+  packConceptEditorState.linking = false;
+  packConceptEditorState.saver = createDebouncedPackSaver((snap) => persistPackConceptSnapshot(snap));
+  if (els.packConceptIncludeSource) els.packConceptIncludeSource.checked = true;
+  setPackConceptEditorError("");
+  setPackConceptEditorStatus("Draft ready");
+  remountPackConceptGraph();
+  showScreen("packConceptEditor");
+  wirePackConceptEditorHandlersOnce();
+}
+
+function wirePackConceptEditorHandlersOnce() {
+  if (packConceptEditorState.wired) return;
+  packConceptEditorState.wired = true;
+
+  els.packConceptEditorBackBtn?.addEventListener("click", async () => {
+    try {
+      await packConceptEditorState.saver?.flush();
+    } catch {
+      // keep going back
+    }
+    enterDocLibraryScreen();
+  });
+
+  els.packConceptAddBtn?.addEventListener("click", () => {
+    if (!packConceptEditorState.snapshot) return;
+    const name = window.prompt("New concept name:");
+    if (name == null) return;
+    try {
+      const { snapshot } = addConcept(packConceptEditorState.snapshot, name);
+      applyPackConceptSnapshot(snapshot);
+      setPackConceptEditorError("");
+    } catch (err) {
+      setPackConceptEditorError(String(err?.message || err));
+    }
+  });
+
+  els.packConceptAddEdgeBtn?.addEventListener("click", () => {
+    packConceptEditorState.linking = true;
+    packConceptEditorState.edgePickFrom = null;
+    setPackConceptEditorError("");
+    setPackConceptEditorStatus("Click the first concept, then the second.");
+  });
+
+  els.packConceptPublishBtn?.addEventListener("click", () => {
+    void publishPackConceptEditor();
+  });
+}
+
+async function publishPackConceptEditor() {
+  if (!packConceptEditorState.packId || !packConceptEditorState.snapshot) return;
+  setPackConceptEditorError("");
+  setPackConceptEditorStatus("Publishing…");
+  try {
+    await packConceptEditorState.saver?.flush();
+    const include = Boolean(els.packConceptIncludeSource?.checked);
+    await finalizePack(packConceptEditorState.packId, include);
+    packConceptEditorState.packId = null;
+    packConceptEditorState.snapshot = null;
+    setPackConceptEditorStatus("");
+    enterDocLibraryScreen();
+    window.alert("Pack published.");
+  } catch (err) {
+    setPackConceptEditorStatus("Publish failed");
+    setPackConceptEditorError(String(err?.message || err || "Publish failed"));
+  }
 }
 
 /**

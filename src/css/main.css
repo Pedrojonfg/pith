@@ -3882,3 +3882,47 @@ button[disabled],
   gap: var(--space-sm);
   flex-wrap: wrap;
 }
+
+/* Pack concept graph editor — full-bleed primary screen */
+.pack-concept-editor-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+  padding: var(--space-md, 16px);
+  min-height: 100%;
+  box-sizing: border-box;
+  background: var(--bg-base, #111318);
+}
+.pack-concept-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-sm, 8px);
+}
+.pack-concept-editor-title {
+  margin: 0;
+  font-size: 1.25rem;
+  color: var(--text-primary, #e4e7f0);
+}
+.pack-concept-editor-status {
+  margin: 0;
+  margin-left: auto;
+}
+.pack-concept-editor-actions {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+}
+.pack-concept-include-source {
+  margin-left: auto;
+}
+.pack-concept-graph-mount {
+  flex: 1;
+  min-height: 360px;
+}
+.pack-concept-editor-hint {
+  margin: 0;
+}
+.pack-concept-editor-error {
+  margin: 0;
+}

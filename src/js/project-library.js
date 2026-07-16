@@ -195,6 +195,7 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
         </button>
         <div class="doc-library-row-actions">
           <button type="button" class="btn-secondary doc-library-download-btn" data-download-doc-id="${escapeHtml(doc.docId)}" aria-label="Export session as Markdown" title="Export session as Markdown">${DOC_LIBRARY_DOWNLOAD_ICON}</button>
+          <button type="button" class="btn-secondary doc-library-create-pack-btn" data-create-pack-doc-id="${escapeHtml(doc.docId)}" title="Create pack">Create pack</button>
           <button type="button" class="btn-secondary doc-library-move-btn" data-move-doc-id="${escapeHtml(doc.docId)}">Move to project…</button>
           <button type="button" class="btn-secondary doc-library-delete-btn" data-delete-doc-id="${escapeHtml(doc.docId)}" aria-label="Delete session" title="Delete session">??</button>
         </div>
@@ -220,6 +221,16 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
         return;
       }
       showProjectToast("No session content to export yet.");
+    });
+  });
+  container.querySelectorAll("[data-create-pack-doc-id]").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const id = btn.getAttribute("data-create-pack-doc-id");
+      if (!id) return;
+      if (typeof projectLibraryCallbacks.onCreatePack === "function") {
+        projectLibraryCallbacks.onCreatePack(id);
+      }
     });
   });
   container.querySelectorAll("[data-move-doc-id]").forEach((btn) => {
@@ -375,7 +386,12 @@ export function renderProjectLibraryView() {
 }
 
 /** @type {{ onDocumentOpen?: (docId: string) => void, onBack?: () => void, onCreateSessionInProject?: (projectId: string) => void }} */
-export const projectLibraryCallbacks = {};
+export const projectLibraryCallbacks = {
+  onDocumentOpen: null,
+  onBack: null,
+  onCreateSessionInProject: null,
+  onCreatePack: null,
+};
 
 export function enterProjectLibrary(options = {}) {
   if (options.projectId !== undefined) {
