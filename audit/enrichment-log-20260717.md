@@ -19,3 +19,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `review-project-scope-filter` | done | info on all/scoped pools (counts, vault skips for missing origin / out of scope) |
 | `review-sm2-item-grade` | done | debug render; info on grade; error if originDocId missing (grade dropped); warn missing session |
 | `sm2-core-update` | done | debug create/update/queue; error on invalid create params |
+| `sm2-ingest-mcq` | done | debug call; info upsert/gate-block; error on missing session or ids |
