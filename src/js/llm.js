@@ -233,6 +233,14 @@ export async function llmChatCompletions({
   response_format,
   signal,
 } = {}) {
+  // [debug-enrich]
+  console.debug('[llm.llmChatCompletions] Starting:', {
+    llmModel: llmModel ?? null,
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    temperature,
+    max_tokens: max_tokens ?? null,
+    hasResponseFormat: Boolean(response_format),
+  });
   const ctx = await resolveLlmContext({ llmModel });
   const body = {
     model: ctx.apiModel,
@@ -251,8 +259,21 @@ export async function llmChatCompletions({
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
+    // [debug-enrich]
+    console.error('[llm.llmChatCompletions] Missing message content:', {
+      hasChoices: Array.isArray(data?.choices),
+      choiceCount: Array.isArray(data?.choices) ? data.choices.length : 0,
+      finishReason: data?.choices?.[0]?.finish_reason ?? null,
+      usage: data?.usage ?? null,
+    });
     throw new Error("Unexpected API response (missing message content).");
   }
+  // [debug-enrich]
+  console.info('[llm.llmChatCompletions] Content received:', {
+    contentLen: content.length,
+    finishReason: data?.choices?.[0]?.finish_reason ?? null,
+    usage: data?.usage ?? null,
+  });
   return content.trim();
 }
 

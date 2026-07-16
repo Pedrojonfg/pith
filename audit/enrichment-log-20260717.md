@@ -32,3 +32,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `registry-ingest-study` | done | info MCQ promote entry; warn missing session / per-concept fail; debug ok/fail counts |
 | `vault-spaced-review-sync` | done | info sync start/pool rebuild counts; warn missing docId/shared |
 | `llm-proxy-client` | done | debug request; info success; warn retry; error auth/network/status (no token logged) |
+| `llm-chat-deepseek` | done | debug start (msg count, max_tokens); info content len/usage; error missing content |
