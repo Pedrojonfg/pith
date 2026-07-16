@@ -284,33 +284,65 @@ export async function runSm2ReviewSession(docId, options = {}) {
 
 /** Cross-document vault review from aggregated due items. */
 export async function runVaultSm2ReviewSession(scope, options = {}) {
+  // [debug-enrich]
+  console.info('[review.runVaultSm2ReviewSession] Starting vault SM-2 review:', {
+    scopeProjectId: scope?.projectId ?? reviewScope?.projectId ?? null,
+    includeDescendants: scope?.includeDescendants ?? reviewScope?.includeDescendants ?? null,
+    mnemonicsOnly: Boolean(options.mnemonicsOnly),
+  });
   if (scope && typeof scope === "object") {
     setReviewScope(scope);
   }
   sm2ReviewDocId = "";
   let pool;
+  let poolSource = "none";
   if (reviewScope.projectId === "all") {
     pool = await buildGlobalReviewQueue({ projectId: "all" });
-    if (!pool.length) pool = await getSmItemsDueToday();
+    poolSource = pool.length ? "global_all" : "none";
+    if (!pool.length) {
+      pool = await getSmItemsDueToday();
+      poolSource = pool.length ? "sm_items_due_today_fallback" : "none";
+    }
   } else {
     pool = await buildGlobalReviewQueue({
       projectId: reviewScope.projectId,
     });
+    poolSource = pool.length ? "global_project" : "none";
     if (!pool.length) {
       pool = filterDueSmItems(
         await getReviewableItemsForProject(reviewScope.projectId, {
           includeDescendants: reviewScope.includeDescendants,
         }),
       );
+      poolSource = pool.length ? "project_scope_fallback" : "none";
     }
   }
   sm2ReviewQueue = pool;
   if (options.mnemonicsOnly) {
+    const before = sm2ReviewQueue.length;
     sm2ReviewQueue = await filterSmItemsByMnemonics(sm2ReviewQueue, getSession);
+    // [debug-enrich]
+    console.info('[review.runVaultSm2ReviewSession] Mnemonics filter applied:', {
+      before,
+      after: sm2ReviewQueue.length,
+    });
   }
   sm2ReviewIndex = 0;
 
+  // [debug-enrich]
+  console.info('[review.runVaultSm2ReviewSession] Queue ready:', {
+    projectId: reviewScope.projectId,
+    poolSource,
+    queueLength: sm2ReviewQueue.length,
+  });
+
   if (!sm2ReviewQueue.length) {
+    // [debug-enrich]
+    console.warn('[review.runVaultSm2ReviewSession] Empty queue — showing empty state', {
+      projectId: reviewScope.projectId,
+      poolSource,
+      mnemonicsOnly: Boolean(options.mnemonicsOnly),
+    });
     showSm2ReviewEmptyState(
       options.mnemonicsOnly
         ? "No mnemonic-linked concepts due for review yet."

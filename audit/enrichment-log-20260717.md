@@ -15,3 +15,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-overlay-playback` | done | info on start (chunkCount, wpm, wpf); warn empty chunks; debug resize/skipCountdown/abort |
 | `rsvp-block-transition` | done | info on finishQuestions (last vs next); warn on concept commit fail; sneakPeek extract debug |
 | `rsvp-session-complete` | done | info on complete screen; warn concept commit / WPM calibration failures previously silent |
+| `review-vault-sm2` | done | info on start/queue (poolSource, length); warn empty; mnemonics filter before/after |
