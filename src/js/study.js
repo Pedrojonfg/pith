@@ -7778,12 +7778,21 @@ function renderSocraticQuestion() {
 
 async function startBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  // [debug-enrich]
+  console.info('[study.startBlock] Starting block:', {
+    blockIndex: idx,
+    totalBlocks: getTotalBlocksSafe(),
+    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
+    docId: state.activeSession?.docId ?? null,
+  });
 
   // 1) triggerPrefetch(N+1) ? fire and forget
   const total = Math.max(1, getTotalBlocksSafe());
   const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
   const nextIdx = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
   if (nextIdx < total) {
+    // [debug-enrich]
+    console.debug('[study.startBlock] Prefetching next block:', { nextIdx });
     prefetchStartedAtByIndex.set(nextIdx, Date.now());
     setPrefetchIndicator("generating");
     const cfg = resolveBlockQuestionConfig(nextIdx);

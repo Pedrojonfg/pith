@@ -45,3 +45,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `dpp-final-persist` | done | info attempt/applied; enriched stale-skip warns with docId |
 | `gate-universal-scope` | done | info apply/auto/enter UI; debug skip reasons; scoped lengths |
 | `rsvp-confirm-session` | done | info confirm click + session init; error on confirm failure |
+| `rsvp-start-block` | done | info start (index/mode/docId); debug prefetch next |
