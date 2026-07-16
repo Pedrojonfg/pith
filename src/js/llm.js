@@ -36,9 +36,35 @@ export function syncPlatformLlmAccessFromSession(session) {
  * @returns {Promise<string|null>}
  */
 export async function getSupabaseAuthToken() {
-  if (cachedAccessToken) return cachedAccessToken;
-  const { data: { session } } = await supabase.auth.getSession();
+  if (cachedAccessToken) {
+    // [debug-enrich]
+    console.debug('[llm.getSupabaseAuthToken] Cache hit');
+    return cachedAccessToken;
+  }
+  // [debug-enrich]
+  console.debug('[llm.getSupabaseAuthToken] Cache miss — fetching session');
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error) {
+    // [debug-enrich]
+    console.error('[llm.getSupabaseAuthToken] getSession failed:', {
+      message: error.message,
+      status: error.status ?? null,
+    });
+  }
   cachedAccessToken = session?.access_token ?? null;
+  if (!cachedAccessToken) {
+    // [debug-enrich]
+    console.warn('[llm.getSupabaseAuthToken] No access token available', {
+      hasSession: Boolean(session),
+      userId: session?.user?.id ?? null,
+    });
+  } else {
+    // [debug-enrich]
+    console.info('[llm.getSupabaseAuthToken] Token resolved from session', {
+      userId: session?.user?.id ?? null,
+      expiresAt: session?.expires_at ?? null,
+    });
+  }
   return cachedAccessToken;
 }
 
