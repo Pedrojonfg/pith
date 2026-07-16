@@ -13,6 +13,7 @@ import { isAdaptiveProbingEnabled, getAdaptiveProbingFlags } from "../config/fla
 import {
   PREPACKING_ALREADY_KNOW_ANSWER,
   PREPACKING_DONT_KNOW_ANSWER,
+  computeGraphEntropy,
 } from "./belief-propagation.js";
 import { buildProbeGraph } from "./probe-graph.js";
 import { initializeBeliefState } from "./belief-state.js";
@@ -64,6 +65,30 @@ export function prepareAdaptiveProbingContext({
 }
 
 /**
+ * Concepts whose seeded prior is at/above HIGH_CONFIDENCE_SKIP_THRESHOLD.
+ * Explicit exclusion list for knowledge_profile presumed_known_vault.
+ * @param {object[]} conceptInventory
+ * @param {Record<string, object>} beliefState
+ * @param {object} [flags]
+ */
+export function collectVaultSkippedConceptIds(
+  conceptInventory,
+  beliefState,
+  flags = getAdaptiveProbingFlags(),
+) {
+  const hi = Number(flags.HIGH_CONFIDENCE_SKIP_THRESHOLD) || 0.8;
+  /** @type {string[]} */
+  const out = [];
+  for (const c of Array.isArray(conceptInventory) ? conceptInventory : []) {
+    const id = getConceptId(c);
+    if (!id) continue;
+    const b = Number(beliefState?.[id]?.belief);
+    if (Number.isFinite(b) && b >= hi) out.push(id);
+  }
+  return out;
+}
+
+/**
  * @param {object} params
  */
 export function buildAdaptiveCoveragePlan({
@@ -92,23 +117,27 @@ export function buildAdaptiveCoveragePlan({
     projectId,
     docId,
   });
+  const vaultSkippedIds = collectVaultSkippedConceptIds(inventory, beliefState);
 
   const probeCount = Math.min(
     Math.max(1, Math.floor(Number(budget?.n_test) || 7)),
     graph.nodes.length,
   );
-  const selectedIds = new Set(
-    selectAdaptiveProbeConcepts({
-      graph,
-      state: beliefState,
-      n: probeCount,
-      inventory,
-    }),
-  );
+  const orderedIds = selectAdaptiveProbeConcepts({
+    graph,
+    state: beliefState,
+    n: probeCount,
+    inventory,
+  });
+  const selectedIds = new Set(orderedIds);
 
-  const filteredInventory = (Array.isArray(inventory) ? inventory : []).filter((c) =>
-    selectedIds.has(getConceptId(c)),
-  );
+  // Preserve EIG selection order (not original inventory order).
+  const byId = new Map();
+  for (const c of Array.isArray(inventory) ? inventory : []) {
+    const id = getConceptId(c);
+    if (id && !byId.has(id)) byId.set(id, c);
+  }
+  const filteredInventory = orderedIds.map((id) => byId.get(id)).filter(Boolean);
   if (!filteredInventory.length) {
     return buildAssessmentCoveragePlan({
       inventory,
@@ -144,7 +173,8 @@ export function buildAdaptiveCoveragePlan({
 
   if (plan) {
     plan.adaptiveProbing = {
-      selectedConceptIds: [...selectedIds],
+      selectedConceptIds: orderedIds,
+      vaultSkippedIds,
       probeGraphMeta: graph.meta,
     };
   }
@@ -153,7 +183,8 @@ export function buildAdaptiveCoveragePlan({
     plan,
     graph,
     beliefState,
-    selectedConceptIds: [...selectedIds],
+    selectedConceptIds: orderedIds,
+    vaultSkippedIds,
   };
 }
 
@@ -183,11 +214,33 @@ export function filterInventoryForAdaptiveProbing({
     n,
     inventory: conceptInventory,
   });
-  const idSet = new Set(selectedConceptIds);
-  const inventory = (Array.isArray(conceptInventory) ? conceptInventory : []).filter((c) =>
-    idSet.has(getConceptId(c)),
-  );
-  return { inventory, graph, beliefState, selectedConceptIds };
+  const vaultSkippedIds = collectVaultSkippedConceptIds(conceptInventory, beliefState);
+  // Hard exclusion: never reintroduce vault-skipped via empty-batch fallback.
+  const skipSet = new Set(vaultSkippedIds);
+  const askedIds = selectedConceptIds.filter((id) => !skipSet.has(id));
+  // ponytail: rebuild in EIG order instead of filter() which keeps inventory order
+  const byId = new Map();
+  for (const c of Array.isArray(conceptInventory) ? conceptInventory : []) {
+    const id = getConceptId(c);
+    if (id && !byId.has(id)) byId.set(id, c);
+  }
+  let inventory = askedIds.map((id) => byId.get(id)).filter(Boolean);
+  if (!inventory.length) {
+    // Edge: all vault-skipped — keep a minimal non-empty set from non-green if any, else first concept.
+    inventory = (Array.isArray(conceptInventory) ? conceptInventory : [])
+      .filter((c) => !skipSet.has(getConceptId(c)))
+      .slice(0, Math.max(1, Math.floor(Number(n) || 1)));
+    if (!inventory.length && conceptInventory?.length) {
+      inventory = [conceptInventory[0]];
+    }
+  }
+  return {
+    inventory,
+    graph,
+    beliefState,
+    selectedConceptIds: inventory.map(getConceptId),
+    vaultSkippedIds,
+  };
 }
 
 /**
@@ -207,6 +260,128 @@ export function applyAdaptiveBeliefUpdate(flow, item, answer) {
     response,
     getAdaptiveProbingFlags(),
   );
+}
+
+/**
+ * Concept ids selected for probing that have not yet received an answer.
+ * @param {object} flow
+ * @returns {string[]}
+ */
+export function remainingUnaskedConceptIds(flow) {
+  const selected = Array.isArray(flow?.adaptiveProbing?.selectedConceptIds)
+    ? flow.adaptiveProbing.selectedConceptIds.map((id) => String(id || "").trim()).filter(Boolean)
+    : [];
+  if (!selected.length) return [];
+
+  const items = Array.isArray(flow?.assessmentItems)
+    ? flow.assessmentItems
+    : Array.isArray(flow?.assessmentBlock?.questions)
+      ? flow.assessmentBlock.questions
+      : [];
+  const itemById = new Map();
+  for (const q of items) {
+    const itemId = String(q?.item_id || "").trim();
+    if (itemId) itemById.set(itemId, String(q?.concept_id || "").trim());
+  }
+
+  const asked = new Set();
+  const responses = [
+    ...(Array.isArray(flow?.assessmentResponses) ? flow.assessmentResponses : []),
+    ...(Array.isArray(flow?.responses) ? flow.responses : []),
+  ];
+  for (const r of responses) {
+    const cid = String(r?.concept_id || "").trim() || itemById.get(String(r?.item_id || "").trim());
+    if (cid) asked.add(cid);
+  }
+  return selected.filter((id) => !asked.has(id));
+}
+
+/**
+ * Early-stop when mean entropy over remaining unasked concepts is below threshold.
+ * Uses existing computeGraphEntropy — no new statistical formula.
+ * @param {object} flow
+ * @param {object} [flags]
+ */
+export function shouldEarlyStopAdaptiveAssessment(flow, flags = getAdaptiveProbingFlags()) {
+  if (!flags?.ADAPTIVE_PROBING_EARLY_STOP) return false;
+  if (!flow?.adaptiveProbing?.beliefState) return false;
+  const remaining = remainingUnaskedConceptIds(flow);
+  if (!remaining.length) return true;
+  const total = computeGraphEntropy(flow.adaptiveProbing.beliefState, remaining);
+  const mean = total / remaining.length;
+  const threshold = Number(flags.ADAPTIVE_EARLY_STOP_MEAN_ENTROPY_THRESHOLD);
+  const cut = Number.isFinite(threshold) ? threshold : 0.35;
+  return mean < cut;
+}
+
+/**
+ * Attach assessmentStatus + inferred rows for early-stopped concepts.
+ * @param {object | null} profile
+ * @param {object} flow
+ */
+export function enrichKnowledgeProfileWithAdaptiveStatuses(profile, flow) {
+  if (!profile || typeof profile !== "object") return profile;
+  const byConceptId =
+    profile.byConceptId && typeof profile.byConceptId === "object" ? { ...profile.byConceptId } : {};
+  const items = Array.isArray(profile.items) ? [...profile.items] : [];
+  const itemIds = new Set(items.map((r) => String(r?.concept_id || "").trim()).filter(Boolean));
+
+  for (const [id, entry] of Object.entries(byConceptId)) {
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.assessed === true && entry.assessmentStatus == null) {
+      byConceptId[id] = { ...entry, assessmentStatus: "tested" };
+    }
+  }
+  for (let i = 0; i < items.length; i += 1) {
+    const row = items[i];
+    if (!row || typeof row !== "object") continue;
+    if (row.assessmentStatus == null) {
+      items[i] = { ...row, assessmentStatus: "tested" };
+    }
+  }
+
+  const belief = flow?.adaptiveProbing?.beliefState || {};
+  const remaining = remainingUnaskedConceptIds(flow);
+  for (const id of remaining) {
+    const b = Number(belief[id]?.belief);
+    const confidence = Number.isFinite(b) ? b : 0.55;
+    const mastery = confidence >= 0.7 ? "full" : confidence >= 0.4 ? "partial" : "none";
+    byConceptId[id] = {
+      ...(byConceptId[id] || { assessed: false }),
+      assessed: false,
+      assessmentStatus: "inferred",
+      correct: mastery === "full",
+    };
+    if (!itemIds.has(id)) {
+      items.push({ concept_id: id, mastery, confidence, assessmentStatus: "inferred" });
+      itemIds.add(id);
+    }
+  }
+
+  // Vault-presumed placeholders (filled in Phase C when skippedIds present)
+  for (const id of Array.isArray(flow?.adaptiveProbing?.vaultSkippedIds)
+    ? flow.adaptiveProbing.vaultSkippedIds
+    : []) {
+    const sid = String(id || "").trim();
+    if (!sid) continue;
+    byConceptId[sid] = {
+      ...(byConceptId[sid] || { assessed: false }),
+      assessed: false,
+      assessmentStatus: "presumed_known_vault",
+      correct: true,
+    };
+    if (!itemIds.has(sid)) {
+      items.push({
+        concept_id: sid,
+        mastery: "full",
+        confidence: Number(belief[sid]?.belief) || 0.85,
+        assessmentStatus: "presumed_known_vault",
+      });
+      itemIds.add(sid);
+    }
+  }
+
+  return { ...profile, byConceptId, items };
 }
 
 export { deriveInventoryEdges, computeHolisticAssessmentBudget };

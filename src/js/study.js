@@ -34,6 +34,8 @@ import {
   buildAdaptiveCoveragePlan,
   applyAdaptiveBeliefUpdate,
   filterInventoryForAdaptiveProbing,
+  shouldEarlyStopAdaptiveAssessment,
+  enrichKnowledgeProfileWithAdaptiveStatuses,
 } from "./adaptive-probing/assessment-integration.js";
 import { mergeSessionBeliefs, loadProjectBeliefs } from "./adaptive-probing/belief-persist.js";
 import { buildProbeGraph } from "./adaptive-probing/probe-graph.js";
@@ -1213,6 +1215,7 @@ async function startSharedAssessmentFromGate() {
   resetPrePackingFlow();
   prePackingFlow = {
     runnerMode: "shared_gate",
+    fromSharedGate: true,
     phase: "assessment",
     conceptInventory,
     edges: prepEdges,
@@ -8312,6 +8315,7 @@ async function resolveHolisticAssessmentContext(flow) {
         graph: adaptive.graph,
         beliefState: adaptive.beliefState,
         selectedConceptIds: adaptive.selectedConceptIds || [],
+        vaultSkippedIds: adaptive.vaultSkippedIds || [],
       };
       await persistAdaptiveBeliefToSession(doc, flow);
     }
@@ -8392,6 +8396,7 @@ function createPrePackingItemsPromise(flow) {
         graph: filtered.graph,
         beliefState: filtered.beliefState,
         selectedConceptIds: filtered.selectedConceptIds || [],
+        vaultSkippedIds: filtered.vaultSkippedIds || [],
       };
     }
   }
@@ -8639,6 +8644,8 @@ function handleAssessmentTestAnswer({ chosen, correct, feedback }) {
   });
   applyAdaptiveBeliefUpdate(prePackingFlow, q, userAnswer);
   persistAdaptiveBeliefFromFlow().catch(() => {});
+  const earlyStop = shouldEarlyStopAdaptiveAssessment(prePackingFlow);
+  if (earlyStop) prePackingFlow.adaptiveEarlyStop = true;
 
   const normalizedChosen = String(chosen || "").trim().toUpperCase();
   const normalizedCorrect = String(correct || "").trim().toUpperCase();
@@ -8654,7 +8661,7 @@ function handleAssessmentTestAnswer({ chosen, correct, feedback }) {
   els.testFeedback.hidden = false;
   void renderMarkdown(els.testFeedback, feedback || "");
 
-  const isLastGlobal = ctx.globalIndex >= ctx.total - 1;
+  const isLastGlobal = earlyStop || ctx.globalIndex >= ctx.total - 1;
   els.testNextBtn.hidden = false;
   els.testNextBtn.textContent = isLastGlobal ? "Finish assessment" : "Next";
 
@@ -8744,6 +8751,12 @@ async function enterPrePackingAssessmentRunner() {
   const qCfg = holistic
     ? (await resolveHolisticAssessmentContext(prePackingFlow)).budget
     : resolvePrePackingQuestionConfig();
+  // fromSharedGate fix (20260711-adaptive-prepacking-activation):
+  // startSharedAssessmentFromGate sets runnerMode "shared_gate", but this runner
+  // must use runnerMode "assessment" so isPrePackingAssessmentRunner() / questions UI work.
+  // Without stashing fromSharedGate, finish/skip never call completeSharedAssessmentGate
+  // and the shared knowledge profile is lost (falls through to RSVP packing path).
+  if (prePackingFlow.runnerMode === "shared_gate") prePackingFlow.fromSharedGate = true;
   prePackingFlow.runnerMode = "assessment";
   prePackingFlow.assessmentQuestionIndex = 0;
   prePackingFlow.assessmentResponses = [];
@@ -8893,7 +8906,7 @@ async function enterPrePackingAssessmentScreen() {
 
 async function handlePrePackingSkip() {
   if (!prePackingFlow) return;
-  if (prePackingFlow.runnerMode === "shared_gate") {
+  if (prePackingFlow.runnerMode === "shared_gate" || prePackingFlow.fromSharedGate) {
     console.info("[study.handlePrePackingSkip] Shared gate assessment skipped"); // [debug-enrich]
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
@@ -8954,7 +8967,10 @@ async function advancePrePackingAssessment() {
   applyAdaptiveBeliefUpdate(prePackingFlow, item, answer);
   persistAdaptiveBeliefFromFlow().catch(() => {});
 
-  if (idx < items.length - 1) {
+  const earlyStop = shouldEarlyStopAdaptiveAssessment(prePackingFlow);
+  if (earlyStop) prePackingFlow.adaptiveEarlyStop = true;
+
+  if (!earlyStop && idx < items.length - 1) {
     prePackingFlow.questionIndex = idx + 1;
     renderPrePackingAssessmentQuestion();
     return;
@@ -8990,13 +9006,16 @@ async function finishPrePackingAssessment() {
     );
   }
 
-  const profile = await evaluatePrePackingAssessmentResponses({
-    items: assessmentItems,
-    responses: assessmentResponses,
-    conceptInventory: prePackingFlow.conceptInventory,
-    llmModel: prePackingFlow.splitOpts?.llmModel,
-    language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
-  });
+  const profile = enrichKnowledgeProfileWithAdaptiveStatuses(
+    await evaluatePrePackingAssessmentResponses({
+      items: assessmentItems,
+      responses: assessmentResponses,
+      conceptInventory: prePackingFlow.conceptInventory,
+      llmModel: prePackingFlow.splitOpts?.llmModel,
+      language: prePackingFlow.splitOpts?.language || getStudyLanguage(),
+    }),
+    prePackingFlow,
+  );
 
   prePackingFlow.knowledgeProfile = profile;
   prePackingFlow.assessmentSkipped = false;
@@ -9004,9 +9023,10 @@ async function finishPrePackingAssessment() {
   console.debug("[study.finishPrePackingAssessment] Profile evaluated:", {
     hasProfile: Boolean(profile),
     masteryCounts: countProfileMastery(profile),
+    adaptiveEarlyStop: Boolean(prePackingFlow.adaptiveEarlyStop),
   }); // [debug-enrich]
 
-  if (prePackingFlow.runnerMode === "shared_gate") {
+  if (prePackingFlow.runnerMode === "shared_gate" || prePackingFlow.fromSharedGate) {
     console.info("[study.finishPrePackingAssessment] Completing shared gate with accepted outcome", {
       hasProfile: Boolean(profile),
     }); // [debug-enrich]

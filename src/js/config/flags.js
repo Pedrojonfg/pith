@@ -19,7 +19,7 @@ export const ASSESSMENT_FLAGS = Object.freeze({
 export function isHolisticAssessmentEnabled() {
   return (
     ASSESSMENT_FLAGS.HOLISTIC_ASSESSMENT_ENABLED === true &&
-    isPrePackingAssessmentEnabled() &&
+    isSharedPreModeAssessmentEnabled() &&
     isAssessmentQuestionsUiEnabled()
   );
 }
@@ -212,18 +212,29 @@ export function isConceptAnchorCompositionEnabled() {
 export const ADAPTIVE_PROBING_FLAGS = Object.freeze({
   ADAPTIVE_PROBING_ENABLED: true,
   BASE_RATE_PRIOR: 0.25,
-  HIGH_CONFIDENCE_SKIP_THRESHOLD: 0.9,
+  /**
+   * Seeded belief at/above this skips the concept from the probe question set.
+   * Unvalidated placeholder — pending post-launch calibration (was 0.9; 0.80 excludes green prior 0.85).
+   */
+  HIGH_CONFIDENCE_SKIP_THRESHOLD: 0.8,
   LOW_CONFIDENCE_SKIP_THRESHOLD: 0.1,
   UPWARD_PROPAGATION_DAMPING: 0.6,
   DOWNWARD_PROPAGATION_DAMPING: 0.8,
   MAX_PROPAGATION_HOPS: 2,
-  ADAPTIVE_PROBING_EARLY_STOP: false,
+  /** When true, stop quiz once remaining-concept mean entropy is low. */
+  ADAPTIVE_PROBING_EARLY_STOP: true,
+  /**
+   * Mean binary entropy over remaining unasked concepts below which we early-stop.
+   * Unvalidated placeholder — pending post-launch calibration.
+   * (binaryEntropy(0.92) ≈ 0.40; current upward propagation rarely exceeds ~0.68 belief.)
+   */
+  ADAPTIVE_EARLY_STOP_MEAN_ENTROPY_THRESHOLD: 0.45,
 });
 
 export function isAdaptiveProbingEnabled() {
   return (
     ADAPTIVE_PROBING_FLAGS.ADAPTIVE_PROBING_ENABLED === true &&
-    isPrePackingAssessmentEnabled()
+    isSharedPreModeAssessmentEnabled()
   );
 }
 
