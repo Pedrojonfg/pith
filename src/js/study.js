@@ -11041,6 +11041,14 @@ export async function wireStudyHandlers() {
   });
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
+    // [debug-enrich]
+    console.info('[study.socraticSubmit] Submit clicked:', {
+      isAssessment: isPrePackingAssessmentRunner(),
+      offline: isOfflineMode(),
+      blockIndex: state.activeBlockIndex,
+      questionIndex: state.activeQuestionIndex,
+      answerLen: String(els.socraticAnswer?.value || "").trim().length,
+    });
     if (isPrePackingAssessmentRunner()) {
       clearSocraticError();
       const answer = String(els.socraticAnswer.value || "").trim();
@@ -11109,6 +11117,11 @@ export async function wireStudyHandlers() {
         studentAnswer: answer,
         ...scopeFields,
       });
+      // [debug-enrich]
+      console.info('[study.socraticSubmit] Tutor response received:', {
+        blockIndex: state.activeBlockIndex,
+        replyLen: resp ? String(resp).length : 0,
+      });
 
       els.socraticResponseBox.hidden = false;
       void renderMarkdown(els.socraticResponseBox, resp);
@@ -11151,6 +11164,12 @@ export async function wireStudyHandlers() {
         els.socraticNextBlockBtn.textContent = "Finish";
       }
     } catch (err) {
+      // [debug-enrich]
+      console.error('[study.socraticSubmit] Tutor submit failed:', {
+        blockIndex: state.activeBlockIndex,
+        message: err?.message ?? String(err),
+        status: err?.status ?? null,
+      });
       setSocraticError(err?.message ? String(err.message) : String(err));
     } finally {
       setSocraticLoading(false);

@@ -49,3 +49,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-block-generate` | done | debug cache hit/miss; info LLM gen params; warn JSON retry |
 | `rsvp-finish-read` | done | info finishRSVP → showQuestions (block indices, mode) |
 | `rsvp-mcq` | done | info on answer (chosen/correct/block/q indices; assessment flag) |
+| `rsvp-socratic` | done | info submit click + reply len; error on tutor failure |
