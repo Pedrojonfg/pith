@@ -248,10 +248,17 @@ export function getCurrentMastery(entry, now = Date.now()) {
  */
 export function getMasteryLabel(entry, now = Date.now()) {
   const m = getCurrentMastery(entry, now);
-  if (m >= 0.8) return "mastered";
-  if (m >= 0.6) return "acquired";
-  if (m >= 0.3) return "partial";
-  return "unknown";
+  let label = "unknown";
+  if (m >= 0.8) label = "mastered";
+  else if (m >= 0.6) label = "acquired";
+  else if (m >= 0.3) label = "partial";
+  // [debug-enrich]
+  console.debug('[vault.mastery-model.getMasteryLabel]', {
+    entryId: entry?.id ?? null,
+    mastery: Math.round(m * 1000) / 1000,
+    label,
+  });
+  return label;
 }
 
 /**
