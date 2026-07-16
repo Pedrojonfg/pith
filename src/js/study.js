@@ -6230,10 +6230,21 @@ function computeSessionCompleteSummary() {
 }
 
 function showSessionComplete() {
+  // [debug-enrich]
+  console.info('[study.showSessionComplete] Session complete:', {
+    activeBlockIndex: state.activeBlockIndex,
+    totalBlocks: getTotalBlocksSafe(),
+    docId: state.activeSession?.docId ?? null,
+    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
+  });
   try {
     commitSessionConceptsForBlock(state.activeBlockIndex);
-  } catch {
-    // ignore concept commit errors
+  } catch (err) {
+    // [debug-enrich]
+    console.warn('[study.showSessionComplete] commitSessionConceptsForBlock failed (ignored):', {
+      blockIndex: state.activeBlockIndex,
+      message: err?.message ?? String(err),
+    });
   }
   void maybeApplyRsvpWpmCalibration();
   persistFlowRecommendationProgress();
@@ -6244,16 +6255,31 @@ function showSessionComplete() {
 
 function maybeApplyRsvpWpmCalibration() {
   const session = state.activeSession;
-  if (!session || !shouldCalibrateStudyMode(session.studyMode || state.studyMode)) return;
+  if (!session || !shouldCalibrateStudyMode(session.studyMode || state.studyMode)) {
+    // [debug-enrich]
+    console.debug('[study.maybeApplyRsvpWpmCalibration] Skipped', {
+      hasSession: Boolean(session),
+      studyMode: session?.studyMode ?? state.studyMode ?? null,
+    });
+    return;
+  }
   void (async () => {
     try {
       const doc = await getActiveSession();
       const inventory = Array.isArray(doc?.shared?.conceptInventory)
         ? doc.shared.conceptInventory
         : [];
+      // [debug-enrich]
+      console.info('[study.maybeApplyRsvpWpmCalibration] Applying calibration:', {
+        docId: doc?.docId ?? session?.docId ?? null,
+        inventoryCount: inventory.length,
+      });
       applySessionWpmCalibration(session, inventory);
-    } catch {
-      // silent — calibration must not block navigation
+    } catch (err) {
+      // [debug-enrich]
+      console.warn('[study.maybeApplyRsvpWpmCalibration] Calibration failed (silent):', {
+        message: err?.message ?? String(err),
+      });
     }
   })();
 }
