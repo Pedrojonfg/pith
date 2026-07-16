@@ -45,10 +45,28 @@ export async function promoteFromMcqBlock({
   skipped,
   source = "rsvp",
 }) {
+  // [debug-enrich]
+  console.info('[concept-registry.ingest.promoteFromMcqBlock] Promoting:', {
+    docId,
+    conceptIdCount: Array.isArray(conceptIds) ? conceptIds.length : 0,
+    correct,
+    firstTry,
+    usedHint,
+    skipped,
+    source,
+  });
   const session = await getSession(docId);
-  if (!session) return;
+  if (!session) {
+    // [debug-enrich]
+    console.warn('[concept-registry.ingest.promoteFromMcqBlock] Session missing — skip', {
+      docId,
+    });
+    return;
+  }
   const quality = mapMcqOutcomeToQuality({ correct, firstTry, usedHint, skipped });
   const ids = Array.isArray(conceptIds) ? conceptIds : [];
+  let okCount = 0;
+  let failCount = 0;
   for (const conceptId of ids) {
     const id = String(conceptId || "").trim();
     if (!id) continue;
@@ -60,11 +78,27 @@ export async function promoteFromMcqBlock({
         quality,
         source,
       });
+      okCount += 1;
     } catch (err) {
-      console.warn("[concept-registry] MCQ promotion failed", id, err);
+      failCount += 1;
+      console.warn("[concept-registry] MCQ promotion failed", id, err); // [debug-enrich] enriched below
+      // [debug-enrich]
+      console.warn('[concept-registry.ingest.promoteFromMcqBlock] Engagement failed:', {
+        docId,
+        conceptId: id,
+        quality,
+        message: err?.message ?? String(err),
+      });
     }
   }
   maybeReinforceOnCorrect(session, ids, correct);
+  // [debug-enrich]
+  console.debug('[concept-registry.ingest.promoteFromMcqBlock] Done:', {
+    docId,
+    quality,
+    okCount,
+    failCount,
+  });
 }
 
 /**

@@ -29,3 +29,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `vault-collect-observations` | done | info entry (signals/mode slots) + exit counts by type |
 | `vault-mastery-labels` | done | debug mastery value + label (mastered/acquired/partial/unknown) |
 | `registry-identity-resolve` | done | debug resolve; info exact/fuzzy/create paths; error on empty name |
+| `registry-ingest-study` | done | info MCQ promote entry; warn missing session / per-concept fail; debug ok/fail counts |
