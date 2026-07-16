@@ -60,7 +60,7 @@ function significantTokens(text) {
     .filter((t) => t.length >= 4 && !STOPWORDS.has(t));
 }
 
-function jaccardOverlap(a, b) {
+export function jaccardOverlap(a, b) {
   const setA = new Set(significantTokens(a));
   const setB = new Set(significantTokens(b));
   if (!setA.size || !setB.size) return 0;
