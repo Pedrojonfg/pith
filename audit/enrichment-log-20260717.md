@@ -36,3 +36,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-c-socratic-tutor` | done | info start (lens/scope flags); info reply shape; error on failure |
 | `pwa-sw-fetch` | done | debug strategy choice + networkFirst/cache hit-miss; warn network fail; CACHE_NAME→pith-v151 |
 | `row-cache-sessions` | done | debug cache hit/miss; info row count on populate; error on fetch failure |
+| `auth-google-oauth` | done | info OAuth start (redirect host); error on OAuth/UI failure |
