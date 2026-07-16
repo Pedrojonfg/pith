@@ -7282,13 +7282,24 @@ function showTestQuestions() {
 function beginRsvpForCurrentBlock({ onDone }) {
   const blocks = getBlocksSafe();
   const block = blocks[state.activeBlockIndex];
+  // [debug-enrich]
+  console.info('[study.beginRsvpForCurrentBlock] Starting RSVP overlay:', {
+    activeBlockIndex: state.activeBlockIndex,
+    hasBlock: Boolean(block),
+    explanationLen: block?.explanation ? String(block.explanation).length : 0,
+    readable: block ? blockHasReadableExplanation(block) : false,
+  });
   if (!block) {
     const msg = "Missing block.";
+    // [debug-enrich]
+    console.error('[study.beginRsvpForCurrentBlock] Missing block at index', state.activeBlockIndex);
     setTestError(msg);
     showScreen("test");
     return;
   }
   if (!blockHasReadableExplanation(block)) {
+    // [debug-enrich]
+    console.warn('[study.beginRsvpForCurrentBlock] No readable explanation — skipping RSVP');
     if (typeof onDone === "function") {
       onDone();
       return;
@@ -7340,6 +7351,17 @@ function beginPacedReadForCurrentBlock({ onDone }) {
 }
 
 function beginBlockReading({ onDone }) {
+  const mode = isReadStudyMode(state.activeSession)
+    ? "read"
+    : isPacedReaderPreferred()
+      ? "paced"
+      : "rsvp";
+  // [debug-enrich]
+  console.info('[study.beginBlockReading] Choosing reading mode:', {
+    mode,
+    activeBlockIndex: state.activeBlockIndex,
+    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
+  });
   if (isReadStudyMode(state.activeSession)) beginReadForCurrentBlock({ onDone });
   else if (isPacedReaderPreferred()) beginPacedReadForCurrentBlock({ onDone });
   else beginRsvpForCurrentBlock({ onDone });
