@@ -2024,7 +2024,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260717_33";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260717_34";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -2050,7 +2050,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260717_33");
+        await import("./src/js/main.js?v=20260717_34");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

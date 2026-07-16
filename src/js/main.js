@@ -54,18 +54,37 @@ async function openInitialScreen() {
 }
 
 async function continueAppBoot() {
-  if (appBooted) return;
-  appBooted = true;
-  await migrateLocalStorageToSupabase();
-
-  const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
-    !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
-  if (hasStoredSession) {
-    await migrateLegacyActiveSession();
+  if (appBooted) {
+    // [debug-enrich]
+    console.debug('[main.continueAppBoot] Already booted — skip');
+    return;
   }
+  // [debug-enrich]
+  console.info('[main.continueAppBoot] Continuing app boot after auth');
+  appBooted = true;
+  try {
+    await migrateLocalStorageToSupabase();
 
-  await openInitialScreen();
-  dismissSplash(false);
+    const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
+      !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
+    if (hasStoredSession) {
+      // [debug-enrich]
+      console.info('[main.continueAppBoot] Migrating legacy active session');
+      await migrateLegacyActiveSession();
+    }
+
+    await openInitialScreen();
+    dismissSplash(false);
+    // [debug-enrich]
+    console.info('[main.continueAppBoot] Boot complete');
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[main.continueAppBoot] Boot failed (appBooted left true):', {
+      message: err?.message ?? String(err),
+      stack: err?.stack ?? null,
+    });
+    throw err;
+  }
 }
 
 function wireAuthUi() {
@@ -100,11 +119,20 @@ function wireAuthUi() {
   });
 
   supabase.auth.onAuthStateChange(async (event, session) => {
+    // [debug-enrich]
+    console.info('[main.onAuthStateChange] Auth event:', {
+      event,
+      hasSession: Boolean(session),
+      userId: session?.user?.id ?? null,
+      appBooted,
+    });
     syncPlatformLlmAccessFromSession(session);
     if ((event === "SIGNED_IN" || event === "INITIAL_SESSION") && session) {
       await continueAppBoot();
     }
     if (event === "SIGNED_OUT") {
+      // [debug-enrich]
+      console.info('[main.onAuthStateChange] Signed out — showing auth screen');
       syncPlatformLlmAccessFromSession(null);
       appBooted = false;
       showScreen("auth");
