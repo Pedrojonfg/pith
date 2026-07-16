@@ -463,9 +463,20 @@ export function clearActiveDocumentPointer() {
  */
 export async function setActiveSession(docId) {
   const id = String(docId || "").trim();
-  if (!(await getSession(id))) throw new Error("session not found");
+  // [debug-enrich]
+  console.info('[session-store.setActiveSession] Setting active doc pointer:', {
+    docId: id,
+    previousActive: localStorage.getItem(LS_ACTIVE_DOC_ID_KEY),
+  });
+  if (!(await getSession(id))) {
+    // [debug-enrich]
+    console.error('[session-store.setActiveSession] Session not found:', { docId: id });
+    throw new Error("session not found");
+  }
   localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
   scheduleActiveDocSync(id);
+  // [debug-enrich]
+  console.debug('[session-store.setActiveSession] Active pointer updated + sync scheduled');
 }
 
 /**
