@@ -13,3 +13,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-start-studying` | done | info on click + enter loop (docId, mode, block/q indices, nTest/nSocratic); error if no session |
 | `rsvp-overlay-read` | done | info on mode choice (rsvp/paced/read); RSVP entry with explanationLen; warn/error on missing/unreadable block |
 | `rsvp-overlay-playback` | done | info on start (chunkCount, wpm, wpf); warn empty chunks; debug resize/skipCountdown/abort |
+| `rsvp-block-transition` | done | info on finishQuestions (last vs next); warn on concept commit fail; sneakPeek extract debug |
