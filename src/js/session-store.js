@@ -472,15 +472,47 @@ export async function setActiveSession(docId) {
  * @param {object} session
  */
 export async function saveActiveSession(session) {
+  // [debug-enrich]
+  console.debug('[session-store.saveActiveSession] Saving:', {
+    docId: session?.docId ?? null,
+    studyMode: session?.studyMode ?? null,
+    hasRawMarkdown: typeof session?.shared?.rawMarkdown === "string",
+    rawMarkdownLen: typeof session?.shared?.rawMarkdown === "string"
+      ? session.shared.rawMarkdown.length
+      : 0,
+    prepStatus: session?.shared?.preparation?.status ?? null,
+  });
   const v = validateDocumentSession(session);
-  if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);
+  if (!v.ok) {
+    // [debug-enrich]
+    console.error('[session-store.saveActiveSession] Validation failed:', {
+      docId: session?.docId ?? null,
+      errors: v.errors,
+    });
+    throw new Error(`invalid session: ${v.errors.join("; ")}`);
+  }
   const updated = { ...session, updatedAt: Date.now() };
-  await upsertSessionInStore(updated);
+  try {
+    await upsertSessionInStore(updated);
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[session-store.saveActiveSession] Upsert failed:', {
+      docId: updated.docId,
+      message: err?.message ?? String(err),
+    });
+    throw err;
+  }
   const activeId = localStorage.getItem(LS_ACTIVE_DOC_ID_KEY);
   if (activeId === updated.docId) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, updated.docId);
     scheduleActiveDocSync(updated.docId);
   }
+  // [debug-enrich]
+  console.info('[session-store.saveActiveSession] Saved:', {
+    docId: updated.docId,
+    updatedAt: updated.updatedAt,
+    wasActive: activeId === updated.docId,
+  });
 }
 
 export async function getAllSessions() {
