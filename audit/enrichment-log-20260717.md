@@ -47,3 +47,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-confirm-session` | done | info confirm click + session init; error on confirm failure |
 | `rsvp-start-block` | done | info start (index/mode/docId); debug prefetch next |
 | `rsvp-block-generate` | done | debug cache hit/miss; info LLM gen params; warn JSON retry |
+| `rsvp-finish-read` | done | info finishRSVP → showQuestions (block indices, mode) |

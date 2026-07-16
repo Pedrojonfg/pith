@@ -7883,11 +7883,21 @@ async function generateBlockDirect(blockIndex, { timeoutMs, n_test, n_socratic }
 }
 
 function finishRSVP(blockIndex) {
+  // [debug-enrich]
+  console.info('[study.finishRSVP] Reading finished — showing questions:', {
+    blockIndex: Math.max(0, Math.floor(Number(blockIndex) || 0)),
+    activeBlockIndex: state.activeBlockIndex,
+  });
   showQuestions(blockIndex);
 }
 
 async function showQuestions(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  // [debug-enrich]
+  console.info('[study.showQuestions] Entering questions for block:', {
+    blockIndex: idx,
+    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
+  });
   state.activeBlockIndex = idx;
   state.activeQuestionIndex = 0;
   if (state.activeSession && typeof state.activeSession === "object") {
