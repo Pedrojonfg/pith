@@ -50,7 +50,10 @@ export function deriveInventoryEdges(inventory, conceptGraph = null) {
   if (Array.isArray(graphEdges)) {
     for (const e of graphEdges) {
       if (!e || typeof e !== "object") continue;
-      add(e.from, e.to, e.type || e.relation || "relates");
+      // ponytail: prefer DPP/cloze snake_case; keep from/to and camelCase fallbacks
+      const from = e.source_id || e.from || e.sourceId;
+      const to = e.target_id || e.to || e.targetId;
+      add(from, to, e.type || e.relation || "relates");
     }
   }
 
