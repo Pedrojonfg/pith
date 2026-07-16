@@ -561,6 +561,11 @@ export function addManualEntry(params) {
   }
   vault.lastUpdated = now;
   saveVault(vault);
+  void import("./metadata-extraction.js")
+    .then(({ enqueueVaultMetadataExtraction }) => {
+      enqueueVaultMetadataExtraction([entry.id]);
+    })
+    .catch(() => {});
   return hydrateMastery(entry);
 }
 

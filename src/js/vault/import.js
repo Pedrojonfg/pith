@@ -735,6 +735,13 @@ export async function importFromDocument(file, normalizedDoc, options = {}) {
     ({ added, merged } = countImportResults(mappings));
     vault.lastUpdated = Date.now();
     saveVault(vault);
+    void import("./metadata-extraction.js")
+      .then(({ enqueueVaultMetadataExtraction }) => {
+        enqueueVaultMetadataExtraction(Object.values(normalizationMap || {}));
+      })
+      .catch((err) => {
+        console.warn("[importFromDocument] metadata extraction enqueue failed", err?.message || err);
+      });
   } else {
     errors.push("All concepts from this document are already in the vault.");
   }

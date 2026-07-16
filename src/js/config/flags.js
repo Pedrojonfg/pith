@@ -298,3 +298,13 @@ export const BOOK_LOOKUP_FLAGS = Object.freeze({
 export function isBookLookupEnabled() {
   return BOOK_LOOKUP_FLAGS.BOOK_LOOKUP_ENABLED === true;
 }
+
+/** Vault temporal/spatial/influence metadata extraction (20260716). */
+export const VAULT_METADATA_FLAGS = Object.freeze({
+  /** Kill-switch: when false, promotion never enqueues extraction/geocode. */
+  VAULT_METADATA_EXTRACTION_ENABLED: true,
+});
+
+export function isVaultMetadataExtractionEnabled() {
+  return VAULT_METADATA_FLAGS.VAULT_METADATA_EXTRACTION_ENABLED === true;
+}
