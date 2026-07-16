@@ -1,6 +1,13 @@
 import { hasGeneratedBlockContent, normalizeStudyMode, isConceptInventoryValid } from "./session.js";
 import { createClozeSession, createSlowSession } from "./study.js";
-import { normalizePreparationState, isTier1PreparationComplete, resolveScopedMarkdown } from "./session-types.js";
+import {
+  normalizePreparationState,
+  isTier1PreparationComplete,
+  resolveScopedMarkdown,
+  isPackImportSession,
+  packImportHasSourceDocument,
+  PACK_SOURCE_REQUIRED_MODES,
+} from "./session-types.js";
 import { getValidItems } from "./cloze/pipeline.js";
 
 /**
@@ -12,7 +19,12 @@ function hasSharedMaterial(doc) {
   if (!sh || typeof sh !== "object") return false;
   if (typeof sh.rawMarkdown === "string" && sh.rawMarkdown.trim().length > 0) return true;
   const ref = sh.rawMarkdownRef;
-  return Boolean(ref && typeof ref === "object" && String(ref.storageKey || "").trim());
+  if (ref && typeof ref === "object" && String(ref.storageKey || "").trim()) return true;
+  // No-source pack imports still carry derived study content (rsvp/recall/questions).
+  if (isPackImportSession(doc) && normalizePreparationState(sh.preparation).status === "ready") {
+    return true;
+  }
+  return false;
 }
 
 function preparationAllowsBootstrap(doc) {
@@ -97,10 +109,18 @@ function isSliceResumable(slice, slot) {
     return blocks.some(hasGeneratedBlockContent);
   }
   if (slot === "slow") {
-    return String(slice.slow?.phase || "").trim().length > 0;
+    // Nested (full SlowSession) or flat pack-import slowSlice { phase }
+    return (
+      String(slice.slow?.phase || "").trim().length > 0 ||
+      String(slice.phase || "").trim().length > 0
+    );
   }
   if (slot === "cloze") {
     if (hasReadyClozeItems(slice) || shouldPreserveClozeSlice(slice)) return true;
+    // Flat pack-import cloze slice { pipelineStatus, items }
+    if (String(slice.pipelineStatus || "") === "ready" && Array.isArray(slice.items) && slice.items.length > 0) {
+      return true;
+    }
     const text = slice.cloze?.normalizedText;
     return typeof text === "string" && text.length > 0;
   }
@@ -147,6 +167,21 @@ export function resolveModeEntryState(doc, mode) {
       kind: "upload_required",
       mode: modeKey,
       reason: "no_document_or_shared_material",
+      existingSlice: null,
+    };
+  }
+
+  // Pack without source document: Slow/Cloze are unavailable (no raw text to ground them).
+  if (
+    slot &&
+    PACK_SOURCE_REQUIRED_MODES.includes(slot) &&
+    isPackImportSession(doc) &&
+    !packImportHasSourceDocument(doc)
+  ) {
+    return {
+      kind: "upload_required",
+      mode: modeKey,
+      reason: "pack_without_source_document",
       existingSlice: null,
     };
   }

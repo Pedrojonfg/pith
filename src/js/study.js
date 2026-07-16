@@ -1560,7 +1560,11 @@ async function syncModeSelectView(doc = null) {
 }
 
 function syncInterviewModeGate(doc) {
-  const hidden = isInterviewOriginSession(doc) ? ["rsvp", "slow", "questions"] : [];
+  const hidden = [];
+  if (isInterviewOriginSession(doc)) hidden.push("rsvp", "slow", "questions");
+  // No-source pack imports: Slow/Cloze require the original document.
+  if (!isModeAvailableForSession(doc, "slow")) hidden.push("slow");
+  if (!isModeAvailableForSession(doc, "cloze")) hidden.push("cloze");
   for (const mode of ["rsvp", "slow", "cloze", "questions", "recall"]) {
     const input = document.querySelector(`input[name="studyMode"][value="${mode}"]`);
     const label = input?.closest(".study-mode-option");
@@ -3828,7 +3832,7 @@ export async function enterModeWithContinuity(mode) {
   const docGate = await getActiveSession();
   if (docGate && !isModeAvailableForSession(docGate, normalized)) {
     if (els.modeSelectManual) els.modeSelectManual.hidden = false;
-    alert("This mode is not available for sessions created from an interview.");
+    alert("This mode is not available for this session.");
     return;
   }
 

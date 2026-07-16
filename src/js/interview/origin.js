@@ -1,5 +1,11 @@
 /** Interview session origin helpers (20260620-nodoc-interview-capture). */
 
+import {
+  isPackImportSession,
+  packImportHasSourceDocument,
+  PACK_SOURCE_REQUIRED_MODES,
+} from "../session-types.js";
+
 /** @typedef {'rsvp'|'slow'|'questions'|'cloze'|'recall'} StudyModeKey */
 
 export const INTERVIEW_PLACEHOLDER_MARKDOWN =
@@ -20,8 +26,15 @@ export function isInterviewOriginSession(session) {
  */
 export function isModeAvailableForSession(session, mode) {
   const key = String(mode || "").trim();
-  if (!isInterviewOriginSession(session)) return true;
-  return !INTERVIEW_HIDDEN_MODES.includes(key);
+  if (isInterviewOriginSession(session) && INTERVIEW_HIDDEN_MODES.includes(key)) return false;
+  if (
+    isPackImportSession(session) &&
+    !packImportHasSourceDocument(session) &&
+    PACK_SOURCE_REQUIRED_MODES.includes(key)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -30,5 +43,8 @@ export function isModeAvailableForSession(session, mode) {
  */
 export function getDefaultModesForSession(session) {
   if (isInterviewOriginSession(session)) return ["cloze", "recall"];
+  if (isPackImportSession(session) && !packImportHasSourceDocument(session)) {
+    return ["rsvp", "questions", "recall"];
+  }
   return ["rsvp", "slow", "cloze", "questions", "recall"];
 }
