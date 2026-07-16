@@ -690,6 +690,15 @@ export async function deepSeekSocraticTutor({
   backgroundMarkdown = "",
   scopeContext = "",
 }) {
+  // [debug-enrich]
+  console.info('[api.deepSeekSocraticTutor] Starting tutor call:', {
+    blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
+    questionLen: question ? String(question).length : 0,
+    answerLen: studentAnswer ? String(studentAnswer).length : 0,
+    hasScopedMarkdown: Boolean(scopedMarkdown),
+    hasBackgroundMarkdown: Boolean(backgroundMarkdown),
+    hasScopeContext: Boolean(scopeContext),
+  });
   // R14: generative DPP contracts stay scoped-only; dual-context is chat-only.
   let scopeBlock = "";
   if (scopedMarkdown && backgroundMarkdown) {
@@ -723,14 +732,31 @@ Be concise overall. Respond in the same language as the question and student ans
 
   const userPrompt = `Question: ${question}\nStudent answer: ${studentAnswer}`;
 
-  return llmChatCompletions({
-    llmModel: resolveLlmModelArg(llmModel),
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.6,
-  });
+  try {
+    const result = await llmChatCompletions({
+      llmModel: resolveLlmModelArg(llmModel),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.6,
+    });
+    // [debug-enrich]
+    console.info('[api.deepSeekSocraticTutor] Tutor reply received:', {
+      replyLen: result ? String(result).length : 0,
+      hasCritique: typeof result === "string" && /critique/i.test(result),
+      hasSuggested: typeof result === "string" && /suggested answer/i.test(result),
+    });
+    return result;
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[api.deepSeekSocraticTutor] Tutor call failed:', {
+      blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
+      message: err?.message ?? String(err),
+      status: err?.status ?? null,
+    });
+    throw err;
+  }
 }
 
 /** Max output tokens for scope context blurb (1–3 sentences). */
