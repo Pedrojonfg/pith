@@ -5,3 +5,4 @@ Logging-only pass; suspected issues noted here, **not fixed**.
 | process id | file | line | description |
 |------------|------|------|-------------|
 | `dpp-t1.4-block-recommendation` | `src/js/document-preparation.js` | ~480–484 | `runPhaseT14` stores `rationale: recommendation.rationale`, but `computeBlockCountRecommendation` returns `reasoning` (not `rationale`) → `blockRecommendation.rationale` is always undefined; full object is also stuffed into `signals` |
+| `review-sm2-item-grade` | `src/js/review.js` | ~233 | `handleSm2QualityClick` early-returns when `originDocId` is empty without advancing `sm2ReviewIndex` — grade appears ignored and user can stuck-retry same item |

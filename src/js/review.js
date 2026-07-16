@@ -117,9 +117,24 @@ function showSm2ReviewEmptyState(message) {
 async function renderSm2ReviewItem() {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) {
+    // [debug-enrich]
+    console.info('[review.renderSm2ReviewItem] Queue exhausted — showing summary', {
+      queueLength: sm2ReviewQueue.length,
+      index: sm2ReviewIndex,
+    });
     showSm2ReviewSummary();
     return;
   }
+
+  // [debug-enrich]
+  console.debug('[review.renderSm2ReviewItem] Rendering item:', {
+    index: sm2ReviewIndex,
+    queueLength: sm2ReviewQueue.length,
+    itemId: item.id ?? null,
+    sourceType: item.sourceType ?? item.source ?? null,
+    docId: item.docId ?? sm2ReviewDocId ?? null,
+    title: item.title ? String(item.title).slice(0, 80) : null,
+  });
 
   setSm2ReviewDomVisible(true);
   if (els.reviewSm2Empty) els.reviewSm2Empty.hidden = true;
@@ -129,6 +144,10 @@ async function renderSm2ReviewItem() {
   const early = !isOnTime(item, now);
   const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
   const originSession = originDocId ? await getSession(originDocId) : null;
+  if (originDocId && !originSession) {
+    // [debug-enrich]
+    console.warn('[review.renderSm2ReviewItem] Origin session missing:', { originDocId });
+  }
 
   if (els.reviewSm2Meta) {
     const why = computeWhyThisExplanation({
@@ -199,7 +218,24 @@ function showSm2ReviewSummary() {
 
 async function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
-  if (!item) return;
+  if (!item) {
+    // [debug-enrich]
+    console.warn('[review.handleSm2QualityClick] No item at index', {
+      index: sm2ReviewIndex,
+      quality,
+    });
+    return;
+  }
+
+  // [debug-enrich]
+  console.info('[review.handleSm2QualityClick] Grade submitted:', {
+    quality,
+    index: sm2ReviewIndex,
+    itemId: item.id ?? null,
+    source: item.source ?? null,
+    sourceType: item.sourceType ?? null,
+    docId: item.docId ?? sm2ReviewDocId ?? null,
+  });
 
   if (item.source === "global" || item.sourceType === "global_concept") {
     onGlobalReviewAnswer({
@@ -230,7 +266,15 @@ async function handleSm2QualityClick(quality) {
   }
 
   const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
-  if (!originDocId) return;
+  if (!originDocId) {
+    // [debug-enrich]
+    console.error('[review.handleSm2QualityClick] Missing originDocId — grade dropped without advancing queue', {
+      quality,
+      itemId: item.id ?? null,
+      sourceType: item.sourceType ?? null,
+    });
+    return;
+  }
 
   const updated = updateSmItem(item, quality);
   await upsertSmItem(originDocId, updated);
@@ -242,6 +286,12 @@ async function handleSm2QualityClick(quality) {
       applyVaultReviewObservation(session, updated.sourceId, {
         type: quality >= 3 ? "mcq_correct" : "mcq_wrong",
         correct: quality >= 3,
+      });
+    } else {
+      // [debug-enrich]
+      console.warn('[review.handleSm2QualityClick] Vault observe skipped — session missing', {
+        originDocId,
+        sourceId: updated.sourceId ?? null,
       });
     }
   }
