@@ -28,3 +28,4 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-supabase-upsert` | done | debug entry; info ok; error with code/details/hint on failure |
 | `vault-collect-observations` | done | info entry (signals/mode slots) + exit counts by type |
 | `vault-mastery-labels` | done | debug mastery value + label (mastered/acquired/partial/unknown) |
+| `registry-identity-resolve` | done | debug resolve; info exact/fuzzy/create paths; error on empty name |
