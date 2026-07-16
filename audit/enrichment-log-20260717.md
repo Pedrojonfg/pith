@@ -50,3 +50,38 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-finish-read` | done | info finishRSVP → showQuestions (block indices, mode) |
 | `rsvp-mcq` | done | info on answer (chosen/correct/block/q indices; assessment flag) |
 | `rsvp-socratic` | done | info submit click + reply len; error on tutor failure |
+
+---
+
+## Checkpoint (pause)
+
+**Stopped after:** `rsvp-socratic` (still inside Pass 2).
+
+**Completed:** Pass 1 fully (critical+none). Pass 2 started through RSVP study loop critical+minimal.
+
+**Resume Pass 2 next (top-to-bottom remaining critical+minimal):**
+1. `persist-session-create`
+2. `persist-session-read`
+3. `persist-markdown-rehydrate`
+4. `persist-blocks-rehydrate`
+5. `persist-retry-keyed`
+6. `persist-retry-transient`
+7. `persist-user-stores-hydrate`
+8. `persist-blocks-cloud-upload`
+9. `vault-load-save`
+10. `vault-session-close`
+11. `registry-maturity-promotion`
+12. `vault-normalize-llm`
+13. `llm-proxy-edge`
+14. `llm-c-block-explanation`
+15. `llm-c-block-questions`
+16. `llm-c-block-json`
+17. `llm-c-hierarchy`
+18. `llm-c-vault-normalize`
+19. `pwa-sw-register-update`
+20. `pwa-sw-cache-install`
+
+Then Pass 3 if time: non-critical `likely-broken` / `likely-fragile`.
+
+**Also see:** `audit/bugs-found-20260717.md`  
+**SW_VERSION now:** `20260717_44` · **CACHE_NAME:** `pith-v151`
