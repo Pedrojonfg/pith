@@ -828,4 +828,29 @@ export function shouldSkipRsvpInventoryLlm(session) {
   return resolvePreparedRsvpInventory(session) != null;
 }
 
+/**
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function isPackImportSession(session) {
+  return String(session?.shared?.uploadMeta?.originalFormat || "").trim() === "pack";
+}
+
+/**
+ * Pack published with includeSourceDocument=false has no rawMarkdown / slow / cloze / images.
+ * @param {unknown} session
+ * @returns {boolean}
+ */
+export function packImportHasSourceDocument(session) {
+  if (!isPackImportSession(session)) return true;
+  if (String(session?.shared?.rawMarkdown || "").trim()) return true;
+  if (session?.modes?.slow != null) return true;
+  if (session?.modes?.cloze != null) return true;
+  const images = session?.shared?.images;
+  return Array.isArray(images) && images.length > 0;
+}
+
+/** Modes that require the source document (blocked on no-source pack imports). */
+export const PACK_SOURCE_REQUIRED_MODES = Object.freeze(["slow", "cloze"]);
+
 export { MODE_KEYS };
