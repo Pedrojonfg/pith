@@ -173,6 +173,11 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
   const rowHtml = [];
   for (const doc of sessions) {
     const title = doc.shared?.docMeta?.titleInferred || "Untitled document";
+    const packOwner = String(doc.shared?.uploadMeta?.sourcePackOwnerName || "").trim();
+    const packAttr =
+      doc.shared?.uploadMeta?.originalFormat === "pack" && packOwner
+        ? `<span class="doc-library-pack-attr hint">Imported from ${escapeHtml(packOwner)}'s pack</span>`
+        : "";
     const modes = Object.entries(doc.modes || {})
       .filter(([, value]) => value != null)
       .map(([key]) => key);
@@ -186,6 +191,7 @@ async function renderDocumentRows(projectId, container, onOpenDoc) {
     rowHtml.push(`<div class="doc-library-row" role="listitem">
         <button type="button" class="doc-library-item" data-doc-id="${escapeHtml(doc.docId)}">
           <span class="doc-library-title">${escapeHtml(title)}</span>
+          ${packAttr}
           <span class="doc-library-meta">
             ${prepHtml}
             <span class="doc-library-modes">${escapeHtml(formatDocLibraryModes(modes))}</span>

@@ -106,6 +106,9 @@ export const PROJECT_STORE_SCHEMA = 1;
  * @property {BookMeta} [bookMeta]
  * @property {SourceFileMeta[]} [files]
  * @property {Record<string, string>} [sourceMap]
+ * @property {string} [sourcePackId] Pack uuid when originalFormat is "pack"
+ * @property {string} [sourcePackOwnerName] Creator display name for imported packs
+ * @property {string} [sourcePackTitle] Pack title at import time
  */
 
 /**

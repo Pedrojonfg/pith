@@ -512,6 +512,31 @@
               </button>
             </div>
             <p class="create-session-start-divider hint">or</p>
+            <div class="create-session-pack-import">
+              <label for="createSessionPackCodeInput">Use a pack code</label>
+              <div class="row create-session-pack-row">
+                <input
+                  id="createSessionPackCodeInput"
+                  name="createSessionPackCodeInput"
+                  type="text"
+                  maxlength="12"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Share code"
+                  class="create-session-pack-code-input"
+                />
+                <button type="button" id="createSessionPackLookupBtn" class="btn-secondary">
+                  Look up
+                </button>
+              </div>
+              <div id="createSessionPackPreview" class="create-session-pack-preview" hidden>
+                <p id="createSessionPackPreviewMeta" class="hint"></p>
+                <button type="button" id="createSessionPackImportBtn" class="btn-primary">
+                  Import pack
+                </button>
+              </div>
+              <p id="createSessionPackError" class="error" role="alert" hidden></p>
+            </div>
             <button type="button" id="createSessionNoFileBtn" class="btn-secondary create-session-no-file-btn">
               I don't have a file for this
             </button>
@@ -1604,6 +1629,11 @@
             </label>
             <button type="button" id="packConceptPublishBtn" class="btn-primary">Publish</button>
           </div>
+          <div id="packConceptShareCodePanel" class="pack-concept-share-code-panel" hidden>
+            <p class="hint">Share code</p>
+            <p id="packConceptShareCodeValue" class="pack-concept-share-code-value"></p>
+            <button type="button" id="packConceptShareCodeCopyBtn" class="btn-secondary">Copy code</button>
+          </div>
           <p id="packConceptEditorError" class="error pack-concept-editor-error" role="alert" hidden></p>
           <div id="packConceptGraphMount" class="pack-concept-graph-mount material-graph-content"></div>
           <p class="hint pack-concept-editor-hint">
@@ -1994,7 +2024,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_05";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260716_06";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -2020,7 +2050,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260716_05");
+        await import("./src/js/main.js?v=20260716_06");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

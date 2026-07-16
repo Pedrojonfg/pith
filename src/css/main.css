@@ -89,7 +89,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ¬ß11 ‚Äî subtle base noise (dark mode only) */
+/* ß11 ó subtle base noise (dark mode only) */
 body::before {
   content: "";
   position: fixed;
@@ -208,7 +208,7 @@ body.paced-reader-active main {
   place-items: stretch;
 }
 
-/* Full-bleed readers hide corner chrome ‚Äî no extra top inset */
+/* Full-bleed readers hide corner chrome ó no extra top inset */
 body.slow-reader-active main > .container,
 body.paced-reader-active main > .container {
   padding-top: 0;
@@ -237,7 +237,7 @@ body.recall-active main > .container {
   padding: 16px;
 }
 
-/* Full-bleed primary screens ‚Äî screens are never cards */
+/* Full-bleed primary screens ó screens are never cards */
 .screen > .card {
   min-height: calc(100vh - var(--chrome-top-reserve) - var(--space-6, 24px));
   padding: 0;
@@ -259,7 +259,7 @@ body.recall-active main > .container {
   font-weight: 600;
 }
 
-/* Hub screens ‚Äî ambient glow on full-bleed surface */
+/* Hub screens ó ambient glow on full-bleed surface */
 .app-home-screen[aria-hidden="false"],
 .mode-select-screen[aria-hidden="false"],
 .retrieval-hub-screen[aria-hidden="false"],
@@ -732,7 +732,7 @@ textarea:focus {
   border: 0;
 }
 
-/* Session complete summary (DESIGN ¬ß9.3) */
+/* Session complete summary (DESIGN ß9.3) */
 .session-complete-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2037,6 +2037,43 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin: 16px 0 10px;
 }
 
+.create-session-pack-import {
+  margin: 0 0 14px;
+}
+
+.create-session-pack-row {
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.create-session-pack-code-input {
+  flex: 1;
+  min-width: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.create-session-pack-preview {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+}
+
+.pack-concept-share-code-panel {
+  margin: 8px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+}
+
+.pack-concept-share-code-value {
+  font-size: 1.35rem;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 8px;
+}
+
 .create-session-staging {
   margin-bottom: 12px;
 }
@@ -2454,7 +2491,7 @@ body.assessment-runner-active .assessment-runner-chrome {
   margin: 8px 0 0;
 }
 
-/* Study projects ‚Äî breadcrumb & flat tree picker (T06) */
+/* Study projects ó breadcrumb & flat tree picker (T06) */
 .study-breadcrumb {
   display: flex;
   flex-wrap: wrap;
@@ -3378,14 +3415,14 @@ body.vault-overlay-open #screenApiSetup {
 }
 
 .vault-study-trail-summary::before {
-  content: "‚ñ∏";
+  content: "?";
   margin-right: 6px;
   color: var(--text-muted, #64748b);
   font-size: 0.75rem;
 }
 
 .vault-study-trail[open] .vault-study-trail-summary::before {
-  content: "‚ñæ";
+  content: "?";
 }
 
 .vault-study-trail-count {
@@ -3704,7 +3741,7 @@ body.vault-overlay-open #screenApiSetup {
 }
 
 .pre-packing-assessment-option.is-presumed-known span::before {
-  content: "‚úì ";
+  content: "? ";
   color: #16a34a;
 }
 
@@ -3715,7 +3752,7 @@ body.vault-overlay-open #screenApiSetup {
   color: #16a34a;
 }
 
-/* Boot splash ‚Äî brief brand veil on cold start */
+/* Boot splash ó brief brand veil on cold start */
 #app-splash {
   position: fixed;
   inset: 0;
@@ -3883,7 +3920,7 @@ button[disabled],
   flex-wrap: wrap;
 }
 
-/* Pack concept graph editor ó full-bleed primary screen */
+/* Pack concept graph editor ù full-bleed primary screen */
 .pack-concept-editor-screen {
   display: flex;
   flex-direction: column;

@@ -11,6 +11,38 @@ import { jaccardOverlap } from "./fidelity-validation.js";
 /** Exclusive upper bound: overlap >= this fails publish (SC-002). */
 export const PACK_REWRITE_JACCARD_MAX = 0.3;
 
+/** Safe aloud/handwriting alphabet — no 0/O/1/I/L. */
+export const PACK_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+export const PACK_CODE_LENGTH = 8;
+const PACK_CODE_ASSIGN_ATTEMPTS = 8;
+
+/**
+ * @returns {string}
+ */
+export function generatePackCode() {
+  let out = "";
+  for (let i = 0; i < PACK_CODE_LENGTH; i += 1) {
+    out += PACK_CODE_ALPHABET[(Math.random() * PACK_CODE_ALPHABET.length) | 0];
+  }
+  return out;
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {string}
+ */
+export function normalizePackCode(raw) {
+  return String(raw || "")
+    .trim()
+    .toUpperCase();
+}
+
+function isUniqueViolation(err) {
+  const code = String(err?.code || "");
+  const msg = String(err?.message || err || "").toLowerCase();
+  return code === "23505" || msg.includes("duplicate") || msg.includes("unique");
+}
+
 /** ~1.5 output tokens per input char, clamped — one-shot prose rewrite. */
 const REWRITE_MAX_TOKENS_FLOOR = 256;
 const REWRITE_MAX_TOKENS_CEIL = 4096;
@@ -183,11 +215,13 @@ export async function createPackDraft(docId, ownerUserId, deps = {}) {
 
   const snapshot = buildPackSnapshot(session);
   const title = String(session.shared?.docMeta?.titleInferred || "").trim();
+  const ownerDisplayName = String(deps.ownerDisplayName || "").trim() || "Pack creator";
 
   const { data, error } = await db
     .from("shared_packs")
     .insert({
       owner_user_id: owner,
+      owner_display_name: ownerDisplayName,
       source_doc_id: id,
       title,
       status: "draft",
@@ -280,5 +314,20 @@ export async function finalizePack(packDraftId, includeSourceDocument, deps = {}
     .single();
 
   if (updErr) throw updErr;
-  return updated;
+
+  // Assign share code after publish (immutability trigger allows code-only updates).
+  let lastErr = null;
+  for (let attempt = 0; attempt < PACK_CODE_ASSIGN_ATTEMPTS; attempt += 1) {
+    const code = generatePackCode();
+    const { data: coded, error: codeErr } = await db
+      .from("shared_packs")
+      .update({ code })
+      .eq("id", packId)
+      .select()
+      .single();
+    if (!codeErr && coded) return coded;
+    lastErr = codeErr;
+    if (!isUniqueViolation(codeErr)) throw codeErr;
+  }
+  throw lastErr || new Error("finalizePack: could not assign a unique share code");
 }
