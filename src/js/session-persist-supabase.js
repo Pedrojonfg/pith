@@ -29,11 +29,28 @@ export function markdownStoragePath(userId, docId) {
 export async function uploadMarkdown(userId, docId, markdown) {
   const path = markdownStoragePath(userId, docId);
   const blob = new Blob([markdown], { type: "text/markdown" });
+  // [debug-enrich]
+  console.debug('[session-persist-supabase.uploadMarkdown] Uploading:', {
+    docId,
+    path,
+    byteLength: typeof markdown === "string" ? markdown.length : null,
+  });
   const { error } = await supabase.storage.from("markdown_files").upload(path, blob, {
     upsert: true,
     contentType: "text/markdown",
   });
-  if (error) throw error;
+  if (error) {
+    // [debug-enrich]
+    console.error('[session-persist-supabase.uploadMarkdown] Upload failed:', {
+      docId,
+      path,
+      message: error.message ?? String(error),
+      statusCode: error.statusCode ?? error.status ?? null,
+    });
+    throw error;
+  }
+  // [debug-enrich]
+  console.info('[session-persist-supabase.uploadMarkdown] Upload ok:', { docId, path });
   return path;
 }
 
