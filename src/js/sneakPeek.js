@@ -11,7 +11,13 @@
  * @returns {string}
  */
 export function extractSneakPeek(explanation, maxSentences = 4) {
-  if (typeof explanation !== "string") return "";
+  if (typeof explanation !== "string") {
+    // [debug-enrich]
+    console.debug('[sneakPeek.extractSneakPeek] Non-string explanation:', {
+      type: typeof explanation,
+    });
+    return "";
+  }
 
   // Normalize maxSentences to a sensible positive integer.
   if (typeof maxSentences !== "number" || !Number.isFinite(maxSentences) || maxSentences <= 0) {
@@ -21,7 +27,11 @@ export function extractSneakPeek(explanation, maxSentences = 4) {
   }
 
   let text = explanation.trim();
-  if (!text) return "";
+  if (!text) {
+    // [debug-enrich]
+    console.debug('[sneakPeek.extractSneakPeek] Empty explanation');
+    return "";
+  }
 
   // Collapse all whitespace (including newlines) to single spaces so that
   // sentence boundaries aren't affected by paragraph formatting.
@@ -41,8 +51,20 @@ export function extractSneakPeek(explanation, maxSentences = 4) {
     }
   }
 
-  if (sentences.length === 0) return "";
+  if (sentences.length === 0) {
+    // [debug-enrich]
+    console.debug('[sneakPeek.extractSneakPeek] No sentences parsed', {
+      inputLen: explanation.length,
+    });
+    return "";
+  }
 
-  return sentences.join(" ");
+  const result = sentences.join(" ");
+  // [debug-enrich]
+  console.debug('[sneakPeek.extractSneakPeek] Extracted:', {
+    inputLen: explanation.length,
+    sentenceCount: sentences.length,
+    peekLen: result.length,
+  });
+  return result;
 }
-

@@ -7822,19 +7822,40 @@ async function finishQuestions(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const total = Math.max(1, getTotalBlocksSafe());
   const studyOrder = isQuestionsStudyMode(state.activeSession) ? state.questionsStudyOrder : null;
+  // [debug-enrich]
+  console.info('[study.finishQuestions] Block questions finished:', {
+    blockIndex: idx,
+    totalBlocks: total,
+    isLast: isLastQuestionsStudyBlock(idx, studyOrder, total),
+    hasStudyOrder: Array.isArray(studyOrder) && studyOrder.length > 0,
+    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
+  });
   if (isLastQuestionsStudyBlock(idx, studyOrder, total)) {
+    // [debug-enrich]
+    console.info('[study.finishQuestions] Last block — showing session complete');
     showSessionComplete();
     return;
   }
 
   try {
     commitSessionConceptsForBlock(idx);
-  } catch {
-    // ignore
+  } catch (err) {
+    // [debug-enrich]
+    console.warn('[study.finishQuestions] commitSessionConceptsForBlock failed (ignored):', {
+      blockIndex: idx,
+      message: err?.message ?? String(err),
+    });
   }
 
   const o = getOrCreateTransitionOverlay();
   const nextIndex = resolveNextStudyBlockForSession(idx, total);
+  // [debug-enrich]
+  console.info('[study.finishQuestions] Opening transition overlay:', {
+    finishedBlockIndex: idx,
+    nextIndex,
+    prefetchStatus: prefetchState?.status ?? null,
+    prefetchBlockIndex: prefetchState?.blockIndex ?? null,
+  });
   o.title.textContent = `Continue to block ${nextIndex + 1} of ${total}`;
 
   o.finishedBlockIndex = idx;
