@@ -55,14 +55,39 @@ function docTextKey(docId) {
 let rowCache = null;
 
 async function readSessionRows() {
+  // [debug-enrich]
+  console.debug('[session-store.readSessionRows] Fetching session rows from Supabase');
   const userId = await getAuthUserId();
-  const rows = await fetchSessionRows(userId);
-  rowCache = new Map(rows.map((r) => [r.id, r]));
-  return rows;
+  try {
+    const rows = await fetchSessionRows(userId);
+    rowCache = new Map(rows.map((r) => [r.id, r]));
+    // [debug-enrich]
+    console.info('[session-store.readSessionRows] Row cache populated:', {
+      rowCount: rows.length,
+      hasUserId: Boolean(userId),
+    });
+    return rows;
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[session-store.readSessionRows] Fetch failed:', {
+      hasUserId: Boolean(userId),
+      message: err?.message ?? String(err),
+    });
+    throw err;
+  }
 }
 
 async function ensureRowCache() {
-  if (!rowCache) await readSessionRows();
+  if (!rowCache) {
+    // [debug-enrich]
+    console.debug('[session-store.ensureRowCache] Cache miss — loading rows');
+    await readSessionRows();
+  } else {
+    // [debug-enrich]
+    console.debug('[session-store.ensureRowCache] Cache hit:', {
+      size: rowCache.size,
+    });
+  }
   return rowCache;
 }
 
