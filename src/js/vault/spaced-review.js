@@ -88,10 +88,25 @@ function isVaultDecaySmItem(item) {
  */
 export async function syncVaultToReviewPool(session) {
   const docId = String(session?.docId || "").trim();
-  if (!docId) return;
+  if (!docId) {
+    // [debug-enrich]
+    console.warn('[vault.spaced-review.syncVaultToReviewPool] Missing docId — skip');
+    return;
+  }
+
+  // [debug-enrich]
+  console.info('[vault.spaced-review.syncVaultToReviewPool] Syncing vault → review pool:', {
+    docId,
+  });
 
   const current = await getSession(docId) || session;
-  if (!current?.shared) return;
+  if (!current?.shared) {
+    // [debug-enrich]
+    console.warn('[vault.spaced-review.syncVaultToReviewPool] No shared slice — skip', {
+      docId,
+    });
+    return;
+  }
 
   const docTopics = Array.isArray(current.shared.docTopics) ? current.shared.docTopics : [];
   const vault = loadVault();
@@ -111,6 +126,15 @@ export async function syncVaultToReviewPool(session) {
   const vaultItems = [...eligible.values()].sort(
     (a, b) => (Number(a.scheduledDue) || 0) - (Number(b.scheduledDue) || 0),
   );
+
+  // [debug-enrich]
+  console.info('[vault.spaced-review.syncVaultToReviewPool] Pool rebuilt:', {
+    docId,
+    topicCount: docTopics.length,
+    eligibleVaultItems: vaultItems.length,
+    keptNonVaultItems: kept.length,
+    totalSmItems: kept.length + vaultItems.length,
+  });
 
   await saveActiveSession({
     ...current,
