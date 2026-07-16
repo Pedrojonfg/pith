@@ -51,12 +51,28 @@ export async function resolveGlobalConcept({
   const name = String(canonicalName || "").trim();
   const slug = normalizeSlug(name);
   if (!name || !slug) {
+    // [debug-enrich]
+    console.error('[identity-resolution.resolveGlobalConcept] Empty canonicalName');
     throw new Error("resolveGlobalConcept requires canonicalName");
   }
+
+  // [debug-enrich]
+  console.debug('[identity-resolution.resolveGlobalConcept] Resolving:', {
+    name: name.slice(0, 80),
+    slug,
+    sourceDocId: sourceDocId ?? null,
+    inventoryEntryId: inventoryEntryId || null,
+  });
 
   const exact = getConceptBySlug(slug);
   if (exact) {
     addSourceDocId(exact.id, sourceDocId);
+    // [debug-enrich]
+    console.info('[identity-resolution.resolveGlobalConcept] Exact slug match:', {
+      conceptId: exact.id,
+      slug,
+      created: false,
+    });
     return { conceptId: exact.id, created: false };
   }
 
@@ -80,6 +96,13 @@ export async function resolveGlobalConcept({
     const aliases = best.aliases.includes(name) ? best.aliases : [...best.aliases, name];
     upsertConcept({ ...best, aliases });
     addSourceDocId(best.id, sourceDocId);
+    // [debug-enrich]
+    console.info('[identity-resolution.resolveGlobalConcept] High-confidence fuzzy match:', {
+      conceptId: best.id,
+      bestScore,
+      candidateCount: candidates.length,
+      created: false,
+    });
     return { conceptId: best.id, created: false };
   }
 
@@ -98,6 +121,15 @@ export async function resolveGlobalConcept({
       best && bestScore >= MEDIUM_CONFIDENCE ? [best.id, ...relatedHintIds] : relatedHintIds,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+  });
+
+  // [debug-enrich]
+  console.info('[identity-resolution.resolveGlobalConcept] Created new concept:', {
+    conceptId: concept.id,
+    slug,
+    bestScore,
+    relatedHintCount: relatedHintIds.length,
+    created: true,
   });
 
   return {
