@@ -519,25 +519,39 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
   return hashPayload(recommendation.primaryFlow);
 }
 
-async function runPhaseT16(doc) {
+async function runPhaseT16(doc, _ctx, deps = {}) {
   const inventory = doc.shared.conceptInventory || [];
+  const resolveFn = deps.resolveGlobalConcept || resolveGlobalConcept;
+  const backfillFn = deps.backfillGlobalConceptIds || backfillGlobalConceptIds;
   for (const entry of inventory) {
-    const name = String(entry?.label || entry?.term || "").trim();
+    const name = String(entry?.label || entry?.term || entry?.title || "").trim();
     const entryId = String(entry?.canonicalId || entry?.id || "").trim();
     if (!name || entry.globalConceptId) continue;
     try {
-      const { conceptId } = await resolveGlobalConcept({
+      const { conceptId } = await resolveFn({
         canonicalName: name,
         description: String(entry?.definition || "").trim(),
         sourceDocId: doc.docId,
         inventoryEntryId: entryId,
       });
-      await backfillGlobalConceptIds(doc, conceptId, entryId, { persist: false });
+      await backfillFn(doc, conceptId, entryId, { persist: false });
     } catch (err) {
       console.warn("[dpp] vault link failed", name, err?.message || err);
     }
   }
   return hashPayload(inventory.map((c) => c.globalConceptId || c.canonicalId));
+}
+
+/**
+ * Importer-scoped Vault linking (DPP T1.6) without tier-1 blockRecommendation gate.
+ * @param {object} doc
+ * @param {{ resolveGlobalConcept?: Function, backfillGlobalConceptIds?: Function }} [deps]
+ * @returns {Promise<object>}
+ */
+export async function runVaultLinkPhase(doc, deps = {}) {
+  if (!doc?.docId) return doc;
+  await runPhaseT16(doc, {}, deps);
+  return doc;
 }
 
 async function runPhaseT17(doc, ctx) {

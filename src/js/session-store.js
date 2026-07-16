@@ -684,6 +684,11 @@ export async function setUploadMeta(docId, meta) {
       ...(meta.bookMeta != null ? { bookMeta: meta.bookMeta } : {}),
       ...(Array.isArray(meta.files) ? { files: meta.files } : {}),
       ...(meta.sourceMap != null && typeof meta.sourceMap === "object" ? { sourceMap: meta.sourceMap } : {}),
+      ...(meta.sourcePackId != null ? { sourcePackId: String(meta.sourcePackId) } : {}),
+      ...(meta.sourcePackOwnerName != null
+        ? { sourcePackOwnerName: String(meta.sourcePackOwnerName) }
+        : {}),
+      ...(meta.sourcePackTitle != null ? { sourcePackTitle: String(meta.sourcePackTitle) } : {}),
     };
   }
   await saveActiveSession(session);

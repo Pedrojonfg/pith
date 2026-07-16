@@ -331,7 +331,9 @@ import {
   toCanvasGraph,
 } from "./pack-concept-editor.js";
 import { createPackDraft, finalizePack, updatePackDraftSnapshot } from "./pack-export.js";
+import { lookupPublishedPackByCode, importPackAsSession } from "./pack-import.js";
 import { getAuthUserId } from "./session-persist-supabase.js";
+import { supabase } from "./supabase-client.js";
 import { jumpToAnnotation } from "./slow/sidebar.js?v=20260625_02";
 import { getValidItems, getPhaseLabel, runClozePipelinePhases } from "./cloze/pipeline.js?v=20260625_02";
 import {
@@ -2086,6 +2088,8 @@ let createSessionStartRunId = 0;
 let createSessionStagedFiles = [];
 let createSessionNameManuallyEdited = false;
 let createSessionUploadInProgress = false;
+/** @type {object|null} */
+let packImportPreview = null;
 
 /** @type {{ currentQuestion: string, questionSource: 'fixed'|'generated', runId: number }} */
 const interviewCaptureState = {
@@ -2727,13 +2731,98 @@ async function handleCreateSessionStartContinue() {
   }
 }
 
+async function resolveOwnerDisplayName() {
+  try {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    const meta = user?.user_metadata || {};
+    const named = String(meta.full_name || meta.name || "").trim();
+    if (named) return named;
+    const email = String(user?.email || "").trim();
+    if (email.includes("@")) return email.split("@")[0];
+  } catch {
+    // fall through
+  }
+  return "Pack creator";
+}
+
+function setCreateSessionPackError(message) {
+  if (!els.createSessionPackError) return;
+  const text = String(message || "").trim();
+  els.createSessionPackError.textContent = text;
+  els.createSessionPackError.hidden = !text;
+}
+
+async function handleCreateSessionPackLookup() {
+  setCreateSessionPackError("");
+  packImportPreview = null;
+  if (els.createSessionPackPreview) els.createSessionPackPreview.hidden = true;
+  const code = String(els.createSessionPackCodeInput?.value || "").trim();
+  if (!code) {
+    setCreateSessionPackError("Enter a pack code.");
+    return;
+  }
+  try {
+    const pack = await lookupPublishedPackByCode(code);
+    if (!pack) {
+      setCreateSessionPackError("Invalid pack code");
+      return;
+    }
+    packImportPreview = pack;
+    const title = String(pack.title || "Untitled pack").trim() || "Untitled pack";
+    const owner = String(pack.owner_display_name || "").trim() || "Pack creator";
+    if (els.createSessionPackPreviewMeta) {
+      els.createSessionPackPreviewMeta.textContent = `${title} — shared by ${owner}`;
+    }
+    if (els.createSessionPackPreview) els.createSessionPackPreview.hidden = false;
+  } catch (err) {
+    setCreateSessionPackError(String(err?.message || err || "Lookup failed"));
+  }
+}
+
+async function handleCreateSessionPackImport() {
+  setCreateSessionPackError("");
+  if (!packImportPreview?.code) {
+    setCreateSessionPackError("Look up a valid pack code first.");
+    return;
+  }
+  try {
+    const userId = await getAuthUserId();
+    const projectId = getUploadDefaultProjectId();
+    if (!projectId) {
+      setCreateSessionPackError("Select a project before importing.");
+      return;
+    }
+    if (els.createSessionPackImportBtn) els.createSessionPackImportBtn.disabled = true;
+    const session = await importPackAsSession(packImportPreview.code, userId, projectId);
+    await setActiveSession(session.docId);
+    state.activeSession = session;
+    hydrateMaterialStateFromDoc(session);
+    packImportPreview = null;
+    enterModeSelectScreen();
+  } catch (err) {
+    const msg = String(err?.message || err || "Import failed");
+    setCreateSessionPackError(/invalid pack code/i.test(msg) ? "Invalid pack code" : msg);
+  } finally {
+    if (els.createSessionPackImportBtn) els.createSessionPackImportBtn.disabled = false;
+  }
+}
+
 export async function enterCreateSessionStartScreen() {
   createSessionStartRunId += 1;
   createSessionStagedFiles = [];
   createSessionNameManuallyEdited = false;
   createSessionUploadInProgress = false;
+  packImportPreview = null;
   if (els.createSessionStartFileInput) {
     els.createSessionStartFileInput.value = "";
+  }
+  if (els.createSessionPackCodeInput) els.createSessionPackCodeInput.value = "";
+  if (els.createSessionPackPreview) els.createSessionPackPreview.hidden = true;
+  if (els.createSessionPackError) {
+    els.createSessionPackError.hidden = true;
+    els.createSessionPackError.textContent = "";
   }
   const doc = await getActiveSession();
   const defaultName = doc?.shared?.docMeta?.titleInferred || "";
@@ -4999,6 +5088,18 @@ function wireDocLibraryHandlers() {
   });
 
   els.createSessionStartBackBtn?.addEventListener("click", () => enterDocLibraryScreen());
+  els.createSessionPackLookupBtn?.addEventListener("click", () => {
+    void handleCreateSessionPackLookup();
+  });
+  els.createSessionPackImportBtn?.addEventListener("click", () => {
+    void handleCreateSessionPackImport();
+  });
+  els.createSessionPackCodeInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void handleCreateSessionPackLookup();
+    }
+  });
   els.createSessionNoFileBtn?.addEventListener("click", () => {
     if (isBookLookupEnabled()) {
       enterBookSearchScreen();
@@ -8464,7 +8565,8 @@ export async function enterPackConceptEditorFromDoc(docId) {
   setPackConceptEditorStatus("Creating draft…");
   try {
     const ownerUserId = await getAuthUserId();
-    const draft = await createPackDraft(id, ownerUserId);
+    const ownerDisplayName = await resolveOwnerDisplayName();
+    const draft = await createPackDraft(id, ownerUserId, { ownerDisplayName });
     await enterPackConceptEditor(draft);
   } catch (err) {
     setPackConceptEditorStatus("");
@@ -8488,6 +8590,7 @@ export async function enterPackConceptEditor(draftRow) {
   packConceptEditorState.linking = false;
   packConceptEditorState.saver = createDebouncedPackSaver((snap) => persistPackConceptSnapshot(snap));
   if (els.packConceptIncludeSource) els.packConceptIncludeSource.checked = true;
+  if (els.packConceptShareCodePanel) els.packConceptShareCodePanel.hidden = true;
   setPackConceptEditorError("");
   setPackConceptEditorStatus("Draft ready");
   remountPackConceptGraph();
@@ -8531,21 +8634,44 @@ function wirePackConceptEditorHandlersOnce() {
   els.packConceptPublishBtn?.addEventListener("click", () => {
     void publishPackConceptEditor();
   });
+
+  els.packConceptShareCodeCopyBtn?.addEventListener("click", async () => {
+    const code = String(els.packConceptShareCodeValue?.textContent || "").trim();
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setPackConceptEditorStatus("Code copied");
+    } catch {
+      setPackConceptEditorError("Could not copy — select the code manually.");
+    }
+  });
 }
 
 async function publishPackConceptEditor() {
   if (!packConceptEditorState.packId || !packConceptEditorState.snapshot) return;
   setPackConceptEditorError("");
   setPackConceptEditorStatus("Publishing…");
+  if (els.packConceptShareCodePanel) els.packConceptShareCodePanel.hidden = true;
   try {
     await packConceptEditorState.saver?.flush();
     const include = Boolean(els.packConceptIncludeSource?.checked);
-    await finalizePack(packConceptEditorState.packId, include);
+    const published = await finalizePack(packConceptEditorState.packId, include);
+    const code = String(published?.code || "").trim();
     packConceptEditorState.packId = null;
     packConceptEditorState.snapshot = null;
-    setPackConceptEditorStatus("");
-    enterDocLibraryScreen();
-    window.alert("Pack published.");
+    setPackConceptEditorStatus(code ? "Published" : "Published (no code)");
+    if (code && els.packConceptShareCodePanel && els.packConceptShareCodeValue) {
+      els.packConceptShareCodeValue.textContent = code;
+      els.packConceptShareCodePanel.hidden = false;
+      try {
+        await navigator.clipboard?.writeText?.(code);
+        setPackConceptEditorStatus("Published — code copied");
+      } catch {
+        // clipboard optional
+      }
+    } else {
+      enterDocLibraryScreen();
+    }
   } catch (err) {
     setPackConceptEditorStatus("Publish failed");
     setPackConceptEditorError(String(err?.message || err || "Publish failed"));
