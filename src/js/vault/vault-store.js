@@ -666,13 +666,22 @@ export function upsertVaultReviewItem(item) {
   const vault = loadVault();
   if (!Array.isArray(vault.reviewItems)) vault.reviewItems = [];
   const id = String(item.id || "").trim() || newVaultId();
+  const sourceDocId = String(item.sourceDocId || item.docId || item.originDocId || "").trim();
+  if (!sourceDocId) {
+    // ponytail: refuse review items without origin — prevents stuck SM-2 grades
+    console.warn("[vault.upsertVaultReviewItem] Refusing item without sourceDocId", {
+      id,
+      vaultEntryId: item.vaultEntryId ?? null,
+    });
+    return null;
+  }
   const normalized = {
     id,
     vaultEntryId: String(item.vaultEntryId || "").trim(),
     facet: String(item.facet || "synthesis").trim(),
     prompt: String(item.prompt || "").trim(),
     answer: String(item.answer || "").trim(),
-    sourceDocId: String(item.sourceDocId || "").trim(),
+    sourceDocId,
     sm2: {
       interval: Number(item.sm2?.interval) || 0,
       easeFactor: Number(item.sm2?.easeFactor) || 2.5,

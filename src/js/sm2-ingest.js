@@ -45,18 +45,23 @@ export const RECALL_QUALITY_TO_SM2 = {
  * @returns {object}
  */
 export async function registerOrUpdateSmItem(docId, params) {
+  const originDocId = String(docId || params?.docId || params?.originDocId || "").trim();
   // [debug-enrich]
   console.debug('[sm2-ingest.registerOrUpdateSmItem] Call:', {
-    docId,
+    docId: originDocId,
     sourceType: params?.sourceType ?? null,
     sourceId: params?.sourceId ?? null,
     quality: params?.quality ?? null,
     conceptIdCount: Array.isArray(params?.conceptIds) ? params.conceptIds.length : 0,
   });
-  const session = await getSession(docId);
+  if (!originDocId) {
+    console.error('[sm2-ingest.registerOrUpdateSmItem] Missing docId/originDocId');
+    throw new Error("registerOrUpdateSmItem requires docId");
+  }
+  const session = await getSession(originDocId);
   if (!session) {
     // [debug-enrich]
-    console.error('[sm2-ingest.registerOrUpdateSmItem] Session not found:', { docId });
+    console.error('[sm2-ingest.registerOrUpdateSmItem] Session not found:', { docId: originDocId });
     throw new Error("session not found");
   }
 
@@ -65,7 +70,7 @@ export async function registerOrUpdateSmItem(docId, params) {
   if (!sourceType || !sourceId) {
     // [debug-enrich]
     console.error('[sm2-ingest.registerOrUpdateSmItem] Missing sourceType/sourceId:', {
-      docId,
+      docId: originDocId,
       sourceType: sourceType ?? null,
       hasSourceId: Boolean(sourceId),
     });
@@ -80,7 +85,7 @@ export async function registerOrUpdateSmItem(docId, params) {
     if (!mayScheduleSm2ForConcepts(session, conceptIds)) {
       // [debug-enrich]
       console.info('[sm2-ingest.registerOrUpdateSmItem] Comprehension gate blocked scheduling:', {
-        docId,
+        docId: originDocId,
         sourceType,
         sourceId,
         conceptIds,
@@ -92,7 +97,7 @@ export async function registerOrUpdateSmItem(docId, params) {
   const reviewProvenance = params.reviewProvenance || "document";
 
   const existing = (session.shared?.smItems || [])
-    .map((raw) => normalizeSmItem({ ...raw, docId }))
+    .map((raw) => normalizeSmItem({ ...raw, docId: originDocId }))
     .find((item) => item && item.sourceType === sourceType && item.sourceId === sourceId);
 
   let item = existing
@@ -106,7 +111,7 @@ export async function registerOrUpdateSmItem(docId, params) {
       }
     : createSmItem({
         ...params,
-        docId,
+        docId: originDocId,
         sourceType,
         sourceId,
         title: params.title,
@@ -121,10 +126,10 @@ export async function registerOrUpdateSmItem(docId, params) {
     }
   }
 
-  await upsertSmItem(docId, item);
+  await upsertSmItem(originDocId, item);
   // [debug-enrich]
   console.info('[sm2-ingest.registerOrUpdateSmItem] Upserted:', {
-    docId,
+    docId: originDocId,
     itemId: item.id,
     sourceType: item.sourceType,
     sourceId: item.sourceId,

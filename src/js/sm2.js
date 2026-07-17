@@ -90,7 +90,7 @@ export function createSmItem(params = {}) {
     throw new Error("createSmItem requires valid sourceType");
   }
   const sourceId = String(params.sourceId || "").trim();
-  const docId = String(params.docId || "").trim();
+  const docId = String(params.docId || params.originDocId || "").trim();
   if (!sourceId || !docId) {
     // [debug-enrich]
     console.error('[sm2.createSmItem] Missing sourceId or docId:', {
@@ -147,7 +147,9 @@ export function normalizeSmItem(raw) {
   ).trim();
   if (!sourceId) return null;
 
-  const docId = String(raw.docId || "").trim();
+  // originDocId alias kept for callers; empty → drop (never enter review queue)
+  const docId = String(raw.docId || raw.originDocId || raw.sourceDocId || "").trim();
+  if (!docId) return null;
   const scheduledDue = Number.isFinite(raw.scheduledDue)
     ? raw.scheduledDue
     : Number.isFinite(raw.nextReview)

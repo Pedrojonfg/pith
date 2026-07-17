@@ -407,6 +407,10 @@ export function commitVaultCurationItem({ session, mapping, payload, batchContex
     const prompt = String(ri?.prompt || "").trim();
     const answer = String(ri?.answer || "").trim();
     if (!prompt) continue;
+    if (!docId) {
+      console.warn("[vault-curation.commitVaultCurationItem] Skip review item — missing docId");
+      continue;
+    }
     if (!Array.isArray(vault.reviewItems)) vault.reviewItems = [];
     vault.reviewItems.push({
       id: newVaultId(),

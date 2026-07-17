@@ -53,13 +53,17 @@ export function shouldIncludeInReviewPool(entry, now = Date.now()) {
  * @param {number} [now]
  */
 function buildVaultSmItem(entry, priority, docId, now = Date.now()) {
+  const originDocId = String(docId || "").trim();
+  if (!originDocId) {
+    throw new Error("buildVaultSmItem requires docId");
+  }
   const vaultEntryId = String(entry.id);
   const definition = String(entry.definition || entry.canonicalDefinition || "").trim();
   return {
     id: `${VAULT_SM_ID_PREFIX}${vaultEntryId}`,
     sourceType: "vault_concept",
     sourceId: vaultEntryId,
-    docId: String(docId || "").trim(),
+    docId: originDocId,
     title: String(entry.canonicalTitle || "").trim() || "Vault concept",
     contentPreview: definition.slice(0, 80),
     interval: 1,
