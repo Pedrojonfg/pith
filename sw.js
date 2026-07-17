@@ -69,15 +69,34 @@ const MATHJAX_URLS = [
 ];
 
 self.addEventListener("install", (event) => {
+  // [debug-enrich]
+  console.info("[sw.install] Install start:", {
+    cacheName: CACHE_NAME,
+    staticAssetCount: STATIC_ASSETS.length,
+    hasActiveWorker: Boolean(self.registration.active),
+  });
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([...STATIC_ASSETS, MARKED_URL, MERMAID_URL, ...MATHJAX_URLS]).catch((err) => {
-        console.warn("SW cache failed for some assets:", err);
+      const urls = [...STATIC_ASSETS, MARKED_URL, MERMAID_URL, ...MATHJAX_URLS];
+      return cache.addAll(urls).then(() => {
+        // [debug-enrich]
+        console.info("[sw.install] Precache complete:", {
+          cacheName: CACHE_NAME,
+          urlCount: urls.length,
+        });
+      }).catch((err) => {
+        // [debug-enrich]
+        console.warn("[sw.install] Precache partial/failed:", {
+          cacheName: CACHE_NAME,
+          message: err?.message || String(err),
+        });
       });
     }),
   );
   // Only activate immediately on first install; updates wait for user "Update now".
   if (!self.registration.active) {
+    // [debug-enrich]
+    console.info("[sw.install] First install — skipWaiting");
     self.skipWaiting();
   }
 });
