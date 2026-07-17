@@ -22,6 +22,13 @@ export function createTurn({ turn, question, questionSource, answer, answeredAt 
  */
 export function appendTurn(transcript, turn) {
   const list = Array.isArray(transcript) ? transcript : [];
+  // [debug-enrich]
+  console.debug("[interview.transcript.appendTurn] Turn appended:", {
+    turn: turn?.turn ?? null,
+    questionSource: turn?.questionSource ?? null,
+    answerLen: String(turn?.answer || "").length,
+    totalTurns: list.length + 1,
+  });
   return [...list, turn];
 }
 
