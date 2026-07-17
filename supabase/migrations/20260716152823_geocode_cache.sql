@@ -19,4 +19,4 @@ create policy "geocode_cache_select_authenticated"
   on public.geocode_cache
   for select
   to authenticated
-  using (true);
+  using (true);;

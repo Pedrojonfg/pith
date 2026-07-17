@@ -72,4 +72,4 @@ DROP TRIGGER IF EXISTS shared_packs_published_immutability ON public.shared_pack
 CREATE TRIGGER shared_packs_published_immutability
   BEFORE UPDATE ON public.shared_packs
   FOR EACH ROW
-  EXECUTE FUNCTION public.shared_packs_enforce_published_immutability();
+  EXECUTE FUNCTION public.shared_packs_enforce_published_immutability();;
