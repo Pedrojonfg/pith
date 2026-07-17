@@ -159,7 +159,17 @@ function buildRewritePrompt(text, context = {}) {
  */
 export async function rewritePackExcerpt(text, context, deps = {}) {
   const input = String(text || "").trim();
-  if (!input) throw new Error("rewritePackExcerpt: empty input");
+  // [debug-enrich]
+  console.info("[pack-export.rewritePackExcerpt] Start:", {
+    inputLen: input.length,
+    kind: context?.kind ?? null,
+    conceptLabel: context?.conceptLabel ?? null,
+  });
+  if (!input) {
+    // [debug-enrich]
+    console.error("[pack-export.rewritePackExcerpt] Empty input");
+    throw new Error("rewritePackExcerpt: empty input");
+  }
   const llm = deps.llmChatCompletions || defaultLlmChatCompletions;
   const content = await llm({
     messages: [
@@ -174,7 +184,16 @@ export async function rewritePackExcerpt(text, context, deps = {}) {
     max_tokens: rewriteMaxTokensForInput(input),
   });
   const out = String(content || "").trim();
-  if (!out) throw new Error("rewritePackExcerpt: empty model output");
+  if (!out) {
+    // [debug-enrich]
+    console.error("[pack-export.rewritePackExcerpt] Empty model output");
+    throw new Error("rewritePackExcerpt: empty model output");
+  }
+  // [debug-enrich]
+  console.info("[pack-export.rewritePackExcerpt] Done:", {
+    outputLen: out.length,
+    kind: context?.kind ?? null,
+  });
   return out;
 }
 
