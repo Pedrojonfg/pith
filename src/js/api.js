@@ -2998,6 +2998,15 @@ export async function deepSeekAuditBlockOverlap({
   language,
 }) {
   const model = resolveLlmModelArg(llmModel);
+  const priors = Array.isArray(priorBlocks) ? priorBlocks : [];
+  // [debug-enrich]
+  console.info("[api.deepSeekAuditBlockOverlap] Start:", {
+    llmModel: model,
+    blockTitle: blockTitle ?? null,
+    priorBlockCount: priors.length,
+    candidateLen: String(candidateExplanation || "").length,
+    language: language ?? null,
+  });
   const systemPrompt = buildOverlapAuditPrompt({
     blockTitle,
     candidateExplanation,
@@ -3019,18 +3028,28 @@ export async function deepSeekAuditBlockOverlap({
     raw = await request(true);
   } catch (err) {
     if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+      // [debug-enrich]
+      console.warn("[api.deepSeekAuditBlockOverlap] JSON mode failed — retry without:", err?.message || err);
       raw = await request(false);
     } else {
+      // [debug-enrich]
+      console.error("[api.deepSeekAuditBlockOverlap] LLM failed:", err?.message || err);
       throw err;
     }
   }
 
   const result = parseOverlapAuditFromModelResponse(raw);
   if (!result) {
-    console.warn(
-      "Overlap audit: could not parse model response, treating as pass",
-      String(raw || "").slice(0, 400),
-    );
+    // [debug-enrich]
+    console.warn("[api.deepSeekAuditBlockOverlap] Parse failed — treating as pass:", {
+      rawPreview: String(raw || "").slice(0, 400),
+    });
+  } else {
+    // [debug-enrich]
+    console.info("[api.deepSeekAuditBlockOverlap] Done:", {
+      overlapDetected: result?.overlap_detected ?? null,
+      action: result?.action ?? null,
+    });
   }
   return result;
 }
