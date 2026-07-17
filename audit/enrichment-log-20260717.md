@@ -77,38 +77,47 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `cloze-pipeline-p2-base` | done | Pass3 fragile: info start/done with candidate + item counts |
 | `review-generated-session` | done | Pass3 fragile: info start/loaded; debug render; error empty selection/index |
 | `sm2-ingest-recall` | done | Pass3 fragile: debug entry/skip; info upserted count |
+| `persist-vault-sync` | done | Pass3 fragile: info schedule/ok; warn abort; error upsert fail; debug offline |
 
 ---
 
 ## Checkpoint (pause)
 
-**Stopped after:** `rsvp-socratic` (still inside Pass 2).
+**Stopped after:** `sm2-ingest-recall` (Pass 3 fragile, mid-list).
 
-**Completed:** Pass 1 fully (critical+none). Pass 2 started through RSVP study loop critical+minimal.
+**Completed:** Pass 1 fully. Pass 2 fully (critical+minimal). Pass 3: both `likely-broken` + fragile through `sm2-ingest-recall`.
 
-**Resume Pass 2 next (top-to-bottom remaining critical+minimal):**
-1. `persist-session-create`
-2. `persist-session-read`
-3. `persist-markdown-rehydrate`
-4. `persist-blocks-rehydrate`
-5. `persist-retry-keyed`
-6. `persist-retry-transient`
-7. `persist-user-stores-hydrate`
-8. `persist-blocks-cloud-upload`
-9. `vault-load-save`
-10. `vault-session-close`
-11. `registry-maturity-promotion`
-12. `vault-normalize-llm`
-13. `llm-proxy-edge`
-14. `llm-c-block-explanation`
-15. `llm-c-block-questions`
-16. `llm-c-block-json`
-17. `llm-c-hierarchy`
-18. `llm-c-vault-normalize`
-19. `pwa-sw-register-update`
-20. `pwa-sw-cache-install`
-
-Then Pass 3 if time: non-critical `likely-broken` / `likely-fragile`.
+**Resume Pass 3 next (non-critical likely-fragile, top-to-bottom):**
+1. `persist-vault-sync`
+2. `persist-registry-sync`
+3. `registry-dedup-gates`
+4. `vault-embeddings`
+5. `vault-novelty-score`
+6. `vault-inventory-merge-embed`
+7. `llm-gemini-chat`
+8. `llm-gemini-embed`
+9. `llm-c-block-split`
+10. `llm-c-char-boundary-refine`
+11. `llm-c-block-audit`
+12. `llm-c-block-overlap-audit`
+13. `llm-c-assessment-items`
+14. `llm-c-assessment-holistic`
+15. `llm-c-assessment-evaluate`
+16. `llm-c-review-batch`
+17. `llm-c-phase0`
+18. `llm-c-cloze-phases`
+19. `llm-c-recall-questions`
+20. `llm-c-recall-tutor`
+21. `llm-c-vision-image`
+22. `llm-c-vision-ocr`
+23. `llm-c-interview-followup`
+24. `llm-c-interview-synthesis`
+25. `llm-c-pack-rewrite`
+26. `interview-loop`
+27. `interview-synthesis`
+28. `export-offline-pack-build`
+29. `pack-snapshot-build`
 
 **Also see:** `audit/bugs-found-20260717.md`  
 **SW_VERSION now:** `20260717_44` · **CACHE_NAME:** `pith-v151`
+**Branch:** `overnight-debug-enrich`
