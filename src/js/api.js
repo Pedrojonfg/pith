@@ -3684,6 +3684,16 @@ export async function deepSeekRegenerateBlockQuestions({
   prevBlockSummaryForConnection = "",
   userExtra = "",
 }) {
+  // [debug-enrich]
+  console.debug('[api.deepSeekRegenerateBlockQuestions] Entry:', {
+    blockIndex,
+    blockTitle: blockTitle ?? null,
+    n_test,
+    n_socratic,
+    include_connection_questions,
+    explanationLen: String(explanation || "").length,
+    materialLen: String(materialText || "").length,
+  });
   const manifestSlice = Array.isArray(coverageManifest) ? coverageManifest.slice(-20) : [];
   const systemPrompt =
     buildQuestionsOnlySystemPrompt({
@@ -3720,16 +3730,39 @@ export async function deepSeekRegenerateBlockQuestions({
 
   const obj = parseModelJsonObject(raw);
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-    console.warn("Invalid questions-only JSON response:", raw);
+    // [debug-enrich]
+    console.warn('[api.deepSeekRegenerateBlockQuestions] Invalid JSON:', {
+      blockIndex,
+      rawPreview: String(raw || "").slice(0, 120),
+    });
     throw new Error("Model did not return valid JSON for questions. Please try again.");
   }
   if (Object.prototype.hasOwnProperty.call(obj, "explanation")) {
-    console.warn("Questions-only regen returned forbidden explanation field — ignoring it.");
+    // [debug-enrich]
+    console.warn('[api.deepSeekRegenerateBlockQuestions] Forbidden explanation field — ignoring');
     delete obj.explanation;
   }
   if (Object.prototype.hasOwnProperty.call(obj, "title")) {
     delete obj.title;
   }
+  const qCount = Array.isArray(obj.questions) ? obj.questions.length : 0;
+  const expected = Math.max(0, Math.round(Number(n_test) || 0)) + Math.max(0, Math.round(Number(n_socratic) || 0));
+  if (expected > 0 && qCount !== expected) {
+    // [debug-enrich]
+    console.warn('[api.deepSeekRegenerateBlockQuestions] Question count mismatch:', {
+      blockIndex,
+      expected,
+      actual: qCount,
+      n_test,
+      n_socratic,
+    });
+  }
+  // [debug-enrich]
+  console.info('[api.deepSeekRegenerateBlockQuestions] Done:', {
+    blockIndex,
+    questionCount: qCount,
+    conceptCount: Array.isArray(obj.concepts) ? obj.concepts.length : 0,
+  });
   return obj;
 }
 
@@ -3980,6 +4013,14 @@ export async function deepSeekGenerateBlockQuestions({
   avoidOverlapWith,
   prevBlockSummaryForConnection,
 }) {
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockQuestions] Start:', {
+    blockIndex,
+    blockTitle: blockTitle ?? null,
+    n_test,
+    n_socratic,
+    include_connection_questions,
+  });
   const prevTitles = [];
   const list = String(blocksListText || "").trim();
   if (list) {
@@ -3988,7 +4029,7 @@ export async function deepSeekGenerateBlockQuestions({
       if (m) prevTitles.push(m[1].trim());
     }
   }
-  return deepSeekRegenerateBlockQuestions({
+  const result = await deepSeekRegenerateBlockQuestions({
     llmModel,
     language,
     n_test,
@@ -4005,6 +4046,12 @@ export async function deepSeekGenerateBlockQuestions({
     avoidOverlapWith,
     prevBlockSummaryForConnection,
   });
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockQuestions] Done:', {
+    blockIndex,
+    questionCount: Array.isArray(result?.questions) ? result.questions.length : 0,
+  });
+  return result;
 }
 
 export async function deepSeekGenerateBlockJson({
@@ -4034,13 +4081,29 @@ export async function deepSeekGenerateBlockJson({
   docTopics = null,
   sectionHasImages = false,
 }) {
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockJson] Start:', {
+    blockIndex,
+    blockTitle: blockTitle ?? null,
+    n_test,
+    n_socratic,
+    strictMode,
+    explanation_profile,
+    materialLen: String(materialText || "").length,
+  });
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
+    // [debug-enrich]
+    console.debug('[api.deepSeekGenerateBlockJson] Extracting source claims (strict)');
     claims = await deepSeekExtractSourceClaims({
       llmModel,
       materialText,
       blockTitle,
       language,
+    });
+    // [debug-enrich]
+    console.debug('[api.deepSeekGenerateBlockJson] Claims extracted:', {
+      claimCount: Array.isArray(claims) ? claims.length : 0,
     });
   }
 
@@ -4114,10 +4177,19 @@ export async function deepSeekGenerateBlockJson({
         concepts: conceptList,
       });
     } catch (err) {
-      console.warn("Concept dictionary enrichment failed; keeping extraction pass definitions:", err);
+      // [debug-enrich]
+      console.warn('[api.deepSeekGenerateBlockJson] Concept dictionary enrichment failed:', err?.message || err);
     }
   }
 
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockJson] Done:', {
+    blockIndex,
+    explanationLen: String(blockObj.explanation || "").length,
+    questionCount: Array.isArray(blockObj.questions) ? blockObj.questions.length : 0,
+    conceptCount: Array.isArray(blockObj.concepts) ? blockObj.concepts.length : 0,
+    fidelityStatus: blockObj.fidelity_status || "ok",
+  });
   return blockObj;
 }
 
