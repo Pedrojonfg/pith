@@ -2827,6 +2827,13 @@ export async function deepSeekPackConceptsToBlocks({
 
 export async function deepSeekAuditBlockIndex({ llmModel, apiKey: _legacyApiKey, blockIndexJson, language }) {
   const model = resolveLlmModelArg(llmModel);
+  const indexJson = String(blockIndexJson || "[]");
+  // [debug-enrich]
+  console.info("[api.deepSeekAuditBlockIndex] Start:", {
+    llmModel: model,
+    language: language ?? null,
+    indexJsonLen: indexJson.length,
+  });
   const systemPrompt = `You are auditing a study session block index for conceptual overlap.
 
 Here is the block index (id, title, summary, signature):
@@ -2855,15 +2862,18 @@ Your task:
 
 Be conservative: if in doubt, KEEP SEPARATE. Losing study depth is worse than a few overlapping blocks.
 Respond ONLY with valid JSON.`
-    .replace("{blockIndexJSON}", String(blockIndexJson || "[]"))
+    .replace("{blockIndexJSON}", indexJson)
     .replace("{language}", language);
 
-  return llmChatCompletions({
+  const raw = await llmChatCompletions({
     llmModel: model,
     messages: [{ role: "system", content: systemPrompt }],
     temperature: 0.1,
     max_tokens: 2000,
   });
+  // [debug-enrich]
+  console.info("[api.deepSeekAuditBlockIndex] Done:", { responseLen: String(raw || "").length });
+  return raw;
 }
 
 const OVERLAP_AUDIT_MAX_PRIOR_BLOCKS = 2;
