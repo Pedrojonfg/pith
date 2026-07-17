@@ -87,40 +87,34 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `vault-inventory-merge-embed` | done | Pass3 fragile: info start/skip/shadow/merge; debug embed/pairs; warn embed fail |
 | `llm-c-char-boundary-refine` | done | Pass3 fragile: debug entry; warn skip/no model/invalid offsets; info applied |
 | `llm-c-block-split` | done | Pass3 fragile: info start/done; debug attempts; warn parse/JSON retry; error all fail |
+| `llm-c-block-audit` | done | Pass3 fragile: info start/done with responseLen |
+| `llm-c-block-overlap-audit` | done | Pass3 fragile: info start/done; warn JSON retry + parse fail; error LLM fail |
+| `llm-c-assessment-items` | done | Pass3 fragile: info start/done; warn partial recovery; error parse/schema |
+| `llm-c-assessment-holistic` | done | Pass3 fragile: info start/done; warn partial recovery; error parse/schema |
+| `llm-c-assessment-evaluate` | done | Pass3 fragile: info start/done; warn partial recovery; error parse/schema |
+| `llm-c-review-batch` | done | Pass3 fragile: info start/done; warn JSON retry; error LLM fail |
+| `llm-c-phase0` | done | Pass3 fragile: info mapReduce start/done; warn chunk fail; error all fail |
+| `llm-c-cloze-phases` | done | Pass3 fragile: info callClozeJson start/done; warn retry; error parse/schema |
+| `llm-c-recall-questions` | done | Pass3 fragile: info start/done; warn partial recovery; error parse/schema |
+| `llm-c-recall-tutor` | done | Pass3 fragile: info start/done; warn partial recovery; error parse/schema |
+| `llm-c-vision-image` | skip | Already had `[debug-enrich]` in `analyzeDocumentImage` — empty commit only |
+| `llm-c-vision-ocr` | done | Pass3 fragile: info start/done; warn empty page; error LLM fail |
+| `llm-c-interview-followup` | done | Pass3 fragile: info start/done; error schema missing question |
+| `llm-c-interview-synthesis` | done | Pass3 fragile: info start/done; warn fidelity retry; error fidelity fail (logs bundled in followup commit; empty commit for process id) |
+| `llm-c-pack-rewrite` | done | Pass3 fragile: info start/done; warn empty excerpt; error LLM fail |
+| `interview-loop` | done | Pass3 fragile: debug appendTurn; info turn count |
+| `interview-synthesis` | done | Pass3 fragile: info applyInterviewSynthesis start/done; warn empty transcript |
+| `pack-snapshot-build` | done | Pass3 fragile: info buildPackSnapshot start/done; warn missing fields |
+| `export-offline-pack-build` | done | Pass3 fragile: info buildOfflinePack start/done; warn empty pack |
 
 ---
 
-## Checkpoint (pause)
+## Checkpoint
 
-**Stopped after:** `llm-gemini-embed` (Pass 3 fragile, mid-list).
+**Status:** **Pass 3 complete** (2026-07-17).
 
-**Completed:** Pass 1 fully. Pass 2 fully. Pass 3: both `likely-broken` + fragile through `llm-gemini-embed` (skipped `vault-novelty-score` and `vault-inventory-merge-embed` in inventory order — **resume those next** before continuing LLM contracts).
-
-**Resume Pass 3 next (non-critical likely-fragile, inventory order):**
-1. `vault-novelty-score`
-2. `vault-inventory-merge-embed`
-3. `llm-c-block-split`
-4. `llm-c-char-boundary-refine`
-5. `llm-c-block-audit`
-6. `llm-c-block-overlap-audit`
-7. `llm-c-assessment-items`
-8. `llm-c-assessment-holistic`
-9. `llm-c-assessment-evaluate`
-10. `llm-c-review-batch`
-11. `llm-c-phase0`
-12. `llm-c-cloze-phases`
-13. `llm-c-recall-questions`
-14. `llm-c-recall-tutor`
-15. `llm-c-vision-image`
-16. `llm-c-vision-ocr`
-17. `llm-c-interview-followup`
-18. `llm-c-interview-synthesis`
-19. `llm-c-pack-rewrite`
-20. `interview-loop`
-21. `interview-synthesis`
-22. `export-offline-pack-build`
-23. `pack-snapshot-build`
+**Completed:** Pass 1 fully · Pass 2 fully · Pass 3 fully (likely-broken + likely-fragile non-critical inventory).
 
 **Also see:** `audit/bugs-found-20260717.md`  
-**SW_VERSION now:** `20260717_44` · **CACHE_NAME:** `pith-v151`  
+**SW_VERSION:** `20260717_44` · **CACHE_NAME:** `pith-v151`  
 **Branch:** `overnight-debug-enrich`
