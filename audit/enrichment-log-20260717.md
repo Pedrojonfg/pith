@@ -70,6 +70,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-c-vault-normalize` | skipped | already adequate — same entry as `vault-normalize-llm` |
 | `pwa-sw-register-update` | done | info register/updatefound/toast/reload; warn unsupported; error register fail |
 | `pwa-sw-cache-install` | done | info install start/complete/skipWaiting; warn precache partial fail |
+| `rsvp-legacy-pack-from-assessment` | done | Pass3 broken: warn missing nBlocks; info skip paths; error pack fail |
 
 ---
 

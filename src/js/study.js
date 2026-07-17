@@ -9218,22 +9218,34 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
 async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
   if (!prePackingFlow) throw new Error("Pre-packing flow not initialized.");
   const { conceptInventory, nBlocks, cleanedText, splitOpts } = prePackingFlow;
+  // [debug-enrich]
   console.info("[study.runPrePackingPack] Start:", {
     nBlocks,
+    nBlocksType: typeof nBlocks,
     inventorySize: conceptInventory?.length || 0,
+    cleanedTextLen: String(cleanedText || "").length,
     hasKnowledgeProfile: Boolean(knowledgeProfile),
     pipeline: knowledgeProfile ? "profile_pack" : "default_pack",
-  }); // [debug-enrich]
+    runnerMode: prePackingFlow.runnerMode || null,
+    fromSharedGate: Boolean(prePackingFlow.fromSharedGate),
+  });
+  if (nBlocks == null || !Number.isFinite(Number(nBlocks)) || Number(nBlocks) <= 0) {
+    // [debug-enrich]
+    console.warn("[study.runPrePackingPack] Suspicious/missing nBlocks (legacy broken path?):", {
+      nBlocks,
+    });
+  }
   const packed = await packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
     ...splitOpts,
     knowledgeProfile,
     onProgress,
   });
+  // [debug-enrich]
   console.info("[study.runPrePackingPack] Done:", {
     blockCount: packed?.blockIndex?.length || 0,
     pipeline: packed?.splitRunMeta?.pipeline,
     packFallback: packed?.splitRunMeta?.pack_fallback_reason || null,
-  }); // [debug-enrich]
+  });
   if (packed?.blockIndex) {
     packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
   }
@@ -9546,13 +9558,22 @@ async function enterPrePackingAssessmentScreen() {
 }
 
 async function handlePrePackingSkip() {
-  if (!prePackingFlow) return;
+  if (!prePackingFlow) {
+    // [debug-enrich]
+    console.warn("[study.handlePrePackingSkip] No prePackingFlow — noop");
+    return;
+  }
   if (prePackingFlow.runnerMode === "shared_gate" || prePackingFlow.fromSharedGate) {
-    console.info("[study.handlePrePackingSkip] Shared gate assessment skipped"); // [debug-enrich]
+    // [debug-enrich]
+    console.info("[study.handlePrePackingSkip] Shared gate assessment skipped");
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
-  console.info("[study.handlePrePackingSkip] Assessment skipped — packing without profile"); // [debug-enrich]
+  // [debug-enrich]
+  console.info("[study.handlePrePackingSkip] Assessment skipped — packing without profile:", {
+    nBlocks: prePackingFlow.nBlocks ?? null,
+    inventorySize: prePackingFlow.conceptInventory?.length || 0,
+  });
   prePackingFlow.knowledgeProfile = null;
   prePackingFlow.assessmentSkipped = true;
   prePackingFlow.packingIgnoredProfile = false;
@@ -9565,6 +9586,8 @@ async function handlePrePackingSkip() {
     applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
     resetPrePackingFlow();
   } catch (err) {
+    // [debug-enrich]
+    console.error("[study.handlePrePackingSkip] Pack failed:", err?.message || err);
     setGenerateError(err?.message ? String(err.message) : String(err));
     showCreateScreen();
   } finally {

@@ -8,3 +8,4 @@ Logging-only pass; suspected issues noted here, **not fixed**.
 | `review-sm2-item-grade` | `src/js/review.js` | ~233 | `handleSm2QualityClick` early-returns when `originDocId` is empty without advancing `sm2ReviewIndex` — grade appears ignored and user can stuck-retry same item |
 | `auth-session-listen` | `src/js/main.js` | continueAppBoot | If boot throws after `appBooted = true`, flag stays true and later auth events skip boot — logged but not fixed |
 | `llm-proxy-edge` | `supabase/functions/llm-proxy/index.ts` | ~109–150 | After `upstream.json()` fails, code calls `upstream.text()` on an already-consumed body — non-JSON upstream responses likely always yield empty text |
+| `rsvp-legacy-pack-from-assessment` | `src/js/study.js` | ~9218 | `runPrePackingPack` reads `prePackingFlow.nBlocks`; current RSVP generate path may leave nBlocks unset — pack can run with invalid count (orphan/legacy path) |
