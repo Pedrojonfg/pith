@@ -383,12 +383,22 @@ export async function generateRecallQuestions({
   llmModel,
 }) {
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  // [debug-enrich]
+  console.info("[recall-api.generateRecallQuestions] Start:", {
+    inventorySize: inventory.length,
+    materialLen: String(rawMarkdown ?? "").length,
+    llmModel: llmModel ?? null,
+  });
   if (!inventory.length) {
+    // [debug-enrich]
+    console.error("[recall-api.generateRecallQuestions] Missing inventory");
     throw new Error("Missing concept inventory for Recall question generation.");
   }
 
   const material = String(rawMarkdown ?? "").trim();
   if (!material) {
+    // [debug-enrich]
+    console.error("[recall-api.generateRecallQuestions] Missing material");
     throw new Error("Missing source material for Recall question generation.");
   }
 
@@ -437,16 +447,107 @@ export async function generateRecallQuestions({
 
   const parsed = parseModelJsonValue(content);
   if (parsed == null) {
+    // [debug-enrich]
+    console.error("[recall-api.generateRecallQuestions] Invalid JSON from model");
     throw new Error("Recall question generation returned invalid JSON.");
   }
 
-  return normalizeRecallQuestions(parsed, {
+  const out = normalizeRecallQuestions(parsed, {
     inventory,
     config: { ...resolvedConfig, questionCount, types: safeTypes, materialText: material },
   });
+  // [debug-enrich]
+  console.info("[recall-api.generateRecallQuestions] Done:", {
+    questionCount: Array.isArray(out?.questions) ? out.questions.length : 0,
+    questionCountRequested: questionCount,
+  });
+  return out;
 }
 
 /**
+ * @param {object} params
+ * @returns {Promise<{ critique: string, suggested_answer: string, quality: string }>}
+ */
+export async function deepSeekRecallTutor({
+  question,
+  recall_type,
+  student_answer,
+  concept_ids,
+  concept_definitions,
+  source_chunk,
+  lang,
+  llmModel,
+}) {
+  const answer = String(student_answer || "").trim();
+  // [debug-enrich]
+  console.info("[recall-api.deepSeekRecallTutor] Start:", {
+    recall_type: recall_type ?? null,
+    answerLen: answer.length,
+    conceptIdCount: Array.isArray(concept_ids) ? concept_ids.length : 0,
+    sourceChunkLen: String(source_chunk || "").length,
+  });
+  if (!answer) {
+    // [debug-enrich]
+    console.error("[recall-api.deepSeekRecallTutor] Empty student answer");
+    throw new Error("Student answer is required before tutor evaluation.");
+  }
+
+  const language = String(lang || "English").trim() || "English";
+  const concepts = Array.isArray(concept_definitions) ? concept_definitions : [];
+  const conceptIds = (Array.isArray(concept_ids) ? concept_ids : [])
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+  const conceptBlock = concepts
+    .map((c) => {
+      const term = String(c?.term || c?.label || "").trim();
+      const def = String(c?.definition || "").trim();
+      return term ? `- ${term}: ${def || "(no definition)"}` : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  const systemPrompt = `You evaluate a student's open-ended recall answer against source material and concept definitions.
+recall_type: ${String(recall_type || "synthesis").trim()}
+Quality rubric:
+- strong: complete, accurate, well-structured synthesis grounded in the source
+- adequate: mostly correct with minor gaps or imprecision
+- partial: some correct ideas but significant gaps, missing concepts, or weak integration
+- insufficient: largely incorrect, off-topic, or lacking substantive content
+
+Return ONLY JSON:
+{"critique":"...","suggested_answer":"...","quality":"strong|adequate|partial|insufficient"}
+Critique must acknowledge strengths and name gaps or inaccuracies with concept references.
+Suggested answer must be a complete model answer grounded in the source excerpt (not generic).
+${RECALL_TUTOR_GENERATIVE_RULES}
+Respond in ${language}.`;
+
+  const userPrompt = `Question: ${String(question || "").trim()}
+Concept ids: ${conceptIds.length ? conceptIds.join(", ") : "(none)"}
+Concept definitions:
+${conceptBlock || "(none)"}
+Source excerpt:
+${String(source_chunk || "").trim()}
+Student answer:
+${answer}`;
+
+  const content = await llmChatCompletions({
+    llmModel: resolveLlmModelArg(llmModel),
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: 0.6,
+  });
+
+  const feedback = normalizeRecallTutorFeedback(content);
+  // [debug-enrich]
+  console.info("[recall-api.deepSeekRecallTutor] Done:", {
+    quality: feedback?.quality ?? null,
+    critiqueLen: String(feedback?.critique || "").length,
+  });
+  return feedback;
+}/**
  * @param {object} params
  * @returns {Promise<{ critique: string, suggested_answer: string, quality: string }>}
  */
