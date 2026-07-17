@@ -130,11 +130,17 @@ serve(async (req) => {
     body: JSON.stringify(llmBody),
   });
 
+  // ponytail: read body once — Response streams are single-use
+  const rawText = await upstream.text();
   let upstreamBody: Record<string, unknown> | null = null;
   try {
-    upstreamBody = await upstream.json();
+    upstreamBody = JSON.parse(rawText) as Record<string, unknown>;
   } catch {
-    upstreamBody = null;
+    // [debug-enrich]
+    console.error("[llm-proxy.serve] Non-JSON upstream body:", {
+      status: upstream.status,
+      bodyPreview: rawText.slice(0, 500),
+    });
   }
 
   const model =
@@ -184,13 +190,7 @@ serve(async (req) => {
     });
 
   if (upstreamBody == null) {
-    const text = await upstream.text().catch(() => "");
-    // [debug-enrich]
-    console.error("[llm-proxy.serve] Non-JSON upstream body:", {
-      status: upstream.status,
-      textLen: text?.length ?? 0,
-    });
-    return new Response(text || "Upstream error", {
+    return new Response(rawText || "Upstream error", {
       status: upstream.status,
       headers: CORS_HEADERS,
     });
