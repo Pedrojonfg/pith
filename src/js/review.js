@@ -265,14 +265,17 @@ async function handleSm2QualityClick(quality) {
     return;
   }
 
-  const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
+  const originDocId = String(sm2ReviewDocId || item.docId || item.originDocId || "").trim();
   if (!originDocId) {
-    // [debug-enrich]
-    console.error('[review.handleSm2QualityClick] Missing originDocId — grade dropped without advancing queue', {
+    // Safety net: never hang the queue on malformed legacy/synthetic items
+    console.warn("[review.handleSm2QualityClick] Missing originDocId — skip and advance", {
       quality,
       itemId: item.id ?? null,
       sourceType: item.sourceType ?? null,
     });
+    sm2ReviewQueue.splice(sm2ReviewIndex, 1);
+    if (sm2ReviewIndex >= sm2ReviewQueue.length) showSm2ReviewSummary();
+    else renderSm2ReviewItem();
     return;
   }
 
