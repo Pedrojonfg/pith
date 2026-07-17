@@ -607,6 +607,14 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
   } = opts;
   const model = normalizeLlmModel(llmModel);
   const text = String(scopeText || "");
+  // [debug-enrich]
+  console.info("[slow.phase0.mapReducePhase0] Start:", {
+    textLen: text.length,
+    criticalMode,
+    llmModel: model,
+    language,
+    hasSession: Boolean(session),
+  });
   const scope = session?.slow?.readingScope;
   const scopeStart = Math.max(0, Number(scope?.charStart) || 0);
   const scopeEnd = scopeStart + text.length;
@@ -693,8 +701,16 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
 
   const orientation = parsePhase0Orientation(rawFinal, { criticalMode });
   if (!orientation) {
+    // [debug-enrich]
+    console.error("[slow.phase0.mapReducePhase0] Invalid synthesized Phase 0 JSON");
     throw new Error("Model did not return valid synthesized Phase 0 JSON.");
   }
+  // [debug-enrich]
+  console.info("[slow.phase0.mapReducePhase0] Done:", {
+    chunkCount: chunks.length,
+    conceptCount: Array.isArray(orientation?.conceptsToFind) ? orientation.conceptsToFind.length : 0,
+    criticalMode,
+  });
   return orientation;
 }
 
