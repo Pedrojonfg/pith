@@ -55,7 +55,52 @@ def test_keep_branch_semantics():
         assert "loop-eng/proc-b" in r.stdout
 
 
+def test_commit_all_force_adds_allowlisted_test_file_despite_gitignore():
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        g = _init_repo(d)
+        # Parent directory ignored, as in the real repo's .gitignore
+        (d / ".gitignore").write_text("cursor-tests/\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "ignore cursor-tests"], cwd=d, check=True, capture_output=True)
+
+        g.test_allowlist_prefix = "cursor-tests/loop-engineering/"
+        test_file = d / "cursor-tests" / "loop-engineering" / "proc-c.test.mjs"
+        test_file.parent.mkdir(parents=True)
+        test_file.write_text("// verification\n", encoding="utf-8")
+        # Sibling outside the allowlist stays ignored
+        other = d / "cursor-tests" / "other.mjs"
+        other.write_text("// local only\n", encoding="utf-8")
+
+        sha = g.commit_all("test(proc-c): add fixture/verification")
+        r = subprocess.run(
+            ["git", "show", "--name-only", "--format=", sha],
+            cwd=d, capture_output=True, text=True, check=True,
+        )
+        assert "cursor-tests/loop-engineering/proc-c.test.mjs" in r.stdout
+        assert "cursor-tests/other.mjs" not in r.stdout
+
+
+def test_commit_all_without_allowlist_prefix_unchanged():
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        g = _init_repo(d)
+        (d / ".gitignore").write_text("cursor-tests/\n", encoding="utf-8")
+        subprocess.run(["git", "add", ".gitignore"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "ignore cursor-tests"], cwd=d, check=True, capture_output=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=d, capture_output=True, text=True, check=True).stdout.strip()
+
+        ignored = d / "cursor-tests" / "loop-engineering" / "proc-d.test.mjs"
+        ignored.parent.mkdir(parents=True)
+        ignored.write_text("// ignored without allowlist\n", encoding="utf-8")
+
+        sha = g.commit_all("test(proc-d): should be a no-op")
+        assert sha == head  # nothing staged, no commit created
+
+
 if __name__ == "__main__":
     test_branch_commit_merge_delete()
     test_keep_branch_semantics()
+    test_commit_all_force_adds_allowlisted_test_file_despite_gitignore()
+    test_commit_all_without_allowlist_prefix_unchanged()
     print("T08 OK")

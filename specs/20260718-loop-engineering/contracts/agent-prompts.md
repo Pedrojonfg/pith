@@ -3,9 +3,11 @@
 ## Invocation
 
 ```
-{agent_bin} -p --force --model {model} "{prompt}"
+{agent_bin} -p --force --model {model}   # prompt body on stdin, not argv
 ```
 
+- **Prompt delivery**: write the full prompt to the process **stdin** (no prompt positional argv). Cursor CLI `agent` reads the initial prompt from stdin when no prompt argument is given. Do **not** pass the prompt as an argv element — that hits Linux ~128KB `MAX_ARG_STRLEN` as rubric/fixture context grows.
+- Applies to both test-agent and fix-agent invocations.
 - cwd = repo root
 - branch = `loop-eng/<process_id>` already checked out
 - timeout = `config.agent_timeout_seconds` (default 600)
@@ -20,6 +22,8 @@
 **Enforcement**: after run, `git diff --name-only` / `git status --porcelain`; if any path outside allowlist → `git checkout -- .` + `git clean -fd` (scoped carefully) → failed attempt.
 
 **Prompt must include**: inventory row verbatim, bugs-found entry if any, enrichment-log entry if any, risk assessment, instruction for Tier-1 vs property tests, English only.
+
+**Ground-truth rubric context (normalization/DPP-T0-T1 only)**: when the process is normalization or DPP-T0/T1 work (inventory id matching `input-normalize-*` or `dpp-t0.*`/`dpp-t1.*`) AND a matching `rubric.json` exists under `fixtures-normalizacion/<case>/`, the test-agent prompt MUST additionally include the full contents of that case's `rubric.json` and `notes.md` as authoritative expected-output ground truth for writing Tier 1 structural assertions. Every case folder with a `rubric.json` is included; the prompt instructs the agent to heed each rubric's `confidence` / `needs_human_review` fields and not hard-assert low-confidence claims. This is prompt-context enrichment only — it does not alter the verification cascade tiers below. Processes without a matching rubric get no rubric context and behave exactly as previously specified.
 
 **Commit**: `test(<process_id>): add fixture/verification`
 

@@ -1,6 +1,7 @@
 """Per-process unit workflow (test-agent → fix-agent → verify → merge)."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -8,19 +9,73 @@ from orchestrator.agent_runner import AgentRunner
 from orchestrator.git_ops import GitOps
 from orchestrator.verification import verify_process
 
+# Ground-truth rubric library for normalization/DPP-T0-T1 processes (fixed repo path,
+# independent of fixture_library_path which may point elsewhere).
+RUBRIC_FIXTURES_DIRNAME = "fixtures-normalizacion"
+
+# Inventory ids covered: section 2 (input-normalize-*) and DPP T0.x / T1.x phases.
+_NORMALIZATION_ID_RE = re.compile(r"^(input-normalize|dpp-t[01]\.)")
+
 
 def test_file_for(process_id: str, root: Path) -> Path:
     return root / "cursor-tests" / "loop-engineering" / f"{process_id}.mjs"
 
 
-def build_test_prompt(row: dict[str, Any], risk: str) -> str:
-    return (
+def is_normalization_dpp_process(process_id: str) -> bool:
+    """True when the process is normalization / DPP-T0-T1 work per inventory id convention."""
+    return bool(_NORMALIZATION_ID_RE.match(process_id))
+
+
+def collect_rubric_context(process_id: str, fixtures_root: Path) -> str:
+    """
+    Ground-truth rubric context for the test-agent prompt.
+
+    Returns the full contents of rubric.json (+ notes.md when present) for every case
+    folder under fixtures_root that has a rubric.json — but only for normalization/
+    DPP-T0-T1 processes. Empty string otherwise (process prompt stays unchanged).
+    Prompt-context enrichment only: verification cascade tiers are not affected.
+    """
+    if not is_normalization_dpp_process(process_id) or not fixtures_root.is_dir():
+        return ""
+    sections: list[str] = []
+    for case_dir in sorted(p for p in fixtures_root.iterdir() if p.is_dir()):
+        rubric = case_dir / "rubric.json"
+        if not rubric.is_file():
+            continue
+        block = [
+            f"=== GROUND TRUTH CASE: {case_dir.name} ===",
+            "--- rubric.json ---",
+            rubric.read_text(encoding="utf-8"),
+        ]
+        notes = case_dir / "notes.md"
+        if notes.is_file():
+            block.append("--- notes.md ---")
+            block.append(notes.read_text(encoding="utf-8"))
+        sections.append("\n".join(block))
+    if not sections:
+        return ""
+    header = (
+        "AUTHORITATIVE EXPECTED-OUTPUT GROUND TRUTH (normalization fixture rubrics):\n"
+        f"The rubric.json and notes.md contents below, from {RUBRIC_FIXTURES_DIRNAME}/<case>/, "
+        "describe the verified expected structure of the fixture documents. Treat them as "
+        "authoritative expected-output ground truth when writing Tier 1 structural assertions. "
+        "Heed each rubric's confidence and needs_human_review fields; do not hard-assert "
+        "low-confidence claims.\n"
+    )
+    return header + "\n\n".join(sections)
+
+
+def build_test_prompt(row: dict[str, Any], risk: str, rubric_context: str = "") -> str:
+    prompt = (
         "Write ONLY a Node test file for this process. Do not modify source.\n"
         f"Process row: {row}\n"
         f"static_risk_assessment: {risk}\n"
         "Use structural/exact fixtures for deterministic risk; property checks for fragile/LLM.\n"
         "English only."
     )
+    if rubric_context:
+        prompt += "\n" + rubric_context
+    return prompt
 
 
 def build_fix_prompt(row: dict[str, Any], test_contents: str, prior_failure: str) -> str:
@@ -65,9 +120,10 @@ def run_process_unit(
     rel_test = str(test_path.relative_to(root)).replace("\\", "/")
 
     # --- test agent ---
+    rubric_context = collect_rubric_context(process_id, root / RUBRIC_FIXTURES_DIRNAME)
     tres = runner.run_with_fallback(
         models=list(cfg.get("test_agent_models") or ["composer-2.5"]),
-        prompt=build_test_prompt(row, row.get("static_risk_assessment", "")),
+        prompt=build_test_prompt(row, row.get("static_risk_assessment", ""), rubric_context),
         cwd=root,
         mode="test",
     )

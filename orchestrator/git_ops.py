@@ -10,6 +10,9 @@ from pathlib import Path
 class GitOps:
     repo: Path
     remote_push: bool = False  # tests leave False
+    # Paths under this prefix are force-added on commit so a broader .gitignore
+    # rule (e.g. "cursor-tests/") cannot silently drop verification test files.
+    test_allowlist_prefix: str | None = None
 
     def _run(self, args: list[str], check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -32,6 +35,8 @@ class GitOps:
 
     def commit_all(self, message: str) -> str:
         self._run(["git", "add", "-A"])
+        if self.test_allowlist_prefix and (self.repo / self.test_allowlist_prefix).exists():
+            self._run(["git", "add", "-f", "--", self.test_allowlist_prefix])
         # allow empty? no — only when there are changes
         status = self._run(["git", "status", "--porcelain"], check=False)
         if not status.stdout.strip():

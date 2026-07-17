@@ -15,7 +15,7 @@ exhaustion_backoff_cap_seconds: 14400
 grounding_similarity_threshold: 0.75  # unvalidated placeholder
 tier3_process_ids: []
 ntfy_topic: "pith-loop-REPLACE_AT_SETUP"
-fixture_library_path: fixtures
+fixture_library_path: fixtures-normalizacion
 inventory_path: audit/process-inventory-20260717.md
 agent_command_template: "agent -p --force --trust --output-format json --model {model}"
 agent_bin: agent

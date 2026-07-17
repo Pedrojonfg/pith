@@ -182,9 +182,12 @@ class AgentRunner:
         return AgentResult(ok=True, model_used=(kwargs.get("models") or ["stub"])[0], stdout="dry-run stub")
 
     def _invoke(self, *, model: str, prompt: str, cwd: Path) -> AgentResult:
-        # command_template uses {model}; prompt passed as final arg
-        # ponytail: build argv simply — template is documentation; we construct argv
-        cmd = [self.agent_bin, "-p", "--force", "--model", model, prompt]
+        # Prompt via stdin (not argv): Cursor CLI `agent` accepts the initial prompt
+        # as positional argv OR from stdin when no prompt argv is given (confirmed via
+        # `agent --help` + pipe probe). Stdin avoids Linux ~128KB MAX_ARG_STRLEN, which
+        # rubric-enriched test-agent prompts already approach. Same path for test + fix.
+        # command_template documents flags; we construct argv without the prompt body.
+        cmd = [self.agent_bin, "-p", "--force", "--model", model]
         preexec = None
         if os.name != "nt":
             preexec = os.setsid  # type: ignore[attr-defined]
@@ -192,6 +195,7 @@ class AgentRunner:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -201,7 +205,7 @@ class AgentRunner:
             raise AgentBinaryMissing(str(e)) from e
 
         try:
-            out, err = proc.communicate(timeout=self.timeout_seconds)
+            out, err = proc.communicate(input=prompt, timeout=self.timeout_seconds)
             return AgentResult(
                 ok=proc.returncode == 0,
                 model_used=model,

@@ -138,7 +138,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         runner.ensure_binary()
 
     sched = Scheduler(free_lane_cap=int(cfg.get("free_lane_cap", 2)))
-    git = GitOps(ROOT, remote_push=not dry and not args.dry_run)
+    git = GitOps(
+        ROOT,
+        remote_push=not dry and not args.dry_run,
+        test_allowlist_prefix=cfg.get("test_allowlist_prefix", "cursor-tests/loop-engineering/"),
+    )
     processed = 0
 
     def run_suite() -> bool:
