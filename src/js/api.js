@@ -5363,9 +5363,10 @@ Respond in ${lang}.`;
   if (!parsed) {
     const recovered = recoverPartialQuestionArray(content);
     if (recovered.length) {
-      console.log(
-        `[assessment] Partial recovery: extracted ${recovered.length} complete question object(s) from truncated response.`,
-      );
+      // [debug-enrich]
+      console.warn("[api.generatePrePackingAssessmentItems] Partial recovery from truncated response:", {
+        recoveredCount: recovered.length,
+      });
       parsed = { questions: recovered };
     }
   }
@@ -5382,9 +5383,11 @@ Respond in ${lang}.`;
   } catch (err) {
     const recovered = recoverPartialQuestionArray(content);
     if (recovered.length) {
-      console.log(
-        `[assessment] Parse failed; partial recovery extracted ${recovered.length} complete question object(s).`,
-      );
+      // [debug-enrich]
+      console.warn("[api.generatePrePackingAssessmentItems] Parse failed — partial recovery:", {
+        recoveredCount: recovered.length,
+        error: err?.message || String(err),
+      });
       try {
         normalized = normalizePrePackingAssessmentQuestions(
           { questions: recovered },
