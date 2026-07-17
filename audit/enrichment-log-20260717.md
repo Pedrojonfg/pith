@@ -72,6 +72,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `pwa-sw-cache-install` | done | info install start/complete/skipWaiting; warn precache partial fail |
 | `rsvp-legacy-pack-from-assessment` | done | Pass3 broken: warn missing nBlocks; info skip paths; error pack fail |
 | `concept-anchoring-unwired` | done | Pass3 broken: info start/done + qualityCounts; warn empty/skip + per-concept fail |
+| `questions-block-generate` | done | Pass3 fragile: info start/done/offline; debug config; warn JSON retry; error missing chunk |
 
 ---
 
