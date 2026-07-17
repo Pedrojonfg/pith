@@ -56,12 +56,35 @@ export async function withRetry(fn, options = {}) {
 
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
-      return await fn();
+      const result = await fn();
+      if (attempt > 0) {
+        // [debug-enrich]
+        console.info('[net.retry.withRetry] Succeeded after retry:', {
+          attempt,
+          maxRetries,
+        });
+      }
+      return result;
     } catch (err) {
       lastErr = err;
-      if (!isTransientError(err) || attempt >= maxRetries) break;
+      const transient = isTransientError(err);
+      // [debug-enrich]
+      console.debug('[net.retry.withRetry] Attempt failed:', {
+        attempt,
+        maxRetries,
+        transient,
+        message: err?.message ?? String(err),
+        status: httpStatusFromError(err) ?? null,
+      });
+      if (!transient || attempt >= maxRetries) break;
       const delay = delays[Math.min(attempt, delays.length - 1)] ?? delays[delays.length - 1];
-      await new Promise((resolve) => setTimeout(resolve, jitterDelay(delay)));
+      const waitMs = jitterDelay(delay);
+      // [debug-enrich]
+      console.warn('[net.retry.withRetry] Backing off:', {
+        attempt,
+        waitMs,
+      });
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
 
@@ -69,6 +92,12 @@ export async function withRetry(fn, options = {}) {
 
   if (options.onExhausted) options.onExhausted(lastErr);
   else console.warn("[withRetry] exhausted", lastErr);
+  // [debug-enrich]
+  console.error('[net.retry.withRetry] Exhausted retries:', {
+    maxRetries,
+    message: lastErr?.message ?? String(lastErr),
+    status: httpStatusFromError(lastErr) ?? null,
+  });
   throw lastErr;
 }
 
