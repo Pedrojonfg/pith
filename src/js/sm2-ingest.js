@@ -169,13 +169,26 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
   const q = question && typeof question === "object" ? question : null;
   const qualityKey = String(q?.tutor_feedback?.quality || "").trim();
   const quality = RECALL_QUALITY_TO_SM2[qualityKey];
-  if (quality == null) return;
+  // [debug-enrich]
+  console.debug("[sm2-ingest.ingestSm2FromRecallAnswer] Entry:", {
+    docId: docId || null,
+    questionId: q?.id || null,
+    qualityKey: qualityKey || null,
+    mappedQuality: quality ?? null,
+    conceptIdCount: Array.isArray(q?.concept_ids) ? q.concept_ids.length : 0,
+  });
+  if (quality == null) {
+    // [debug-enrich]
+    console.debug("[sm2-ingest.ingestSm2FromRecallAnswer] Skip — unmapped quality");
+    return;
+  }
 
   const conceptIds = Array.isArray(q.concept_ids) ? q.concept_ids : [];
   await confirmComprehensionForConcepts(docId, conceptIds, "recall", qualityKey);
 
   const title = String(q.question || "").trim();
   const preview = conceptIds.join(", ");
+  let upserted = 0;
   for (const conceptId of conceptIds) {
     const id = String(conceptId || "").trim();
     if (!id) continue;
@@ -188,5 +201,12 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
       quality,
       reviewProvenance: "document",
     });
+    upserted += 1;
   }
+  // [debug-enrich]
+  console.info("[sm2-ingest.ingestSm2FromRecallAnswer] Done:", {
+    docId: docId || null,
+    quality,
+    upserted,
+  });
 }
