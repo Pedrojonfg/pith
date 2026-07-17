@@ -9216,43 +9216,6 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   console.debug('[study.applyPackedBlocksToEditor] Blocks screen shown');
 }
 
-async function runPrePackingPack({ knowledgeProfile = null, onProgress } = {}) {
-  if (!prePackingFlow) throw new Error("Pre-packing flow not initialized.");
-  const { conceptInventory, nBlocks, cleanedText, splitOpts } = prePackingFlow;
-  // [debug-enrich]
-  console.info("[study.runPrePackingPack] Start:", {
-    nBlocks,
-    nBlocksType: typeof nBlocks,
-    inventorySize: conceptInventory?.length || 0,
-    cleanedTextLen: String(cleanedText || "").length,
-    hasKnowledgeProfile: Boolean(knowledgeProfile),
-    pipeline: knowledgeProfile ? "profile_pack" : "default_pack",
-    runnerMode: prePackingFlow.runnerMode || null,
-    fromSharedGate: Boolean(prePackingFlow.fromSharedGate),
-  });
-  if (nBlocks == null || !Number.isFinite(Number(nBlocks)) || Number(nBlocks) <= 0) {
-    // [debug-enrich]
-    console.warn("[study.runPrePackingPack] Suspicious/missing nBlocks (legacy broken path?):", {
-      nBlocks,
-    });
-  }
-  const packed = await packInventoryToBlocks(conceptInventory, nBlocks, cleanedText, {
-    ...splitOpts,
-    knowledgeProfile,
-    onProgress,
-  });
-  // [debug-enrich]
-  console.info("[study.runPrePackingPack] Done:", {
-    blockCount: packed?.blockIndex?.length || 0,
-    pipeline: packed?.splitRunMeta?.pipeline,
-    packFallback: packed?.splitRunMeta?.pack_fallback_reason || null,
-  });
-  if (packed?.blockIndex) {
-    packed.blockIndex = applyKnowledgeProfileToBlockIndex(packed.blockIndex);
-  }
-  return packed;
-}
-
 function renderPrePackingAssessmentGraph(inventory) {
   const host = els.prePackingAssessmentGraph;
   if (!host) return;
@@ -9570,30 +9533,8 @@ async function handlePrePackingSkip() {
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
-  // [debug-enrich]
-  console.info("[study.handlePrePackingSkip] Assessment skipped — packing without profile:", {
-    nBlocks: prePackingFlow.nBlocks ?? null,
-    inventorySize: prePackingFlow.conceptInventory?.length || 0,
-  });
-  prePackingFlow.knowledgeProfile = null;
-  prePackingFlow.assessmentSkipped = true;
-  prePackingFlow.packingIgnoredProfile = false;
-  setGenerateLoading(true);
-  try {
-    const packed = await runPrePackingPack({ knowledgeProfile: null });
-    if (!prePackingFlow) return;
-    prePackingFlow.packedResult = packed;
-    stashPrePackingDraftMeta();
-    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
-    resetPrePackingFlow();
-  } catch (err) {
-    // [debug-enrich]
-    console.error("[study.handlePrePackingSkip] Pack failed:", err?.message || err);
-    setGenerateError(err?.message ? String(err.message) : String(err));
-    showCreateScreen();
-  } finally {
-    setGenerateLoading(false);
-  }
+  // Legacy non-shared-gate pack-on-skip path removed (unreachable under current UI).
+  console.warn("[study.handlePrePackingSkip] Non-shared-gate skip ignored (dead path removed)");
 }
 
 function collectCurrentPrePackingAnswer() {
@@ -9699,129 +9640,9 @@ async function finishPrePackingAssessment() {
     return;
   }
 
-  const doc = await getActiveSession();
-  if (doc && prePackingFlow.adaptiveProbing?.beliefState) {
-    doc.shared.knowledgeBeliefState = { ...prePackingFlow.adaptiveProbing.beliefState };
-    await saveDocumentSession(doc);
-    if (doc.projectId) {
-      mergeSessionBeliefs(doc.projectId, doc.shared.knowledgeBeliefState).catch(
-        (err) => console.warn("[adaptive-probing] merge beliefs", err?.message || err),
-      );
-    }
-  }
-
-  if (ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING && profile) {
-    const flow = prePackingFlow;
-    prePackingFlow.packingPromise = runPrePackingPack({
-      knowledgeProfile: profile,
-      onProgress: (msg) => {
-        if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = msg;
-      },
-    }).then((packed) => {
-      if (prePackingFlow === flow) flow.packedResult = packed;
-      return packed;
-    });
-  }
-
-  const counts = countProfileMastery(profile);
-  if (!profile || counts.full === 0) {
-    if (!prePackingFlow.packingPromise) {
-      prePackingFlow.packingPromise = runPrePackingPack({
-        knowledgeProfile: profile,
-      });
-    }
-    const packed = await prePackingFlow.packingPromise;
-    if (!prePackingFlow) return;
-    prePackingFlow.packedResult = packed;
-    stashPrePackingDraftMeta();
-    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
-    resetPrePackingFlow();
-    return;
-  }
-
-  renderPrePackingResultsScreen(counts);
-  showScreen("prePackingResults");
+  // Legacy non-shared-gate pack/results path removed (unreachable under current UI).
+  console.warn("[study.finishPrePackingAssessment] Non-shared-gate finish ignored (dead path removed)");
   if (els.prePackingAssessmentNext) els.prePackingAssessmentNext.disabled = false;
-}
-
-function renderPrePackingResultsScreen(counts) {
-  if (!prePackingFlow) return;
-  const { full, partial, none } = counts;
-  if (els.prePackingResultsSummary) {
-    els.prePackingResultsSummary.textContent = `Mastered: ${full} · Partial: ${partial} · New: ${none}`;
-  }
-  if (els.prePackingResultsDiff) {
-    if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF) {
-      const n = prePackingFlow.nBlocks;
-      els.prePackingResultsDiff.hidden = false;
-      els.prePackingResultsDiff.textContent = `Hasta ${n} ? packing with profile (may be fewer blocks)`;
-    } else {
-      els.prePackingResultsDiff.hidden = true;
-    }
-  }
-  const list = els.prePackingResultsDetailList;
-  if (list && prePackingFlow.knowledgeProfile?.items) {
-    list.innerHTML = "";
-    for (const item of prePackingFlow.knowledgeProfile.items) {
-      const li = document.createElement("li");
-      li.textContent = `${item.concept_id}: ${item.mastery} (${Math.round(item.confidence * 100)}%)`;
-      list.appendChild(li);
-    }
-  }
-}
-
-async function handlePrePackingAccept() {
-  if (!prePackingFlow) return;
-  if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = true;
-  if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Preparing blocks…";
-  }
-  try {
-    let packed = prePackingFlow.packedResult;
-    if (!packed && prePackingFlow.packingPromise) {
-      packed = await prePackingFlow.packingPromise;
-    }
-    if (!packed) {
-      packed = await runPrePackingPack({
-        knowledgeProfile: prePackingFlow.knowledgeProfile,
-      });
-    }
-    if (!prePackingFlow) return;
-    prePackingFlow.packedResult = packed;
-    if (ASSESSMENT_FLAGS.ASSESSMENT_SHOW_DIFF && els.prePackingResultsDiff) {
-      els.prePackingResultsDiff.textContent = `Hasta ${prePackingFlow.nBlocks} ? ${packed.blockIndex.length}`;
-    }
-    stashPrePackingDraftMeta();
-    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
-    resetPrePackingFlow();
-  } catch (err) {
-    setGenerateError(err?.message ? String(err.message) : String(err));
-    showCreateScreen();
-  } finally {
-    if (els.prePackingResultsAccept) els.prePackingResultsAccept.disabled = false;
-    if (els.prePackingResultsStatus) els.prePackingResultsStatus.textContent = "";
-  }
-}
-
-async function handlePrePackingIgnore() {
-  if (!prePackingFlow) return;
-  console.info("[study.handlePrePackingIgnore] Re-packing without profile"); // [debug-enrich]
-  prePackingFlow.packingIgnoredProfile = true;
-  if (els.prePackingResultsStatus) {
-    els.prePackingResultsStatus.textContent = "Re-packing without profile…";
-  }
-  try {
-    prePackingFlow.packingPromise = null;
-    const packed = await runPrePackingPack({ knowledgeProfile: null });
-    if (!prePackingFlow) return;
-    prePackingFlow.packedResult = packed;
-    stashPrePackingDraftMeta();
-    applyPackedBlocksToEditor(packed, prePackingFlow.conceptInventory);
-    resetPrePackingFlow();
-  } catch (err) {
-    setGenerateError(err?.message ? String(err.message) : String(err));
-    showCreateScreen();
-  }
 }
 
 function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
@@ -10910,12 +10731,6 @@ export async function wireStudyHandlers() {
   });
   els.prePackingAssessmentNext?.addEventListener("click", () => {
     void advancePrePackingAssessment();
-  });
-  els.prePackingResultsAccept?.addEventListener("click", () => {
-    void handlePrePackingAccept();
-  });
-  els.prePackingResultsIgnore?.addEventListener("click", () => {
-    void handlePrePackingIgnore();
   });
 
   els.startStudyingBtn.addEventListener("click", async () => startStudyingNow());
