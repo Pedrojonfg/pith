@@ -1,0 +1,766 @@
+{
+  "generated_at": "2026-07-17T16:31:23Z",
+  "inventory_path": "C:/Users/Usuario/Desktop/mylearning/mylearning/audit/process-inventory-20260717.md",
+  "groups": [
+    {
+      "group_id": "01-1-auth-app-boot",
+      "section_name": "1. Auth & App Boot",
+      "process_ids": [
+        "auth-google-oauth",
+        "auth-session-listen",
+        "auth-llm-token-sync",
+        "auth-llm-token-fetch",
+        "auth-sign-out",
+        "auth-legacy-migrate",
+        "boot-storage-migrate"
+      ],
+      "hub_files": [],
+      "non_hub_files": [
+        "auth.js",
+        "main.js",
+        "supabase-client.js",
+        "config/supabase.js",
+        "llm.js",
+        "session-persist-supabase.js",
+        "user-store-sync.js",
+        "storage-rebrand-migration.js",
+        "session-migration.js"
+      ],
+      "priority_score": [
+        0,
+        1
+      ],
+      "free_lane": true,
+      "collapsed": false,
+      "needs_recon": true
+    },
+    {
+      "group_id": "02-2-input-normalization-pre-dpp",
+      "section_name": "2. Input Normalization (pre-DPP)",
+      "process_ids": [
+        "input-normalize-study-material",
+        "input-normalize-multifile"
+      ],
+      "hub_files": [],
+      "non_hub_files": [
+        "input-normalization.js",
+        "normalization/*",
+        "document-images/*",
+        "study.js` (`processCreateSessionStagedUpload` ~L2626)",
+        "same + multifile callers in `study.js"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": true,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "03-3-document-preparation-pipeline-dpp",
+      "section_name": "3. Document Preparation Pipeline (DPP)",
+      "process_ids": [
+        "dpp-orchestrator",
+        "dpp-t0.1-normalize-marker",
+        "dpp-t0.2-text-metrics",
+        "dpp-t1.1-hierarchy",
+        "dpp-t1.2-concept-inventory",
+        "dpp-t1.3-concept-graph",
+        "dpp-t1.4-block-recommendation",
+        "dpp-t1.5-mode-recommendation",
+        "dpp-t1.6-vault-link",
+        "dpp-t1.7-vision",
+        "dpp-t1.8-novelty",
+        "dpp-t1.9-doc-similarity",
+        "dpp-t2.1-cloze-gen",
+        "dpp-t2.2-recall-gen",
+        "dpp-t2.3-slow-orientation",
+        "dpp-scope-structure",
+        "dpp-tier1-ensure",
+        "dpp-inventory-guard",
+        "dpp-tier2-background",
+        "dpp-post-cache-user-phases",
+        "dpp-checkpoint-persist",
+        "dpp-final-persist",
+        "concept-anchoring-unwired"
+      ],
+      "hub_files": [
+        "study.js",
+        "api.js",
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "document-preparation.js",
+        "session.js",
+        "dpp-persistence.js",
+        "recommendation/analyzer.js",
+        "hierarchy-llm.js",
+        "normalization/hierarchy.js",
+        "normalization/quality-signal.js",
+        "session.js` (`runConceptInventoryWithFallback`)",
+        "pedagogy/factual-classifier.js",
+        "pedagogy/threshold-concepts.js",
+        "cloze/pipeline.js` (`generateEpistemicGraph`)",
+        "concept-registry/connection-promotion.js",
+        "recommendation/block-count-recommender.js",
+        "recommendation/recommender.js",
+        "study.js` (`finalizeModeSelectEntry`)",
+        "concept-registry/identity-resolution.js",
+        "concept-registry/promotion.js",
+        "pack-import.js",
+        "document-images/vision.js",
+        "llm.js` (Gemini)",
+        "vault/novelty-scoring.js",
+        "concept-registry/dedup-gates.js",
+        "vault/contradiction-check.js",
+        "vault/doc-similarity.js",
+        "cloze/pipeline.js",
+        "recall-study.js",
+        "recall-api.js",
+        "slow/phase0.js",
+        "study.js` (`finalizeModeSelectEntry",
+        "completeSharedAssessmentGate`)",
+        "shared-dpp-cache.js",
+        "shared-dpp-cache-persist.js",
+        "concept-anchoring.js",
+        "vault/embeddings.js"
+      ],
+      "priority_score": [
+        0,
+        0
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "04-4-cross-mode-gates-bootstrap",
+      "section_name": "4. Cross-mode gates & bootstrap",
+      "process_ids": [
+        "gate-universal-scope",
+        "gate-shared-assessment",
+        "gate-assessment-generate",
+        "gate-assessment-evaluate",
+        "mode-select-finalize",
+        "mode-entry-bootstrap"
+      ],
+      "hub_files": [
+        "study.js",
+        "api.js"
+      ],
+      "non_hub_files": [
+        "scope-selection.js",
+        "adaptive-probing/*",
+        "assessment-coverage.js",
+        "adaptive-probing/assessment-integration.js",
+        "document-preparation.js",
+        "recommendation/*",
+        "mode-bootstrap.js",
+        "session.js"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "05-5-rsvp-study-mode-demo-default",
+      "section_name": "5. RSVP study mode (demo default)",
+      "process_ids": [
+        "rsvp-generate-blocks-pack",
+        "rsvp-blocks-editor",
+        "rsvp-confirm-session",
+        "rsvp-session-ready",
+        "rsvp-start-studying",
+        "rsvp-start-block",
+        "rsvp-block-generate",
+        "rsvp-overlay-read",
+        "rsvp-overlay-playback",
+        "rsvp-paced-reader",
+        "rsvp-read-mode-render",
+        "rsvp-finish-read",
+        "rsvp-mcq",
+        "rsvp-socratic",
+        "rsvp-block-transition",
+        "rsvp-session-complete",
+        "rsvp-legacy-pack-from-assessment",
+        "block-prefetch"
+      ],
+      "hub_files": [
+        "study.js",
+        "session-store.js",
+        "api.js"
+      ],
+      "non_hub_files": [
+        "session.js",
+        "api.js` (`deepSeekPackConceptsToBlocks`)",
+        "rsvp-shared-consumption.js",
+        "ui.js",
+        "llm.js",
+        "block-store.js",
+        "rsvp.js",
+        "paced-reader.js",
+        "read-mode.js",
+        "document-images/render.js",
+        "sm2-ingest.js",
+        "concept-registry/ingest.js",
+        "markdown.js",
+        "sneakPeek.js",
+        "rsvp/wpm-calibration.js"
+      ],
+      "priority_score": [
+        0,
+        0
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "06-6-questions-mode",
+      "section_name": "6. Questions mode",
+      "process_ids": [
+        "questions-mode-entry",
+        "questions-generate-pack",
+        "questions-study-order",
+        "questions-block-generate",
+        "questions-study-loop"
+      ],
+      "hub_files": [
+        "study.js",
+        "api.js"
+      ],
+      "non_hub_files": [
+        "mode-bootstrap.js",
+        "session.js",
+        "assessment-signals.js"
+      ],
+      "priority_score": [
+        1,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "07-7-slow-mode",
+      "section_name": "7. Slow mode",
+      "process_ids": [
+        "slow-upload-bootstrap",
+        "slow-scope",
+        "slow-phase0-generate",
+        "slow-phase0-cache",
+        "slow-reader",
+        "slow-phase3",
+        "slow-resume"
+      ],
+      "hub_files": [
+        "study.js",
+        "api.js"
+      ],
+      "non_hub_files": [
+        "mode-bootstrap.js",
+        "slow/headings.js",
+        "slow/phase0.js",
+        "llm.js",
+        "slow/reader.js",
+        "slow/annotations.js",
+        "slow/pagination.js",
+        "slow/checkpoints.js",
+        "slow/phase3.js",
+        "study.js` (~L9747 MutationObserver init)",
+        "review.js",
+        "graph/*"
+      ],
+      "priority_score": [
+        1,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "08-8-cloze-mode",
+      "section_name": "8. Cloze mode",
+      "process_ids": [
+        "cloze-upload-bootstrap",
+        "cloze-pipeline-p0-graph",
+        "cloze-pipeline-p1-semantic",
+        "cloze-pipeline-p2-base",
+        "cloze-pipeline-p3-distractors",
+        "cloze-pipeline-p4-qa",
+        "cloze-pipeline-orchestrator",
+        "cloze-study-loop"
+      ],
+      "hub_files": [
+        "study.js",
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "cloze/normalize.js",
+        "cloze/pipeline.js",
+        "llm.js",
+        "sm2.js",
+        "sm2-ingest.js",
+        "concept-registry/ingest.js"
+      ],
+      "priority_score": [
+        1,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "09-9-recall-mode",
+      "section_name": "9. Recall mode",
+      "process_ids": [
+        "recall-generate",
+        "recall-tutor-loop"
+      ],
+      "hub_files": [],
+      "non_hub_files": [
+        "recall-study.js",
+        "recall-api.js",
+        "llm.js",
+        "pedagogy/generative-pedagogy.js",
+        "sm2-ingest.js"
+      ],
+      "priority_score": [
+        1,
+        2
+      ],
+      "free_lane": true,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "10-10-review-mode",
+      "section_name": "10. Review mode",
+      "process_ids": [
+        "review-vault-sm2",
+        "review-sm2-single-doc",
+        "review-project-scope-filter",
+        "review-mnemonics-only",
+        "review-sm2-item-grade",
+        "review-generated-batch",
+        "review-generated-session",
+        "review-slow-flashcards"
+      ],
+      "hub_files": [
+        "session-store.js",
+        "api.js"
+      ],
+      "non_hub_files": [
+        "review.js",
+        "concept-registry/global-review.js",
+        "review-project-scope.js",
+        "sm2.js",
+        "project-store.js",
+        "mnemonic.js",
+        "vault/spaced-review.js",
+        "llm.js",
+        "localStorage"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "11-11-sm-2-ingest-spaced-repetition-core",
+      "section_name": "11. SM-2 ingest & spaced repetition core",
+      "process_ids": [
+        "sm2-core-update",
+        "sm2-ingest-mcq",
+        "sm2-ingest-recall",
+        "sm2-comprehension-confirm"
+      ],
+      "hub_files": [
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "sm2.js",
+        "sm2-ingest.js",
+        "pedagogy/comprehension-gate.js",
+        "recall-study.js"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "12-12-persistence-sync",
+      "section_name": "12. Persistence / sync",
+      "process_ids": [
+        "persist-session-create",
+        "persist-session-read",
+        "persist-session-save",
+        "persist-session-delete",
+        "persist-active-pointer",
+        "persist-markdown-externalize",
+        "persist-markdown-rehydrate",
+        "persist-blocks-externalize",
+        "persist-blocks-rehydrate",
+        "persist-blocks-write-through",
+        "persist-supabase-upsert",
+        "persist-retry-keyed",
+        "persist-retry-transient",
+        "persist-user-stores-hydrate",
+        "persist-vault-sync",
+        "persist-registry-sync",
+        "persist-blocks-cloud-upload",
+        "persist-shared-dpp-cache-fetch",
+        "persist-shared-dpp-cache-upsert",
+        "persist-project-store"
+      ],
+      "hub_files": [
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "session-persist-supabase.js",
+        "document-images/storage.js",
+        "block-store.js",
+        "net/retry.js",
+        "user-store-sync.js",
+        "same + legacy localStorage",
+        "config.js",
+        "user-data-persist-supabase.js",
+        "vault/vault-store.js",
+        "registry-store.js",
+        "shared-dpp-cache-persist.js",
+        "shared-dpp-cache.js",
+        "offline.js",
+        "same"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "13-13-vault-concept-registry",
+      "section_name": "13. Vault & concept registry",
+      "process_ids": [
+        "vault-load-save",
+        "vault-session-close",
+        "vault-collect-observations",
+        "vault-mastery-labels",
+        "registry-identity-resolve",
+        "registry-maturity-promotion",
+        "registry-ingest-study",
+        "registry-typed-connections",
+        "registry-dedup-gates",
+        "registry-cascade-merge",
+        "vault-embeddings",
+        "vault-novelty-score",
+        "vault-inventory-merge-embed",
+        "vault-normalize-llm",
+        "vault-extract-candidates",
+        "vault-curation-commit",
+        "vault-prereq-inference",
+        "vault-misconceptions",
+        "vault-contradiction-check",
+        "vault-spaced-review-sync",
+        "vault-metadata-extraction"
+      ],
+      "hub_files": [
+        "api.js",
+        "study.js",
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "vault-store.js",
+        "user-store-sync.js",
+        "session-close.js",
+        "misconceptions.js",
+        "prerequisite-graph.js",
+        "block-store.js",
+        "mastery-model.js",
+        "identity-resolution.js",
+        "registry-store.js",
+        "promotion.js",
+        "ingest.js",
+        "connection-store.js",
+        "connection-types.js",
+        "dedup-gates.js",
+        "dedup-gate-rules.js",
+        "vault/embeddings.js",
+        "cascade-merge.js",
+        "sessions",
+        "embeddings.js",
+        "llm.js",
+        "embedding-persist.js",
+        "novelty-scoring.js",
+        "embeddings",
+        "inventory-merge-*",
+        "vault-curation.js",
+        "contradiction-check.js",
+        "spaced-review.js",
+        "metadata-extraction.js",
+        "geocode-proxy"
+      ],
+      "priority_score": [
+        0,
+        1
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": true
+    },
+    {
+      "group_id": "14-14-llm-proxy-call-contracts",
+      "section_name": "14. LLM proxy & call contracts",
+      "process_ids": [
+        "llm-proxy-edge",
+        "llm-proxy-client",
+        "llm-chat-deepseek",
+        "llm-gemini-chat",
+        "llm-gemini-embed",
+        "llm-c-block-split",
+        "llm-c-concept-inventory",
+        "llm-c-char-boundary-refine",
+        "llm-c-semantic-dedup",
+        "llm-c-inventory-merge",
+        "llm-c-threshold-classify",
+        "llm-c-pack-concepts",
+        "llm-c-block-audit",
+        "llm-c-block-overlap-audit",
+        "llm-c-block-explanation",
+        "llm-c-block-questions",
+        "llm-c-block-json",
+        "llm-c-socratic-tutor",
+        "llm-c-assessment-items",
+        "llm-c-assessment-holistic",
+        "llm-c-assessment-evaluate",
+        "llm-c-review-batch",
+        "llm-c-review-socratic",
+        "llm-c-hierarchy",
+        "llm-c-phase0",
+        "llm-c-cloze-phases",
+        "llm-c-recall-questions",
+        "llm-c-recall-tutor",
+        "llm-c-vault-normalize",
+        "llm-c-vault-extract",
+        "llm-c-vision-image",
+        "llm-c-vision-ocr",
+        "llm-c-guide-chat",
+        "llm-c-interview-followup",
+        "llm-c-interview-synthesis",
+        "llm-c-pack-rewrite",
+        "llm-c-misc-enrichment"
+      ],
+      "hub_files": [
+        "api.js"
+      ],
+      "non_hub_files": [
+        "llm-proxy/index.ts",
+        "llm.js",
+        "document-images/vision.js",
+        "vault/embeddings.js",
+        "session.js",
+        "hierarchy-llm.js",
+        "slow/phase0.js",
+        "cloze/pipeline.js",
+        "recall-api.js",
+        "vision.js",
+        "guide-chat.js",
+        "interview-api.js",
+        "interview/synthesis.js",
+        "pack-export.js",
+        "multiple"
+      ],
+      "priority_score": [
+        0,
+        1
+      ],
+      "free_lane": false,
+      "collapsed": true,
+      "needs_recon": true
+    },
+    {
+      "group_id": "15-15-adaptive-probing-assessment-internals",
+      "section_name": "15. Adaptive probing (assessment internals)",
+      "process_ids": [
+        "adaptive-probe-graph",
+        "adaptive-belief-update",
+        "adaptive-eig-select",
+        "adaptive-assessment-integrate",
+        "adaptive-belief-persist"
+      ],
+      "hub_files": [
+        "study.js"
+      ],
+      "non_hub_files": [
+        "probe-graph.js",
+        "adaptive-probing/*",
+        "eig-selection.js",
+        "assessment-integration.js",
+        "belief-persist.js"
+      ],
+      "priority_score": [
+        1,
+        1
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": true
+    },
+    {
+      "group_id": "16-16-interview-nodoc",
+      "section_name": "16. Interview / nodoc",
+      "process_ids": [
+        "interview-opening",
+        "interview-loop",
+        "interview-synthesis"
+      ],
+      "hub_files": [
+        "study.js",
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "opening-questions.js",
+        "book-lookup.js",
+        "transcript.js",
+        "interview-api.js",
+        "synthesis.js"
+      ],
+      "priority_score": [
+        1,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "17-17-mnemonics",
+      "section_name": "17. Mnemonics",
+      "process_ids": [
+        "mnemonic-crud",
+        "mnemonic-chrome"
+      ],
+      "hub_files": [
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "mnemonic.js",
+        "main.js` / study"
+      ],
+      "priority_score": [
+        1,
+        3
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "18-18-export-packs-offline",
+      "section_name": "18. Export / packs / offline",
+      "process_ids": [
+        "export-session-markdown",
+        "export-offline-pack-build",
+        "export-offline-pack-download",
+        "pack-snapshot-build",
+        "pack-finalize",
+        "pack-import",
+        "pack-concept-editor"
+      ],
+      "hub_files": [
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "export.js",
+        "export-format.js",
+        "block-store.js",
+        "pack-export.js",
+        "llm.js",
+        "Supabase",
+        "pack-import.js",
+        "document-preparation.js` (T1.6 only)",
+        "pack-concept-editor.js",
+        "study UI"
+      ],
+      "priority_score": [
+        1,
+        1
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": true
+    },
+    {
+      "group_id": "19-19-pwa-service-worker-offline-gating",
+      "section_name": "19. PWA / Service Worker / offline gating",
+      "process_ids": [
+        "pwa-sw-register-update",
+        "pwa-sw-cache-install",
+        "pwa-sw-fetch",
+        "pwa-install-prompt",
+        "pwa-install-help",
+        "offline-mode-gate"
+      ],
+      "hub_files": [],
+      "non_hub_files": [
+        "sw-update.js",
+        "index.html",
+        "sw.js",
+        "pwa-install.js",
+        "main.js",
+        "offline.js",
+        "DPP",
+        "shared cache",
+        "user sync"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": true,
+      "collapsed": false,
+      "needs_recon": false
+    },
+    {
+      "group_id": "20-20-shared-cache-sneak-peek-misc-ui-jobs",
+      "section_name": "20. Shared cache / sneak-peek / misc UI jobs",
+      "process_ids": [
+        "cache-shared-dpp-hydrate",
+        "sneak-peek-extract",
+        "row-cache-sessions"
+      ],
+      "hub_files": [
+        "study.js",
+        "session-store.js"
+      ],
+      "non_hub_files": [
+        "shared-dpp-cache.js",
+        "sneakPeek.js"
+      ],
+      "priority_score": [
+        0,
+        2
+      ],
+      "free_lane": false,
+      "collapsed": false,
+      "needs_recon": false
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# Entry: python -m orchestrator
+from orchestrator.main import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

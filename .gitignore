@@ -28,3 +28,13 @@ test-material.txt
 *.log
 .DS_Store
 Thumbs.db
+
+# Loop-engineering orchestrator runtime
+progress/state.json
+progress/run-log-*.md
+.venv-orchestrator/
+orchestrator/config.yaml
+
+__pycache__/
+*.py[cod]
+
