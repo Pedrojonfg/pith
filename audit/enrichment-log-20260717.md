@@ -56,6 +56,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-blocks-rehydrate` | done | debug start; info blocks/responses rehydrated; warn missing data; error on parse/fetch |
 | `persist-retry-keyed` | done | debug start; info superseded; debug silent drop; error on real failure |
 | `persist-retry-transient` | done | debug attempt fail; warn backoff; info success-after-retry; error exhausted |
+| `persist-user-stores-hydrate` | done | info hydrate start/complete; debug per-store; warn missing userId |
 
 ---
 
