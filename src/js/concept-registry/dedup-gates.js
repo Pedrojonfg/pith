@@ -50,6 +50,12 @@ const GATE_ORDER = [
  * @param {object} context
  */
 export async function evaluateDedupPair(conceptA, conceptB, context = {}) {
+  // [debug-enrich]
+  console.debug("[concept-registry.dedup-gates.evaluateDedupPair] Entry:", {
+    a: conceptA?.id || conceptA?.canonicalName || null,
+    b: conceptB?.id || conceptB?.canonicalName || null,
+    cosineScore: context.cosineScore ?? null,
+  });
   const gateResults = {};
   for (const gate of GATE_ORDER) {
     const result =
@@ -58,12 +64,23 @@ export async function evaluateDedupPair(conceptA, conceptB, context = {}) {
         : gate.run(conceptA, conceptB, context);
     gateResults[gate.id] = result;
     if (!result.passed) {
+      // [debug-enrich]
+      console.info("[concept-registry.dedup-gates.evaluateDedupPair] Rejected at gate:", {
+        gate: gate.id,
+        outcome: "rejected",
+      });
       return { passed: false, gateResults, outcome: "rejected" };
     }
   }
 
   const cosine = context.cosineScore ?? 0;
   const outcome = classifyDedupOutcome(cosine);
+  // [debug-enrich]
+  console.info("[concept-registry.dedup-gates.evaluateDedupPair] Done:", {
+    outcome,
+    cosine,
+    passed: outcome !== "rejected",
+  });
   return { passed: outcome !== "rejected", gateResults, outcome };
 }
 
@@ -138,6 +155,8 @@ export async function generateDedupCandidatesForConcept(concept, options = {}) {
  */
 export async function runDedupForDocument(doc) {
   if (!isVaultDedupGatesEnabled() || !isVaultEmbeddingsEnabled()) {
+    // [debug-enrich]
+    console.info("[concept-registry.dedup-gates.runDedupForDocument] Skipped — flags off");
     return { status: "skipped", proposals: [] };
   }
 
@@ -146,6 +165,12 @@ export async function runDedupForDocument(doc) {
   const concepts = (registry.concepts || []).filter(
     (c) => !c.merged_into && (c.sourceDocIds || []).includes(docId),
   );
+
+  // [debug-enrich]
+  console.info("[concept-registry.dedup-gates.runDedupForDocument] Start:", {
+    docId: docId || null,
+    conceptCount: concepts.length,
+  });
 
   const proposals = [];
   const language = doc?.shared?.docMeta?.language || null;
@@ -162,6 +187,11 @@ export async function runDedupForDocument(doc) {
   if (!doc.shared) doc.shared = {};
   doc.shared.mergeProposals = mergeProposalList(doc.shared.mergeProposals, proposals);
 
+  // [debug-enrich]
+  console.info("[concept-registry.dedup-gates.runDedupForDocument] Done:", {
+    docId: docId || null,
+    proposalCount: proposals.length,
+  });
   return { status: "success", proposals };
 }
 
