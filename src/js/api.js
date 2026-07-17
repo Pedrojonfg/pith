@@ -3786,6 +3786,17 @@ export async function deepSeekGenerateBlockExplanation({
   includeVisualNeed = true,
   sectionHasImages = false,
 }) {
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockExplanation] Start:', {
+    blockIndex,
+    blockTitle: blockTitle ?? null,
+    language: language ?? null,
+    explanation_profile,
+    strictMode,
+    materialLen: String(materialText || "").length,
+    conceptIdCount: Array.isArray(conceptIds) ? conceptIds.length : 0,
+    sectionHasImages: Boolean(sectionHasImages),
+  });
   let vaultHint = "";
   const sessionForVault =
     vaultSession ||
@@ -3798,7 +3809,9 @@ export async function deepSeekGenerateBlockExplanation({
         "./vault/prompt-injection.js"
       );
       vaultHint = buildBlockVaultHint(conceptIds, getVaultContextForDoc(sessionForVault));
-    } catch {
+    } catch (err) {
+      // [debug-enrich]
+      console.warn('[api.deepSeekGenerateBlockExplanation] Vault hint failed:', err?.message || err);
       vaultHint = "";
     }
   }
@@ -3864,6 +3877,12 @@ export async function deepSeekGenerateBlockExplanation({
   };
 
   const callLlm = async (userExtra = "") => {
+    // [debug-enrich]
+    console.debug('[api.deepSeekGenerateBlockExplanation] LLM call:', {
+      blockIndex,
+      retryExtra: Boolean(userExtra),
+      extraPreview: userExtra ? String(userExtra).slice(0, 80) : null,
+    });
     const raw = await llmChatCompletions({
       llmModel: resolveLlmModelArg(llmModel),
       response_format: { type: "json_object" },
@@ -3879,6 +3898,8 @@ export async function deepSeekGenerateBlockExplanation({
   let blockObj = await callLlm();
   if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
     const min = getMinExplanationParagraphs(paragraphOpts);
+    // [debug-enrich]
+    console.warn('[api.deepSeekGenerateBlockExplanation] Paragraph retry:', { blockIndex, min });
     blockObj = await callLlm(
       `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs separated by blank lines.`,
     );
@@ -3897,6 +3918,12 @@ export async function deepSeekGenerateBlockExplanation({
   };
   let validation = validateBlockFidelity(fidelityMeta);
   if (!validation.ok && validation.action === "retry") {
+    // [debug-enrich]
+    console.warn('[api.deepSeekGenerateBlockExplanation] Fidelity retry:', {
+      blockIndex,
+      uncoveredClaims: validation.uncoveredClaims?.length ?? 0,
+      unsupportedTerms: validation.unsupported_terms?.length ?? 0,
+    });
     if (validation.uncoveredClaims?.length) {
       const phrases = validation.uncoveredClaims.map((c) => c.source_phrase).filter(Boolean);
       blockObj = await callLlm(
@@ -3910,6 +3937,11 @@ export async function deepSeekGenerateBlockExplanation({
     validation = validateBlockFidelity({ ...fidelityMeta, explanation: blockObj.explanation, isRetry: true });
   }
   if (!validation.ok) {
+    // [debug-enrich]
+    console.warn('[api.deepSeekGenerateBlockExplanation] Fidelity warn status:', {
+      blockIndex,
+      unsupportedTerms: validation.unsupported_terms?.length ?? 0,
+    });
     blockObj.fidelity_status = "warn";
     blockObj.fidelity_issues = validation.unsupported_terms;
   }
@@ -3919,6 +3951,15 @@ export async function deepSeekGenerateBlockExplanation({
     claimCoverageRatio: validation.claimCoverageRatio,
     severity: validation.severity,
   };
+  // [debug-enrich]
+  console.info('[api.deepSeekGenerateBlockExplanation] Done:', {
+    blockIndex,
+    explanationLen: String(blockObj.explanation || "").length,
+    conceptCount: Array.isArray(blockObj.concepts) ? blockObj.concepts.length : 0,
+    fidelityOk: validation.ok,
+    fidelityStatus: blockObj.fidelity_status || "ok",
+    hasVisualNeed: Boolean(blockObj.visualNeed),
+  });
   return blockObj;
 }
 
