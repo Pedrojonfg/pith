@@ -243,6 +243,13 @@ Only include nodes with importance >= 3. Edge aptitude_score >= 3 for viable edg
 }
 
 export async function generateBaseItems(text, analysis, { llmModel, signal } = {}) {
+  // [debug-enrich]
+  console.info("[cloze.pipeline.generateBaseItems] Start:", {
+    textLen: String(text || "").length,
+    nodeCandidateCount: Array.isArray(analysis?.node_candidates) ? analysis.node_candidates.length : 0,
+    edgeCandidateCount: Array.isArray(analysis?.edge_candidates) ? analysis.edge_candidates.length : 0,
+    llmModel: llmModel || null,
+  });
   const systemPrompt = `Generate base cloze items (no distractors yet).
 
 Return ONLY valid JSON:
@@ -294,7 +301,14 @@ Use _____ as blank placeholder. Reject trivial blanks (articles, prepositions).`
     const fileId = resolveSourceFileIdForExcerpt(material, item.sentence_original || item.sentence_with_blank);
     return fileId ? { ...item, sourceFileId: fileId } : item;
   };
-  return [...nodeItems, ...edgeItems].map(annotate);
+  const out = [...nodeItems, ...edgeItems].map(annotate);
+  // [debug-enrich]
+  console.info("[cloze.pipeline.generateBaseItems] Done:", {
+    nodeItemCount: nodeItems.length,
+    edgeItemCount: edgeItems.length,
+    total: out.length,
+  });
+  return out;
 }
 
 export async function generateDistractors(items, epistemicGraph, { llmModel, signal } = {}) {
