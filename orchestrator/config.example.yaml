@@ -3,10 +3,10 @@
 
 test_agent_models:
   - composer-2.5
-  - claude-sonnet-4-6
+  - claude-4.6-sonnet-medium
 fix_agent_models:
-  - grok-4.5
-  - claude-opus-4-8
+  - cursor-grok-4.5-high
+  - claude-opus-4-8-high
 free_lane_cap: 2
 max_fix_attempts: 6
 agent_timeout_seconds: 600
@@ -17,7 +17,7 @@ tier3_process_ids: []
 ntfy_topic: "pith-loop-REPLACE_AT_SETUP"
 fixture_library_path: fixtures
 inventory_path: audit/process-inventory-20260717.md
-agent_command_template: "agent -p --force --model {model}"
+agent_command_template: "agent -p --force --trust --output-format json --model {model}"
 agent_bin: agent
 exhaustion_matchers:
   - rate limit
