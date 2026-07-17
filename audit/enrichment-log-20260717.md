@@ -81,6 +81,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-registry-sync` | done | Pass3 fragile: info schedule/ok; warn abort; error upsert fail; debug offline |
 | `registry-dedup-gates` | done | Pass3 fragile: debug pair; info gate reject/done + doc run |
 | `vault-embeddings` | done | Pass3 fragile: info API/batch; debug cache hit; error empty/auth |
+| `llm-gemini-chat` | done | Pass3 fragile: debug start; warn null token/missing content; info done |
 
 ---
 
