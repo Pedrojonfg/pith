@@ -78,6 +78,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `review-generated-session` | done | Pass3 fragile: info start/loaded; debug render; error empty selection/index |
 | `sm2-ingest-recall` | done | Pass3 fragile: debug entry/skip; info upserted count |
 | `persist-vault-sync` | done | Pass3 fragile: info schedule/ok; warn abort; error upsert fail; debug offline |
+| `persist-registry-sync` | done | Pass3 fragile: info schedule/ok; warn abort; error upsert fail; debug offline |
 
 ---
 
