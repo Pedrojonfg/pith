@@ -901,9 +901,25 @@ export function getBlockSummaryFromList(blockIndex) {
 /** Questions mode: generate test/socratic items from block summary + source chunk (no RSVP explanation). */
 export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_socratic } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
+  // [debug-enrich]
+  console.info("[session.generateQuestionsBlockForIndex] Start:", {
+    blockIndex: idx,
+    n_test: n_test ?? null,
+    n_socratic: n_socratic ?? null,
+    offline: isOfflineMode(),
+  });
   if (isOfflineMode()) {
     const block = getBlock(idx);
-    if (!block) throw new Error("Missing offline block.");
+    if (!block) {
+      // [debug-enrich]
+      console.error("[session.generateQuestionsBlockForIndex] Missing offline block:", { idx });
+      throw new Error("Missing offline block.");
+    }
+    // [debug-enrich]
+    console.info("[session.generateQuestionsBlockForIndex] Offline hit:", {
+      idx,
+      questionCount: Array.isArray(block?.questions) ? block.questions.length : 0,
+    });
     return block;
   }
 
@@ -918,6 +934,8 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
 
   const materialChunk = getBlockChunkFromIndex(idx);
   if (!materialChunk) {
+    // [debug-enrich]
+    console.error("[session.generateQuestionsBlockForIndex] Missing block chunk:", { idx });
     throw new Error("Missing block chunk for this session. Please regenerate blocks.");
   }
 
@@ -944,6 +962,15 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
 
   const factualBundle = await buildFactualQuestionsForBlock(idx, cfg);
+  // [debug-enrich]
+  console.debug("[session.generateQuestionsBlockForIndex] Config:", {
+    idx,
+    blockTitle,
+    cfg,
+    factualCount: Array.isArray(factualBundle.questions) ? factualBundle.questions.length : 0,
+    remainingNTest: factualBundle.remainingNTest,
+    materialLen: String(materialChunk).length,
+  });
 
   const request = {
     llmModel,
@@ -968,6 +995,11 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
     } catch (err) {
       const message = err?.message ? String(err.message) : String(err);
       if (!message.includes("valid JSON")) throw err;
+      // [debug-enrich]
+      console.warn("[session.generateQuestionsBlockForIndex] JSON retry after parse fail:", {
+        idx,
+        message,
+      });
       response = await deepSeekRegenerateBlockQuestions(request);
     }
     warnQuestionsOnlyCountMismatch(response, { ...cfg, n_test: factualBundle.remainingNTest });
@@ -989,6 +1021,13 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   if (Array.isArray(merged.questions)) {
     merged.questions = shuffleTestQuestionsInList(merged.questions);
   }
+  // [debug-enrich]
+  console.info("[session.generateQuestionsBlockForIndex] Done:", {
+    idx,
+    questionCount: Array.isArray(merged.questions) ? merged.questions.length : 0,
+    llmQuestionCount: llmQuestions.length,
+    factualCount: Array.isArray(factualBundle.questions) ? factualBundle.questions.length : 0,
+  });
   return merged;
 }
 
