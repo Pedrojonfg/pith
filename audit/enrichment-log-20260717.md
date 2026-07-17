@@ -64,6 +64,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `vault-normalize-llm` | done | debug entry; info LLM/short-circuit/fallback; warn empty mappings + LLM fail |
 | `llm-proxy-edge` | done | warn 4xx paths; info request/response tokens; error missing key + non-JSON upstream |
 | `llm-c-block-explanation` | done | info start/done; debug LLM calls; warn paragraph/fidelity retries + vault hint fail |
+| `llm-c-block-questions` | done | info wrap start/done; regenerate debug + count mismatch warn |
 
 ---
 
