@@ -89,6 +89,13 @@ export async function generateInterviewFollowUp({ transcript, studyLang, llmMode
   const answeredTurns = Array.isArray(transcript)
     ? transcript.filter((t) => String(t?.answer || "").trim()).length
     : 0;
+  // [debug-enrich]
+  console.info("[interview-api.generateInterviewFollowUp] Start:", {
+    answeredTurns,
+    transcriptLen: source.length,
+    hasBookMeta: Boolean(bookMeta),
+    llmModel: llmModel ?? null,
+  });
   const isFirstFollowUp = answeredTurns === 1;
   let bookContextBlock = "";
   if (
@@ -126,8 +133,15 @@ Rules:
   if (!question) {
     const err = new Error("Follow-up JSON missing question field.");
     err.code = "INTERVIEW_FOLLOWUP_SCHEMA_ERROR";
+    // [debug-enrich]
+    console.error("[interview-api.generateInterviewFollowUp] Schema error — missing question");
     throw err;
   }
+  // [debug-enrich]
+  console.info("[interview-api.generateInterviewFollowUp] Done:", {
+    questionLen: question.length,
+    isFirstFollowUp,
+  });
   return { question };
 }
 
@@ -144,6 +158,14 @@ export async function synthesizeInterviewToMarkdown({
   const source = concatTranscriptForSource(transcript);
   const language = String(studyLang || "English").trim() || "English";
   const title = String(sessionTitle || "Interview session").trim() || "Interview session";
+
+  // [debug-enrich]
+  console.info("[interview-api.synthesizeInterviewToMarkdown] Start:", {
+    sessionTitle: title,
+    transcriptLen: source.length,
+    isRetry,
+    llmModel: llmModel ?? null,
+  });
 
   const systemPrompt = `${SOURCE_FIDELITY_RULES}
 
@@ -197,6 +219,8 @@ Rules:
     synthesizedMarkdown: rawMarkdown,
   });
   if (!fidelity.ok && !isRetry) {
+    // [debug-enrich]
+    console.warn("[interview-api.synthesizeInterviewToMarkdown] Fidelity fail — retry once");
     return synthesizeInterviewToMarkdown({
       transcript,
       studyLang,
@@ -208,6 +232,8 @@ Rules:
   if (!fidelity.ok) {
     const err = new Error("Synthesized content failed fidelity validation.");
     err.code = "INTERVIEW_SYNTHESIS_FIDELITY";
+    // [debug-enrich]
+    console.error("[interview-api.synthesizeInterviewToMarkdown] Fidelity failed after retry");
     throw err;
   }
 
@@ -220,5 +246,11 @@ Rules:
     articulatedConceptIds.push(String(raw.canonicalId || raw.id || computeCanonicalId(label)).trim());
   }
 
+  // [debug-enrich]
+  console.info("[interview-api.synthesizeInterviewToMarkdown] Done:", {
+    markdownLen: rawMarkdown.length,
+    conceptCount: concepts.length,
+    articulatedCount: articulatedConceptIds.length,
+  });
   return { rawMarkdown, concepts, articulatedConceptIds };
 }
