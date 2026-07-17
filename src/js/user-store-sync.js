@@ -188,13 +188,42 @@ export function scheduleVaultSync(vaultData) {
 }
 
 export function scheduleRegistrySync(registryData) {
-  if (isOfflineMode()) return;
+  if (isOfflineMode()) {
+    // [debug-enrich]
+    console.debug("[user-store-sync.scheduleRegistrySync] Skip — offline");
+    return;
+  }
+  // [debug-enrich]
+  console.info("[user-store-sync.scheduleRegistrySync] Scheduled:", {
+    conceptCount: Array.isArray(registryData?.concepts)
+      ? registryData.concepts.length
+      : registryData?.concepts && typeof registryData.concepts === "object"
+        ? Object.keys(registryData.concepts).length
+        : null,
+    schemaVersion: registryData?.schemaVersion ?? null,
+    hasData: Boolean(registryData),
+  });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
-    if (!userId || !registryData) return;
-    await withKeyedRetry(`registry:${userId}`, () =>
-      upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2),
-    );
+    if (!userId || !registryData) {
+      // [debug-enrich]
+      console.warn("[user-store-sync.scheduleRegistrySync] Abort — missing userId or data:", {
+        hasUserId: Boolean(userId),
+        hasData: Boolean(registryData),
+      });
+      return;
+    }
+    try {
+      await withKeyedRetry(`registry:${userId}`, () =>
+        upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2),
+      );
+      // [debug-enrich]
+      console.info("[user-store-sync.scheduleRegistrySync] Upsert ok:", { userId });
+    } catch (err) {
+      // [debug-enrich]
+      console.error("[user-store-sync.scheduleRegistrySync] Upsert failed:", err?.message || err);
+      throw err;
+    }
   });
 }
 
