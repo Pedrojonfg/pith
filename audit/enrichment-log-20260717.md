@@ -84,6 +84,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-gemini-chat` | done | Pass3 fragile: debug start; warn null token/missing content; info done |
 | `llm-gemini-embed` | done | Pass3 fragile: debug proxy call; info dims; error on fail |
 | `vault-novelty-score` | done | Pass3 fragile: info start/done/short-circuit; warn per-concept fail |
+| `vault-inventory-merge-embed` | done | Pass3 fragile: info start/skip/shadow/merge; debug embed/pairs; warn embed fail |
 
 ---
 

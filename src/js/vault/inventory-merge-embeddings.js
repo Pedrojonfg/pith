@@ -51,16 +51,31 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
     shadowDecisions: [],
   };
 
+  // [debug-enrich]
+  console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Start:", {
+    mode,
+    partialCount: payload.length,
+    embeddingsEnabled: isVaultEmbeddingsEnabled(),
+    testBypassGate: Boolean(options.testBypassGate),
+  });
+
   if (payload.length < 2 || (!options.testBypassGate && !isVaultEmbeddingsEnabled())) {
+    const reason = payload.length < 2 ? "single_partial" : "embeddings_disabled";
+    // [debug-enrich]
+    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped:", { reason });
     return {
       status: "skipped",
-      reason: payload.length < 2 ? "single_partial" : "embeddings_disabled",
+      reason,
       telemetry: emptyTelemetry,
     };
   }
 
   const rows = flattenPartialsForEmbed(payload);
   if (rows.length < 2) {
+    // [debug-enrich]
+    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped — too_few_concepts:", {
+      rowCount: rows.length,
+    });
     return { status: "skipped", reason: "too_few_concepts", telemetry: emptyTelemetry };
   }
 
@@ -68,9 +83,16 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
   const embedFn = options.embedFn || ((list) => embedBatch(list));
   let vectorsList;
   try {
+    // [debug-enrich]
+    console.debug("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embedding batch:", {
+      textCount: texts.length,
+    });
     vectorsList = await embedFn(texts);
   } catch (err) {
-    console.warn("[inventory-merge-embed] embed failed — fallback to LLM merge", err?.message || err);
+    // [debug-enrich]
+    console.warn("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embed failed — fallback:", {
+      message: err?.message || err,
+    });
     return { status: "skipped", reason: "embed_failed", telemetry: emptyTelemetry };
   }
 
@@ -84,6 +106,11 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
   });
 
   const pairs = findCandidatePairs(rows, vectors);
+  // [debug-enrich]
+  console.debug("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Candidate pairs:", {
+    pairCount: pairs.length,
+    vectorCount: vectors.size,
+  });
   const uf = new UnionFind(rows.map((r) => r.flatId));
   const cap = getMaxContradictionChecksPerDppRun();
   const rowById = new Map(rows.map((r) => [r.flatId, r]));
@@ -145,13 +172,15 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
 
   if (mode === "shadow") {
     telemetry.finalConceptCount = rows.length;
-    console.info("[inventory-merge-embed] shadow telemetry", telemetry);
+    // [debug-enrich]
+    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Shadow done:", telemetry);
     return { status: "skipped", reason: "shadow_mode", telemetry, inventoryMode: "embed_shadow" };
   }
 
   const concepts = materializeMergedConcepts(rows, uf, vectors);
   telemetry.finalConceptCount = concepts.length;
-  console.info("[inventory-merge-embed] merge telemetry", telemetry);
+  // [debug-enrich]
+  console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Merge done:", telemetry);
 
   const inventoryMode = mode === "full" ? "embed_full" : "embed_auto";
   return { status: "success", concepts, telemetry, inventoryMode };
