@@ -183,20 +183,76 @@ export function scheduleActiveDocSync(docId) {
 }
 
 export function scheduleBlocksUpload(docId, blocksJson) {
-  if (isOfflineMode()) return;
+  if (isOfflineMode()) {
+    // [debug-enrich]
+    console.debug('[user-store-sync.scheduleBlocksUpload] Offline — skip', { docId });
+    return;
+  }
+  // [debug-enrich]
+  console.info('[user-store-sync.scheduleBlocksUpload] Scheduling:', {
+    docId,
+    jsonLen: typeof blocksJson === "string" ? blocksJson.length : null,
+  });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
-    if (!userId || !docId || !blocksJson) return;
-    await uploadBlocksJson(userId, docId, blocksJson);
+    if (!userId || !docId || !blocksJson) {
+      // [debug-enrich]
+      console.warn('[user-store-sync.scheduleBlocksUpload] Skipped upload — missing args', {
+        hasUserId: Boolean(userId),
+        docId: docId || null,
+        hasJson: Boolean(blocksJson),
+      });
+      return;
+    }
+    try {
+      await uploadBlocksJson(userId, docId, blocksJson);
+      // [debug-enrich]
+      console.info('[user-store-sync.scheduleBlocksUpload] Upload ok:', { docId });
+    } catch (err) {
+      // [debug-enrich]
+      console.error('[user-store-sync.scheduleBlocksUpload] Upload failed:', {
+        docId,
+        message: err?.message ?? String(err),
+      });
+      throw err;
+    }
   });
 }
 
 export function scheduleResponsesUpload(docId, respJson) {
-  if (isOfflineMode()) return;
+  if (isOfflineMode()) {
+    // [debug-enrich]
+    console.debug('[user-store-sync.scheduleResponsesUpload] Offline — skip', { docId });
+    return;
+  }
+  // [debug-enrich]
+  console.info('[user-store-sync.scheduleResponsesUpload] Scheduling:', {
+    docId,
+    jsonLen: typeof respJson === "string" ? respJson.length : null,
+  });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
-    if (!userId || !docId || !respJson) return;
-    await uploadResponsesJson(userId, docId, respJson);
+    if (!userId || !docId || !respJson) {
+      // [debug-enrich]
+      console.warn('[user-store-sync.scheduleResponsesUpload] Skipped upload — missing args', {
+        hasUserId: Boolean(userId),
+        docId: docId || null,
+        hasJson: Boolean(respJson),
+      });
+      return;
+    }
+    try {
+      await uploadResponsesJson(userId, docId, respJson);
+      // [debug-enrich]
+      console.info('[user-store-sync.scheduleResponsesUpload] Upload ok:', { docId });
+    } catch (err) {
+      // [debug-enrich]
+      console.error('[user-store-sync.scheduleResponsesUpload] Upload failed:', {
+        docId,
+        message: err?.message ?? String(err),
+      });
+      throw err;
+    }
   });
 }
 

@@ -57,6 +57,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-retry-keyed` | done | debug start; info superseded; debug silent drop; error on real failure |
 | `persist-retry-transient` | done | debug attempt fail; warn backoff; info success-after-retry; error exhausted |
 | `persist-user-stores-hydrate` | done | info hydrate start/complete; debug per-store; warn missing userId |
+| `persist-blocks-cloud-upload` | done | info schedule/ok for blocks+responses; warn missing args; error upload fail |
 
 ---
 
