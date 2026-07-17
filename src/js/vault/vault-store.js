@@ -233,9 +233,17 @@ function readEntriesFromStorage(meta) {
 export function loadVault() {
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
-    if (!raw) return emptyVault();
+    if (!raw) {
+      // [debug-enrich]
+      console.debug('[vault-store.loadVault] Empty — returning empty vault');
+      return emptyVault();
+    }
     const meta = JSON.parse(raw);
-    if (!meta || typeof meta !== "object") return emptyVault();
+    if (!meta || typeof meta !== "object") {
+      // [debug-enrich]
+      console.warn('[vault-store.loadVault] Invalid meta — empty vault');
+      return emptyVault();
+    }
     let entries = readEntriesFromStorage(meta).map((e) => migrateEntryCuration(e));
     const version = Number(meta.schemaVersion) || 1;
     if (version < SCHEMA_VERSION) {
@@ -244,7 +252,7 @@ export function loadVault() {
     const reviewItems = Array.isArray(meta.reviewItems) ? [...meta.reviewItems] : [];
     rebuildDependents(entries);
     recomputeImportanceScores({ entries });
-    return {
+    const vault = {
       schemaVersion: SCHEMA_VERSION,
       entries: entries.map((e) => hydrateMastery(e)),
       reviewItems,
@@ -258,8 +266,20 @@ export function loadVault() {
         ? [...meta.pendingInferredEdges]
         : [],
     };
+    // [debug-enrich]
+    console.info('[vault-store.loadVault] Loaded:', {
+      entryCount: vault.entries.length,
+      reviewItemCount: vault.reviewItems.length,
+      schemaVersion: vault.schemaVersion,
+      migratedFrom: version,
+    });
+    return vault;
   } catch (err) {
     console.warn("[vault-store] loadVault: corrupt data", err);
+    // [debug-enrich]
+    console.error('[vault-store.loadVault] Corrupt data — empty vault:', {
+      message: err?.message ?? String(err),
+    });
     return emptyVault();
   }
 }
@@ -304,6 +324,12 @@ export function saveVault(vault) {
         },
       }),
     );
+    // [debug-enrich]
+    console.info('[vault-store.saveVault] Saved (externalized entries):', {
+      entryCount: stripped.length,
+      reviewItemCount: reviewItems.length,
+      inlineLen: inline.length,
+    });
   } else {
     try {
       localStorage.removeItem(VAULT_DATA_KEY);
@@ -314,6 +340,12 @@ export function saveVault(vault) {
       VAULT_STORAGE_KEY,
       JSON.stringify({ ...metaPayload, entries: stripped }),
     );
+    // [debug-enrich]
+    console.info('[vault-store.saveVault] Saved (inline):', {
+      entryCount: stripped.length,
+      reviewItemCount: reviewItems.length,
+      inlineLen: inline.length,
+    });
   }
   scheduleVaultSync({ ...metaPayload, entries: stripped });
 }
