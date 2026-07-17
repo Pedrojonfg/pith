@@ -5469,7 +5469,8 @@ export async function generateHolisticPrePackingAssessmentItems({
               language,
             });
           } catch (err) {
-            console.error("[assessment] Concept-coverage batch error:", err);
+            // [debug-enrich]
+            console.error("[api.generateHolisticPrePackingAssessmentItems] Batch error:", err?.message || err);
             return [];
           }
         }),
@@ -5487,7 +5488,10 @@ export async function generateHolisticPrePackingAssessmentItems({
   for (let retry = 0; retry < MAX_RETRY_ROUNDS; retry += 1) {
     const uncovered = inventory.filter((c) => !covered.has(getConceptId(c)));
     if (!uncovered.length) break;
-    console.info("[assessment] Retry round", retry + 1, "— uncovered:", uncovered.length);
+    console.info("[api.generateHolisticPrePackingAssessmentItems] Retry round:", {
+      round: retry + 1,
+      uncoveredCount: uncovered.length,
+    }); // [debug-enrich]
     await runConceptBatches(uncovered, `retry-${retry + 1}`);
   }
 
