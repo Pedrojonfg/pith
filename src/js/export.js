@@ -775,6 +775,12 @@ export async function buildMarkdown(session) {
 
 export function buildOfflinePack(activeSession, blockIndex) {
   const safe = activeSession && typeof activeSession === "object" ? activeSession : {};
+  // [debug-enrich]
+  console.info("[export.buildOfflinePack] Start:", {
+    docId: safe?.docId || null,
+    blockCount: Array.isArray(safe.blocks) ? safe.blocks.length : 0,
+    n_blocks: safe.n_blocks ?? null,
+  });
   const sourceFiles = Array.isArray(safe?._meta?.source_files) ? safe._meta.source_files : [];
   const sourceFilename = sourceFiles.length
     ? String(sourceFiles[0]?.name || "").trim() || "unknown-source"
@@ -845,7 +851,14 @@ export function buildOfflinePack(activeSession, blockIndex) {
   lines.push("<!-- OFFLINE_PACK_V1");
   lines.push(JSON.stringify(payload, null, 2));
   lines.push("-->");
-  return lines.join("\n").trim() + "\n";
+  const out = lines.join("\n").trim() + "\n";
+  // [debug-enrich]
+  console.info("[export.buildOfflinePack] Done:", {
+    blockCount: results.length,
+    failedBlocks,
+    payloadLen: out.length,
+  });
+  return out;
 }
 
 export function downloadTextFile({ filename, text }) {
