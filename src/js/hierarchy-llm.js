@@ -16,10 +16,24 @@ import {
  */
 export function makeHierarchyLlmFn(options = {}) {
   const model = normalizeLlmModel(options.llmModel);
-  if (!getApiKeyForLlmModel(model)) return null;
+  if (!getApiKeyForLlmModel(model)) {
+    // [debug-enrich]
+    console.warn('[hierarchy-llm.makeHierarchyLlmFn] No API key for model:', model);
+    return null;
+  }
   const signal = options.signal;
-  return async ({ systemPrompt, userPrompt, temperature, maxTokens }) =>
-    llmChatCompletions({
+  // [debug-enrich]
+  console.debug('[hierarchy-llm.makeHierarchyLlmFn] LLM fn ready:', { model });
+  return async ({ systemPrompt, userPrompt, temperature, maxTokens }) => {
+    // [debug-enrich]
+    console.info('[hierarchy-llm.makeHierarchyLlmFn] LLM call:', {
+      model,
+      temperature,
+      maxTokens,
+      systemLen: String(systemPrompt || "").length,
+      userLen: String(userPrompt || "").length,
+    });
+    return llmChatCompletions({
       llmModel: model,
       messages: [
         { role: "system", content: systemPrompt },
@@ -29,6 +43,7 @@ export function makeHierarchyLlmFn(options = {}) {
       max_tokens: maxTokens,
       signal,
     });
+  };
 }
 
 /**
@@ -42,12 +57,14 @@ export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) 
   const hasHeadings = hasMarkdownHeadings(text);
   const needsLlm = text.length >= minLlmChars && !hasHeadings;
   const llmFn = needsLlm ? makeHierarchyLlmFn(options) : null;
-  console.debug("[hierarchy-llm.buildDocumentHierarchyWithLlm] Path decision:", {
+  // [debug-enrich]
+  console.info('[hierarchy-llm.buildDocumentHierarchyWithLlm] Start:', {
     charCount: text.length,
     minLlmChars,
     hasMarkdownHeadings: hasHeadings,
     needsLlm,
     llmFnAvailable: typeof llmFn === "function",
+    useCache: options.useCache !== false,
     skipLlmReason: hasHeadings
       ? "markdown_headings_present"
       : text.length < minLlmChars
@@ -55,9 +72,22 @@ export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) 
         : typeof llmFn !== "function"
           ? "no_api_key_or_llm_fn"
           : null,
-  }); // [debug-enrich]
-  return buildDocumentHierarchy(text, llmFn, {
-    useCache: options.useCache !== false,
-    signal: options.signal,
   });
+  try {
+    const result = await buildDocumentHierarchy(text, llmFn, {
+      useCache: options.useCache !== false,
+      signal: options.signal,
+    });
+    // [debug-enrich]
+    console.info('[hierarchy-llm.buildDocumentHierarchyWithLlm] Done:', {
+      method: result?.method || null,
+      rootCount: Array.isArray(result?.tree) ? result.tree.length : null,
+      topicCount: Array.isArray(result?.topics) ? result.topics.length : null,
+    });
+    return result;
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[hierarchy-llm.buildDocumentHierarchyWithLlm] Failed:', err?.message || err);
+    throw err;
+  }
 }

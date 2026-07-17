@@ -66,6 +66,8 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-c-block-explanation` | done | info start/done; debug LLM calls; warn paragraph/fidelity retries + vault hint fail |
 | `llm-c-block-questions` | done | info wrap start/done; regenerate debug + count mismatch warn |
 | `llm-c-block-json` | done | info orchestrator + generateBlockFromChunk; debug claims; warn concept enrich fail |
+| `llm-c-hierarchy` | done | info start/done + LLM call; warn no key; error on failure |
+| `llm-c-vault-normalize` | skipped | already adequate — same entry as `vault-normalize-llm` |
 
 ---
 
