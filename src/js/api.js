@@ -1136,13 +1136,33 @@ ${boundaryContextsJson}`;
 export async function refineCharFallbackBoundaries(rawMarkdown, mechanicalChunks, splitOpts = {}) {
   const material = String(rawMarkdown || "");
   const chunks = Array.isArray(mechanicalChunks) ? mechanicalChunks : [];
-  if (chunks.length < 2 || material.length < 50000) return chunks;
+  // [debug-enrich]
+  console.debug("[api.refineCharFallbackBoundaries] Entry:", {
+    materialLen: material.length,
+    chunkCount: chunks.length,
+    llmModel: splitOpts.llmModel ?? null,
+  });
+  if (chunks.length < 2 || material.length < 50000) {
+    // [debug-enrich]
+    console.debug("[api.refineCharFallbackBoundaries] Skip — below threshold");
+    return chunks;
+  }
 
   const model = resolveLlmModelArg(splitOpts.llmModel);
-  if (!model) return chunks;
+  if (!model) {
+    // [debug-enrich]
+    console.warn("[api.refineCharFallbackBoundaries] Skip — no LLM model");
+    return chunks;
+  }
 
   const baseOffsets = mechanicalCharFallbackOffsets(material.length);
-  if (baseOffsets.length < 3) return chunks;
+  if (baseOffsets.length < 3) {
+    // [debug-enrich]
+    console.debug("[api.refineCharFallbackBoundaries] Skip — insufficient offsets:", {
+      offsetCount: baseOffsets.length,
+    });
+    return chunks;
+  }
 
   /** @type {object[]} */
   const boundaryMeta = [];
