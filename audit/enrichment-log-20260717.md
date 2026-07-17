@@ -65,6 +65,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `llm-proxy-edge` | done | warn 4xx paths; info request/response tokens; error missing key + non-JSON upstream |
 | `llm-c-block-explanation` | done | info start/done; debug LLM calls; warn paragraph/fidelity retries + vault hint fail |
 | `llm-c-block-questions` | done | info wrap start/done; regenerate debug + count mismatch warn |
+| `llm-c-block-json` | done | info orchestrator + generateBlockFromChunk; debug claims; warn concept enrich fail |
 
 ---
 

@@ -4258,6 +4258,15 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
       ? Boolean(config.include_connection_questions)
       : true;
 
+  // [debug-enrich]
+  console.info('[api.generateBlockFromChunk] Start:', {
+    id,
+    title,
+    source,
+    nTest,
+    materialLen: materialText.length,
+  });
+
   const blocksListText = `${id}. ${title}`;
   const sourceLine = `Source: block ${id} '${title}' from ${source}`;
   const blockObj = await deepSeekGenerateBlockJson({
@@ -4273,7 +4282,7 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
     include_connection_questions,
   });
   const paragraphOpts = buildParagraphFormatOpts(title, "thorough");
-  return {
+  const out = {
     explanation: enforceExplanationParagraphs(
       String(blockObj?.explanation || ""),
       paragraphOpts,
@@ -4281,6 +4290,14 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
     questions: Array.isArray(blockObj?.questions) ? blockObj.questions : [],
     concepts: Array.isArray(blockObj?.concepts) ? blockObj.concepts : [],
   };
+  // [debug-enrich]
+  console.info('[api.generateBlockFromChunk] Done:', {
+    id,
+    explanationLen: out.explanation.length,
+    questionCount: out.questions.length,
+    conceptCount: out.concepts.length,
+  });
+  return out;
 }
 
 function sleep(ms) {
