@@ -43,12 +43,23 @@ export function countScopedRegistryConcepts(projectIds) {
  * @param {object} doc
  */
 export async function scoreConceptNovelty(doc) {
+  // [debug-enrich]
+  console.info("[vault.novelty-scoring.scoreConceptNovelty] Start:", {
+    docId: doc?.docId || null,
+    projectId: doc?.projectId || null,
+    noveltyEnabled: isVaultNoveltyScoringEnabled(),
+    embeddingsEnabled: isVaultEmbeddingsEnabled(),
+  });
   if (!isVaultNoveltyScoringEnabled() || !isVaultEmbeddingsEnabled()) {
+    // [debug-enrich]
+    console.info("[vault.novelty-scoring.scoreConceptNovelty] Skipped — flags off");
     return { status: "skipped", reason: "embeddings_disabled" };
   }
 
   const inventory = doc?.shared?.conceptInventory;
   if (!Array.isArray(inventory) || !inventory.length) {
+    // [debug-enrich]
+    console.debug("[vault.novelty-scoring.scoreConceptNovelty] Empty inventory");
     return { status: "success", scored: 0 };
   }
 
@@ -61,18 +72,27 @@ export async function scoreConceptNovelty(doc) {
   });
 
   if (!unresolved.length) {
+    // [debug-enrich]
+    console.info("[vault.novelty-scoring.scoreConceptNovelty] All entries have globalConceptId");
     return { status: "success", scored: 0 };
   }
 
   // Empty vault scope → all novel, no API calls (R1.3)
-  if (!projectIds.length || countScopedRegistryConcepts(projectIds) === 0) {
+  const scopedCount = countScopedRegistryConcepts(projectIds);
+  if (!projectIds.length || scopedCount === 0) {
     for (const entry of unresolved) {
       entry.noveltyScore = 1.0;
     }
+    // [debug-enrich]
+    console.info("[vault.novelty-scoring.scoreConceptNovelty] Short-circuit empty vault:", {
+      unresolvedCount: unresolved.length,
+      projectIds: projectIds.length,
+    });
     return { status: "success", scored: unresolved.length, shortCircuit: "empty_vault" };
   }
 
   let scored = 0;
+  let failed = 0;
   for (const entry of unresolved) {
     const conceptId = String(entry?.globalConceptId || entry?.canonicalId || entry?.id || "").trim();
     const text = buildConceptEmbedText(entry);
@@ -98,11 +118,24 @@ export async function scoreConceptNovelty(doc) {
       entry.noveltyScore = computeNoveltyScore(maxSim);
       scored += 1;
     } catch (err) {
-      console.warn("[novelty] score failed for", conceptId, err?.message || err);
+      failed += 1;
+      // [debug-enrich]
+      console.warn("[vault.novelty-scoring.scoreConceptNovelty] Score failed:", {
+        conceptId,
+        message: err?.message || err,
+      });
       entry.noveltyScore = null;
     }
   }
 
+  // [debug-enrich]
+  console.info("[vault.novelty-scoring.scoreConceptNovelty] Done:", {
+    docId: doc?.docId || null,
+    unresolvedCount: unresolved.length,
+    scored,
+    failed,
+    scopedRegistryCount: scopedCount,
+  });
   return { status: "success", scored };
 }
 

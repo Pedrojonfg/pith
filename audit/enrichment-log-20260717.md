@@ -83,6 +83,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `vault-embeddings` | done | Pass3 fragile: info API/batch; debug cache hit; error empty/auth |
 | `llm-gemini-chat` | done | Pass3 fragile: debug start; warn null token/missing content; info done |
 | `llm-gemini-embed` | done | Pass3 fragile: debug proxy call; info dims; error on fail |
+| `vault-novelty-score` | done | Pass3 fragile: info start/done/short-circuit; warn per-concept fail |
 
 ---
 
