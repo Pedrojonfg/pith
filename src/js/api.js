@@ -4444,6 +4444,13 @@ export async function deepSeekGenerateReviewBatch({
   type,
   batchSize,
 }) {
+  // [debug-enrich]
+  console.info("[api.deepSeekGenerateReviewBatch] Start:", {
+    type: type ?? null,
+    batchSize,
+    sessionContentLen: String(sessionContent || "").length,
+    hasInstructions: Boolean(String(reviewInstructions || "").trim()),
+  });
   const typeWord =
     type === "both"
       ? "mixed (test and socratic)"
@@ -4485,7 +4492,7 @@ No preamble, no backticks.`
   }
   userParts.push(String(sessionContent || ""));
 
-  return llmChatCompletions({
+  const raw = await llmChatCompletions({
     llmModel: resolveLlmModelArg(llmModel),
     messages: [
       { role: "system", content: systemPrompt },
@@ -4493,6 +4500,9 @@ No preamble, no backticks.`
     ],
     temperature: 0.1,
   });
+  // [debug-enrich]
+  console.info("[api.deepSeekGenerateReviewBatch] Done:", { responseLen: String(raw || "").length });
+  return raw;
 }
 
 export const PREPACKING_DONT_KNOW_ANSWER = "I don't know";
