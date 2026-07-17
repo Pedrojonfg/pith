@@ -431,13 +431,31 @@ export async function createSession(rawMarkdown, options = {}) {
   const markdown = String(rawMarkdown || "");
   const docId = options.docId || (await computeDocId(markdown));
   const now = Date.now();
+  // [debug-enrich]
+  console.info('[session-store.createSession] Creating session:', {
+    docId,
+    markdownLen: markdown.length,
+    projectId: options.projectId ? String(options.projectId) : null,
+    pendingImageCount: Array.isArray(options.pendingImages) ? options.pendingImages.length : 0,
+    hasExplicitDocId: Boolean(options.docId),
+  });
   /** @type {import("./session-types.js").DocumentImage[]} */
   let images = [];
   if (Array.isArray(options.pendingImages) && options.pendingImages.length) {
     try {
       images = await persistPendingImages(docId, options.pendingImages);
+      // [debug-enrich]
+      console.info('[session-store.createSession] Images persisted:', {
+        docId,
+        imageCount: images.length,
+      });
     } catch (err) {
       console.warn("[session-store] image persist failed", err?.message || err);
+      // [debug-enrich]
+      console.warn('[session-store.createSession] Image persist failed (continuing):', {
+        docId,
+        message: err?.message ?? String(err),
+      });
     }
   }
   const session = {
@@ -481,8 +499,30 @@ export async function createSession(rawMarkdown, options = {}) {
     modes: { rsvp: null, slow: null, cloze: null, questions: null, recall: null, read: null },
   };
   const v = validateDocumentSession(session);
-  if (!v.ok) throw new Error(`invalid session: ${v.errors.join("; ")}`);
-  await upsertSessionInStore(session);
+  if (!v.ok) {
+    // [debug-enrich]
+    console.error('[session-store.createSession] Validation failed:', {
+      docId,
+      errors: v.errors,
+    });
+    throw new Error(`invalid session: ${v.errors.join("; ")}`);
+  }
+  try {
+    await upsertSessionInStore(session);
+  } catch (err) {
+    // [debug-enrich]
+    console.error('[session-store.createSession] Upsert failed:', {
+      docId,
+      message: err?.message ?? String(err),
+    });
+    throw err;
+  }
+  // [debug-enrich]
+  console.info('[session-store.createSession] Session created:', {
+    docId,
+    imageCount: images.length,
+    charCount: session.shared?.docMeta?.charCount ?? markdown.length,
+  });
   return session;
 }
 
