@@ -531,12 +531,36 @@ export async function createSession(rawMarkdown, options = {}) {
  */
 export async function getSession(docId) {
   const id = String(docId || "").trim();
-  if (!id) return null;
+  if (!id) {
+    // [debug-enrich]
+    console.debug('[session-store.getSession] Empty docId — return null');
+    return null;
+  }
+  // [debug-enrich]
+  console.debug('[session-store.getSession] Loading:', { docId: id });
   const cache = await ensureRowCache();
   const row = cache.get(id);
-  if (!row) return null;
+  if (!row) {
+    // [debug-enrich]
+    console.info('[session-store.getSession] Not found in row cache:', { docId: id });
+    return null;
+  }
   const base = rowToSession(row, true);
-  return normalizeLoadedSession(await rehydrateMarkdown(base, row.markdown_ref));
+  const session = normalizeLoadedSession(await rehydrateMarkdown(base, row.markdown_ref));
+  // [debug-enrich]
+  console.info('[session-store.getSession] Loaded:', {
+    docId: id,
+    hasInlineMarkdown: typeof base?.shared?.rawMarkdown === "string",
+    rehydratedMarkdownLen:
+      typeof session?.shared?.rawMarkdown === "string" ? session.shared.rawMarkdown.length : 0,
+    markdownRef: row.markdown_ref ?? session?.shared?.rawMarkdownRef?.storageKey ?? null,
+    prepStatus: session?.shared?.preparation?.status ?? null,
+    hasRsvpBlocks: Array.isArray(session?.modes?.rsvp?.blocks),
+    rsvpBlockCount: Array.isArray(session?.modes?.rsvp?.blocks)
+      ? session.modes.rsvp.blocks.length
+      : null,
+  });
+  return session;
 }
 
 export async function getActiveSession() {

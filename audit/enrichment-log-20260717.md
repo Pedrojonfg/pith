@@ -51,6 +51,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `rsvp-mcq` | done | info on answer (chosen/correct/block/q indices; assessment flag) |
 | `rsvp-socratic` | done | info submit click + reply len; error on tutor failure |
 | `persist-session-create` | done | info create/images/created; warn image fail; error validation/upsert |
+| `persist-session-read` | done | debug load; info loaded (markdown len, prep, blocks) or not-found |
 
 ---
 
