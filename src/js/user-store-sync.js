@@ -152,13 +152,38 @@ export function scheduleProjectsSync(store) {
 }
 
 export function scheduleVaultSync(vaultData) {
-  if (isOfflineMode()) return;
+  if (isOfflineMode()) {
+    // [debug-enrich]
+    console.debug("[user-store-sync.scheduleVaultSync] Skip — offline");
+    return;
+  }
+  // [debug-enrich]
+  console.info("[user-store-sync.scheduleVaultSync] Scheduled:", {
+    entryCount: Array.isArray(vaultData?.entries) ? vaultData.entries.length : null,
+    schemaVersion: vaultData?.schemaVersion ?? null,
+    hasData: Boolean(vaultData),
+  });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
-    if (!userId || !vaultData) return;
-    await withKeyedRetry(`vault:${userId}`, () =>
-      upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3),
-    );
+    if (!userId || !vaultData) {
+      // [debug-enrich]
+      console.warn("[user-store-sync.scheduleVaultSync] Abort — missing userId or data:", {
+        hasUserId: Boolean(userId),
+        hasData: Boolean(vaultData),
+      });
+      return;
+    }
+    try {
+      await withKeyedRetry(`vault:${userId}`, () =>
+        upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3),
+      );
+      // [debug-enrich]
+      console.info("[user-store-sync.scheduleVaultSync] Upsert ok:", { userId });
+    } catch (err) {
+      // [debug-enrich]
+      console.error("[user-store-sync.scheduleVaultSync] Upsert failed:", err?.message || err);
+      throw err;
+    }
   });
 }
 
