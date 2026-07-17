@@ -74,6 +74,9 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `concept-anchoring-unwired` | done | Pass3 broken: info start/done + qualityCounts; warn empty/skip + per-concept fail |
 | `questions-block-generate` | done | Pass3 fragile: info start/done/offline; debug config; warn JSON retry; error missing chunk |
 | `cloze-pipeline-p0-graph` | done | Pass3 fragile: info start/done node/edge counts; error invalid graph |
+| `cloze-pipeline-p2-base` | done | Pass3 fragile: info start/done with candidate + item counts |
+| `review-generated-session` | done | Pass3 fragile: info start/loaded; debug render; error empty selection/index |
+| `sm2-ingest-recall` | done | Pass3 fragile: debug entry/skip; info upserted count |
 
 ---
 
