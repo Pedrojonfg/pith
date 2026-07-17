@@ -1314,6 +1314,15 @@ export async function deepSeekSplitIntoBlocks({
   const notes = String(studyNotes || "").trim();
   const material = String(materialText || "").trim();
 
+  // [debug-enrich]
+  console.info("[api.deepSeekSplitIntoBlocks] Start:", {
+    nBlocks: n,
+    materialLen: material.length,
+    hasStudyNotes: Boolean(notes),
+    language: lang,
+    llmModel: model,
+  });
+
   function buildMessages(compact) {
     const messages = [{ role: "system", content: buildSplitBlocksPrompt(n, lang, { compact }) }];
     if (notes) {
@@ -1336,8 +1345,15 @@ export async function deepSeekSplitIntoBlocks({
   ];
 
   let lastRaw = "";
-  for (const attempt of attempts) {
+  for (let attemptIdx = 0; attemptIdx < attempts.length; attemptIdx += 1) {
+    const attempt = attempts[attemptIdx];
     try {
+      // [debug-enrich]
+      console.debug("[api.deepSeekSplitIntoBlocks] Attempt:", {
+        attempt: attemptIdx + 1,
+        compact: attempt.compact,
+        useJsonObjectMode: attempt.useJsonObjectMode,
+      });
       lastRaw = await callLlmSplit({
         llmModel: model,
         messages: buildMessages(attempt.compact),
@@ -1345,24 +1361,35 @@ export async function deepSeekSplitIntoBlocks({
       });
     } catch (err) {
       if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
+        // [debug-enrich]
+        console.warn("[api.deepSeekSplitIntoBlocks] JSON mode failed — retry without:", err?.message || err);
         lastRaw = await callLlmSplit({
           llmModel: model,
           messages: buildMessages(attempt.compact),
           useJsonObjectMode: false,
         });
       } else {
+        // [debug-enrich]
+        console.error("[api.deepSeekSplitIntoBlocks] LLM call failed:", err?.message || err);
         throw err;
       }
     }
 
     const blocks = parseBlockIndexFromModelResponse(lastRaw);
     if (Array.isArray(blocks) && blocks.length) {
+      // [debug-enrich]
+      console.info("[api.deepSeekSplitIntoBlocks] Done:", { blockCount: blocks.length, attempt: attemptIdx + 1 });
       return blocks;
     }
-    console.warn("Block split: parse failed, trying next attempt…", lastRaw.slice(0, 400));
+    // [debug-enrich]
+    console.warn("[api.deepSeekSplitIntoBlocks] Parse failed — next attempt:", {
+      attempt: attemptIdx + 1,
+      rawPreview: lastRaw.slice(0, 400),
+    });
   }
 
-  console.warn("Block split: all parse attempts failed:", lastRaw.slice(0, 800));
+  // [debug-enrich]
+  console.error("[api.deepSeekSplitIntoBlocks] All attempts failed:", { rawPreview: lastRaw.slice(0, 800) });
   throw new Error(
     "Model returned blocks JSON we could not parse. Please try generating blocks again.",
   );
