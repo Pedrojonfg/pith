@@ -5514,7 +5514,17 @@ export async function evaluatePrePackingAssessmentResponses({
   const qs = Array.isArray(items) ? items : [];
   const resp = normalizeAssessmentResponseRows(responses);
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
-  if (!qs.length) return null;
+  // [debug-enrich]
+  console.info("[api.evaluatePrePackingAssessmentResponses] Start:", {
+    itemCount: qs.length,
+    responseCount: resp.length,
+    inventorySize: inventory.length,
+  });
+  if (!qs.length) {
+    // [debug-enrich]
+    console.debug("[api.evaluatePrePackingAssessmentResponses] No items — null profile");
+    return null;
+  }
 
   const legacy = qs.some(isLegacyMcqAssessmentItem);
   if (legacy) {
@@ -5552,9 +5562,15 @@ Respond in ${lang}.`;
       });
 
       const parsed = parseModelJsonValue(content);
-      return normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
+      const profile = normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
+      // [debug-enrich]
+      console.info("[api.evaluatePrePackingAssessmentResponses] Legacy LLM profile ok:", {
+        itemCount: profile?.items?.length ?? 0,
+      });
+      return profile;
     } catch (err) {
-      console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
+      // [debug-enrich]
+      console.warn("[api.evaluatePrePackingAssessmentResponses] Legacy eval failed:", err?.message || err);
       return null;
     }
   }
@@ -5568,7 +5584,15 @@ Respond in ${lang}.`;
     !qs.some((q) => String(q?.type || "").trim().toLowerCase() === "socratic");
 
   if (conceptCoverageMode) {
-    return buildConceptCoverageKnowledgeProfile(qs, resp, inventory);
+    // [debug-enrich]
+    console.info("[api.evaluatePrePackingAssessmentResponses] Concept-coverage mode");
+    const profile = buildConceptCoverageKnowledgeProfile(qs, resp, inventory);
+    // [debug-enrich]
+    console.info("[api.evaluatePrePackingAssessmentResponses] Done:", {
+      mode: "concept_coverage",
+      itemCount: profile?.items?.length ?? 0,
+    });
+    return profile;
   }
 
   try {
@@ -5583,18 +5607,30 @@ Respond in ${lang}.`;
         language,
       });
     } catch (err) {
-      console.warn("Socratic assessment evaluation failed:", err?.message || err);
+      // [debug-enrich]
+      console.warn("[api.evaluatePrePackingAssessmentResponses] Socratic eval failed:", err?.message || err);
     }
 
     const merged = mergeProfileRows([...testRows, ...socraticRows]);
-    if (!merged.length) return null;
+    if (!merged.length) {
+      // [debug-enrich]
+      console.warn("[api.evaluatePrePackingAssessmentResponses] No profile rows after merge");
+      return null;
+    }
 
-    return normalizeKnowledgeProfile(
+    const profile = normalizeKnowledgeProfile(
       { items: merged },
       { inventory, items: qs, responses: resp },
     );
+    // [debug-enrich]
+    console.info("[api.evaluatePrePackingAssessmentResponses] Done:", {
+      mode: "test+socratic",
+      itemCount: profile?.items?.length ?? 0,
+    });
+    return profile;
   } catch (err) {
-    console.warn("evaluatePrePackingAssessmentResponses failed:", err?.message || err);
+    // [debug-enrich]
+    console.warn("[api.evaluatePrePackingAssessmentResponses] Eval failed:", err?.message || err);
     return null;
   }
 }
