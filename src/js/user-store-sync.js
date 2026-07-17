@@ -49,27 +49,64 @@ async function tryGetUserId() {
  */
 export async function hydrateUserStoresFromSupabase(userId) {
   const uid = userId || (await tryGetUserId());
-  if (!uid) return;
+  if (!uid) {
+    // [debug-enrich]
+    console.warn('[user-store-sync.hydrateUserStoresFromSupabase] No userId — skip');
+    return;
+  }
+  // [debug-enrich]
+  console.info('[user-store-sync.hydrateUserStoresFromSupabase] Hydrating stores:', {
+    userId: uid,
+  });
 
   const projects = await fetchUserProjects(uid);
   if (projects?.data) {
     localStorage.setItem(LS_PROJECTS_KEY, JSON.stringify(projects.data));
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Projects hydrated');
+  } else {
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No projects payload');
   }
 
   const vault = await fetchUserVault(uid);
   if (vault?.data) {
     hydrateVaultLocal(vault.data);
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Vault hydrated', {
+      entryCount: Array.isArray(vault.data.entries) ? vault.data.entries.length : null,
+    });
+  } else {
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No vault payload');
   }
 
   const registry = await fetchUserConceptRegistry(uid);
   if (registry?.data) {
     localStorage.setItem(REGISTRY_STORAGE_KEY, JSON.stringify(registry.data));
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Registry hydrated');
+  } else {
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No registry payload');
   }
 
   const prefs = await fetchUserPrefs(uid);
   if (prefs?.active_doc_id) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, prefs.active_doc_id);
+    // [debug-enrich]
+    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Active doc restored:', {
+      activeDocId: prefs.active_doc_id,
+    });
   }
+  // [debug-enrich]
+  console.info('[user-store-sync.hydrateUserStoresFromSupabase] Hydrate complete:', {
+    userId: uid,
+    hadProjects: Boolean(projects?.data),
+    hadVault: Boolean(vault?.data),
+    hadRegistry: Boolean(registry?.data),
+    hadActiveDoc: Boolean(prefs?.active_doc_id),
+  });
 }
 
 /**
