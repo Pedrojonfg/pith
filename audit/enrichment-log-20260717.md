@@ -59,6 +59,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-user-stores-hydrate` | done | info hydrate start/complete; debug per-store; warn missing userId |
 | `persist-blocks-cloud-upload` | done | info schedule/ok for blocks+responses; warn missing args; error upload fail |
 | `vault-load-save` | done | info load/save counts; warn invalid/corrupt; debug empty |
+| `vault-session-close` | done | info start/diff/obs/saved; warn normalize fallback + cleanup fail |
 
 ---
 

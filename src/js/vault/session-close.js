@@ -242,14 +242,35 @@ export function applyObservations(vault, observations, normalizationMap) {
  * @param {string} mode
  */
 export async function updateVaultFromSession(session, mode) {
-  if (!session?.docId) return;
+  if (!session?.docId) {
+    // [debug-enrich]
+    console.warn('[vault.session-close.updateVaultFromSession] Missing docId — skip');
+    return;
+  }
   const docId = String(session.docId);
   const inventory = collectInventoryConcepts(session);
-  if (!inventory.length) return;
+  // [debug-enrich]
+  console.info('[vault.session-close.updateVaultFromSession] Start:', {
+    docId,
+    mode: mode ?? null,
+    inventoryCount: inventory.length,
+  });
+  if (!inventory.length) {
+    // [debug-enrich]
+    console.info('[vault.session-close.updateVaultFromSession] Empty inventory — skip');
+    return;
+  }
 
   let vault = loadVault();
   const docTopics = getDocTopics(session);
   const newConcepts = filterNewConcepts(inventory, vault, docId);
+  // [debug-enrich]
+  console.info('[vault.session-close.updateVaultFromSession] Diff:', {
+    docId,
+    vaultEntryCount: vault.entries?.length ?? 0,
+    newConceptCount: newConcepts.length,
+    topicCount: docTopics.length,
+  });
 
   let normalizationMap = /** @type {Record<string, string>} */ ({});
   const existingForConcept = new Map();
@@ -273,6 +294,8 @@ export async function updateVaultFromSession(session, mode) {
 
     let mappings;
     if (!existingEntries.length) {
+      // [debug-enrich]
+      console.info('[vault.session-close.updateVaultFromSession] No existing topic entries — all-new mappings');
       mappings = buildAllNewMappings(newConcepts);
     } else {
       try {
@@ -289,6 +312,11 @@ export async function updateVaultFromSession(session, mode) {
         });
       } catch (err) {
         console.warn("[session-close] normalization failed, fallback all-new", err);
+        // [debug-enrich]
+        console.warn('[vault.session-close.updateVaultFromSession] LLM normalize failed — all-new fallback:', {
+          docId,
+          message: err?.message ?? String(err),
+        });
         mappings = buildAllNewMappings(newConcepts);
       }
     }
@@ -314,6 +342,12 @@ export async function updateVaultFromSession(session, mode) {
 
   const observations = await collectObservations(session, mode, docId);
   const touchedEntryIds = applyObservations(vault, observations, normalizationMap);
+  // [debug-enrich]
+  console.info('[vault.session-close.updateVaultFromSession] Observations applied:', {
+    docId,
+    observationCount: observations.length,
+    touchedCount: touchedEntryIds?.size ?? touchedEntryIds?.length ?? null,
+  });
   await runMisconceptionDetectionForEntries(vault, touchedEntryIds);
   elevatePrerequisiteRelations(session, normalizationMap);
 
@@ -326,13 +360,22 @@ export async function updateVaultFromSession(session, mode) {
         fresh.shared._vaultPendingObservations = [];
         await saveActiveSession(fresh);
       }
-    } catch {
-      // ignore persistence cleanup errors
+    } catch (err) {
+      // [debug-enrich]
+      console.warn('[vault.session-close.updateVaultFromSession] Pending-obs cleanup failed:', {
+        docId,
+        message: err?.message ?? String(err),
+      });
     }
   }
 
   vault.lastUpdated = Date.now();
   saveVault(vault);
+  // [debug-enrich]
+  console.info('[vault.session-close.updateVaultFromSession] Vault saved:', {
+    docId,
+    entryCount: vault.entries?.length ?? 0,
+  });
 
   try {
     const { enqueueVaultMetadataExtraction } = await import("./metadata-extraction.js");
