@@ -136,24 +136,70 @@ export async function rehydrateBlocks(rsvpSlice, docId) {
 
   const blocksRef = slice.blocksRef;
   const hasInlineBlocks = Array.isArray(slice.blocks) && slice.blocks.length > 0;
+  // [debug-enrich]
+  console.debug('[block-store.rehydrateBlocks] Start:', {
+    docId: id,
+    hasInlineBlocks,
+    inlineCount: hasInlineBlocks ? slice.blocks.length : 0,
+    hasBlocksRef: Boolean(blocksRef?.storageKey),
+    hasResponsesRef: Boolean(slice.responsesRef?.storageKey),
+    hasInlineResponses: Boolean(slice._responses),
+  });
   if (blocksRef?.storageKey && !hasInlineBlocks) {
     try {
       const raw = await readExternalJson(blocksRef.storageKey, id, downloadBlocksJson);
       if (raw != null) {
         const blocks = JSON.parse(raw);
-        if (Array.isArray(blocks)) slice = { ...slice, blocks };
+        if (Array.isArray(blocks)) {
+          slice = { ...slice, blocks };
+          // [debug-enrich]
+          console.info('[block-store.rehydrateBlocks] Blocks rehydrated:', {
+            docId: id,
+            blockCount: blocks.length,
+            storageKey: blocksRef.storageKey,
+          });
+        }
+      } else {
+        // [debug-enrich]
+        console.warn('[block-store.rehydrateBlocks] Blocks ref present but no data:', {
+          docId: id,
+          storageKey: blocksRef.storageKey,
+        });
       }
     } catch (err) {
       console.warn("[block-store] rehydrate blocks failed", err);
+      // [debug-enrich]
+      console.error('[block-store.rehydrateBlocks] Blocks rehydrate failed:', {
+        docId: id,
+        message: err?.message ?? String(err),
+      });
     }
   }
 
   if (slice.responsesRef?.storageKey && !slice._responses) {
     try {
       const raw = await readExternalJson(slice.responsesRef.storageKey, id, downloadResponsesJson);
-      if (raw != null) slice = { ...slice, _responses: JSON.parse(raw) };
+      if (raw != null) {
+        slice = { ...slice, _responses: JSON.parse(raw) };
+        // [debug-enrich]
+        console.info('[block-store.rehydrateBlocks] Responses rehydrated:', {
+          docId: id,
+          storageKey: slice.responsesRef.storageKey,
+        });
+      } else {
+        // [debug-enrich]
+        console.warn('[block-store.rehydrateBlocks] Responses ref present but no data:', {
+          docId: id,
+          storageKey: slice.responsesRef.storageKey,
+        });
+      }
     } catch (err) {
       console.warn("[block-store] rehydrate responses failed", err);
+      // [debug-enrich]
+      console.error('[block-store.rehydrateBlocks] Responses rehydrate failed:', {
+        docId: id,
+        message: err?.message ?? String(err),
+      });
     }
   }
 
