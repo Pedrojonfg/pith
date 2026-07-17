@@ -43,11 +43,15 @@ serve(async (req) => {
   }
 
   if (req.method !== "POST") {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Method not allowed:", req.method);
     return new Response("Method Not Allowed", { status: 405, headers: CORS_HEADERS });
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Unauthorized: missing Bearer token");
     return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
   }
   const token = authHeader.replace("Bearer ", "");
@@ -60,6 +64,8 @@ serve(async (req) => {
 
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Unauthorized: getUser failed:", authError?.message ?? "no user");
     return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
   }
 
@@ -67,6 +73,8 @@ serve(async (req) => {
   try {
     payload = await req.json();
   } catch {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Bad Request: invalid JSON");
     return new Response("Bad Request: invalid JSON", { status: 400, headers: CORS_HEADERS });
   }
 
@@ -75,6 +83,12 @@ serve(async (req) => {
   const llmBody = payload.body;
 
   if (!service || !endpoint || llmBody == null) {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Bad Request: missing fields:", {
+      hasService: Boolean(service),
+      hasEndpoint: Boolean(endpoint),
+      hasBody: llmBody != null,
+    });
     return new Response("Bad Request: missing service, endpoint, or body", {
       status: 400,
       headers: CORS_HEADERS,
@@ -87,15 +101,26 @@ serve(async (req) => {
   } else if (service === "gemini-chat" || service === "gemini-embed") {
     authKey = Deno.env.get("GEMINI_API_KEY") ?? "";
   } else {
+    // [debug-enrich]
+    console.warn("[llm-proxy.serve] Bad Request: unknown service:", service);
     return new Response("Bad Request: unknown service", { status: 400, headers: CORS_HEADERS });
   }
 
   if (!authKey) {
+    // [debug-enrich]
+    console.error("[llm-proxy.serve] Missing API key secret for service:", service);
     return new Response("Server misconfiguration: missing API key secret", {
       status: 500,
       headers: CORS_HEADERS,
     });
   }
+
+  // [debug-enrich]
+  console.info("[llm-proxy.serve] Proxy request:", {
+    userId: user.id,
+    service,
+    endpoint,
+  });
 
   const targetUrl = buildTargetUrl(service, endpoint, authKey);
 
@@ -126,6 +151,16 @@ serve(async (req) => {
     (usage?.output_tokens as number | undefined) ??
     null;
 
+  // [debug-enrich]
+  console.info("[llm-proxy.serve] Upstream response:", {
+    status: upstream.status,
+    service,
+    model,
+    inputTokens,
+    outputTokens,
+    hasJsonBody: upstreamBody != null,
+  });
+
   const supabaseAdmin = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -143,10 +178,18 @@ serve(async (req) => {
       key_ownership: "platform",
     })
     .then(() => undefined)
-    .catch(() => undefined);
+    .catch((err) => {
+      // [debug-enrich]
+      console.warn("[llm-proxy.serve] Usage log insert failed:", err?.message ?? err);
+    });
 
   if (upstreamBody == null) {
     const text = await upstream.text().catch(() => "");
+    // [debug-enrich]
+    console.error("[llm-proxy.serve] Non-JSON upstream body:", {
+      status: upstream.status,
+      textLen: text?.length ?? 0,
+    });
     return new Response(text || "Upstream error", {
       status: upstream.status,
       headers: CORS_HEADERS,
