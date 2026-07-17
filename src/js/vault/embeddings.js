@@ -69,14 +69,36 @@ async function writeCache(row) {
  */
 export async function embedText(text, options = {}) {
   const sourceText = String(text || "").trim();
-  if (!sourceText) throw new Error("embedText requires non-empty text");
+  if (!sourceText) {
+    // [debug-enrich]
+    console.error("[vault.embeddings.embedText] Empty text");
+    throw new Error("embedText requires non-empty text");
+  }
   const token = await getSupabaseAuthToken();
-  if (!token) throw new Error("Sign in to use embeddings");
+  if (!token) {
+    // [debug-enrich]
+    console.error("[vault.embeddings.embedText] No auth token");
+    throw new Error("Sign in to use embeddings");
+  }
 
   const sourceTextHash = await hashSourceText(sourceText);
   const cached = await readCache(sourceTextHash);
-  if (cached) return cached;
+  if (cached) {
+    // [debug-enrich]
+    console.debug("[vault.embeddings.embedText] Cache hit:", {
+      textLen: sourceText.length,
+      dims: Array.isArray(cached) ? cached.length : null,
+      conceptId: options.conceptId || null,
+    });
+    return cached;
+  }
 
+  // [debug-enrich]
+  console.info("[vault.embeddings.embedText] API call:", {
+    textLen: sourceText.length,
+    conceptId: options.conceptId || null,
+    scopeType: options.scopeType || "concept",
+  });
   const outputDimensionality = getEmbeddingOutputDimensionality();
   const taskType = options.taskType || "SEMANTIC_SIMILARITY";
   const json = await geminiEmbedContent({
@@ -87,6 +109,8 @@ export async function embedText(text, options = {}) {
   });
   const values = json?.embedding?.values;
   if (!Array.isArray(values) || !values.length) {
+    // [debug-enrich]
+    console.error("[vault.embeddings.embedText] Empty vector from Gemini");
     throw new Error("Gemini embed returned empty vector");
   }
 
@@ -100,6 +124,11 @@ export async function embedText(text, options = {}) {
     model_version: EMBEDDING_MODEL_VERSION,
   });
 
+  // [debug-enrich]
+  console.info("[vault.embeddings.embedText] Done:", {
+    dims: values.length,
+    conceptId: options.conceptId || null,
+  });
   return values;
 }
 
@@ -109,10 +138,14 @@ export async function embedText(text, options = {}) {
  */
 export async function embedBatch(texts, options = {}) {
   const list = (Array.isArray(texts) ? texts : []).map((t) => String(t || "").trim()).filter(Boolean);
+  // [debug-enrich]
+  console.info("[vault.embeddings.embedBatch] Start:", { count: list.length });
   const out = [];
   for (const text of list) {
     out.push(await embedText(text, options));
   }
+  // [debug-enrich]
+  console.info("[vault.embeddings.embedBatch] Done:", { count: out.length });
   return out;
 }
 
