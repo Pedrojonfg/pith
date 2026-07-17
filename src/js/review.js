@@ -933,11 +933,23 @@ export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = 
   const indices = Array.isArray(blockIndices)
     ? blockIndices.map((i) => Math.max(0, Math.floor(Number(i) || 0)))
     : [];
+  // [debug-enrich]
+  console.info("[review.startReviewFromSessionBlocks] Start:", {
+    indexCount: indices.length,
+    reviewType: rt,
+  });
   if (!indices.length) {
+    // [debug-enrich]
+    console.error("[review.startReviewFromSessionBlocks] No blocks selected");
     throw new Error("Select at least one block to review.");
   }
   const collected = collectQuestionsFromSessionBlocks(indices, rt);
   if (!collected.length) {
+    // [debug-enrich]
+    console.error("[review.startReviewFromSessionBlocks] No questions in selected blocks:", {
+      indices,
+      reviewType: rt,
+    });
     throw new Error("No questions available for review in the selected blocks.");
   }
 
@@ -948,6 +960,11 @@ export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = 
   reviewCorrect = 0;
   reviewTestTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
   reviewAnswers = new Array(reviewQuestions.length).fill(null);
+  // [debug-enrich]
+  console.info("[review.startReviewFromSessionBlocks] Loaded:", {
+    questionCount: reviewQuestions.length,
+    testTotal: reviewTestTotal,
+  });
   showScreen("review");
   renderReviewQuestion();
 }
@@ -990,7 +1007,16 @@ function renderReviewQuestion() {
   clearReviewError();
   const total = reviewQuestions.length;
   const q = reviewQuestions[reviewIndex];
+  // [debug-enrich]
+  console.debug("[review.renderReviewQuestion] Render:", {
+    reviewIndex,
+    total,
+    type: q?.type || null,
+    hasQuestion: Boolean(q),
+  });
   if (!q) {
+    // [debug-enrich]
+    console.error("[review.renderReviewQuestion] No question at index:", { reviewIndex, total });
     setReviewError("No questions loaded.");
     return;
   }
