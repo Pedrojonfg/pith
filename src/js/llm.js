@@ -323,8 +323,19 @@ export async function geminiChatCompletions({
   max_tokens,
   signal,
 } = {}) {
+  // [debug-enrich]
+  console.debug("[llm.geminiChatCompletions] Start:", {
+    model: model || null,
+    messageCount: Array.isArray(messages) ? messages.length : 0,
+    temperature,
+    max_tokens: max_tokens ?? null,
+  });
   const token = await getSupabaseAuthToken();
-  if (!token) return null;
+  if (!token) {
+    // [debug-enrich]
+    console.warn("[llm.geminiChatCompletions] No auth token — returning null");
+    return null;
+  }
 
   const body = { model, messages, temperature };
   if (max_tokens != null) body.max_tokens = max_tokens;
@@ -338,8 +349,18 @@ export async function geminiChatCompletions({
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
+    // [debug-enrich]
+    console.warn("[llm.geminiChatCompletions] Missing content:", {
+      hasChoices: Array.isArray(data?.choices),
+      finishReason: data?.choices?.[0]?.finish_reason ?? null,
+    });
     return { status: 200, content: null };
   }
+  // [debug-enrich]
+  console.info("[llm.geminiChatCompletions] Done:", {
+    contentLen: content.length,
+    usage: data?.usage ?? null,
+  });
   return { status: 200, content: content.trim() };
 }
 
