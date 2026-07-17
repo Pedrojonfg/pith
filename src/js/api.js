@@ -5481,8 +5481,23 @@ export async function normalizeConceptsToVault({
 }) {
   const existing = Array.isArray(existingEntries) ? existingEntries : [];
   const concepts = Array.isArray(newConcepts) ? newConcepts : [];
-  if (!concepts.length) return [];
+  // [debug-enrich]
+  console.debug('[api.normalizeConceptsToVault] Entry:', {
+    existingCount: existing.length,
+    newCount: concepts.length,
+    topic: topic ?? null,
+    hasBatchContext: Boolean(batchContext),
+  });
+  if (!concepts.length) {
+    // [debug-enrich]
+    console.debug('[api.normalizeConceptsToVault] Empty newConcepts — skip');
+    return [];
+  }
   if (!existing.length) {
+    // [debug-enrich]
+    console.info('[api.normalizeConceptsToVault] No existing vault — all-new short-circuit:', {
+      newCount: concepts.length,
+    });
     return concepts
       .map((c) => ({
         conceptId: String(c.id || "").trim(),
@@ -5527,6 +5542,12 @@ Respond with JSON only:
   };
 
   try {
+    // [debug-enrich]
+    console.info('[api.normalizeConceptsToVault] LLM call:', {
+      topic: topicLabel,
+      existingCount: existing.length,
+      newCount: concepts.length,
+    });
     const raw = await llmChatCompletions({
       llmModel: resolveLlmModelArg(null),
       response_format: { type: "json_object" },
@@ -5568,11 +5589,27 @@ Respond with JSON only:
         relatedCandidates,
       });
     }
-    if (out.length) return out;
+    if (out.length) {
+      const byAction = { merge: 0, alias: 0, new: 0 };
+      for (const m of out) {
+        if (byAction[m.action] != null) byAction[m.action] += 1;
+      }
+      // [debug-enrich]
+      console.info('[api.normalizeConceptsToVault] LLM mappings ok:', {
+        mappingCount: out.length,
+        byAction,
+      });
+      return out;
+    }
+    // [debug-enrich]
+    console.warn('[api.normalizeConceptsToVault] Empty/invalid mappings — fallback all-new');
   } catch (err) {
-    console.warn("[normalizeConceptsToVault] LLM failed", err?.message || err);
+    // [debug-enrich]
+    console.warn('[api.normalizeConceptsToVault] LLM failed — fallback all-new:', err?.message || err);
   }
 
+  // [debug-enrich]
+  console.info('[api.normalizeConceptsToVault] Fallback all-new:', { newCount: concepts.length });
   return concepts
     .map((c) => ({
       conceptId: String(c.id || "").trim(),
