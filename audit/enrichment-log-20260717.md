@@ -54,6 +54,7 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `persist-session-read` | done | debug load; info loaded (markdown len, prep, blocks) or not-found |
 | `persist-markdown-rehydrate` | done | debug inline/download; info ok/legacy; warn/error empty fallback paths |
 | `persist-blocks-rehydrate` | done | debug start; info blocks/responses rehydrated; warn missing data; error on parse/fetch |
+| `persist-retry-keyed` | done | debug start; info superseded; debug silent drop; error on real failure |
 
 ---
 

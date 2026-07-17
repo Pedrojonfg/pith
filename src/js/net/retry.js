@@ -100,18 +100,45 @@ export function withKeyedRetry(key, fn, options = {}) {
   const nextGen = getWriteGeneration(key) + 1;
   writeGenerations.set(key, nextGen);
   const myGen = nextGen;
+  // [debug-enrich]
+  console.debug('[net.retry.withKeyedRetry] Start:', { key, generation: myGen });
 
   return withRetry(async () => {
     if (writeGenerations.get(key) !== myGen) {
+      // [debug-enrich]
+      console.info('[net.retry.withKeyedRetry] Superseded before write:', {
+        key,
+        myGen,
+        currentGen: writeGenerations.get(key),
+      });
       throw new WriteSupersededError(key);
     }
     const result = await fn();
     if (writeGenerations.get(key) !== myGen) {
+      // [debug-enrich]
+      console.info('[net.retry.withKeyedRetry] Superseded after write:', {
+        key,
+        myGen,
+        currentGen: writeGenerations.get(key),
+      });
       throw new WriteSupersededError(key);
     }
     return result;
   }, options).catch((err) => {
-    if (err instanceof WriteSupersededError) return undefined;
+    if (err instanceof WriteSupersededError) {
+      // [debug-enrich]
+      console.debug('[net.retry.withKeyedRetry] Dropping superseded write (silent):', {
+        key,
+        myGen,
+      });
+      return undefined;
+    }
+    // [debug-enrich]
+    console.error('[net.retry.withKeyedRetry] Failed:', {
+      key,
+      myGen,
+      message: err?.message ?? String(err),
+    });
     throw err;
   });
 }
