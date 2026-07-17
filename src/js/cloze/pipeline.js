@@ -160,6 +160,11 @@ function truncateForPrompt(text, max = 15000) {
 }
 
 export async function generateEpistemicGraph(text, { llmModel, signal } = {}) {
+  // [debug-enrich]
+  console.info("[cloze.pipeline.generateEpistemicGraph] Start:", {
+    textLen: String(text || "").length,
+    llmModel: llmModel || null,
+  });
   const systemPrompt = `You build an epistemic graph from study material.
 
 Return ONLY valid JSON with this schema:
@@ -192,7 +197,16 @@ Rules:
   const raw = await callClozeJson({ llmModel, systemPrompt, userPrompt, signal });
   const parsed = parseModelJsonObject(raw);
   const graph = normalizeEpistemicGraph(parsed);
-  if (!graph) throw new Error("Fase 0: invalid epistemic graph JSON.");
+  if (!graph) {
+    // [debug-enrich]
+    console.error("[cloze.pipeline.generateEpistemicGraph] Invalid graph JSON");
+    throw new Error("Fase 0: invalid epistemic graph JSON.");
+  }
+  // [debug-enrich]
+  console.info("[cloze.pipeline.generateEpistemicGraph] Done:", {
+    nodeCount: Array.isArray(graph.nodes) ? graph.nodes.length : 0,
+    edgeCount: Array.isArray(graph.edges) ? graph.edges.length : 0,
+  });
   return graph;
 }
 
