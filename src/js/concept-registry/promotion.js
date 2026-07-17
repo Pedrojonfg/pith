@@ -125,8 +125,20 @@ export async function onConceptEngagement({
   const docId = String(session?.docId || "").trim();
   const invId = String(conceptId || "").trim();
   if (!docId || !invId) {
+    // [debug-enrich]
+    console.error('[concept-registry.promotion.onConceptEngagement] Missing session/conceptId');
     throw new Error("onConceptEngagement requires session and conceptId");
   }
+
+  // [debug-enrich]
+  console.debug('[concept-registry.promotion.onConceptEngagement] Engagement:', {
+    docId,
+    conceptId: invId,
+    facet: facet ?? null,
+    quality: quality ?? null,
+    source: source ?? null,
+    hasContentText: Boolean(contentText),
+  });
 
   const entry = findInventoryEntry(session, invId);
   const label = String(entry?.label || entry?.name || invId).trim();
@@ -145,6 +157,12 @@ export async function onConceptEngagement({
     globalConceptId = resolved.conceptId;
     if (entry) entry.globalConceptId = globalConceptId;
     backfillGlobalConceptIds(session, globalConceptId, invId);
+    // [debug-enrich]
+    console.info('[concept-registry.promotion.onConceptEngagement] Resolved global id:', {
+      invId,
+      globalConceptId,
+      created: resolved.created ?? null,
+    });
   }
 
   const concept = getConceptById(globalConceptId);
@@ -188,6 +206,14 @@ export async function onConceptEngagement({
   } catch (err) {
     console.warn("[concept-registry] connection promotion failed", err?.message || err);
   }
+  // [debug-enrich]
+  console.info('[concept-registry.promotion.onConceptEngagement] Done:', {
+    globalConceptId,
+    maturity: updated?.maturity || "yellow",
+    facet: resolvedFacet,
+    quality: q,
+    promotedToGreen,
+  });
   return {
     globalConceptId,
     maturity: updated?.maturity || "yellow",
