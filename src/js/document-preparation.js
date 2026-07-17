@@ -493,14 +493,13 @@ async function runPhaseT14(doc) {
   console.info('[document-preparation.runPhaseT14] Block recommendation result:', {
     docId: doc.id ?? null,
     nBlocks: recommendation?.nBlocks ?? null,
-    rationalePresent: recommendation?.rationale != null,
     reasoningPresent: recommendation?.reasoning != null,
     factors: recommendation?.factors ?? null,
     signalsUsed: recommendation?.signalsUsed ?? null,
   });
   doc.shared.blockRecommendation = {
     nBlocks: recommendation.nBlocks,
-    rationale: recommendation.rationale,
+    reasoning: recommendation.reasoning,
     computedAt: Date.now(),
     signals: recommendation,
   };

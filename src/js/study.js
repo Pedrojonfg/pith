@@ -1356,7 +1356,8 @@ function applySharedBlockRecommendationToUi(doc) {
   if (els.blocksInput) els.blocksInput.value = String(rec.nBlocks);
   const signals = rec.signals || rec;
   if (els.recommendBlocksWhy) {
-    els.recommendBlocksWhy.textContent = rec.rationale || formatBlockCountReasoning(signals);
+    els.recommendBlocksWhy.textContent =
+      (rec.reasoning ?? rec.rationale) || formatBlockCountReasoning(signals);
     els.recommendBlocksWhy.hidden = false;
   }
   if (els.recommendBlocksStatus) {
