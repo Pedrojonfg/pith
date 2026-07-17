@@ -121,6 +121,13 @@ export function getPhaseLabel(phaseIndex) {
 }
 
 async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 8192, signal }) {
+  // [debug-enrich]
+  console.debug("[cloze.pipeline.callClozeJson] LLM call:", {
+    llmModel: llmModel || null,
+    max_tokens,
+    systemLen: String(systemPrompt || "").length,
+    userLen: String(userPrompt || "").length,
+  });
   let content;
   try {
     content = await llmChatCompletions({
@@ -136,6 +143,8 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
     });
   } catch (err) {
     if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
+      // [debug-enrich]
+      console.warn("[cloze.pipeline.callClozeJson] JSON mode failed — retry without:", err?.message || err);
       content = await llmChatCompletions({
         llmModel,
         max_tokens,
@@ -147,9 +156,15 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
         signal,
       });
     } else {
+      // [debug-enrich]
+      console.error("[cloze.pipeline.callClozeJson] LLM failed:", err?.message || err);
       throw err;
     }
   }
+  // [debug-enrich]
+  console.debug("[cloze.pipeline.callClozeJson] Response:", {
+    contentLen: String(content || "").length,
+  });
   return content;
 }
 
