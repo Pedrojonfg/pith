@@ -66,6 +66,13 @@ function deepCloneJson(value) {
 export function buildPackSnapshot(session) {
   const sh = session?.shared || {};
   const modes = session?.modes || {};
+  // [debug-enrich]
+  console.info("[pack-export.buildPackSnapshot] Building snapshot:", {
+    docId: session?.docId || null,
+    inventorySize: Array.isArray(sh.conceptInventory) ? sh.conceptInventory.length : 0,
+    markdownLen: typeof sh.rawMarkdown === "string" ? sh.rawMarkdown.length : 0,
+    imageCount: Array.isArray(sh.images) ? sh.images.length : 0,
+  });
   return {
     docMeta: deepCloneJson(sh.docMeta ?? null),
     docHierarchy: deepCloneJson(sh.docHierarchy ?? null),
