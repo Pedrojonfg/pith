@@ -43,7 +43,17 @@ export function buildUnpromptedArticulationSignals(articulatedConceptIds, concep
  * @param {{ transcript: object[], studyLang: string, sessionTitle: string, llmModel?: string }} params
  */
 export async function applyInterviewSynthesis(doc, params) {
-  if (!doc?.shared) throw new Error("Invalid session for synthesis.");
+  if (!doc?.shared) {
+    // [debug-enrich]
+    console.error("[interview.synthesis.applyInterviewSynthesis] Invalid session");
+    throw new Error("Invalid session for synthesis.");
+  }
+  // [debug-enrich]
+  console.info("[interview.synthesis.applyInterviewSynthesis] Start:", {
+    docId: doc?.docId || null,
+    sessionTitle: params?.sessionTitle ?? null,
+    transcriptTurns: Array.isArray(params?.transcript) ? params.transcript.length : 0,
+  });
   const result = await synthesizeInterviewToMarkdown(params);
 
   doc.shared.rawMarkdown = result.rawMarkdown;
@@ -64,5 +74,12 @@ export async function applyInterviewSynthesis(doc, params) {
     doc.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
   }
 
+  // [debug-enrich]
+  console.info("[interview.synthesis.applyInterviewSynthesis] Done:", {
+    docId: doc?.docId || null,
+    conceptCount: result.concepts?.length ?? 0,
+    articulatedCount: incoming.length,
+    markdownLen: result.rawMarkdown?.length ?? 0,
+  });
   return { doc, articulatedCount: incoming.length };
 }
