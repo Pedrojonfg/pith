@@ -50,6 +50,7 @@ async function openInitialScreen() {
   } catch (err) {
     console.error("Failed to open initial screen:", err);
     showScreen("settings");
+    throw err;
   }
 }
 
@@ -61,7 +62,6 @@ async function continueAppBoot() {
   }
   // [debug-enrich]
   console.info('[main.continueAppBoot] Continuing app boot after auth');
-  appBooted = true;
   try {
     await migrateLocalStorageToSupabase();
 
@@ -75,15 +75,18 @@ async function continueAppBoot() {
 
     await openInitialScreen();
     dismissSplash(false);
+    appBooted = true;
     // [debug-enrich]
     console.info('[main.continueAppBoot] Boot complete');
   } catch (err) {
+    appBooted = false;
     // [debug-enrich]
-    console.error('[main.continueAppBoot] Boot failed (appBooted left true):', {
+    console.error('[main.continueAppBoot] Boot failed:', {
       message: err?.message ?? String(err),
       stack: err?.stack ?? null,
     });
-    throw err;
+    dismissSplash(false);
+    showScreen("settings");
   }
 }
 
