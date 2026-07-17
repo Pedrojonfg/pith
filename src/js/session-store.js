@@ -105,9 +105,20 @@ function rowToSession(row, includeMarkdown) {
 }
 
 async function rehydrateMarkdown(session, markdownRef) {
-  if (!session?.shared) return rehydrateSessionModes(session);
+  if (!session?.shared) {
+    // [debug-enrich]
+    console.debug('[session-store.rehydrateMarkdown] No shared — skip');
+    return rehydrateSessionModes(session);
+  }
   const sh = session.shared;
-  if (typeof sh.rawMarkdown === "string") return rehydrateSessionModes(session);
+  if (typeof sh.rawMarkdown === "string") {
+    // [debug-enrich]
+    console.debug('[session-store.rehydrateMarkdown] Inline markdown present:', {
+      docId: session.docId ?? null,
+      len: sh.rawMarkdown.length,
+    });
+    return rehydrateSessionModes(session);
+  }
 
   const storagePath = markdownRef || sh.rawMarkdownRef?.storageKey;
   if (!storagePath) {
@@ -116,26 +127,58 @@ async function rehydrateMarkdown(session, markdownRef) {
       try {
         const text = localStorage.getItem(legacyKey);
         if (text != null) {
+          // [debug-enrich]
+          console.info('[session-store.rehydrateMarkdown] Legacy localStorage hit:', {
+            docId: session.docId ?? null,
+            legacyKey,
+            len: text.length,
+          });
           return rehydrateSessionModes({
             ...session,
             shared: { ...sh, rawMarkdown: text },
           });
         }
-      } catch {
-        // ignore
+      } catch (err) {
+        // [debug-enrich]
+        console.warn('[session-store.rehydrateMarkdown] Legacy localStorage read failed:', {
+          docId: session.docId ?? null,
+          message: err?.message ?? String(err),
+        });
       }
     }
+    // [debug-enrich]
+    console.warn('[session-store.rehydrateMarkdown] No storage path — empty markdown', {
+      docId: session.docId ?? null,
+      markdownRef: markdownRef ?? null,
+    });
     return rehydrateSessionModes({ ...session, shared: { ...sh, rawMarkdown: "" } });
   }
 
   try {
+    // [debug-enrich]
+    console.debug('[session-store.rehydrateMarkdown] Downloading:', {
+      docId: session.docId ?? null,
+      storagePath,
+    });
     const text = await downloadMarkdown(storagePath);
+    // [debug-enrich]
+    console.info('[session-store.rehydrateMarkdown] Download ok:', {
+      docId: session.docId ?? null,
+      storagePath,
+      len: text?.length ?? 0,
+    });
     return rehydrateSessionModes({
       ...session,
       shared: { ...sh, rawMarkdown: text },
     });
   } catch (err) {
     console.warn("[session-store] storage rehydrate failed", err);
+    // [debug-enrich]
+    console.error('[session-store.rehydrateMarkdown] Download failed — empty markdown fallback:', {
+      docId: session.docId ?? null,
+      storagePath,
+      message: err?.message ?? String(err),
+    });
     return rehydrateSessionModes({ ...session, shared: { ...sh, rawMarkdown: "" } });
   }
 }
