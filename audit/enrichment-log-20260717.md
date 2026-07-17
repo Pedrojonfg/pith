@@ -82,46 +82,41 @@ Pass order: (1) critical+none → (2) critical+minimal → (3) non-critical like
 | `registry-dedup-gates` | done | Pass3 fragile: debug pair; info gate reject/done + doc run |
 | `vault-embeddings` | done | Pass3 fragile: info API/batch; debug cache hit; error empty/auth |
 | `llm-gemini-chat` | done | Pass3 fragile: debug start; warn null token/missing content; info done |
+| `llm-gemini-embed` | done | Pass3 fragile: debug proxy call; info dims; error on fail |
 
 ---
 
 ## Checkpoint (pause)
 
-**Stopped after:** `sm2-ingest-recall` (Pass 3 fragile, mid-list).
+**Stopped after:** `llm-gemini-embed` (Pass 3 fragile, mid-list).
 
-**Completed:** Pass 1 fully. Pass 2 fully (critical+minimal). Pass 3: both `likely-broken` + fragile through `sm2-ingest-recall`.
+**Completed:** Pass 1 fully. Pass 2 fully. Pass 3: both `likely-broken` + fragile through `llm-gemini-embed` (skipped `vault-novelty-score` and `vault-inventory-merge-embed` in inventory order — **resume those next** before continuing LLM contracts).
 
-**Resume Pass 3 next (non-critical likely-fragile, top-to-bottom):**
-1. `persist-vault-sync`
-2. `persist-registry-sync`
-3. `registry-dedup-gates`
-4. `vault-embeddings`
-5. `vault-novelty-score`
-6. `vault-inventory-merge-embed`
-7. `llm-gemini-chat`
-8. `llm-gemini-embed`
-9. `llm-c-block-split`
-10. `llm-c-char-boundary-refine`
-11. `llm-c-block-audit`
-12. `llm-c-block-overlap-audit`
-13. `llm-c-assessment-items`
-14. `llm-c-assessment-holistic`
-15. `llm-c-assessment-evaluate`
-16. `llm-c-review-batch`
-17. `llm-c-phase0`
-18. `llm-c-cloze-phases`
-19. `llm-c-recall-questions`
-20. `llm-c-recall-tutor`
-21. `llm-c-vision-image`
-22. `llm-c-vision-ocr`
-23. `llm-c-interview-followup`
-24. `llm-c-interview-synthesis`
-25. `llm-c-pack-rewrite`
-26. `interview-loop`
-27. `interview-synthesis`
-28. `export-offline-pack-build`
-29. `pack-snapshot-build`
+**Resume Pass 3 next (non-critical likely-fragile, inventory order):**
+1. `vault-novelty-score`
+2. `vault-inventory-merge-embed`
+3. `llm-c-block-split`
+4. `llm-c-char-boundary-refine`
+5. `llm-c-block-audit`
+6. `llm-c-block-overlap-audit`
+7. `llm-c-assessment-items`
+8. `llm-c-assessment-holistic`
+9. `llm-c-assessment-evaluate`
+10. `llm-c-review-batch`
+11. `llm-c-phase0`
+12. `llm-c-cloze-phases`
+13. `llm-c-recall-questions`
+14. `llm-c-recall-tutor`
+15. `llm-c-vision-image`
+16. `llm-c-vision-ocr`
+17. `llm-c-interview-followup`
+18. `llm-c-interview-synthesis`
+19. `llm-c-pack-rewrite`
+20. `interview-loop`
+21. `interview-synthesis`
+22. `export-offline-pack-build`
+23. `pack-snapshot-build`
 
 **Also see:** `audit/bugs-found-20260717.md`  
-**SW_VERSION now:** `20260717_44` · **CACHE_NAME:** `pith-v151`
+**SW_VERSION now:** `20260717_44` · **CACHE_NAME:** `pith-v151`  
 **Branch:** `overnight-debug-enrich`

@@ -369,10 +369,28 @@ export async function geminiChatCompletions({
  * @param {object} body
  */
 export async function geminiEmbedContent(body, { signal } = {}) {
-  return callViaProxy({
-    service: "gemini-embed",
-    endpoint: "/v1beta/models/gemini-embedding-001:embedContent",
-    body,
-    signal,
+  // [debug-enrich]
+  console.debug("[llm.geminiEmbedContent] Proxy call:", {
+    model: body?.model || null,
+    taskType: body?.taskType || null,
+    textLen: body?.content?.parts?.[0]?.text?.length ?? null,
+    outputDimensionality: body?.outputDimensionality ?? null,
   });
+  try {
+    const result = await callViaProxy({
+      service: "gemini-embed",
+      endpoint: "/v1beta/models/gemini-embedding-001:embedContent",
+      body,
+      signal,
+    });
+    // [debug-enrich]
+    console.info("[llm.geminiEmbedContent] Done:", {
+      dims: Array.isArray(result?.embedding?.values) ? result.embedding.values.length : null,
+    });
+    return result;
+  } catch (err) {
+    // [debug-enrich]
+    console.error("[llm.geminiEmbedContent] Failed:", err?.message || err);
+    throw err;
+  }
 }
