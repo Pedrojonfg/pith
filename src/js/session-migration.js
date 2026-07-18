@@ -21,8 +21,26 @@ import {
   validateDocumentSession,
 } from "./session-store.js";
 import { computeCanonicalId, inferDocMeta } from "./session-types.js";
-import { parseSessionsByModeRaw } from "./session.js";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
+
+/** Parse legacy `sessions_by_mode` JSON; null on missing/corrupt input. */
+function parseSessionsByModeRaw(raw) {
+  if (!raw || !String(raw).trim()) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (!obj || typeof obj !== "object") return null;
+    return {
+      rsvp: obj.rsvp && typeof obj.rsvp === "object" ? obj.rsvp : null,
+      slow: obj.slow && typeof obj.slow === "object" ? obj.slow : null,
+      cloze: obj.cloze && typeof obj.cloze === "object" ? obj.cloze : null,
+      questions: obj.questions && typeof obj.questions === "object" ? obj.questions : null,
+      recall: obj.recall && typeof obj.recall === "object" ? obj.recall : null,
+      read: obj.read && typeof obj.read === "object" ? obj.read : null,
+    };
+  } catch {
+    return null;
+  }
+}
 
 async function hasV2Sessions() {
   return (await getAllSessions()).some((s) => s?.schemaVersion >= 2);
@@ -166,6 +184,7 @@ async function buildDocumentSessionFromV1(slots) {
     cloze: migrateSlot(slots.cloze),
     questions: migrateSlot(slots.questions),
     recall: null,
+    read: null,
   };
 
   const now = Date.now();
@@ -223,8 +242,8 @@ export function stripLegacyReviewSlot(session) {
 }
 
 export async function detectAndMigrateV1() {
-  migrateProjects();
-  if (hasV2Sessions()) return;
+  await migrateProjects();
+  if (await hasV2Sessions()) return;
 
   let rawV1 = localStorage.getItem(LS_SESSIONS_BY_MODE_KEY);
   let sessionsByMode = parseSessionsByModeRaw(rawV1);

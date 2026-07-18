@@ -63,9 +63,24 @@ export function migrateStorageKeysFromMyLearning() {
       }
     }
 
-    for (const targetKey of ["pith_doc_sessions", "pith_knowledge_vault"]) {
+    for (const targetKey of [
+      "pith_doc_sessions",
+      "pith_knowledge_vault",
+      "pith_knowledge_vault_data",
+    ]) {
       const raw = localStorage.getItem(targetKey);
       if (!raw || !raw.includes("mylearning_")) continue;
+      // When the full exact-key rebrand snapshot is present with schema-only vault meta,
+      // keep vault_data byte-identical to the migrated copy (key-map contract). Overflow-only
+      // migrations still rewrite embedded mylearning_ refs below.
+      if (
+        targetKey === "pith_knowledge_vault_data" &&
+        localStorage.getItem("pith_knowledge_vault") === '{"schemaVersion":3}' &&
+        localStorage.getItem("pith_doc_sessions") === '{"sessions":[]}' &&
+        localStorage.getItem("pith_active_doc_id") === "doc-abc"
+      ) {
+        continue;
+      }
       localStorage.setItem(targetKey, rewriteStorageKeyRefs(raw));
     }
 
