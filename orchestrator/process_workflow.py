@@ -85,6 +85,17 @@ def build_fix_prompt(row: dict[str, Any], test_contents: str, prior_failure: str
     # FR-015: do not include verification thresholds
     prior = "\n".join((prior_failure or "").splitlines()[-200:])
     return (
+        "=== HEADLESS UNATTENDED RUN — NO HUMAN WILL RESPOND ===\n"
+        "This is a fully unattended headless orchestrator run. There is no human operator "
+        "watching this session and nobody will answer questions, confirmations, or "
+        "'shall I commit?' / 'say if you want these committed' prompts.\n"
+        "Never ask for confirmation before applying or committing changes. Apply source "
+        "fixes and commit autonomously when the work is done.\n"
+        "The orchestrator re-runs the test file independently via subprocess after your "
+        "turn. Your self-report that the test passed does NOT count as success. Consider "
+        "the task incomplete until that independent re-run exits 0. Do not end your turn "
+        "claiming success while leaving uncommitted work or waiting for approval.\n"
+        "=====\n"
         "Make the provided test pass by modifying source only. Never edit the test file.\n"
         f"Process row: {row}\n"
         f"TEST FILE:\n{test_contents}\n"
@@ -267,7 +278,8 @@ def run_process_unit(
                 "merged_commit_sha": sha,
             }
         append_run_log(root, process_id, agent="fix-agent", attempt=attempts, result=fres)
-        detail = combine_agent_output(fres) or v.detail or "verification failed"
+        # Ground truth: orchestrator tier-1 subprocess stdout/stderr, not agent chat self-report.
+        detail = v.detail or "verification failed"
         last_detail = truncate_block_detail(detail)
         prior = v.detail
 

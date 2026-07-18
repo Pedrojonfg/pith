@@ -13,6 +13,7 @@ from orchestrator.agent_runner import AgentResult, AgentRunner
 from orchestrator.git_ops import GitOps
 from orchestrator.process_workflow import (
     append_run_log,
+    build_fix_prompt,
     run_log_path,
     run_process_unit,
     truncate_block_detail,
@@ -35,6 +36,23 @@ def test_truncate_block_detail():
     out = truncate_block_detail(long, 500)
     assert len(out) == 500
     assert out.endswith("...")
+
+
+def test_build_fix_prompt_headless_unattended():
+    prompt = build_fix_prompt({"id": "p"}, "assert.ok(true);\n", "prior boom")
+    lower = prompt.lower()
+    assert "headless" in lower
+    assert "unattended" in lower
+    assert "no human" in lower
+    assert "never ask for confirmation" in lower
+    assert "independent" in lower or "independently" in lower
+    assert "self-report" in lower
+    assert "Process row:" in prompt
+    assert "assert.ok(true);" in prompt
+    assert "prior boom" in prompt
+    # FR-015: no verification thresholds in fix prompt
+    assert "0.75" not in prompt
+    assert "grounding" not in lower
 
 
 def test_append_run_log_per_process():
@@ -141,7 +159,10 @@ def test_fix_agent_failures_append_run_log():
             return AgentResult(
                 ok=True,
                 model_used="m1",
-                stdout=f"fix-out-{calls['n']}",
+                stdout=(
+                    f"fix-out-{calls['n']}: 127 passed. "
+                    "Say if you want these committed."
+                ),
                 stderr=f"fix-err-{calls['n']}",
             )
 
@@ -172,15 +193,22 @@ def test_fix_agent_failures_append_run_log():
         assert result["status"] == "blocked"
         assert result["block_reason"] == "exhausted"
         assert result["attempts"] == 2
-        assert result.get("block_detail")
+        detail = result.get("block_detail") or ""
+        assert detail
+        # Ground truth from tier-1 subprocess, not agent chat self-report
+        assert "127 passed" not in detail
+        assert "Say if you want these committed" not in detail
+        assert "fix-out-" not in detail
         log = run_log_path(d, "proc-fix").read_text(encoding="utf-8")
         assert "fix-agent attempt 1" in log
         assert "fix-agent attempt 2" in log
         assert "fix-out-" in log
+        assert "Say if you want these committed" in log
 
 
 if __name__ == "__main__":
     test_truncate_block_detail()
+    test_build_fix_prompt_headless_unattended()
     test_append_run_log_per_process()
     test_test_agent_retries_then_blocks_with_detail_and_wip()
     test_fix_agent_failures_append_run_log()

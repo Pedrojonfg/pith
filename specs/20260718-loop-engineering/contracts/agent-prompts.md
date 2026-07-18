@@ -37,6 +37,8 @@
 
 **Prompt must include**: inventory row, full test file contents, truncated prior failure (last ≤200 lines), English only.
 
+**Headless / unattended (mandatory, prominent in prompt)**: This is a fully unattended headless run — no human will respond to any question. The agent must never ask for confirmation before applying or committing changes. The orchestrator re-runs the process test independently via subprocess after each attempt; the agent's self-reported belief that the test passed does not count. The task is incomplete until that independent re-run exits 0.
+
 **Commit on success**: `fix(<process_id>): <one-line>`
 
 **Commit on block**: `wip(<process_id>): blocked after N attempts, see progress/state.json`
