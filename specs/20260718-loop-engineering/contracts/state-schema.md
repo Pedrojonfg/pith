@@ -14,6 +14,7 @@
           "status": "pending | test_written | fixing | verified | merged | blocked",
           "attempts": 0,
           "block_reason": null,
+          "block_detail": null,
           "branch": "loop-eng/<process_id> | null",
           "merged_commit_sha": null
         }
@@ -36,3 +37,14 @@
 ## Write policy
 
 Atomic write: write temp file then `os.replace`. Update `last_updated_at` on every mutation.
+
+## Process fields
+
+| Field | Notes |
+|-------|-------|
+| `block_reason` | Category only when `status=blocked`: `test_agent_failed`, `exhausted`, `regression`, `merge_conflict`, `allowlist`, etc. |
+| `block_detail` | When blocked: truncated (~500 chars) last error message from the failing agent/verification step; `null` otherwise. |
+
+## Per-process run log
+
+Failed agent attempts append full raw stdout+stderr to `progress/run-log-<process_id>.md` (one file per process; create `progress/` as needed; never overwrite another process's log). Each entry includes a UTC timestamp and which agent/attempt failed. These files are runtime diagnostics (typically gitignored); they are not part of `state.json`.

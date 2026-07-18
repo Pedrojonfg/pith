@@ -18,6 +18,7 @@ FILES = [
     "test_agent_runner.py",
     "test_git_ops.py",
     "test_verification.py",
+    "test_process_workflow.py",
     "test_main_dry_run.py",
 ]
 

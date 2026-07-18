@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from orchestrator.agent_runner import AgentRunner
+from orchestrator.agent_runner import AgentResult, AgentRunner
 from orchestrator.git_ops import GitOps
 from orchestrator.verification import verify_process
 
@@ -15,6 +16,8 @@ RUBRIC_FIXTURES_DIRNAME = "fixtures-normalizacion"
 
 # Inventory ids covered: section 2 (input-normalize-*) and DPP T0.x / T1.x phases.
 _NORMALIZATION_ID_RE = re.compile(r"^(input-normalize|dpp-t[01]\.)")
+
+BLOCK_DETAIL_MAX_CHARS = 500
 
 
 def test_file_for(process_id: str, root: Path) -> Path:
@@ -90,6 +93,46 @@ def build_fix_prompt(row: dict[str, Any], test_contents: str, prior_failure: str
     )
 
 
+def run_log_path(root: Path, process_id: str) -> Path:
+    return root / "progress" / f"run-log-{process_id}.md"
+
+
+def combine_agent_output(result: AgentResult) -> str:
+    parts = [p for p in (result.stdout or "", result.stderr or "") if p]
+    text = "\n".join(parts).strip()
+    if result.timed_out and "timeout" not in text.lower():
+        text = f"timeout\n{text}".strip() if text else "timeout"
+    return text
+
+
+def truncate_block_detail(message: str, limit: int = BLOCK_DETAIL_MAX_CHARS) -> str:
+    msg = (message or "").strip()
+    if len(msg) <= limit:
+        return msg
+    return msg[: limit - 3] + "..."
+
+
+def append_run_log(
+    root: Path,
+    process_id: str,
+    *,
+    agent: str,
+    attempt: int,
+    result: AgentResult,
+) -> None:
+    """Append full agent stdout+stderr for a failed attempt to progress/run-log-<id>.md."""
+    path = run_log_path(root, process_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    block = (
+        f"## {ts} — {agent} attempt {attempt}\n\n"
+        f"### stdout\n\n```\n{result.stdout or ''}\n```\n\n"
+        f"### stderr\n\n```\n{result.stderr or ''}\n```\n\n"
+    )
+    with path.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+
 def run_process_unit(
     *,
     process_id: str,
@@ -111,6 +154,7 @@ def run_process_unit(
             "status": "merged",
             "attempts": 1,
             "block_reason": None,
+            "block_detail": None,
             "branch": None,
             "merged_commit_sha": f"dry-{process_id}",
         }
@@ -118,29 +162,49 @@ def run_process_unit(
     branch = git.create_process_branch(process_id)
     test_path = test_file_for(process_id, root)
     rel_test = str(test_path.relative_to(root)).replace("\\", "/")
+    max_attempts = int(cfg.get("max_fix_attempts", 6))
 
-    # --- test agent ---
+    # --- test agent (same retry budget as fix-agent) ---
     rubric_context = collect_rubric_context(process_id, root / RUBRIC_FIXTURES_DIRNAME)
-    tres = runner.run_with_fallback(
-        models=list(cfg.get("test_agent_models") or ["composer-2.5"]),
-        prompt=build_test_prompt(row, row.get("static_risk_assessment", ""), rubric_context),
-        cwd=root,
-        mode="test",
-    )
-    if tres.exhausted_models or not tres.ok:
+    test_prompt = build_test_prompt(row, row.get("static_risk_assessment", ""), rubric_context)
+    attempts = 0
+    last_detail = ""
+    test_ok = False
+    for attempts in range(1, max_attempts + 1):
+        tres = runner.run_with_fallback(
+            models=list(cfg.get("test_agent_models") or ["composer-2.5"]),
+            prompt=test_prompt,
+            cwd=root,
+            mode="test",
+        )
+        if tres.exhausted_models:
+            append_run_log(root, process_id, agent="test-agent", attempt=attempts, result=tres)
+            last_detail = truncate_block_detail(combine_agent_output(tres) or "models exhausted")
+            break
+        if not tres.ok or tres.allowlist_violation:
+            append_run_log(root, process_id, agent="test-agent", attempt=attempts, result=tres)
+            last_detail = truncate_block_detail(
+                combine_agent_output(tres) or ("allowlist violation" if tres.allowlist_violation else "test_agent_failed")
+            )
+            continue
+        test_ok = True
+        break
+
+    if not test_ok:
         git.commit_all(f"wip({process_id}): blocked after test-agent failure, see progress/state.json")
         return {
             "status": "blocked",
-            "attempts": 0,
+            "attempts": attempts,
             "block_reason": "test_agent_failed",
+            "block_detail": last_detail or "test_agent_failed",
             "branch": branch,
             "merged_commit_sha": None,
         }
     git.commit_all(f"test({process_id}): add fixture/verification")
 
     # --- fix agent loop ---
-    max_attempts = int(cfg.get("max_fix_attempts", 6))
     prior = ""
+    last_detail = ""
     attempts = 0
     for attempts in range(1, max_attempts + 1):
         test_contents = test_path.read_text(encoding="utf-8") if test_path.is_file() else ""
@@ -152,8 +216,12 @@ def run_process_unit(
             forbidden_test_path=rel_test,
         )
         if fres.exhausted_models:
+            append_run_log(root, process_id, agent="fix-agent", attempt=attempts, result=fres)
+            last_detail = truncate_block_detail(combine_agent_output(fres) or "models exhausted")
             break
         if fres.allowlist_violation:
+            append_run_log(root, process_id, agent="fix-agent", attempt=attempts, result=fres)
+            last_detail = truncate_block_detail(combine_agent_output(fres) or "allowlist violation")
             prior = fres.stderr
             continue
         v = verify_process(
@@ -173,6 +241,7 @@ def run_process_unit(
                     "status": "blocked",
                     "attempts": attempts,
                     "block_reason": "merge_conflict",
+                    "block_detail": truncate_block_detail("throwaway merge conflict with main"),
                     "branch": branch,
                     "merged_commit_sha": None,
                 }
@@ -183,6 +252,7 @@ def run_process_unit(
                     "status": "blocked",
                     "attempts": attempts,
                     "block_reason": "regression",
+                    "block_detail": truncate_block_detail("accumulated loop-engineering suite failed"),
                     "branch": branch,
                     "merged_commit_sha": None,
                 }
@@ -192,9 +262,13 @@ def run_process_unit(
                 "status": "merged",
                 "attempts": attempts,
                 "block_reason": None,
+                "block_detail": None,
                 "branch": None,
                 "merged_commit_sha": sha,
             }
+        append_run_log(root, process_id, agent="fix-agent", attempt=attempts, result=fres)
+        detail = combine_agent_output(fres) or v.detail or "verification failed"
+        last_detail = truncate_block_detail(detail)
         prior = v.detail
 
     git.commit_all(f"wip({process_id}): blocked after {attempts} attempts, see progress/state.json")
@@ -202,6 +276,7 @@ def run_process_unit(
         "status": "blocked",
         "attempts": attempts,
         "block_reason": "exhausted",
+        "block_detail": last_detail or truncate_block_detail(prior) or "exhausted",
         "branch": branch,
         "merged_commit_sha": None,
     }

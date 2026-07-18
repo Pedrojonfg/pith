@@ -19,6 +19,7 @@ def empty_process_state() -> dict[str, Any]:
         "status": "pending",
         "attempts": 0,
         "block_reason": None,
+        "block_detail": None,
         "branch": None,
         "merged_commit_sha": None,
     }

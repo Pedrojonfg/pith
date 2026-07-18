@@ -41,10 +41,17 @@ Parsed from one inventory table row.
 | Field | Type | Values |
 |-------|------|--------|
 | status | string | `pending` \| `test_written` \| `fixing` \| `verified` \| `merged` \| `blocked` |
-| attempts | number | fix-agent attempts used |
-| block_reason | string\|null | e.g. `exhausted`, `regression`, `allowlist` |
+| attempts | number | agent attempts used in the failing/current phase (test-agent retries or fix-agent retries; same `max_fix_attempts` budget) |
+| block_reason | string\|null | category only, e.g. `test_agent_failed`, `exhausted`, `regression`, `allowlist` |
+| block_detail | string\|null | when blocked: truncated (~500 chars) last error message; otherwise `null` |
 | branch | string\|null | `loop-eng/<id>` |
 | merged_commit_sha | string\|null | |
+
+### Per-process run log (filesystem)
+
+| Artifact | Notes |
+|----------|-------|
+| `progress/run-log-<process_id>.md` | Append-only diagnostic log of failed test-agent / fix-agent invocations (timestamp, agent role, attempt number, full stdout+stderr). One file per process; do not overwrite across processes. |
 
 ### Transitions
 

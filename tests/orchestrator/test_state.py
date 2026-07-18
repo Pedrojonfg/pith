@@ -40,6 +40,7 @@ def test_merged_without_sha_reverts(tmp_path: Path | None = None):
         "status": "merged",
         "attempts": 2,
         "block_reason": None,
+        "block_detail": None,
         "branch": None,
         "merged_commit_sha": "deadbeef",
     }
