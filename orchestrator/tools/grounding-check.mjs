@@ -5,8 +5,6 @@
  * Offline fallback: token-overlap proxy (no network).
  * Production: wire to gemini-embedding-001 via existing vault embeddings when credentials present.
  */
-const fs = require("fs");
-
 function tokenOverlap(a, b) {
   const ta = new Set(String(a || "").toLowerCase().split(/\s+/).filter(Boolean));
   const tb = new Set(String(b || "").toLowerCase().split(/\s+/).filter(Boolean));
