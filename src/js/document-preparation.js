@@ -316,6 +316,7 @@ async function runPhaseT01(doc, ctx) {
 
 async function runPhaseT02(doc, ctx) {
   const metrics = analyzeText(getRawMarkdown(doc));
+  doc.shared = doc.shared || {};
   doc.shared.textMetrics = metrics;
   console.info("[document-preparation.runPhaseT02] Text metrics:", {
     docId: doc.docId,

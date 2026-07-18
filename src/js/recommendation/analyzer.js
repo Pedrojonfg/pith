@@ -4,8 +4,9 @@
  */
 
 const HEADING_RE = /^#{1,6}\s+/gm;
+// English citation forms: (Author, YYYY), Author (YYYY), and [n] markers.
 const BIBLIOGRAPHY_RE =
-  /\([A-Z][a-z]+,?\s+\d{4}\)|\[\d+\]/;
+  /\([A-Z][A-Za-z'-]+,?\s+\d{4}\)|[A-Z][A-Za-z'-]+\s+\(\d{4}\)|\[\d+\]/;
 const MATH_RE = /\$|\\frac|\\sum|∑|∫/;
 const DEFINITION_RE =
   /(refers to as|is defined as)/i;
