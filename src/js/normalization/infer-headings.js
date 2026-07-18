@@ -2,7 +2,14 @@
  * Heading inference: scoring, patterns, hierarchy validation (heading-detection.md).
  */
 
-import { normalizeHeadingLabel, isPdfHeadingNoise, compareHeadingLabels, collapsePdfSpacedTitle, isValidPdfTopLevelLabel } from "./heading-text.js";
+import {
+  normalizeHeadingLabel,
+  isPdfHeadingNoise,
+  isOcrGarbageHeadingText,
+  compareHeadingLabels,
+  collapsePdfSpacedTitle,
+  isValidPdfTopLevelLabel,
+} from "./heading-text.js";
 import { resolveOutlineLabel } from "./pdf-outline.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
@@ -73,6 +80,31 @@ function hasStrongHeadingPattern(block) {
     return true;
   }
   return false;
+}
+
+/**
+ * Detect FOIA/scan OCR corpora where font heuristics invent thousands of headings.
+ * Require control-char / HTML-entity density so clean digital PDFs are unaffected.
+ * @param {TextBlock[]} blocks
+ */
+function isLikelyPoorOcrPdfDocument(blocks) {
+  const pdfBlocks = (blocks || []).filter(
+    (b) => b?.source === "pdf" && b.kind !== "artifact" && String(b.text || "").trim(),
+  );
+  if (pdfBlocks.length < 80) return false;
+  let controlOrEntity = 0;
+  let mergedTokens = 0;
+  for (const block of pdfBlocks) {
+    const text = String(block.text || "").trim();
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(text) || /&#\d+;|&[a-z]+;/i.test(text)) {
+      controlOrEntity += 1;
+    }
+    const longNoSpace = text.length >= 12 && !/\s/.test(text);
+    const alphaRun =
+      /[A-Za-z]{10,}/.test(text) && (text.match(/\s/g) || []).length < text.length / 20;
+    if (longNoSpace || alphaRun) mergedTokens += 1;
+  }
+  return controlOrEntity / pdfBlocks.length > 0.04 || mergedTokens / pdfBlocks.length > 0.15;
 }
 
 /** Top-level numbered section labels keep L1 (e.g. "1 Introduction", not "3.1 Foo"). */
@@ -321,8 +353,9 @@ export function inferHeadings(blocks, opts = {}) {
   const rawBodyFontSize = computeBodyFontSize(blocks);
   const bodyFontSizeUnavailable = rawBodyFontSize <= 0;
   const bodyFontSize = bodyFontSizeUnavailable ? DEFAULT_BODY_FONT_SIZE : rawBodyFontSize;
-  const threshold = 35;
-  const patternOnlyThreshold = 25;
+  const poorOcrPdf = opts.format === "pdf" && isLikelyPoorOcrPdfDocument(blocks);
+  const threshold = poorOcrPdf ? 80 : 35;
+  const patternOnlyThreshold = poorOcrPdf ? 70 : 25;
 
   /** @type {Record<string, number>} */
   const rejectionReasons = {};
@@ -464,6 +497,11 @@ export function inferHeadings(blocks, opts = {}) {
     const score = scoreBlock(block, bodyFontSizeUnavailable ? 0 : bodyFontSize, pageHeight);
     const acceptThreshold =
       bodyFontSizeUnavailable && hasStrongHeadingPattern(block) ? patternOnlyThreshold : threshold;
+
+    if (poorOcrPdf && block.source === "pdf" && isOcrGarbageHeadingText(text)) {
+      bumpRejection("pdf_ocr_garbage");
+      continue;
+    }
 
     const blockIndex = bi;
     const earlyLetterhead =

@@ -54,10 +54,42 @@ function countWords(text) {
 
 const TABLE_CAPTION_RE = /^Table\s+(\d+)\.\s/i;
 const TABLE_CONTINUED_RE = /^Table\s+(\d+)\.\s.+-\s*Continued/i;
+const TABLE_CONTINUED_LINE_RE = /-\s*Continued\s*$/i;
 
 /** @param {TextBlock} block */
 function isMarkdownTableBlock(block) {
   return /^\| .+\|/m.test(String(block?.text || "").trim());
+}
+
+/**
+ * Captions often split across two lines: title line + "fourth quarter 2025 - Continued".
+ * @param {TextBlock[]} blocks
+ * @param {number} index
+ * @returns {{ tableNum: string, isContinued: boolean, endIndex: number } | null}
+ */
+function readTableCaptionAt(blocks, index) {
+  const text = String(blocks[index]?.text || "").trim();
+  const directCont = TABLE_CONTINUED_RE.exec(text);
+  if (directCont) {
+    return { tableNum: directCont[1], isContinued: true, endIndex: index };
+  }
+  const captionMatch = TABLE_CAPTION_RE.exec(text);
+  if (!captionMatch) return null;
+
+  const tableNum = captionMatch[1];
+  const next = String(blocks[index + 1]?.text || "").trim();
+  const samePage =
+    blocks[index + 1] &&
+    blocks[index + 1].pageIndex === blocks[index].pageIndex &&
+    !isMarkdownTableBlock(blocks[index + 1]);
+  if (samePage && TABLE_CONTINUED_LINE_RE.test(next) && next.length < 80) {
+    return { tableNum, isContinued: true, endIndex: index + 1 };
+  }
+  if (samePage && /^fourth quarter|^[a-z]/i.test(next) && next.length < 80) {
+    // First page subtitle without "- Continued"
+    return { tableNum, isContinued: false, endIndex: index + 1 };
+  }
+  return { tableNum, isContinued: false, endIndex: index };
 }
 
 /**
@@ -68,11 +100,11 @@ function isMarkdownTableBlock(block) {
 function appendMarkdownTables(base, addition, dropHeader = true) {
   const baseLines = String(base || "")
     .trim()
-    .split(/\n/)
+    .split("\n")
     .filter((line) => line.trim().startsWith("|"));
   const addLines = String(addition || "")
     .trim()
-    .split(/\n/)
+    .split("\n")
     .filter((line) => line.trim().startsWith("|"));
   let addStart = 0;
   if (dropHeader && addLines.length >= 2 && /^\|\s*[-: |]+\|/.test(addLines[1])) {
@@ -93,22 +125,21 @@ function mergeCrossPageContinuationTables(blocks) {
   let i = 0;
 
   while (i < blocks.length) {
-    const block = blocks[i];
-    const captionMatch = TABLE_CAPTION_RE.exec(String(block.text || "").trim());
+    const caption = readTableCaptionAt(blocks, i);
 
-    if (captionMatch) {
-      const tableNum = captionMatch[1];
+    if (caption && !caption.isContinued) {
+      const tableNum = caption.tableNum;
       let tableIdx = -1;
-      for (let j = i + 1; j < blocks.length; j += 1) {
-        const between = String(blocks[j].text || "").trim();
-        if (TABLE_CAPTION_RE.test(between) && j !== i + 1 && !isMarkdownTableBlock(blocks[j])) {
+      for (let j = caption.endIndex + 1; j < blocks.length; j += 1) {
+        const betweenCaption = readTableCaptionAt(blocks, j);
+        if (betweenCaption && j > caption.endIndex + 1 && !isMarkdownTableBlock(blocks[j])) {
           break;
         }
         if (isMarkdownTableBlock(blocks[j])) {
           tableIdx = j;
           break;
         }
-        if (blocks[j].pageIndex > block.pageIndex + 1) break;
+        if (blocks[j].pageIndex > blocks[i].pageIndex + 1) break;
       }
 
       if (tableIdx >= 0) {
@@ -117,20 +148,38 @@ function mergeCrossPageContinuationTables(blocks) {
         i = tableIdx + 1;
 
         while (i < blocks.length) {
-          const nextText = String(blocks[i].text || "").trim();
-          const contMatch = TABLE_CONTINUED_RE.exec(nextText);
-          if (!contMatch || contMatch[1] !== tableNum) break;
+          // Skip page trailers / footnotes between a table body and the next caption.
+          while (
+            i < blocks.length &&
+            !readTableCaptionAt(blocks, i) &&
+            !isMarkdownTableBlock(blocks[i])
+          ) {
+            const peek = readTableCaptionAt(blocks, i);
+            if (peek) break;
+            // Stop skipping if we hit a different table's caption-free body on a far page.
+            if (
+              blocks[i].pageIndex > mergedBlock.pageIndex + 12 &&
+              isMarkdownTableBlock(blocks[i])
+            ) {
+              break;
+            }
+            i += 1;
+          }
 
-          i += 1;
+          const cont = readTableCaptionAt(blocks, i);
+          if (!cont || !cont.isContinued || cont.tableNum !== tableNum) break;
+
+          const contPage = blocks[i]?.pageIndex ?? -1;
+          i = cont.endIndex + 1;
           let nextTableIdx = -1;
-          const contPage = blocks[i - 1]?.pageIndex ?? -1;
           for (let j = i; j < blocks.length; j += 1) {
             if (blocks[j].pageIndex > contPage + 1) break;
             if (isMarkdownTableBlock(blocks[j])) {
               nextTableIdx = j;
               break;
             }
-            if (TABLE_CAPTION_RE.test(String(blocks[j].text || "").trim()) && j > i) break;
+            const nestedCaption = readTableCaptionAt(blocks, j);
+            if (nestedCaption && j > i) break;
           }
           if (nextTableIdx < 0) break;
 
@@ -144,11 +193,41 @@ function mergeCrossPageContinuationTables(blocks) {
       }
     }
 
-    result.push(block);
+    // Skip orphaned continuation caption lines only (keep their tables for later / secondary flatten).
+    if (caption?.isContinued) {
+      i = caption.endIndex + 1;
+      continue;
+    }
+
+    result.push(blocks[i]);
     i += 1;
   }
 
   return result;
+}
+
+/**
+ * When one dominant cross-page table exists, flatten secondary tables to prose.
+ * @param {TextBlock[]} blocks
+ */
+function flattenSecondaryPdfTables(blocks) {
+  /** @type {{ index: number, dataRows: number }[]} */
+  const tables = [];
+  for (let i = 0; i < blocks.length; i += 1) {
+    const text = String(blocks[i].text || "").trim();
+    if (!text.startsWith("|")) continue;
+    const dataRows = text
+      .split("\n")
+      .filter((line) => /^\|/.test(line.trim()) && !/^\|\s*[-:|\s]+\|$/.test(line.trim())).length;
+    tables.push({ index: i, dataRows });
+  }
+  if (tables.length <= 1) return;
+  const largest = tables.reduce((a, b) => (b.dataRows > a.dataRows ? b : a));
+  if (largest.dataRows < 200) return;
+  for (const t of tables) {
+    if (t.index === largest.index) continue;
+    flattenPdfTableBlocks([blocks[t.index]]);
+  }
 }
 
 /** Count non-separator rows in the largest markdown table block. */
@@ -883,6 +962,8 @@ export async function extractPdfBlocks(buffer) {
       blocksAfter: mergedBlocks.length,
     });
   }
+
+  flattenSecondaryPdfTables(mergedBlocks);
 
   const tableLikeBlocks = mergedBlocks.filter((b) =>
     String(b.text || "").trim().startsWith("|"),

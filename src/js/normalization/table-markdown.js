@@ -24,10 +24,20 @@ export function gridToMarkdownTable(grid) {
     .filter((row) => row.length > 0);
   if (!rows.length) return null;
 
+  // Empty cells must not be space/nbsp-only: scanners treat `|  |` / `|   |` as GFM
+  // separator rows because `\s` eats NBSP and `[-: ]` still matches surrounding spaces.
+  // Use ZWNJ (not whitespace) so empty body rows stay data rows.
+  const cellOrPlaceholder = (value) => {
+    const t = String(value || "");
+    return t.trim().length ? t : "\u200c";
+  };
+
   const colCount = Math.max(1, ...rows.map((r) => r.length));
-  const header = Array.from({ length: colCount }, (_, i) => rows[0][i] || "");
+  const header = Array.from({ length: colCount }, (_, i) => cellOrPlaceholder(rows[0][i]));
   const sep = Array.from({ length: colCount }, () => "---");
-  const body = rows.slice(1).map((r) => Array.from({ length: colCount }, (_, i) => r[i] || ""));
+  const body = rows
+    .slice(1)
+    .map((r) => Array.from({ length: colCount }, (_, i) => cellOrPlaceholder(r[i])));
 
   const lines = [];
   lines.push(`| ${header.join(" | ")} |`);

@@ -237,6 +237,26 @@ export function isPdfHeadingNoise(text) {
   if (/^For release \d/i.test(t)) return true;
   if (/^Technical information:/i.test(t)) return true;
   if (/^Media contact:/i.test(t)) return true;
+  if (isOcrGarbageHeadingText(t)) return true;
+  return false;
+}
+
+/**
+ * Poor OCR often invents "headings" from control chars, entities, and glyph noise.
+ * @param {string} text
+ */
+export function isOcrGarbageHeadingText(text) {
+  const t = String(text || "").trim();
+  if (!t) return true;
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(t)) return true;
+  if (/&#\d+;|&[a-z]+;/i.test(t)) return true;
+  if (/\uFFFD/.test(t)) return true;
+  const letters = (t.match(/\p{L}/gu) || []).length;
+  const weird = (t.match(/[^\p{L}\p{N}\s.,;:'"?!()\-/–—]/gu) || []).length;
+  if (t.length >= 6 && letters > 0 && weird / t.length > 0.22) return true;
+  if (t.length >= 8 && letters / t.length < 0.35) return true;
+  // Merged OCR tokens with almost no word spaces look like shouty headings.
+  if (t.length >= 20 && !/\s/.test(t) && /[A-Za-z]{12,}/.test(t)) return true;
   return false;
 }
 
