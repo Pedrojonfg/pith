@@ -108,8 +108,17 @@ export class WriteSupersededError extends Error {
   }
 }
 
-/** @type {Map<string, number>} */
+/** @type {Map<string, number>} per-key write counter (for getWriteGeneration) */
 const writeGenerations = new Map();
+
+/**
+ * Active write owner per key. Object identity — not the numeric generation —
+ * is the supersession signal, so a mid-flight map clear cannot make a stale
+ * writer look current again when a newer write reclaims the same generation
+ * number.
+ * @type {Map<string, { gen: number }>}
+ */
+const writeOwners = new Map();
 
 /**
  * @param {string} key
@@ -129,11 +138,13 @@ export function withKeyedRetry(key, fn, options = {}) {
   const nextGen = getWriteGeneration(key) + 1;
   writeGenerations.set(key, nextGen);
   const myGen = nextGen;
+  const owner = { gen: myGen };
+  writeOwners.set(key, owner);
   // [debug-enrich]
   console.debug('[net.retry.withKeyedRetry] Start:', { key, generation: myGen });
 
   return withRetry(async () => {
-    if (writeGenerations.get(key) !== myGen) {
+    if (writeOwners.get(key) !== owner) {
       // [debug-enrich]
       console.info('[net.retry.withKeyedRetry] Superseded before write:', {
         key,
@@ -143,7 +154,7 @@ export function withKeyedRetry(key, fn, options = {}) {
       throw new WriteSupersededError(key);
     }
     const result = await fn();
-    if (writeGenerations.get(key) !== myGen) {
+    if (writeOwners.get(key) !== owner) {
       // [debug-enrich]
       console.info('[net.retry.withKeyedRetry] Superseded after write:', {
         key,
@@ -175,4 +186,5 @@ export function withKeyedRetry(key, fn, options = {}) {
 /** @internal test helper */
 export function resetKeyedRetryState() {
   writeGenerations.clear();
+  writeOwners.clear();
 }
