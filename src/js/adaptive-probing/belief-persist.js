@@ -59,8 +59,9 @@ export async function loadProjectBeliefs(projectId) {
   for (const row of data || []) {
     const id = String(row?.concept_id || "").trim();
     if (!id) continue;
+    const belief = Number(row.belief);
     out[id] = {
-      belief: Number(row.belief) || 0.5,
+      belief: Number.isFinite(belief) ? belief : 0.5,
       source: String(row.source || "prior"),
       lastUpdated: row.updated_at || new Date().toISOString(),
     };
