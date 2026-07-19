@@ -357,6 +357,9 @@ Use _____ as blank placeholder. Reject trivial blanks (articles, prepositions).`
   return out;
 }
 
+// Phase 3 distractors: up to ~40 items × 3 distractors × ~80 tokens/distractor + schema overhead → 12000 headroom
+const DISTRACTORS_MAX_TOKENS = 12000;
+
 export async function generateDistractors(items, epistemicGraph, { llmModel, signal } = {}) {
   const baseItems = (Array.isArray(items) ? items : []).map(normalizeClozeItem).filter(Boolean);
   if (!baseItems.length) return [];
@@ -390,7 +393,13 @@ Rules:
   }));
 
   const userPrompt = `Graph nodes:\n${JSON.stringify(epistemicGraph?.nodes || [])}\n\nItems:\n${JSON.stringify(slimItems)}`;
-  const raw = await callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens: 12000, signal });
+  const raw = await callClozeJson({
+    llmModel,
+    systemPrompt,
+    userPrompt,
+    max_tokens: DISTRACTORS_MAX_TOKENS,
+    signal,
+  });
   const parsed = parseModelJsonObject(raw);
   const byId = new Map(
     (Array.isArray(parsed?.items) ? parsed.items : []).map((row) => [String(row.item_id || ""), row.distractors]),
