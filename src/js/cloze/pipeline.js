@@ -401,12 +401,21 @@ Rules:
     .filter(Boolean);
 }
 
+// Phase 4 QA calibrate: up to ~40 items × ~150 tokens/row (id + enums + notes) + schema → 8192 headroom
+const QA_CALIBRATE_MAX_TOKENS = 8192;
+
 /**
  * Target balance post-QA (best effort): EASY 30%, MEDIUM 50%, HARD 20%.
  */
 export async function qaAndCalibrate(items, { llmModel, signal } = {}) {
   const withOptions = (Array.isArray(items) ? items : []).map(normalizeClozeItem).filter((i) => i?.options?.length === 4);
   if (!withOptions.length) return [];
+
+  // [debug-enrich]
+  console.info("[cloze.pipeline.qaAndCalibrate] Start:", {
+    itemCount: withOptions.length,
+    llmModel: llmModel || null,
+  });
 
   const systemPrompt = `QA cloze MC items and assign difficulty + qa_status.
 
@@ -431,13 +440,19 @@ Target distribution among valid items: ~30% easy, ~50% medium, ~20% hard.`;
     options: item.options.map((o) => ({ text: o.text, plausibility: o.plausibility })),
   }));
 
-  const raw = await callClozeJson({ llmModel, systemPrompt, userPrompt: JSON.stringify(slim), max_tokens: 8192, signal });
+  const raw = await callClozeJson({
+    llmModel,
+    systemPrompt,
+    userPrompt: JSON.stringify(slim),
+    max_tokens: QA_CALIBRATE_MAX_TOKENS,
+    signal,
+  });
   const parsed = parseModelJsonObject(raw);
   const qaById = new Map(
     (Array.isArray(parsed?.items) ? parsed.items : []).map((row) => [String(row.id || ""), row]),
   );
 
-  return withOptions.map((item) => {
+  const out = withOptions.map((item) => {
     const qa = qaById.get(item.id) || {};
     const difficulty = ["easy", "medium", "hard"].includes(String(qa.difficulty))
       ? qa.difficulty
@@ -452,6 +467,18 @@ Target distribution among valid items: ~30% easy, ~50% medium, ~20% hard.`;
       qa_notes: qa.qa_notes != null ? String(qa.qa_notes) : item.qa_notes,
     });
   }).filter(Boolean);
+
+  // [debug-enrich]
+  const statusCounts = {};
+  for (const item of out) {
+    const status = String(item?.qa_status || "missing");
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+  }
+  console.info("[cloze.pipeline.qaAndCalibrate] Done:", {
+    calibratedCount: out.length,
+    statusCounts,
+  });
+  return out;
 }
 
 /**
