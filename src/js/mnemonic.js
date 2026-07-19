@@ -648,7 +648,7 @@ export async function shouldShowMnemonicButton(screenId) {
   const id = String(screenId || "").trim();
   if (MNEMONIC_HIDDEN_SCREENS.has(id)) return false;
   if (!isMnemonicButtonVisiblePref()) return false;
-  return Boolean(await getActiveSession()?.docId);
+  return Boolean((await getActiveSession())?.docId);
 }
 
 export async function syncMnemonicButtonVisibility(screenId) {
