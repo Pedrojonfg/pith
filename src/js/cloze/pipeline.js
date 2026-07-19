@@ -279,6 +279,9 @@ Only include nodes with importance >= 3. Edge aptitude_score >= 3 for viable edg
   return analysis;
 }
 
+// Phase 2 base items: up to ~40 node+edge items × ~250 tokens/item + schema overhead → 12000 headroom
+const BASE_ITEMS_MAX_TOKENS = 12000;
+
 export async function generateBaseItems(text, analysis, { llmModel, signal } = {}) {
   // [debug-enrich]
   console.info("[cloze.pipeline.generateBaseItems] Start:", {
@@ -324,7 +327,13 @@ Return ONLY valid JSON:
 Use _____ as blank placeholder. Reject trivial blanks (articles, prepositions).`;
 
   const userPrompt = `Analysis:\n${JSON.stringify(analysis)}\n\nMaterial:\n${truncateForPrompt(text)}`;
-  const raw = await callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens: 12000, signal });
+  const raw = await callClozeJson({
+    llmModel,
+    systemPrompt,
+    userPrompt,
+    max_tokens: BASE_ITEMS_MAX_TOKENS,
+    signal,
+  });
   const parsed = parseModelJsonObject(raw);
   const nodeItems = (Array.isArray(parsed?.node_items) ? parsed.node_items : [])
     .map(normalizeClozeItem)
