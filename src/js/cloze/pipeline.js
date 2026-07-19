@@ -225,7 +225,17 @@ Rules:
   return graph;
 }
 
+// Phase 1 semantic analysis: up to ~50 node candidates × ~80 tokens + edge rows → 8192 headroom
+const SEMANTIC_ANALYSIS_MAX_TOKENS = 8192;
+
 export async function analyzeSemanticCandidates(text, epistemicGraph, { llmModel, signal } = {}) {
+  // [debug-enrich]
+  console.info("[cloze.pipeline.analyzeSemanticCandidates] Start:", {
+    textLen: String(text || "").length,
+    nodeCount: Array.isArray(epistemicGraph?.nodes) ? epistemicGraph.nodes.length : 0,
+    edgeCount: Array.isArray(epistemicGraph?.edges) ? epistemicGraph.edges.length : 0,
+    llmModel: llmModel || null,
+  });
   const systemPrompt = `Analyze semantic cloze candidates from text + epistemic graph.
 
 Return ONLY valid JSON:
@@ -252,9 +262,21 @@ Return ONLY valid JSON:
 Only include nodes with importance >= 3. Edge aptitude_score >= 3 for viable edges.`;
 
   const userPrompt = `Graph:\n${JSON.stringify(epistemicGraph)}\n\nMaterial:\n${truncateForPrompt(text)}`;
-  const raw = await callClozeJson({ llmModel, systemPrompt, userPrompt, signal });
+  const raw = await callClozeJson({
+    llmModel,
+    systemPrompt,
+    userPrompt,
+    max_tokens: SEMANTIC_ANALYSIS_MAX_TOKENS,
+    signal,
+  });
   const parsed = parseModelJsonObject(raw);
-  return normalizeSemanticAnalysis(parsed);
+  const analysis = normalizeSemanticAnalysis(parsed);
+  // [debug-enrich]
+  console.info("[cloze.pipeline.analyzeSemanticCandidates] Done:", {
+    nodeCandidates: analysis.node_candidates.length,
+    edgeCandidates: analysis.edge_candidates.length,
+  });
+  return analysis;
 }
 
 export async function generateBaseItems(text, analysis, { llmModel, signal } = {}) {
