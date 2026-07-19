@@ -458,7 +458,7 @@ export async function generateRecallQuestions({
   });
   // [debug-enrich]
   console.info("[recall-api.generateRecallQuestions] Done:", {
-    questionCount: Array.isArray(out?.questions) ? out.questions.length : 0,
+    questionCount: Array.isArray(out) ? out.length : 0,
     questionCountRequested: questionCount,
   });
   return out;
