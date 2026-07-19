@@ -1005,25 +1005,27 @@ export async function exportSessionMarkdown({ force = false, source = "button" }
 export function exportOfflinePack() {
   if (isOfflineMode()) return { ok: false, error: "offline" };
 
-  const session = resolveSessionSliceForOffline();
-  if (!session) {
-    return { ok: false, error: "no_session" };
-  }
+  return (async () => {
+    const session = await resolveSessionSliceForOffline();
+    if (!session) {
+      return { ok: false, error: "no_session" };
+    }
 
-  const withContent = (Array.isArray(session.blocks) ? session.blocks : []).filter(
-    hasGeneratedBlockContent,
-  );
-  if (!withContent.length) {
-    return { ok: false, error: "no_block_content" };
-  }
+    const withContent = (Array.isArray(session.blocks) ? session.blocks : []).filter(
+      hasGeneratedBlockContent,
+    );
+    if (!withContent.length) {
+      return { ok: false, error: "no_block_content" };
+    }
 
-  const md = buildOfflinePack(session, state.activeBlockIndex);
-  const ts = formatExportTimestamp(new Date());
-  const stem = getExportFilenameStem();
-  const downloaded = downloadTextFile({
-    filename: `${stem}_offline_${ts}.md`,
-    text: md,
-  });
-  return { ok: downloaded, error: downloaded ? undefined : "download_blocked" };
+    const md = buildOfflinePack(session, state.activeBlockIndex);
+    const ts = formatExportTimestamp(new Date());
+    const stem = getExportFilenameStem();
+    const downloaded = downloadTextFile({
+      filename: `${stem}_offline_${ts}.md`,
+      text: md,
+    });
+    return { ok: downloaded, error: downloaded ? undefined : "download_blocked" };
+  })();
 }
 

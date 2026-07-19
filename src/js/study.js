@@ -5936,7 +5936,7 @@ function showExportToast(message, { variant = "success", durationMs = 3000 } = {
 }
 
 async function handleOfflinePackClick() {
-  const result = exportOfflinePack();
+  const result = await exportOfflinePack();
   if (result.ok) {
     showExportToast("Offline pack downloaded");
     return;
