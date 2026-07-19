@@ -323,8 +323,11 @@ function saveButtonPos(x, y) {
 function clampPos(x, y, btn) {
   const w = btn?.offsetWidth || 44;
   const h = btn?.offsetHeight || 44;
-  const maxX = Math.max(8, window.innerWidth - w - 8);
-  const maxY = Math.max(8, window.innerHeight - h - 8);
+  const win = typeof window !== "undefined" ? window : null;
+  const vw = win?.innerWidth || 1024;
+  const vh = win?.innerHeight || 768;
+  const maxX = Math.max(8, vw - w - 8);
+  const maxY = Math.max(8, vh - h - 8);
   return {
     x: Math.min(Math.max(8, x), maxX),
     y: Math.min(Math.max(8, y), maxY),
@@ -333,9 +336,11 @@ function clampPos(x, y, btn) {
 
 function applyButtonPos(btn) {
   if (!btn) return;
+  const win = typeof window !== "undefined" ? window : null;
+  if (!win?.innerWidth) return;
   const stored = loadButtonPos();
-  const defaultX = window.innerWidth - 56;
-  const defaultY = window.innerHeight - 120;
+  const defaultX = win.innerWidth - 56;
+  const defaultY = win.innerHeight - 120;
   const { x, y } = clampPos(stored?.x ?? defaultX, stored?.y ?? defaultY, btn);
   btn.style.left = `${x}px`;
   btn.style.top = `${y}px`;
@@ -648,13 +653,15 @@ export async function shouldShowMnemonicButton(screenId) {
   const id = String(screenId || "").trim();
   if (MNEMONIC_HIDDEN_SCREENS.has(id)) return false;
   if (!isMnemonicButtonVisiblePref()) return false;
-  return Boolean(await getActiveSession()?.docId);
+  return Boolean((await getActiveSession())?.docId);
 }
 
 export async function syncMnemonicButtonVisibility(screenId) {
-  const btn = document.getElementById("mnemonicBtn");
+  const btn = typeof document !== "undefined" ? document.getElementById("mnemonicBtn") : null;
   if (!btn) return;
   const show = await shouldShowMnemonicButton(screenId ?? resolveScreenId?.() ?? "");
+  // DOM may have been torn down while awaiting (tests / rapid navigation).
+  if (!btn.isConnected) return;
   btn.hidden = !show;
   if (show) {
     applyButtonPos(btn);
@@ -691,7 +698,7 @@ export function initMnemonicChrome(deps = {}) {
     });
   }
   wirePanelHandlers();
-  syncMnemonicButtonVisibility();
+  void syncMnemonicButtonVisibility().catch(() => {});
 }
 
 /**
