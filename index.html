@@ -1498,7 +1498,7 @@
           </div>
         </section>
 
-        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope" hidden>
+        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
           <div class="card slow-card">
             <h1>Reading scope</h1>
             <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
@@ -1613,7 +1613,6 @@
           class="screen pack-concept-editor-screen"
           aria-hidden="true"
           aria-label="Edit pack concept graph"
-          hidden
         >
           <header class="pack-concept-editor-toolbar">
             <button type="button" id="packConceptEditorBackBtn" class="create-back-btn">← Library</button>
@@ -2024,7 +2023,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260719_06";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260721_01";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -2050,7 +2049,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260719_06");
+        await import("./src/js/main.js?v=20260721_01");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(
