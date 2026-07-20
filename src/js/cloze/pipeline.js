@@ -215,7 +215,7 @@ Rules:
   if (!graph) {
     // [debug-enrich]
     console.error("[cloze.pipeline.generateEpistemicGraph] Invalid graph JSON");
-    throw new Error("Fase 0: invalid epistemic graph JSON.");
+    throw new Error("Phase 0: invalid epistemic graph JSON.");
   }
   // [debug-enrich]
   console.info("[cloze.pipeline.generateEpistemicGraph] Done:", {
@@ -556,7 +556,9 @@ async function persistClozeItemsToShared(docId, items) {
           sourceId: String(item.id),
           docId,
           title: String(item.blank_text || item.stem || "").trim(),
-          contentPreview: String(item.correct_answer || item.answer || "").trim(),
+          contentPreview: String(
+            item.correct_answer || item.answer || item.blank_text || "",
+          ).trim(),
         }),
       );
     } catch (err) {
@@ -611,7 +613,7 @@ export async function runClozePipelinePhases(text, session, handlers = {}) {
   onPhase(4, "phase4", { epistemicGraph, analysis, items });
 
   if (doc?.docId) {
-    persistClozeItemsToShared(doc.docId, items);
+    await persistClozeItemsToShared(doc.docId, items);
   }
 
   const validItems = getValidItems(items);
