@@ -309,7 +309,7 @@ import {
   syncPhase0ConceptsToShared,
 } from "./slow/phase0.js?v=20260625_02";
 import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260625_02";
-import { initPhase3Screen } from "./slow/phase3.js?v=20260625_02";
+import { clearPhase3ScreenContent, initPhase3Screen } from "./slow/phase3.js?v=20260625_02";
 import { computeDepthScore } from "./slow/gamification.js?v=20260625_02";
 import {
   buildGraphSubgraphMarkdown,
@@ -9765,6 +9765,8 @@ async function wireSlowPhase3Handlers() {
     if (!session?.slow) return;
     session.slow.phase = "phase1";
     await storeActiveSession(session);
+    // End this Phase 3 visit so Complete regenerates; graph round-trips keep DOM.
+    clearPhase3ScreenContent();
     initSlowReader(session);
     showScreen("slowReader");
   });
@@ -9778,10 +9780,13 @@ async function wireSlowPhase3Handlers() {
     session.slow.phase = "complete";
     session.slow.graphEnrichedUnlocked = true;
     await storeActiveSession(session);
+    clearPhase3ScreenContent();
     void exportSessionMarkdown();
     enterRetrievalHub({ entrySource: "exposure_complete" });
   });
 
+  // Sole Phase 3 init path: Complete, resume (navigateSlowByPhase), and graph return
+  // all flip aria-hidden via showScreen — initPhase3Screen guards against re-generation.
   const observer = new MutationObserver(async () => {
     if (els.screenSlowPhase3?.getAttribute("aria-hidden") === "false") {
       const session = state.activeSession;

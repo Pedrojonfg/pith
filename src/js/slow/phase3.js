@@ -621,7 +621,8 @@ export async function wirePhase3FlashcardConvert(hostEl, session) {
   };
 
   panel.querySelectorAll("[data-convert-flashcard]").forEach((btn) => {
-    if (btn.disabled) return;
+    if (btn.disabled || btn.dataset.phase3Wired === "1") return;
+    btn.dataset.phase3Wired = "1";
     btn.addEventListener("click", async () => {
       const annId = String(btn.dataset.annotationId || "").trim();
       const ann = (session.slow.annotations || []).find((a) => a.id === annId);
@@ -742,6 +743,22 @@ export function renderPhase3ModulePicker(session, pickerEl, { onChange } = {}) {
   return selected;
 }
 
+function phase3ModuleSelector(moduleId) {
+  return `.slow-phase3-module-${String(moduleId || "").toLowerCase()}`;
+}
+
+function appendPhase3SectionHtml(hostEl, html) {
+  const wrap = document.createElement("div");
+  wrap.innerHTML = String(html || "").trim();
+  const node = wrap.firstElementChild;
+  if (node) hostEl.appendChild(node);
+}
+
+/**
+ * Re-render selected Phase 3 modules. Modules already present in the host and
+ * still selected are reused in place (no LLM re-call; Module B textareas kept).
+ * Only missing selected modules are generated fresh.
+ */
 export async function renderPhase3Modules(session, hostEl, moduleIds) {
   if (!hostEl || !session?.slow) return;
   const scopeText = getScopeText(session);
@@ -749,48 +766,79 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
   const es = isSpanishLang(lang);
   const breakpoints = session.slow.breakpoints || [];
   const selected = normalizePhase3Selection(session, moduleIds);
-  const sections = [];
 
-  if (selected.includes("A")) {
-    const moduleA = comparePhase0ToAnnotations(
-      session.slow.phase0,
-      session.slow.annotations,
-      scopeText,
-    );
-    const def = PHASE3_MODULE_DEFS.find((m) => m.id === "A");
-    sections.push(`<section class="slow-phase3-module slow-phase3-module-a">
+  /** @type {Map<string, Element>} */
+  const reused = new Map();
+  for (const id of selected) {
+    const existing = hostEl.querySelector(phase3ModuleSelector(id));
+    if (existing) reused.set(id, existing);
+  }
+  // Detach keepers before clearing so nodes (and Module B answers) survive.
+  for (const node of reused.values()) node.remove();
+
+  hostEl.replaceChildren();
+
+  if (!selected.length) {
+    hostEl.innerHTML = `<p class="hint">${escapeHtml(
+      es ? "Selecciona al menos un módulo arriba." : "Select at least one module above.",
+    )}</p>`;
+    return;
+  }
+
+  for (const id of selected) {
+    if (reused.has(id)) {
+      hostEl.appendChild(reused.get(id));
+      continue;
+    }
+
+    if (id === "A") {
+      const moduleA = comparePhase0ToAnnotations(
+        session.slow.phase0,
+        session.slow.annotations,
+        scopeText,
+      );
+      const def = PHASE3_MODULE_DEFS.find((m) => m.id === "A");
+      appendPhase3SectionHtml(
+        hostEl,
+        `<section class="slow-phase3-module slow-phase3-module-a">
       <h2>${escapeHtml(def?.title || "A")}</h2>
       <p class="hint">${escapeHtml(es ? "Comparación amable — oportunidades de revisión, no calificación." : "Gentle comparison — review opportunities, not grading.")}</p>
       ${renderPhase3ModuleA(moduleA, session, { lang, breakpoints })}
-    </section>`);
-  }
+    </section>`,
+      );
+      continue;
+    }
 
-  if (selected.includes("B")) {
-    const shells = await generateRetrievalByType(session, session.slow.annotations);
-    const devilsAdvocate = session.slow.criticalMode
-      ? await generateDevilsAdvocateQuestions(session, session.slow.annotations)
-      : [];
-    const sessionId =
-      getActiveReviewSessionId() || String(session?._meta?.session_id || "").trim();
-    const flashcardPanel = renderPhase3FlashcardPanel(session, lang, sessionId);
-    const def = PHASE3_MODULE_DEFS.find((m) => m.id === "B");
-    sections.push(`<section class="slow-phase3-module slow-phase3-module-b">
+    if (id === "B") {
+      const shells = await generateRetrievalByType(session, session.slow.annotations);
+      const devilsAdvocate = session.slow.criticalMode
+        ? await generateDevilsAdvocateQuestions(session, session.slow.annotations)
+        : [];
+      const sessionId =
+        getActiveReviewSessionId() || String(session?._meta?.session_id || "").trim();
+      const flashcardPanel = renderPhase3FlashcardPanel(session, lang, sessionId);
+      const def = PHASE3_MODULE_DEFS.find((m) => m.id === "B");
+      appendPhase3SectionHtml(
+        hostEl,
+        `<section class="slow-phase3-module slow-phase3-module-b">
       <h2>${escapeHtml(def?.title || "B")}</h2>
       ${renderPhase3ModuleB(shells, lang, { devilsAdvocate, flashcardPanelHtml: flashcardPanel })}
-    </section>`);
-  }
+    </section>`,
+      );
+      continue;
+    }
 
-  if (selected.includes("C")) {
-    const def = PHASE3_MODULE_DEFS.find((m) => m.id === "C");
-    sections.push(`<section class="slow-phase3-module slow-phase3-module-c">
+    if (id === "C") {
+      const def = PHASE3_MODULE_DEFS.find((m) => m.id === "C");
+      appendPhase3SectionHtml(
+        hostEl,
+        `<section class="slow-phase3-module slow-phase3-module-c">
       <h2>${escapeHtml(def?.title || "C")}</h2>
       ${renderPhase3ModuleC(session, lang)}
-    </section>`);
+    </section>`,
+      );
+    }
   }
-
-  hostEl.innerHTML =
-    sections.join("") ||
-    `<p class="hint">${escapeHtml(es ? "Selecciona al menos un módulo arriba." : "Select at least one module above.")}</p>`;
 }
 
 export async function generateRetrievalQuestions(session, annotations) {
@@ -813,37 +861,63 @@ export async function generateRetrievalQuestions(session, annotations) {
   }
 }
 
+/** In-flight init — prevents concurrent double LLM on overlapping reveals. */
+let phase3InitInFlight = null;
+
 export async function initPhase3Screen(session, hostEl, pickerEl, scoreEl) {
   if (!session?.slow) return;
-  const contentEl =
-    hostEl ||
-    (typeof document !== "undefined" ? document.getElementById("slowPhase3Content") : null);
-  const modulesEl =
-    pickerEl ||
-    (typeof document !== "undefined" ? document.getElementById("slowPhase3Modules") : null);
-  const gamificationEl =
-    scoreEl ||
-    (typeof document !== "undefined" ? document.getElementById("slowPhase3Score") : null);
-  const lang = getStudyLanguage() || "English";
+  if (phase3InitInFlight) return phase3InitInFlight;
 
-  if (gamificationEl) {
-    gamificationEl.innerHTML = renderPhase3GamificationPanel(session, lang);
+  phase3InitInFlight = (async () => {
+    const contentEl =
+      hostEl ||
+      (typeof document !== "undefined" ? document.getElementById("slowPhase3Content") : null);
+    const modulesEl =
+      pickerEl ||
+      (typeof document !== "undefined" ? document.getElementById("slowPhase3Modules") : null);
+    const gamificationEl =
+      scoreEl ||
+      (typeof document !== "undefined" ? document.getElementById("slowPhase3Score") : null);
+    const lang = getStudyLanguage() || "English";
+
+    if (gamificationEl) {
+      gamificationEl.innerHTML = renderPhase3GamificationPanel(session, lang);
+    }
+
+    const selected = renderPhase3ModulePicker(session, modulesEl, {
+      onChange: (ids) => {
+        void renderPhase3Modules(session, contentEl, ids).then(() => {
+          wirePhase3FlashcardConvert(contentEl, session);
+        });
+      },
+    });
+
+    // Re-showing Phase 3 (graph round-trip, resume, aria-hidden flip) must not
+    // wipe DOM-only Module B answers or re-call the retrieval LLM.
+    const alreadyRendered = Boolean(contentEl?.querySelector(".slow-phase3-module"));
+    if (!alreadyRendered) {
+      await renderPhase3Modules(session, contentEl, selected);
+      wirePhase3FlashcardConvert(contentEl, session);
+    }
+
+    const graphActionsEl =
+      typeof document !== "undefined" ? document.getElementById("slowPhase3GraphActions") : null;
+    if (graphActionsEl) {
+      graphActionsEl.hidden = false;
+      graphActionsEl.innerHTML = renderGraphUnlockButtonHtml(lang);
+    }
+  })();
+
+  try {
+    await phase3InitInFlight;
+  } finally {
+    phase3InitInFlight = null;
   }
+}
 
-  const selected = renderPhase3ModulePicker(session, modulesEl, {
-    onChange: (ids) => {
-      void renderPhase3Modules(session, contentEl, ids).then(() => {
-        wirePhase3FlashcardConvert(contentEl, session);
-      });
-    },
-  });
-  await renderPhase3Modules(session, contentEl, selected);
-  wirePhase3FlashcardConvert(contentEl, session);
-
-  const graphActionsEl =
-    typeof document !== "undefined" ? document.getElementById("slowPhase3GraphActions") : null;
-  if (graphActionsEl) {
-    graphActionsEl.hidden = false;
-    graphActionsEl.innerHTML = renderGraphUnlockButtonHtml(lang);
-  }
+/** Clear Phase 3 module DOM so the next visit regenerates (e.g. after Back). */
+export function clearPhase3ScreenContent() {
+  if (typeof document === "undefined") return;
+  const contentEl = document.getElementById("slowPhase3Content");
+  if (contentEl) contentEl.replaceChildren();
 }

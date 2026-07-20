@@ -32,7 +32,6 @@ import {
   updateAnnotation,
 } from "./annotations.js?v=20260625_02";
 import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260625_02";
-import { initPhase3Screen } from "./phase3.js?v=20260625_02";
 import {
   charOffsetToPage,
   closestPageAfterRecompute,
@@ -1481,12 +1480,9 @@ export async function initSlowReader(session) {
     hideCheckpointChip();
     s.slow.phase = "phase3";
     await storeActiveSession(s);
+    // Phase 3 init is owned by the MutationObserver in study.js (sole path for
+    // Complete, resume, and graph return). Do not call initPhase3Screen here.
     showScreen("slowPhase3");
-    void initPhase3Screen(
-      s,
-      document.getElementById("slowPhase3Content"),
-      document.getElementById("slowPhase3Modules"),
-    );
   });
 
   els.slowReaderPage?.addEventListener("mouseup", () => {
