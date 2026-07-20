@@ -8514,7 +8514,10 @@ export async function openVaultGraphScreen({ topicFilter = "all" } = {}) {
   if ((vault.entries || []).length < VAULT_GRAPH_MIN_ENTRIES) return;
 
   materialGraphSource = "vault";
-  materialGraphBackScreen = getCurrentScreenId() || "modeSelect";
+  // Topic-picker re-entry calls this while already on slowGraph; keep the real origin.
+  if (getCurrentScreenId() !== "slowGraph") {
+    materialGraphBackScreen = getCurrentScreenId() || "modeSelect";
+  }
   resetVaultGraphChrome();
   layout?.classList.add("vault-graph-active");
   const exportBtn = document.getElementById("slowGraphExportBtn");
