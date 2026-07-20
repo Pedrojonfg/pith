@@ -210,7 +210,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
     failedConcepts,
     sectionEmbedCalls,
     qualityCounts,
-    note: "Not registered in PHASE_RUNNERS — unreachable from DPP unless called directly",
+    note: "DPP phase T1.2b",
   });
   return { anchored, failed: false };
 }

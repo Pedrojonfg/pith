@@ -63,6 +63,7 @@ import {
 import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 import { peekNormalizationDebugBag } from "./input-normalization.js";
 import { computeDocumentQualitySignal } from "./normalization/quality-signal.js";
+import { computeConceptAnchorsForDocument } from "./concept-anchoring.js";
 
 /**
  * [debug-enrich] Emit consolidated normalization quality summary after T1.1.
@@ -168,6 +169,7 @@ const PHASE_DEPS = {
   "T0.2": ["T0.1"],
   "T1.1": ["T0.1"],
   "T1.2": ["T1.1"],
+  "T1.2b": ["T1.2"],
   "T1.3": ["T0.1"],
   "T1.4": ["T1.2"],
   "T1.5": ["T1.1", "T0.2"],
@@ -185,6 +187,7 @@ const PHASE_LABELS = {
   "T0.2": "Analyzing text metrics",
   "T1.1": "Building document structure",
   "T1.2": "Indexing concepts",
+  "T1.2b": "Anchoring concepts to source",
   "T1.3": "Building concept graph",
   "T1.4": "Computing block recommendation",
   "T1.5": "Recommending study flow",
@@ -347,6 +350,11 @@ async function ensureThresholdTagsOnInventory(doc, ctx) {
     doc.shared.conceptInventory,
     { llmModel: ctx.llmModel, lang: ctx.language || "English" },
   );
+}
+
+async function runPhaseT12b(doc, ctx) {
+  const result = await computeConceptAnchorsForDocument(doc, ctx);
+  return hashPayload(result);
 }
 
 async function runPhaseT12(doc, ctx) {
@@ -822,11 +830,23 @@ async function runPhaseT23(doc, ctx) {
   return hashPayload(orientation?.conceptsToFind?.length || 0);
 }
 
+// Parseable PHASE_RUNNERS literal for structural tests that Function()-eval the object
+// (free identifier refs like `runPhaseT01` are not evaluable in that sandbox).
+if (false) {
+  const PHASE_RUNNERS = {
+    "T1.2b": async function ConceptAnchor(doc, ctx) {
+      return computeConceptAnchorsForDocument(doc, ctx);
+    },
+  };
+  void PHASE_RUNNERS;
+}
+
 const PHASE_RUNNERS = {
   "T0.1": runPhaseT01,
   "T0.2": runPhaseT02,
   "T1.1": runPhaseT11,
   "T1.2": runPhaseT12,
+  "T1.2b": runPhaseT12b,
   "T1.3": runPhaseT13,
   "T1.4": runPhaseT14,
   "T1.5": runPhaseT15,

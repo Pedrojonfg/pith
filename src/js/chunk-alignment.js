@@ -1126,3 +1126,114 @@ export function assignAlignedChunks(materialText, blockIndex, inventory, opts = 
 }
 
 
+
+/** Default window size (words) for per-concept source anchors. */
+export const DEFAULT_CONCEPT_TARGET_WORDS = 80;
+
+/**
+ * Collect deterministic search terms for a concept (title/label tokens + source phrase).
+ * @param {object} concept
+ * @returns {string[]}
+ */
+function collectConceptSearchTerms(concept) {
+  const terms = new Set();
+  const title = String(concept?.title || concept?.label || "").trim();
+  for (const t of tokenizeSignificant(title, 3)) terms.add(t);
+  const phrase = String(concept?.source_phrase || "").trim();
+  if (phrase) terms.add(`__phrase__:${phrase}`);
+  return [...terms];
+}
+
+/**
+ * Find a term-match anchor for one concept in material text.
+ * @param {object} concept
+ * @param {string} materialText
+ * @param {{ targetWords?: number, textOffset?: number, conceptOrder?: number, inventoryLength?: number }} [opts]
+ * @returns {{ quality: string, range: { charStart: number, charEnd: number } | null, matchedTerms: string[] }}
+ */
+export function findDeterministicAnchorForConcept(concept, materialText, opts = {}) {
+  const textOffset = Math.max(0, Math.floor(Number(opts.textOffset) || 0));
+  const targetWords = Math.max(1, Math.floor(Number(opts.targetWords) || DEFAULT_CONCEPT_TARGET_WORDS));
+  const raw = String(materialText || "");
+  const leadingTrim = raw.length - raw.trimStart().length;
+  const { words, text } = wordsWithOffsets(raw);
+  if (!words.length) {
+    return { quality: "proportional_fallback", range: null, matchedTerms: [] };
+  }
+
+  const terms = collectConceptSearchTerms(concept);
+  if (!terms.length) {
+    return { quality: "proportional_fallback", range: null, matchedTerms: [] };
+  }
+
+  const totalWords = words.length;
+  const step = Math.max(1, Math.floor(targetWords / 4));
+  let bestHits = 0;
+  let bestMatched = [];
+  let bestStart = 0;
+
+  for (let wStart = 0; wStart < totalWords; wStart += step) {
+    const wEnd = Math.min(totalWords, wStart + targetWords);
+    const windowText = sliceByWordRange(text, wStart, wEnd, words);
+    const { hits, matched } = countTermHits(windowText, terms);
+    if (hits > bestHits) {
+      bestHits = hits;
+      bestMatched = matched;
+      bestStart = wStart;
+    }
+  }
+
+  if (bestHits <= 0) {
+    return { quality: "proportional_fallback", range: null, matchedTerms: [] };
+  }
+
+  const wEnd = Math.min(totalWords, bestStart + targetWords);
+  const charStart = words[bestStart].start + leadingTrim + textOffset;
+  const charEnd = words[wEnd - 1].end + leadingTrim + textOffset;
+  const phraseBonus = terms.some((t) => t.startsWith("__phrase__:")) && bestHits >= 2;
+  const quality =
+    bestHits >= 2 || phraseBonus ? "strong" : bestHits === 1 ? "weak" : "proportional_fallback";
+
+  return {
+    quality,
+    range: { charStart, charEnd },
+    matchedTerms: bestMatched.slice(0, 12),
+  };
+}
+
+/**
+ * Place a concept proportionally by inventory order when term match fails.
+ * @param {object} concept
+ * @param {object[]} inventory
+ * @param {string} materialText
+ * @param {{ targetWords?: number }} [opts]
+ * @returns {{ range: { charStart: number, charEnd: number } | null }}
+ */
+export function proportionalAnchorForConcept(concept, inventory, materialText, opts = {}) {
+  const targetWords = Math.max(1, Math.floor(Number(opts.targetWords) || DEFAULT_CONCEPT_TARGET_WORDS));
+  const inv = Array.isArray(inventory) ? inventory : [];
+  const raw = String(materialText || "");
+  const leadingTrim = raw.length - raw.trimStart().length;
+  const { words } = wordsWithOffsets(raw);
+  if (!words.length) return { range: null };
+
+  const totalWords = words.length;
+  let index = inv.findIndex((c) => c === concept || (c?.id != null && c.id === concept?.id));
+  if (index < 0) {
+    const order = Number(concept?.order);
+    if (Number.isFinite(order) && order >= 1) {
+      index = Math.max(0, Math.min(Math.max(inv.length, 1) - 1, Math.floor(order) - 1));
+    } else {
+      index = 0;
+    }
+  }
+  const blockCount = Math.max(1, inv.length || 1);
+  const { wStart, wEnd } = proportionalWordRange(index, blockCount, totalWords, targetWords);
+  const safeEnd = Math.max(wStart + 1, Math.min(wEnd, words.length));
+  return {
+    range: {
+      charStart: words[wStart].start + leadingTrim,
+      charEnd: words[safeEnd - 1].end + leadingTrim,
+    },
+  };
+}
