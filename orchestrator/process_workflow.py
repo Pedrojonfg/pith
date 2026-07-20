@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -69,12 +71,26 @@ def collect_rubric_context(process_id: str, fixtures_root: Path) -> str:
 
 
 def build_test_prompt(row: dict[str, Any], risk: str, rubric_context: str = "") -> str:
+    process_id = row.get("id", "UNKNOWN")
+    canonical_path = f"cursor-tests/loop-engineering/{process_id}.mjs"
     prompt = (
         "Write ONLY a Node test file for this process. Do not modify source.\n"
         f"Process row: {row}\n"
         f"static_risk_assessment: {risk}\n"
         "Use structural/exact fixtures for deterministic risk; property checks for fragile/LLM.\n"
-        "English only."
+        "English only.\n"
+        "\n"
+        "=== MANDATORY FILE LOCATION — NON-NEGOTIABLE ===\n"
+        f"You MUST create or overwrite the file at exactly this path: {canonical_path}\n"
+        "This is the only acceptable output location. Do NOT write to any other path.\n"
+        "Do NOT search the repo for existing test files and reuse them. Any test file that\n"
+        "already exists elsewhere in the repo under any other name or path is irrelevant and\n"
+        "is NOT a substitute for writing to the canonical path above.\n"
+        "Do NOT report success, claim a test 'already exists', or describe a passing test\n"
+        "unless you have yourself just written or confirmed the content of that exact file.\n"
+        "If a similar test happens to exist somewhere else, ignore it entirely — it does not\n"
+        "count. You must still write to the canonical path.\n"
+        "=== END MANDATORY FILE LOCATION ==="
     )
     if rubric_context:
         prompt += "\n" + rubric_context
@@ -102,6 +118,34 @@ def build_fix_prompt(row: dict[str, Any], test_contents: str, prior_failure: str
         f"PRIOR FAILURE (truncated):\n{prior}\n"
         "English only."
     )
+
+
+def canonical_test_file_was_written(test_path: Path, root: Path, mtime_floor: float) -> bool:
+    """
+    Return True iff the canonical test file exists AND was written after mtime_floor.
+
+    mtime_floor should be set to time.time() immediately before the test-agent call.
+    Using both an mtime check and a git-status check so that either alone is sufficient:
+    - mtime: works for brand-new files (untracked) and modified tracked files.
+    - git status: confirms the file appears in git's working-tree diff (new or modified).
+    """
+    if not test_path.is_file():
+        return False
+    # mtime check — file must have been touched after the agent was invoked
+    if test_path.stat().st_mtime > mtime_floor:
+        return True
+    # git-status fallback: file is tracked and shows as modified/added
+    try:
+        r = subprocess.run(
+            ["git", "status", "--porcelain", str(test_path.relative_to(root))],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return bool(r.stdout.strip())
+    except Exception:
+        return False
 
 
 def run_log_path(root: Path, process_id: str) -> Path:
@@ -182,6 +226,7 @@ def run_process_unit(
     last_detail = ""
     test_ok = False
     for attempts in range(1, max_attempts + 1):
+        mtime_floor = time.time()
         tres = runner.run_with_fallback(
             models=list(cfg.get("test_agent_models") or ["composer-2.5"]),
             prompt=test_prompt,
@@ -197,6 +242,17 @@ def run_process_unit(
             last_detail = truncate_block_detail(
                 combine_agent_output(tres) or ("allowlist violation" if tres.allowlist_violation else "test_agent_failed")
             )
+            continue
+        # Canonical file check: agent self-report is not trusted.
+        # The file MUST exist at the exact canonical path and must have been written
+        # during this attempt (mtime or git-status confirms it).
+        if not canonical_test_file_was_written(test_path, root, mtime_floor):
+            missing_msg = (
+                f"canonical test file not written: expected {rel_test} "
+                f"(agent reported success but file missing or unmodified)"
+            )
+            append_run_log(root, process_id, agent="test-agent", attempt=attempts, result=tres)
+            last_detail = truncate_block_detail(missing_msg)
             continue
         test_ok = True
         break

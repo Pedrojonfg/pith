@@ -4,6 +4,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +15,8 @@ from orchestrator.git_ops import GitOps
 from orchestrator.process_workflow import (
     append_run_log,
     build_fix_prompt,
+    build_test_prompt,
+    canonical_test_file_was_written,
     run_log_path,
     run_process_unit,
     truncate_block_detail,
@@ -206,10 +209,157 @@ def test_fix_agent_failures_append_run_log():
         assert "Say if you want these committed" in log
 
 
+def test_build_test_prompt_canonical_path_instruction():
+    """build_test_prompt must embed the exact canonical path and forbid substitution."""
+    row = {"id": "my-process", "static_risk_assessment": "likely-fine"}
+    prompt = build_test_prompt(row, "likely-fine")
+    canonical = "cursor-tests/loop-engineering/my-process.mjs"
+    assert canonical in prompt, "canonical path must appear verbatim in the prompt"
+    lower = prompt.lower()
+    assert "mandatory" in lower or "non-negotiable" in lower
+    assert "irrelevant" in lower or "not a substitute" in lower
+    assert "do not report success" in lower or "do not report" in lower or "not report success" in lower
+    assert "already exists" in lower
+
+
+def test_canonical_test_file_was_written_missing():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        test_path = root / "cursor-tests" / "loop-engineering" / "proc.mjs"
+        # File doesn't exist at all
+        assert not canonical_test_file_was_written(test_path, root, time.time() - 1)
+
+
+def test_canonical_test_file_was_written_new_file():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        test_path = root / "cursor-tests" / "loop-engineering" / "proc.mjs"
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        floor = time.time() - 0.01  # floor set just before write
+        test_path.write_text("// test\n", encoding="utf-8")
+        assert canonical_test_file_was_written(test_path, root, floor)
+
+
+def test_canonical_test_file_was_written_old_file_not_counted():
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True, capture_output=True)
+        test_path = root / "cursor-tests" / "loop-engineering" / "proc.mjs"
+        test_path.parent.mkdir(parents=True, exist_ok=True)
+        test_path.write_text("// old\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add old test"], cwd=root, check=True, capture_output=True)
+        # mtime_floor is now AFTER the file was committed/written
+        floor = time.time() + 1
+        # File exists but mtime is before floor; git status shows clean → should be False
+        assert not canonical_test_file_was_written(test_path, root, floor)
+
+
+def test_test_agent_blocks_when_canonical_file_not_written():
+    """
+    If the test-agent reports ok=True but does NOT write the canonical file,
+    the orchestrator must treat it as a failed attempt (not success).
+    """
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        git = _init_repo(d)
+        calls = {"n": 0}
+
+        def agent_reports_ok_but_writes_nothing(**kwargs):
+            calls["n"] += 1
+            # Agent says it succeeded, but writes no file anywhere.
+            return AgentResult(ok=True, model_used="m1", stdout="test file already exists and passes")
+
+        runner = AgentRunner(
+            agent_bin="agent",
+            command_template="x",
+            timeout_seconds=1,
+            exhaustion_matchers=[],
+            allowlist_prefix="cursor-tests/loop-engineering/",
+            dry_run=False,
+            run_fn=agent_reports_ok_but_writes_nothing,
+        )
+        result = run_process_unit(
+            process_id="ghost-proc",
+            row={"id": "ghost-proc", "static_risk_assessment": "likely-fine"},
+            files_involved=["src/js/x.js"],
+            root=d,
+            runner=runner,
+            git=git,
+            cfg={
+                "max_fix_attempts": 2,
+                "test_agent_models": ["m1"],
+                "fix_agent_models": ["m1"],
+                "tier3_process_ids": [],
+            },
+            run_suite=lambda: True,
+        )
+        assert result["status"] == "blocked"
+        assert result["block_reason"] == "test_agent_failed"
+        assert calls["n"] == 2  # retried all allowed attempts
+        assert "canonical" in (result.get("block_detail") or "").lower()
+        # Canonical file must NOT exist (agent never wrote it)
+        assert not (d / "cursor-tests" / "loop-engineering" / "ghost-proc.mjs").exists()
+
+
+def test_test_agent_succeeds_only_when_canonical_file_written():
+    """
+    test-agent is accepted when it actually writes the canonical file.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        git = _init_repo(d)
+
+        def agent_writes_canonical(**kwargs):
+            if kwargs.get("mode") == "test":
+                test_dir = d / "cursor-tests" / "loop-engineering"
+                test_dir.mkdir(parents=True, exist_ok=True)
+                (test_dir / "real-proc.mjs").write_text(
+                    "process.exit(0);\n", encoding="utf-8"
+                )
+                return AgentResult(ok=True, model_used="m1", stdout="wrote test")
+            return AgentResult(ok=True, model_used="m1", stdout="fix ok")
+
+        runner = AgentRunner(
+            agent_bin="agent",
+            command_template="x",
+            timeout_seconds=1,
+            exhaustion_matchers=[],
+            allowlist_prefix="cursor-tests/loop-engineering/",
+            dry_run=False,
+            run_fn=agent_writes_canonical,
+        )
+        result = run_process_unit(
+            process_id="real-proc",
+            row={"id": "real-proc", "static_risk_assessment": "likely-fine"},
+            files_involved=["src/js/x.js"],
+            root=d,
+            runner=runner,
+            git=git,
+            cfg={
+                "max_fix_attempts": 3,
+                "test_agent_models": ["m1"],
+                "fix_agent_models": ["m1"],
+                "tier3_process_ids": [],
+            },
+            run_suite=lambda: True,
+        )
+        # process.exit(0) passes tier-1; non-LLM process → merged
+        assert result["status"] == "merged"
+
+
 if __name__ == "__main__":
     test_truncate_block_detail()
     test_build_fix_prompt_headless_unattended()
     test_append_run_log_per_process()
     test_test_agent_retries_then_blocks_with_detail_and_wip()
     test_fix_agent_failures_append_run_log()
+    test_build_test_prompt_canonical_path_instruction()
+    test_canonical_test_file_was_written_missing()
+    test_canonical_test_file_was_written_new_file()
+    test_canonical_test_file_was_written_old_file_not_counted()
+    test_test_agent_blocks_when_canonical_file_not_written()
+    test_test_agent_succeeds_only_when_canonical_file_written()
     print("process_workflow OK")
