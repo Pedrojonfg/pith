@@ -522,7 +522,7 @@ export function epistemicGraphFromShared(shared) {
 }
 
 /** Phase-0 skip/reuse: only the cloze slice and `doc.shared` of the same DocumentSession. */
-function shouldSkipClozePhase0(session, doc) {
+export function shouldSkipClozePhase0(session, doc) {
   const retrySkip = Boolean(
     session?.cloze?.epistemicGraph?.nodes?.length &&
       String(session?.cloze?.pipelineStatus || "") === "failed",
