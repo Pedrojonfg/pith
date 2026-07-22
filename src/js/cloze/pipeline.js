@@ -496,26 +496,29 @@ Target distribution among valid items: ~30% easy, ~50% medium, ~20% hard.`;
  */
 export function epistemicGraphFromShared(shared) {
   const concepts = Array.isArray(shared?.conceptInventory) ? shared.conceptInventory : [];
-  const nodes = concepts.map((c, i) => {
-    const id = String(c?.canonicalId || `shared_${i + 1}`).trim();
-    const text = String(c?.label || "").trim();
-    if (!id || !text) return null;
-    const imp = Number(c?.importance);
-    const importance =
-      Number.isFinite(imp) && imp >= 1 && imp <= 5
-        ? Math.round(imp)
-        : Number.isFinite(imp) && imp <= 1
-          ? Math.max(1, Math.min(5, Math.round(imp * 5)))
-          : 3;
-    return {
-      id,
-      text,
-      type: "CONCEPT",
-      importance,
-      semantic_cluster: "shared",
-    };
-  }).filter(Boolean);
-  return normalizeEpistemicGraph({ nodes, edges: [] }) || { nodes: [], edges: [] };
+  const nodes = concepts
+    .map((c, i) => {
+      const id = String(c?.canonicalId || c?.id || `shared_${i + 1}`).trim();
+      const text = String(c?.text || c?.label || c?.title || "").trim();
+      if (!id || !text) return null;
+      const imp = Number(c?.importance);
+      const importance =
+        Number.isFinite(imp) && imp >= 1 && imp <= 5
+          ? Math.round(imp)
+          : Number.isFinite(imp) && imp <= 1
+            ? Math.max(1, Math.min(5, Math.round(imp * 5)))
+            : 3;
+      return {
+        id,
+        text,
+        type: "CONCEPT",
+        importance,
+        semantic_cluster: "shared",
+      };
+    })
+    .filter(Boolean);
+  const edges = Array.isArray(shared?.conceptGraph?.edges) ? shared.conceptGraph.edges : [];
+  return normalizeEpistemicGraph({ nodes, edges }) || { nodes: [], edges: [] };
 }
 
 /** Phase-0 skip/reuse: only the cloze slice and `doc.shared` of the same DocumentSession. */
@@ -532,6 +535,11 @@ function shouldSkipClozePhase0(session, doc) {
 
   // Same-doc conceptGraph only — never looks up another docId.
   if (doc?.shared?.conceptGraph?.nodes?.length) {
+    return { skip: true, fromShared: true };
+  }
+
+  // Inventory alone is enough — never regenerate a second concept set (unified graph)
+  if ((doc?.shared?.conceptInventory?.length ?? 0) > 0) {
     return { skip: true, fromShared: true };
   }
 

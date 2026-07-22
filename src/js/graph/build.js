@@ -473,14 +473,19 @@ function clozeNodeId(epistemicId) {
 export function buildClozeEpistemicGraph(session, options = {}) {
   const shared = options.shared ?? session?.shared ?? null;
   let epistemicGraph = session?.cloze?.epistemicGraph;
+  if (!epistemicGraph?.nodes?.length && shared?.conceptGraph?.nodes?.length) {
+    epistemicGraph = shared.conceptGraph;
+  }
   if ((!epistemicGraph || !epistemicGraph.nodes?.length) && shared?.conceptInventory?.length) {
-    const nodes = shared.conceptInventory.map((c, i) => ({
-      id: String(c.canonicalId || `shared_${i + 1}`),
-      text: String(c.label || "").trim(),
-      type: "CONCEPT",
-      importance: 3,
-    })).filter((n) => n.id && n.text);
-    epistemicGraph = { nodes, edges: [] };
+    const nodes = shared.conceptInventory
+      .map((c, i) => ({
+        id: String(c.canonicalId || c.id || `shared_${i + 1}`),
+        text: String(c.text || c.label || c.title || "").trim(),
+        type: "CONCEPT",
+        importance: 3,
+      }))
+      .filter((n) => n.id && n.text);
+    epistemicGraph = { nodes, edges: shared?.conceptGraph?.edges || [] };
   }
   if (!epistemicGraph || typeof epistemicGraph !== "object") {
     return { nodes: [], edges: [], kind: "cloze" };
@@ -492,7 +497,8 @@ export function buildClozeEpistemicGraph(session, options = {}) {
 
   for (const node of rawNodes) {
     const id = String(node?.id || "").trim();
-    const text = String(node?.text || "").trim();
+    // ponytail: unified inventory may use title/label instead of legacy text
+    const text = String(node?.text || node?.label || node?.title || "").trim();
     if (!id || !text) continue;
     const canvasNode = {
       id: clozeNodeId(id),
@@ -504,7 +510,7 @@ export function buildClozeEpistemicGraph(session, options = {}) {
     if (Number.isFinite(importance) && importance >= 1 && importance <= 5) {
       canvasNode.importance = importance;
     }
-    const nodeType = String(node?.type || "").trim();
+    const nodeType = String(node?.type || node?.nodeType || "").trim();
     if (nodeType) canvasNode.epistemicType = nodeType;
     g.addNode(canvasNode);
   }

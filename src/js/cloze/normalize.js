@@ -8,7 +8,8 @@ const CONCEPT_TYPES = new Set([
   "CAUSE",
   "EFFECT",
 ]);
-const RELATION_TYPES = new Set([
+/** @type {readonly string[]} */
+export const RELATION_TYPE_LIST = Object.freeze([
   "implies",
   "causes",
   "supports",
@@ -19,6 +20,7 @@ const RELATION_TYPES = new Set([
   "part_of",
   "prerequisite_of",
 ]);
+const RELATION_TYPES = new Set(RELATION_TYPE_LIST);
 const NODE_ITEM_TYPES = new Set(["NODE-DEF", "NODE-APP", "NODE-COND", "NODE-CONTRAST"]);
 const EDGE_ITEM_TYPES = new Set(["EDGE-SOURCE", "EDGE-TARGET", "EDGE-RELATION"]);
 const ITEM_TYPES = new Set([...NODE_ITEM_TYPES, ...EDGE_ITEM_TYPES]);
@@ -48,17 +50,20 @@ export function parseModelJsonObject(raw) {
 export function normalizeEpistemicNode(raw, index = 0) {
   if (!raw || typeof raw !== "object") return null;
   const id = String(raw.id || `node_${String(index + 1).padStart(3, "0")}`).trim();
-  const text = String(raw.text || "").trim();
+  // ponytail: accept inventory (title/label) and legacy graph (text) without dual writers
+  const text = String(raw.text || raw.label || raw.title || "").trim();
   if (!id || !text) return null;
-  const type = CONCEPT_TYPES.has(String(raw.type || "").trim())
-    ? String(raw.type).trim()
+  const type = CONCEPT_TYPES.has(String(raw.type || raw.nodeType || "").trim())
+    ? String(raw.type || raw.nodeType).trim()
     : "CONCEPT";
+  const semantic =
+    String(raw.semantic_cluster || raw.semanticCluster || "general").trim() || "general";
   return {
     id,
     text,
     type,
     importance: clampImportance(raw.importance),
-    semantic_cluster: String(raw.semantic_cluster || "general").trim() || "general",
+    semantic_cluster: semantic,
     aliases: Array.isArray(raw.aliases)
       ? raw.aliases.map((a) => String(a || "").trim()).filter(Boolean)
       : [],

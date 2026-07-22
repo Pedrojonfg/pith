@@ -55,6 +55,11 @@ import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
 import { applyNoveltyPackingBias } from "./pedagogy/novelty-packing.js";
 import {
+  orderInventoryByAffinity,
+  repairPrerequisiteBlockOrder,
+  resolvePackingEdges,
+} from "./concept-graph/packing.js";
+import {
   blockIsThreshold,
   mergeThresholdBlockConfig,
   sortBlockIndexForThresholds,
@@ -3479,11 +3484,13 @@ export async function runConceptInventoryWithFallback(
 /** Local pack when LLM output truncates — no network, assigns every concept once, assigns every concept once. */
 export function packInventoryDeterministic(inventory, nBlocks, lang = "English", options = {}) {
   const targetN = Math.max(1, Math.floor(Number(nBlocks) || 1));
+  const edges = resolvePackingEdges(options, () => getActiveDocumentSession?.());
   let inv = (Array.isArray(inventory) ? inventory : [])
     .filter((c) => c && String(c.id || "").trim());
 
   inv = applyNoveltyPackingBias(inv, { beliefState: options.beliefState || null });
   inv = inv.slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  inv = orderInventoryByAffinity(inv, edges);
   if (!inv.length) {
     return { blocks: [], pack_meta: { target_n: targetN, final_block_count: 0, merges: [] } };
   }
@@ -3579,11 +3586,12 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
   }
 
   const normalized = blocks.slice(0, targetN).map((b, i) => ({ ...b, id: i + 1, chunk: "" }));
+  const repaired = repairPrerequisiteBlockOrder(normalized, edges);
   return {
-    blocks: normalized,
+    blocks: repaired,
     pack_meta: {
       target_n: targetN,
-      final_block_count: normalized.length,
+      final_block_count: repaired.length,
       merges: [],
       deterministic: true,
     },
@@ -3603,7 +3611,7 @@ export async function packInventoryToBlocks(
   inventory,
   nBlocks,
   material,
-  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null, docHierarchy = null, docTopics = null } = {},
+  { llmModel, studyNotes, language, onProgress, knowledgeProfile = null, docHierarchy = null, docTopics = null, edges: edgesOpt = null } = {},
 ) {
   const requested_n = Math.max(1, Math.floor(Number(nBlocks) || 1));
   const lang = String(language || getStudyLanguage?.() || "English").trim() || "English";
@@ -3669,7 +3677,9 @@ export async function packInventoryToBlocks(
       inventorySize: inventory?.length || 0,
     }); // [debug-enrich]
     progress("Packing blocks locally…");
-    const det = packInventoryDeterministic(inventory, requested_n, lang);
+    const det = packInventoryDeterministic(inventory, requested_n, lang, {
+      edges: edgesOpt,
+    });
     if (det?.blocks?.length) {
       blocks = det.blocks;
       pack_meta = {
@@ -3740,6 +3750,12 @@ export async function packInventoryToBlocks(
   blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
 
   blockIndex = blockIndex.map((b) => annotateBlockIndexEntry(b));
+
+  const packingEdges = resolvePackingEdges(
+    { edges: edgesOpt },
+    () => getActiveDocumentSession?.(),
+  );
+  blockIndex = repairPrerequisiteBlockOrder(blockIndex, packingEdges);
 
   progress("Checking for duplicates…");
   let dedupResult = await applyDeterministicDedup(blockIndex, { llmModel: model });

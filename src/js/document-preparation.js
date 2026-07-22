@@ -13,11 +13,11 @@ import {
   mapOnboardingRecommendationToModeRecommendation,
 } from "./recommendation/onboarding-recommender.js";
 import {
-  generateEpistemicGraph,
   getValidItems,
   runClozePipelinePhases,
   diagnoseClozePipelineFailure,
 } from "./cloze/pipeline.js";
+import { generateConceptRelations } from "./concept-graph/relations.js";
 import { generatePhase0ForScope } from "./slow/phase0.js";
 import { generateRecallSliceForDoc } from "./recall-study.js";
 import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js";
@@ -179,7 +179,7 @@ const PHASE_DEPS = {
   "T1.1": ["T0.1"],
   "T1.2": ["T1.1"],
   "T1.2b": ["T1.2"],
-  "T1.3": ["T0.1"],
+  "T1.3": ["T1.2"],
   "T1.4": ["T1.2"],
   "T1.5": ["T1.1", "T0.2"],
   "T1.6": ["T1.2"],
@@ -511,13 +511,26 @@ async function runPhaseT12(doc, ctx) {
 }
 
 async function runPhaseT13(doc, ctx) {
-  const graph = await generateEpistemicGraph(getStudyMarkdown(doc), {
-    llmModel: ctx.llmModel,
-    signal: ctx.signal,
-  });
-  doc.shared.conceptGraph = graph;
-  promoteGraphConnectionsToRegistry(doc, graph);
-  return hashPayload({ nodes: graph.nodes?.length, edges: graph.edges?.length });
+  const inventory = doc.shared.conceptInventory;
+  if (!inventory || inventory.length === 0) {
+    return { skipped: true, hash: "no_inventory" };
+  }
+  let edges = [];
+  try {
+    edges = await generateConceptRelations(getStudyMarkdown(doc), inventory, {
+      llmModel: ctx.llmModel,
+      signal: ctx.signal,
+    });
+  } catch (err) {
+    console.warn("[document-preparation.runPhaseT13] relations failed — empty edges:", err?.message || err);
+    doc.shared.conceptGraph = { nodes: inventory, edges: [] };
+    promoteGraphConnectionsToRegistry(doc, doc.shared.conceptGraph);
+    return { partial: true, hash: hashPayload({ nodes: inventory.length, edges: 0 }) };
+  }
+  // Same array reference as inventory — one node identity per concept in this run
+  doc.shared.conceptGraph = { nodes: inventory, edges };
+  promoteGraphConnectionsToRegistry(doc, doc.shared.conceptGraph);
+  return hashPayload({ nodes: inventory.length, edges: edges.length });
 }
 
 async function runPhaseT14(doc) {
