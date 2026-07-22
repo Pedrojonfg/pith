@@ -58,6 +58,7 @@ import {
   orderInventoryByAffinity,
   repairPrerequisiteBlockOrder,
   resolvePackingEdges,
+  finalImportance,
 } from "./concept-graph/packing.js";
 import {
   blockIsThreshold,
@@ -3489,7 +3490,12 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
     .filter((c) => c && String(c.id || "").trim());
 
   inv = applyNoveltyPackingBias(inv, { beliefState: options.beliefState || null });
-  inv = inv.slice().sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+  // finalImportance = LLM importance + affinity structuralBonus (capped); higher first, then document order
+  inv = inv.slice().sort((a, b) => {
+    const d = finalImportance(b, edges) - finalImportance(a, edges);
+    if (Math.abs(d) > 1e-9) return d;
+    return (Number(a.order) || 0) - (Number(b.order) || 0);
+  });
   inv = orderInventoryByAffinity(inv, edges);
   if (!inv.length) {
     return { blocks: [], pack_meta: { target_n: targetN, final_block_count: 0, merges: [] } };
