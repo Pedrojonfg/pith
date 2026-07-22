@@ -10,6 +10,7 @@ import {
 } from "./embedding-thresholds.js";
 import { upsertDocumentSimilarity, fetchDocumentSimilaritiesForDoc } from "./embedding-persist.js";
 import { getAllSessions } from "../session-store.js";
+import { getConceptDisplayName } from "../concept-graph/concept-display.js";
 
 /**
  * @param {object} doc
@@ -24,7 +25,7 @@ export function buildDocumentSummaryText(doc) {
 export function buildDocumentConceptsText(doc) {
   const inv = doc?.shared?.conceptInventory || [];
   const names = inv
-    .map((c) => String(c?.label || c?.term || "").trim())
+    .map((c) => getConceptDisplayName(c))
     .filter(Boolean)
     .slice(0, DOC_SIMILARITY_TOP_CONCEPTS);
   return names.join(" ");

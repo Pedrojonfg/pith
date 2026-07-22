@@ -6,6 +6,7 @@
 
 import { graphTermSlug } from "./graph/ids.js";
 import { EDGE_TYPES } from "./graph/build.js";
+import { getConceptDisplayName } from "./concept-graph/concept-display.js";
 
 /** UI picker → stored EDGE_TYPES values (research.md). */
 export const PACK_EDITOR_EDGE_TYPES = [
@@ -50,7 +51,7 @@ function ensureGraph(snapshot) {
 }
 
 function inventoryTitle(entry) {
-  return String(entry?.title || entry?.label || "").trim();
+  return getConceptDisplayName(entry);
 }
 
 function allocateConceptId(snapshot, title) {
@@ -213,7 +214,7 @@ export function toCanvasGraph(snapshot) {
     if (!id || seen.has(id)) continue;
     seen.add(id);
     const label =
-      String(n?.text || n?.label || "").trim() || titleById.get(id) || id;
+      getConceptDisplayName(n) || titleById.get(id) || id;
     nodes.push({ id, label, layer: "concept" });
   }
 

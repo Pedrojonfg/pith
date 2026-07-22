@@ -7,6 +7,7 @@ import {
   buildSlowPhase0GraphFromInputs,
   collectTextConceptsFromLists,
 } from "./build.js";
+import { getConceptDisplayName, getConceptDefinition } from "../concept-graph/concept-display.js";
 
 /**
  * Resolve enriched-graph inputs from session + optional overrides (single I/O adapter).
@@ -33,8 +34,8 @@ export async function resolveEnrichedGraphInputs(session, overrides = {}) {
     overrides.sessionConcepts ?? (session ? getSortedSessionConcepts() : []);
   const sharedConcepts = Array.isArray(shared?.conceptInventory)
     ? shared.conceptInventory.map((c) => ({
-        term: c.label,
-        definition: c.definition,
+        term: getConceptDisplayName(c),
+        definition: getConceptDefinition(c),
         canonicalId: c.canonicalId,
       }))
     : [];

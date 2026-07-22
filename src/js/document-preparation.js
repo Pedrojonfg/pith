@@ -18,6 +18,7 @@ import {
   diagnoseClozePipelineFailure,
 } from "./cloze/pipeline.js";
 import { generateConceptRelations } from "./concept-graph/relations.js";
+import { getConceptDisplayName, getConceptDefinition } from "./concept-graph/concept-display.js";
 import { generatePhase0ForScope } from "./slow/phase0.js";
 import { generateRecallSliceForDoc } from "./recall-study.js";
 import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js";
@@ -727,18 +728,29 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
   return hashPayload(recommendation.primaryFlow);
 }
 
+/**
+ * Display fields T1.6 sends to vault identity resolution (title/scope-aware).
+ * @param {object} entry
+ */
+export function vaultLinkFieldsFromInventoryEntry(entry) {
+  return {
+    name: getConceptDisplayName(entry),
+    description: getConceptDefinition(entry),
+  };
+}
+
 async function runPhaseT16(doc, _ctx, deps = {}) {
   const inventory = doc.shared.conceptInventory || [];
   const resolveFn = deps.resolveGlobalConcept || resolveGlobalConcept;
   const backfillFn = deps.backfillGlobalConceptIds || backfillGlobalConceptIds;
   for (const entry of inventory) {
-    const name = String(entry?.label || entry?.term || entry?.title || "").trim();
+    const { name, description } = vaultLinkFieldsFromInventoryEntry(entry);
     const entryId = String(entry?.canonicalId || entry?.id || "").trim();
     if (!name || entry.globalConceptId) continue;
     try {
       const { conceptId } = await resolveFn({
         canonicalName: name,
-        description: String(entry?.definition || "").trim(),
+        description,
         sourceDocId: doc.docId,
         inventoryEntryId: entryId,
       });

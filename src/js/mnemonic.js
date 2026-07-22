@@ -4,6 +4,7 @@
  */
 
 import { getActiveSession, saveActiveSession } from "./session-store.js";
+import { getConceptDisplayName } from "./concept-graph/concept-display.js";
 
 export const MNEMONIC_BTN_POS_KEY = "pith_mnemonic_btn_pos";
 export const MNEMONIC_BTN_VISIBLE_KEY = "pith_mnemonic_btn_visible";
@@ -266,7 +267,7 @@ export function searchConceptInventory(inventory, query, opts = {}) {
   const rows = (Array.isArray(inventory) ? inventory : [])
     .map((c) => ({
       id: String(c?.canonicalId || c?.id || "").trim(),
-      label: String(c?.label || c?.term || "").trim(),
+      label: getConceptDisplayName(c),
     }))
     .filter((c) => c.id && c.label && !attached.has(c.id))
     .filter((c) => !q || c.label.toLowerCase().includes(q) || c.id.toLowerCase().includes(q));

@@ -7,11 +7,27 @@ import { geminiChatCompletions, hasPlatformLlmAccess } from "../llm.js?v=2026062
 import { logLlmUsage } from "../llm-usage-log.js";
 import { getDocumentImageSignedUrl } from "./storage.js";
 import { EDGE_TYPES } from "../graph/build.js";
+import { getConceptDisplayName, getConceptDefinition } from "../concept-graph/concept-display.js";
 
 const GEMINI_VISION_MODEL = "gemini-3.5-flash";
 
 /** Vision JSON: ~8 fields × ~40 tokens */
 const VISION_ANALYSIS_MAX_TOKENS = 512;
+
+/**
+ * Slim inventory rows for the vision LLM prompt (id + display name + definition).
+ * @param {object[]} conceptInventory
+ */
+export function mapConceptsForVisionPrompt(conceptInventory) {
+  return (Array.isArray(conceptInventory) ? conceptInventory : [])
+    .slice(0, 80)
+    .map((c) => ({
+      id: String(c.canonicalId || c.id || "").trim(),
+      label: getConceptDisplayName(c),
+      definition: getConceptDefinition(c).slice(0, 200),
+    }))
+    .filter((c) => c.id && c.label);
+}
 
 /** Page OCR fallback: ~1 scanned page × ~800 tokens */
 const VISION_PAGE_TEXT_MAX_TOKENS = 4096;
@@ -178,14 +194,7 @@ export async function analyzeDocumentImage(image, conceptInventory, ctx = {}) {
     throw new Error("image URL unavailable");
   }
 
-  const concepts = (conceptInventory || [])
-    .slice(0, 80)
-    .map((c) => ({
-      id: String(c.canonicalId || c.id || "").trim(),
-      label: String(c.label || c.term || "").trim(),
-      definition: String(c.definition || c.authorUsage || "").slice(0, 200),
-    }))
-    .filter((c) => c.id && c.label);
+  const concepts = mapConceptsForVisionPrompt(conceptInventory);
 
   const prompt = [
     "Analyze this document figure for a study app.",

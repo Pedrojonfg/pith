@@ -13,6 +13,7 @@ import {
   fetchCachedEmbedding,
   upsertConceptEmbedding,
 } from "./embedding-persist.js";
+import { getConceptDisplayName, getConceptDefinition } from "../concept-graph/concept-display.js";
 
 export { computeNoveltyScore } from "./embedding-math.js";
 
@@ -34,8 +35,8 @@ export async function hashSourceText(text) {
  * @param {object} entry
  */
 export function buildConceptEmbedText(entry) {
-  const label = String(entry?.label || entry?.term || "").trim();
-  const definition = String(entry?.definition || entry?.authorUsage || "").trim();
+  const label = getConceptDisplayName(entry);
+  const definition = getConceptDefinition(entry);
   if (label && definition) return `${label} ${definition}`.trim();
   return label || definition;
 }

@@ -8,6 +8,7 @@ import {
   parseModelJsonObject,
   RELATION_TYPE_LIST,
 } from "../cloze/normalize.js";
+import { getConceptDisplayName, getConceptDefinition } from "./concept-display.js";
 
 /**
  * Expected ≤80 edges × ~40 tokens + JSON wrapper / prompt echo headroom.
@@ -26,8 +27,8 @@ function inventoryIdSet(inventory) {
 
 function slimConceptForPrompt(c) {
   const id = String(c?.canonicalId || c?.id || "").trim();
-  const label = String(c?.label || c?.title || "").trim();
-  const definition = String(c?.definition || c?.scope_one_line || "").trim();
+  const label = getConceptDisplayName(c);
+  const definition = getConceptDefinition(c);
   return { id, label, definition };
 }
 

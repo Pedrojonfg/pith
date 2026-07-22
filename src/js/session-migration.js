@@ -22,6 +22,7 @@ import {
 } from "./session-store.js";
 import { computeCanonicalId, inferDocMeta } from "./session-types.js";
 import { migrateLegacyHtmlMinSession } from "./normalization/migrate-html-min.js";
+import { getConceptDisplayName } from "./concept-graph/concept-display.js";
 
 /** Parse legacy `sessions_by_mode` JSON; null on missing/corrupt input. */
 function parseSessionsByModeRaw(raw) {
@@ -80,7 +81,7 @@ function slowPayload(slot) {
   return slot?.slow && typeof slot.slow === "object" ? slot.slow : slot;
 }
 
-function collectConceptsFromV1(slots) {
+export function collectConceptsFromV1(slots) {
   const out = [];
   const slow = slowPayload(slots.slow);
   if (slow?.phase0?.conceptsToFind) {
@@ -111,7 +112,7 @@ function collectConceptsFromV1(slots) {
   const clozeNodes = slots.cloze?.epistemicGraph?.nodes;
   if (Array.isArray(clozeNodes)) {
     for (const n of clozeNodes) {
-      const label = String(n?.text || n?.label || "").trim();
+      const label = getConceptDisplayName(n);
       if (!label) continue;
       out.push({
         canonicalId: computeCanonicalId(label),
