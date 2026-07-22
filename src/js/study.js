@@ -4563,7 +4563,10 @@ async function runClozeGeneration(session) {
 function mountClozeGraph(session) {
   if (!els.clozeGraphMount || !session?.cloze?.epistemicGraph) return;
   els.clozeGraphMount.hidden = false;
-  mountMaterialGraphScreen(session, els.clozeGraphMount, { mode: "cloze" });
+  void mountMaterialGraphScreen(session, els.clozeGraphMount, {
+    mode: "cloze",
+    shared: session?.shared,
+  });
 }
 
 function showModeResumeOrUpload(mode) {
@@ -4961,7 +4964,7 @@ function renderSlowPhase0Screen(session) {
 
   if (status === "ready" && slow.phase0) {
     renderSlowPhase0Content(session);
-    renderSlowPhase0GraphActions(session);
+    void renderSlowPhase0GraphActions(session);
     updatePhase0CollapseUi(session);
     setSlowPhase0Controls({ showContinue: true });
     return;
@@ -8538,7 +8541,7 @@ async function openMaterialGraphScreen({
       hint ||
       "Concepts, blocks, and links from your study material.",
   });
-  lastMaterialGraph = mountMaterialGraphScreen(session, host, {
+  lastMaterialGraph = await mountMaterialGraphScreen(session, host, {
     blockIndex,
     conceptInventory,
     mode,
@@ -8708,7 +8711,7 @@ function remountPackConceptGraph() {
   const host = els.packConceptGraphMount;
   if (!host || !packConceptEditorState.snapshot) return;
   const canvasGraph = toCanvasGraph(packConceptEditorState.snapshot);
-  mountMaterialGraphScreen(null, host, {
+  void mountMaterialGraphScreen(null, host, {
     graph: canvasGraph,
     onNodeClick: (node) => {
       void handlePackConceptNodeClick(node);
@@ -9740,7 +9743,7 @@ function renderBlocksGraphActions(blockIndex, conceptInventory = []) {
     <span class="hint">${es ? `${graph.nodes.length} nodos · ${graph.edges.length} enlaces` : `${graph.nodes.length} nodes · ${graph.edges.length} edges`}</span>`;
 }
 
-function renderSlowPhase0GraphActions(session) {
+async function renderSlowPhase0GraphActions(session) {
   const host = document.getElementById("slowPhase0GraphActions");
   if (!host || !session?.slow?.phase0) {
     if (host) {
@@ -9749,7 +9752,7 @@ function renderSlowPhase0GraphActions(session) {
     }
     return;
   }
-  const graph = buildSessionGraph(session, { mode: "slow_phase0" });
+  const graph = await buildSessionGraph(session, { mode: "slow_phase0" });
   const lang = getStudyLanguage() || "English";
   const es = String(lang).toLowerCase().startsWith("es");
   host.hidden = false;
@@ -9809,25 +9812,27 @@ function wireMaterialGraphHandlers() {
   });
 
   document.getElementById("slowGraphExportBtn")?.addEventListener("click", () => {
-    const session = state.activeSession;
-    const host = document.getElementById("slowGraphContent");
-    const graph =
-      lastMaterialGraph ||
-      mountMaterialGraphScreen(session, host, {
-        blockIndex: state.materialGraphContext?.blockIndex,
-        conceptInventory: state.materialGraphContext?.conceptInventory,
-        mode: "auto",
+    void (async () => {
+      const session = state.activeSession;
+      const host = document.getElementById("slowGraphContent");
+      const graph =
+        lastMaterialGraph ||
+        (await mountMaterialGraphScreen(session, host, {
+          blockIndex: state.materialGraphContext?.blockIndex,
+          conceptInventory: state.materialGraphContext?.conceptInventory,
+          mode: "auto",
+        }));
+      if (!graph) return;
+      const lang = getStudyLanguage() || "English";
+      const md = buildGraphSubgraphMarkdown(graph, lang);
+      const stem = String(
+        session?.materialMeta?.fileName || session?._meta?.source_files?.[0]?.name || "material-graph",
+      ).replace(/\.[^.]+$/, "");
+      downloadTextFile({
+        filename: `${stem}_graph_${Date.now()}.md`,
+        text: md,
       });
-    if (!graph) return;
-    const lang = getStudyLanguage() || "English";
-    const md = buildGraphSubgraphMarkdown(graph, lang);
-    const stem = String(
-      session?.materialMeta?.fileName || session?._meta?.source_files?.[0]?.name || "material-graph",
-    ).replace(/\.[^.]+$/, "");
-    downloadTextFile({
-      filename: `${stem}_graph_${Date.now()}.md`,
-      text: md,
-    });
+    })();
   });
 }
 

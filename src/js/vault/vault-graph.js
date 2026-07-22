@@ -161,7 +161,7 @@ export function renderVaultGraphTopicPicker(containerEl, vault, onSelect) {
  * @param {HTMLElement | null} detailHost
  * @param {{ vault?: object, topicFilter?: string, projectIds?: Set<string>|string[]|null, sessionsByDocId?: object, onNodeClick?: (node: object) => void }} [options]
  */
-export function mountVaultGraphScreen(containerEl, detailHost, options = {}) {
+export async function mountVaultGraphScreen(containerEl, detailHost, options = {}) {
   if (!containerEl) return null;
   const vault = options.vault || loadVault();
   const built = buildVaultGraph(vault, {

@@ -115,18 +115,19 @@ export function persistEnrichedGraph(session, graph) {
  * Mount graph screen: canvas + list fallback.
  * @param {object} session
  * @param {HTMLElement} containerEl
- * @param {{ conceptInventory?: object[], blockIndex?: object[], graph?: object, mode?: string }} [options]
+ * @param {{ conceptInventory?: object[], blockIndex?: object[], graph?: object, mode?: string, shared?: object }} [options]
  */
-export function mountMaterialGraphScreen(session, containerEl, options = {}) {
+export async function mountMaterialGraphScreen(session, containerEl, options = {}) {
   if (!containerEl) return null;
   const lang = getStudyLanguage() || "English";
   const builtGraph =
     options.graph ||
-    buildSessionGraph(session, {
+    (await buildSessionGraph(session, {
       conceptInventory: options.conceptInventory,
       blockIndex: options.blockIndex,
       mode: options.mode || "auto",
-    });
+      shared: options.shared,
+    }));
   const graph = pruneOrphanNodes(builtGraph);
 
   if (session?.slow?.graphEnrichedUnlocked || options.mode === "slow_enriched") {
