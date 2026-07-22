@@ -5466,16 +5466,18 @@ Respond in ${lang}.`;
 
 /**
  * Concept-coverage holistic assessment — one MCQ per concept, batched by 20.
+ * conceptsToAssess MUST be the pre-filtered candidate set (adaptive probing / vault-skip already applied upstream), NOT the full document inventory.
  * @see specs/20260629-assessment-concept-coverage/
+ * @see specs/20260722-adaptive-holistic-wiring/
  */
 export async function generateHolisticPrePackingAssessmentItems({
-  conceptInventory,
+  conceptsToAssess,
   materialText,
   onProgress,
   llmModel,
   language,
 }) {
-  const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
+  const inventory = Array.isArray(conceptsToAssess) ? conceptsToAssess : [];
   if (!inventory.length) return [];
   const material = String(materialText ?? "").trim();
   if (!material) return [];

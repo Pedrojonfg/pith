@@ -34,6 +34,7 @@ import {
   buildAdaptiveCoveragePlan,
   applyAdaptiveBeliefUpdate,
   filterInventoryForAdaptiveProbing,
+  resolveAdaptiveCandidateConcepts,
   shouldEarlyStopAdaptiveAssessment,
   enrichKnowledgeProfileWithAdaptiveStatuses,
 } from "./adaptive-probing/assessment-integration.js";
@@ -44,6 +45,7 @@ import {
   buildAssessmentCoveragePlan,
   computeHolisticAssessmentBudget,
   deriveInventoryEdges,
+  getConceptId,
   hashCoveragePlan,
 } from "./assessment-coverage.js?v=20260625_02";
 import {
@@ -9063,8 +9065,13 @@ function createPrePackingItemsPromise(flow) {
       flow.docHierarchy = ctx.docHierarchy;
       flow.coveragePlan = ctx.plan;
       flow.holisticBudget = ctx.budget;
+      const candidateConcepts = resolveAdaptiveCandidateConcepts(flow.conceptInventory, ctx.plan, {
+        selectedConceptIds: flow.adaptiveProbing?.selectedConceptIds,
+        vaultSkippedIds: flow.adaptiveProbing?.vaultSkippedIds,
+      });
+      flow.assessedConceptIds = candidateConcepts.map((c) => getConceptId(c)).filter(Boolean);
       return generateHolisticPrePackingAssessmentItems({
-        conceptInventory: flow.conceptInventory,
+        conceptsToAssess: candidateConcepts,
         edges: ctx.edges,
         materialText: flow.cleanedText,
         docHierarchy: ctx.docHierarchy,

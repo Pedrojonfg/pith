@@ -189,6 +189,57 @@ export function buildAdaptiveCoveragePlan({
 }
 
 /**
+ * Map adaptive coverage selection to full inventory objects for holistic generation.
+ * Hard-excludes vaultSkippedIds (holistic builder does not; see research OQ2).
+ * // ponytail: thin id→object map; no second EIG pass
+ * @param {object[]} inventory
+ * @param {object | null} plan
+ * @param {{ selectedConceptIds?: string[], vaultSkippedIds?: string[], adaptiveEnabled?: boolean }} [options]
+ * @returns {object[]}
+ */
+export function resolveAdaptiveCandidateConcepts(inventory, plan, options = {}) {
+  const list = Array.isArray(inventory) ? inventory : [];
+  if (!list.length) return list;
+
+  const adaptiveEnabled =
+    typeof options.adaptiveEnabled === "boolean"
+      ? options.adaptiveEnabled
+      : isAdaptiveProbingEnabled();
+  if (!adaptiveEnabled) return list;
+
+  const selectedRaw = Array.isArray(options.selectedConceptIds)
+    ? options.selectedConceptIds
+    : Array.isArray(plan?.adaptiveProbing?.selectedConceptIds)
+      ? plan.adaptiveProbing.selectedConceptIds
+      : [];
+  const skipRaw = Array.isArray(options.vaultSkippedIds)
+    ? options.vaultSkippedIds
+    : Array.isArray(plan?.adaptiveProbing?.vaultSkippedIds)
+      ? plan.adaptiveProbing.vaultSkippedIds
+      : [];
+  const skipSet = new Set(
+    skipRaw.map((id) => String(id || "").trim()).filter(Boolean),
+  );
+  const orderedIds = selectedRaw
+    .map((id) => String(id || "").trim())
+    .filter((id) => id && !skipSet.has(id));
+
+  const byId = new Map();
+  for (const c of list) {
+    const id = getConceptId(c);
+    if (id && !byId.has(id)) byId.set(id, c);
+  }
+  const out = orderedIds.map((id) => byId.get(id)).filter(Boolean);
+  if (!out.length) {
+    console.warn(
+      "[resolveAdaptiveCandidateConcepts] empty adaptive selection; falling back to full inventory",
+    );
+    return list;
+  }
+  return out;
+}
+
+/**
  * Filter inventory for non-holistic adaptive path.
  */
 export function filterInventoryForAdaptiveProbing({
@@ -364,8 +415,18 @@ export function enrichKnowledgeProfileWithAdaptiveStatuses(profile, flow) {
     : []) {
     const sid = String(id || "").trim();
     if (!sid) continue;
+    const existing = byConceptId[sid];
+    const alreadyTested =
+      existing?.assessmentStatus === "tested" ||
+      (existing?.assessed === true && existing?.assessmentStatus !== "inferred" && existing?.assessmentStatus !== "presumed_known_vault");
+    if (alreadyTested) {
+      console.warn(
+        `[enrichKnowledgeProfileWithAdaptiveStatuses] invariant: vault-skipped "${sid}" already tested; refusing overwrite`,
+      );
+      continue;
+    }
     byConceptId[sid] = {
-      ...(byConceptId[sid] || { assessed: false }),
+      ...(existing || { assessed: false }),
       assessed: false,
       assessmentStatus: "presumed_known_vault",
       correct: true,
