@@ -3592,7 +3592,10 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
   }
 
   const normalized = blocks.slice(0, targetN).map((b, i) => ({ ...b, id: i + 1, chunk: "" }));
-  const repaired = repairPrerequisiteBlockOrder(normalized, edges);
+  // skipPrerequisiteRepair: test hook to snapshot pre-repair block order
+  const repaired = options.skipPrerequisiteRepair
+    ? normalized
+    : repairPrerequisiteBlockOrder(normalized, edges);
   return {
     blocks: repaired,
     pack_meta: {
