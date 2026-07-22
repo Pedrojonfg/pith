@@ -3490,11 +3490,11 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
     .filter((c) => c && String(c.id || "").trim());
 
   inv = applyNoveltyPackingBias(inv, { beliefState: options.beliefState || null });
-  // finalImportance = LLM importance + affinity structuralBonus (capped); higher first, then document order
+  // Document order primary; finalImportance only breaks ties (never reorders the pedagogical sequence).
   inv = inv.slice().sort((a, b) => {
-    const d = finalImportance(b, edges) - finalImportance(a, edges);
-    if (Math.abs(d) > 1e-9) return d;
-    return (Number(a.order) || 0) - (Number(b.order) || 0);
+    const o = (Number(a.order) || 0) - (Number(b.order) || 0);
+    if (o !== 0) return o;
+    return finalImportance(b, edges) - finalImportance(a, edges);
   });
   inv = orderInventoryByAffinity(inv, edges);
   if (!inv.length) {
@@ -3540,7 +3540,10 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
     for (const [modName, concepts] of moduleEntries) {
       if (blocks.length >= targetN) break;
       if (concepts.length < 4) continue;
-      const vocab = concepts[0];
+      // FI picks which concept owns the Key-terms slot; sequence of modules stays document-led.
+      const vocab = concepts
+        .slice()
+        .sort((a, b) => finalImportance(b, edges) - finalImportance(a, edges))[0];
       if (!vocab?.id || assigned.has(vocab.id)) continue;
       assigned.add(vocab.id);
       blocks.push(
@@ -3569,13 +3572,17 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
       const group = remaining.slice(idx, idx + per);
       idx += per;
       if (!group.length) continue;
+      // Within a sequential slice, FI only chooses the lead concept for the block title.
+      const lead = group
+        .slice()
+        .sort((a, b) => finalImportance(b, edges) - finalImportance(a, edges))[0];
       for (const c of group) assigned.add(String(c.id));
       blocks.push({
         id: blocks.length + 1,
         title:
           group.length === 1
-            ? String(group[0].title || "").trim()
-            : `${String(group[0].title || "").trim()} (+${group.length - 1})`,
+            ? String(lead.title || "").trim()
+            : `${String(lead.title || "").trim()} (+${group.length - 1})`,
         summary: group
           .map((c) => String(c.scope_one_line || c.title || "").trim())
           .filter(Boolean)
