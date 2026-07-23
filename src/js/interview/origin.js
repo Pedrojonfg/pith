@@ -26,6 +26,8 @@ export function isInterviewOriginSession(session) {
  */
 export function isModeAvailableForSession(session, mode) {
   const key = String(mode || "").trim();
+  // Soft-dep: practice mode slot ships with practice-ontology; hide until modes.practice exists.
+  if (key === "practice" && !(session?.modes && "practice" in session.modes)) return false;
   if (isInterviewOriginSession(session) && INTERVIEW_HIDDEN_MODES.includes(key)) return false;
   if (
     isPackImportSession(session) &&

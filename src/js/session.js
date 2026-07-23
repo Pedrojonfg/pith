@@ -297,6 +297,109 @@ function resolveBlockTitleForConfig(blockIndex) {
   return indexEntry ? String(indexEntry.title || "").trim() : getBlockTitleFromList(blockIndex);
 }
 
+/**
+ * Mode slices often omit `shared`; keep last-known onboarding params for sync readers.
+ * @type {{
+ *   blockCountMultiplier?: number,
+ *   socraticEnabled?: boolean,
+ *   socraticTurnCapOverride?: { followUps: number, totalTurns: number } | null,
+ *   socraticRatio?: number | null,
+ * } | null}
+ */
+let modeRecommendationParamsCache = null;
+
+/**
+ * @param {unknown} params
+ */
+export function cacheModeRecommendationParams(params) {
+  if (params && typeof params === "object") {
+    modeRecommendationParamsCache = /** @type {typeof modeRecommendationParamsCache} */ (params);
+  }
+}
+
+/**
+ * @param {{ shared?: { modeRecommendation?: { params?: unknown } } } | null | undefined} doc
+ */
+function rememberParamsFromDoc(doc) {
+  cacheModeRecommendationParams(doc?.shared?.modeRecommendation?.params);
+}
+
+/**
+ * Read onboarding recommendation params from the active session (if present).
+ * @returns {{
+ *   blockCountMultiplier?: number,
+ *   socraticEnabled?: boolean,
+ *   socraticTurnCapOverride?: { followUps: number, totalTurns: number } | null,
+ *   socraticRatio?: number | null,
+ * } | null}
+ */
+function getModeRecommendationParams() {
+  const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : null;
+  const fromSession = session?.shared?.modeRecommendation?.params;
+  if (fromSession && typeof fromSession === "object") {
+    modeRecommendationParamsCache = fromSession;
+    return fromSession;
+  }
+  return modeRecommendationParamsCache;
+}
+
+/**
+ * Apply socraticEnabled / socraticRatio from modeRecommendation.params at the chokepoint.
+ * @param {{ n_test: number, n_socratic: number } & Record<string, unknown>} cfg
+ * @returns {{ n_test: number, n_socratic: number } & Record<string, unknown>}
+ */
+function applyModeRecommendationQuestionParams(cfg) {
+  const params = getModeRecommendationParams();
+  if (!params) return cfg;
+
+  if (params.socraticEnabled === false) {
+    return { ...cfg, n_socratic: 0 };
+  }
+
+  const ratio = Number(params.socraticRatio);
+  if (!Number.isFinite(ratio) || ratio <= 0 || ratio > 1) return cfg;
+
+  const total = clampInt(cfg.n_test, 0, MAX_N_TEST, 0) + clampInt(cfg.n_socratic, 0, MAX_N_SOCRATIC, 0);
+  if (total <= 0) return cfg;
+
+  let n_socratic = clampInt(Math.round(total * ratio), 0, MAX_N_SOCRATIC, 0);
+  let n_test = clampInt(total - n_socratic, 0, MAX_N_TEST, 0);
+  // If MAX clamps shrink the split, prefer restoring budget into n_test.
+  const used = n_test + n_socratic;
+  if (used < total && n_test < MAX_N_TEST) {
+    n_test = clampInt(n_test + (total - used), 0, MAX_N_TEST, n_test);
+  }
+  return { ...cfg, n_test, n_socratic };
+}
+
+/**
+ * Soft-apply `params.socraticTurnCapOverride` when pedagogy/socratic-loop-config.js exists.
+ * Missing module → null (no throw). Sibling branch may ship the config later.
+ * @param {object | null | undefined} params
+ * @returns {Promise<object | null>}
+ */
+export async function tryApplySocraticTurnCapOverride(params) {
+  cacheModeRecommendationParams(params);
+  const override = params?.socraticTurnCapOverride;
+  if (!override || typeof override !== "object") return null;
+  try {
+    const mod = await import("./pedagogy/socratic-loop-config.js");
+    const cfg = mod.SOCRATIC_LOOP_CONFIG || mod.default;
+    if (!cfg || typeof cfg !== "object") return null;
+    const followUps = Number(override.followUps);
+    if (Number.isFinite(followUps) && followUps >= 0) {
+      cfg.baseFollowUpCap = followUps;
+    }
+    const totalTurns = Number(override.totalTurns);
+    if (Number.isFinite(totalTurns) && totalTurns >= 1 && "totalLearnerTurns" in cfg) {
+      cfg.totalLearnerTurns = totalTurns;
+    }
+    return cfg;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveBlockQuestionConfig(blockIndex) {
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const defaults = {
@@ -335,14 +438,15 @@ export function resolveBlockQuestionConfig(blockIndex) {
         ...(Number.isFinite(Number(cfg.rsvp_wpm_cap)) ? { rsvp_wpm_cap: Number(cfg.rsvp_wpm_cap) } : {}),
       };
 
+  let resolved = base;
   if (isThresholdConceptsEnabled()) {
     const inv = resolveSessionConceptInventory(session);
     const entry = getBlockIndexEntry(blockIndex);
     if (blockIsThreshold(entry, inv)) {
-      return mergeThresholdBlockConfig(base, true);
+      resolved = mergeThresholdBlockConfig(base, true);
     }
   }
-  return base;
+  return applyModeRecommendationQuestionParams(resolved);
 }
 
 export { buildQuestionScopeContext };
@@ -385,7 +489,7 @@ function newSessionId() {
     : `sess_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
-/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'} */
+/** @returns {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'|'practice'} */
 export function normalizeStudyMode(mode) {
   const m = String(mode || "").trim();
   if (m === "slow") return "slow";
@@ -393,6 +497,7 @@ export function normalizeStudyMode(mode) {
   if (m === "questions") return "questions";
   if (m === "recall") return "recall";
   if (m === "read") return "read";
+  if (m === "practice") return "practice";
   return "rsvp";
 }
 
@@ -543,6 +648,11 @@ export async function storeActiveSession(sessionObj, { bumpRev } = {}) {
 export async function loadActiveSession() {
   migrateLegacyActiveSession();
   const mode = state.studyMode != null ? normalizeStudyMode(state.studyMode) : "rsvp";
+  try {
+    rememberParamsFromDoc(await getActiveDocumentSession());
+  } catch {
+    // ignore — params stay at last cached value
+  }
   return await loadSessionForMode(mode);
 }
 
@@ -840,6 +950,9 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   const blocksListText = String(state.activeSession?.blocks_list_text || "").trim();
   if (!blocksListText) throw new Error("Missing confirmed blocks list.");
 
+  const doc = await getActiveDocumentSession();
+  rememberParamsFromDoc(doc);
+
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
@@ -855,7 +968,6 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
   }
 
   const blockTitle = getBlockTitleFromList(idx);
-  const doc = await getActiveDocumentSession();
   const imageIds = findPithImageTokenIds(materialChunk);
   const knownImages = new Set(
     (Array.isArray(doc?.shared?.images) ? doc.shared.images : []).map((img) =>
@@ -877,6 +989,8 @@ export async function generateBlockForIndex(blockIndex, { n_test, n_socratic, pr
     gap_focus: cfg.gap_focus,
     include_connection_questions: cfg.include_connection_questions,
     sectionHasImages,
+    vaultSession: doc || null,
+    studentIntent: doc?.shared?.studentIntent ?? null,
   };
 
   let obj = null;
@@ -923,6 +1037,15 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
     return block;
   }
 
+  const llmModel = getSessionLlmModel(state.activeSession);
+  assertLlmKeyPresent(llmModel);
+
+  try {
+    rememberParamsFromDoc(await getActiveDocumentSession());
+  } catch {
+    // ignore
+  }
+
   const resolved = resolveBlockQuestionConfig(idx);
   const cfg = {
     n_test: clampInt(n_test, 0, MAX_N_TEST, resolved.n_test),
@@ -942,9 +1065,6 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   const blockTitle = String(getBlockTitleFromList(idx)).trim() || getBlockTitleFromList(idx);
   const summary = getBlockSummaryFromList(idx);
   const grounding = summary || blockTitle;
-
-  const llmModel = getSessionLlmModel(state.activeSession);
-  assertLlmKeyPresent(llmModel);
 
   const titlesById = parseBlockTitlesFromList(String(state.activeSession?.blocks_list_text || ""));
   const previousBlocksTitles = [];
@@ -1105,6 +1225,12 @@ export async function generateQuestionsOnlyForIndex(
   const explanation = String(base.explanation || "").trim();
   if (!explanation) {
     throw new Error("Cannot regenerate questions only without a non-empty explanation.");
+  }
+
+  try {
+    rememberParamsFromDoc(await getActiveDocumentSession());
+  } catch {
+    // ignore
   }
 
   const resolved = resolveBlockQuestionConfig(idx);
@@ -3448,13 +3574,11 @@ export function packInventoryDeterministic(inventory, nBlocks, lang = "English",
   };
 }
 
-function resolveDocHierarchyForAlignment() {
-  try {
-    const doc = getActiveDocumentSession?.();
-    const h = doc?.shared?.docHierarchy;
+function resolveDocHierarchyForAlignment(docHint = null) {
+  for (const doc of [docHint, state.activeSession]) {
+    if (!doc || typeof doc !== "object") continue;
+    const h = doc.shared?.docHierarchy || doc.docHierarchy;
     if (h && typeof h === "object" && Array.isArray(h.tree) && h.tree.length) return h;
-  } catch {
-    // ignore
   }
   return null;
 }
@@ -3476,20 +3600,17 @@ export async function packInventoryToBlocks(
       : null;
   let resolvedDocTopics = docTopics;
   let vaultSession = null;
-  if (!Array.isArray(resolvedDocTopics)) {
-    try {
-      const activeDoc = getActiveDocumentSession?.();
+  let studentIntent = null;
+  try {
+    const activeDoc = await getActiveDocumentSession();
+    vaultSession = activeDoc || null;
+    rememberParamsFromDoc(activeDoc);
+    studentIntent = activeDoc?.shared?.studentIntent ?? null;
+    if (!Array.isArray(resolvedDocTopics)) {
       resolvedDocTopics = activeDoc?.shared?.docTopics;
-      vaultSession = activeDoc || null;
-    } catch {
-      resolvedDocTopics = [];
     }
-  } else {
-    try {
-      vaultSession = getActiveDocumentSession?.() || null;
-    } catch {
-      vaultSession = null;
-    }
+  } catch {
+    if (!Array.isArray(resolvedDocTopics)) resolvedDocTopics = [];
   }
   const progress = (msg) => {
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
@@ -3500,7 +3621,7 @@ export async function packInventoryToBlocks(
     inventorySize: Array.isArray(inventory) ? inventory.length : 0,
     materialChars: materialText.length,
     hasKnowledgeProfile: Boolean(profile),
-    hasDocHierarchy: Boolean(docHierarchy || resolveDocHierarchyForAlignment()),
+    hasDocHierarchy: Boolean(docHierarchy || resolveDocHierarchyForAlignment(vaultSession)),
   }); // [debug-enrich]
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
@@ -3522,6 +3643,7 @@ export async function packInventoryToBlocks(
       knowledgeProfile: profile,
       docTopics: Array.isArray(resolvedDocTopics) ? resolvedDocTopics : [],
       vaultSession,
+      studentIntent,
     }));
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);
@@ -3555,7 +3677,7 @@ export async function packInventoryToBlocks(
       let fallbackBlocks = normalizeBlockIndexArray(parsed, { requireChunk: false, lenient: true });
       if (!fallbackBlocks?.length) throw packErr;
       let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, fallbackBlocks, inventory, {
-        docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
+        docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(vaultSession),
       });
       blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);
       return {
@@ -3596,7 +3718,7 @@ export async function packInventoryToBlocks(
     };
   });
   let { blocks: blockIndex } = assignAlignedChunksSequential(materialText, enriched, inventory, {
-    docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(),
+    docHierarchy: docHierarchy || resolveDocHierarchyForAlignment(vaultSession),
   });
 
   blockIndex = annotateBlocksWithSourceFileIds(blockIndex, materialText);

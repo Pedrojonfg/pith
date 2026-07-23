@@ -4,10 +4,14 @@
  */
 
 import { analyzeText } from "./recommendation/analyzer.js";
-import { computeBlockCountRecommendation } from "./recommendation/block-count-recommender.js";
+import { computeBlockCountRecommendation, applyBlockCountMultiplier } from "./recommendation/block-count-recommender.js";
 import { buildDocumentHierarchy, buildDeterministicPedagogicalMeta } from "./normalization/hierarchy.js";
 import { buildDocumentHierarchyWithLlm } from "./hierarchy-llm.js";
 import { computeModeRecommendation } from "./recommendation/recommender.js";
+import {
+  computeOnboardingModeRecommendation,
+  mapOnboardingRecommendationToModeRecommendation,
+} from "./recommendation/onboarding-recommender.js";
 import {
   generateEpistemicGraph,
   getValidItems,
@@ -20,7 +24,7 @@ import { resolveGlobalConcept } from "./concept-registry/identity-resolution.js"
 import { backfillGlobalConceptIds } from "./concept-registry/promotion.js";
 import { promoteGraphConnectionsToRegistry } from "./concept-registry/connection-promotion.js";
 import { isInterviewOriginSession } from "./interview/origin.js";
-import { runConceptInventoryWithFallback, isConceptInventoryValid, runDedupedDppFlight, meetsConceptInventoryThreshold, repairStuckRunningPreparationIfNeeded } from "./session.js";
+import { runConceptInventoryWithFallback, isConceptInventoryValid, runDedupedDppFlight, meetsConceptInventoryThreshold, repairStuckRunningPreparationIfNeeded, tryApplySocraticTurnCapOverride, cacheModeRecommendationParams } from "./session.js";
 import { getSupabaseAuthToken } from "./llm.js?v=20260625_02";
 import { isOfflineMode } from "./offline.js";
 import { isVaultEmbeddingsEnabled } from "./vault/embeddings.js";
@@ -497,7 +501,17 @@ async function runPhaseT14(doc) {
     genre: signals.genre,
     hasHierarchy: Boolean(hierarchy),
   });
-  const recommendation = computeBlockCountRecommendation(signals);
+  const theoryMode =
+    doc.shared?.modeRecommendation?.onboardingFlow?.[0] ||
+    doc.shared?.modeRecommendation?.primaryFlow?.[0]?.mode;
+  const paceMult = Number(doc.shared?.modeRecommendation?.params?.blockCountMultiplier);
+  const blockOpts =
+    Number.isFinite(paceMult) &&
+    paceMult !== 1 &&
+    (theoryMode === "rsvp" || theoryMode === "read")
+      ? { blockCountMultiplier: paceMult }
+      : {};
+  const recommendation = computeBlockCountRecommendation(signals, blockOpts);
   // [debug-enrich]
   console.info('[document-preparation.runPhaseT14] Block recommendation result:', {
     docId: doc.id ?? null,
@@ -505,18 +519,58 @@ async function runPhaseT14(doc) {
     reasoningPresent: recommendation?.reasoning != null,
     factors: recommendation?.factors ?? null,
     signalsUsed: recommendation?.signalsUsed ?? null,
+    blockCountMultiplier: blockOpts.blockCountMultiplier ?? 1,
   });
   doc.shared.blockRecommendation = {
     nBlocks: recommendation.nBlocks,
     reasoning: recommendation.reasoning,
     computedAt: Date.now(),
     signals: recommendation,
+    baseNBlocks: recommendation.factors?.baseNBlocks ?? recommendation.nBlocks,
+    ...(Number.isFinite(Number(recommendation.factors?.blockCountMultiplier)) &&
+    Number(recommendation.factors.blockCountMultiplier) !== 1
+      ? { paceMultiplierApplied: Number(recommendation.factors.blockCountMultiplier) }
+      : {}),
   };
   return hashPayload(doc.shared.blockRecommendation);
 }
 
 async function runPhaseT15(doc, ctx) {
   return runModeRecommendationPhase(doc, ctx);
+}
+
+/**
+ * T1.4 often runs before onboarding params exist. Re-apply pace multiplier once params are known.
+ * @param {object} doc
+ * @param {object | null | undefined} params
+ * @param {string | null | undefined} theoryMode
+ */
+function syncBlockRecommendationPace(doc, params, theoryMode) {
+  const br = doc?.shared?.blockRecommendation;
+  if (!br || typeof br !== "object") return;
+  const paceMult = Number(params?.blockCountMultiplier);
+  if (!Number.isFinite(paceMult) || paceMult === 1) return;
+  if (theoryMode !== "rsvp" && theoryMode !== "read") return;
+
+  const applied = Number(br.paceMultiplierApplied);
+  if (applied === paceMult) return;
+
+  const baseN =
+    Number.isFinite(Number(br.baseNBlocks)) && Number(br.baseNBlocks) > 0
+      ? Number(br.baseNBlocks)
+      : Number(br.nBlocks);
+  if (!Number.isFinite(baseN) || baseN <= 0) return;
+
+  if (br.baseNBlocks == null) br.baseNBlocks = baseN;
+  br.nBlocks = applyBlockCountMultiplier(baseN, paceMult);
+  br.paceMultiplierApplied = paceMult;
+  if (br.signals && typeof br.signals === "object") {
+    br.signals.nBlocks = br.nBlocks;
+    br.signals.factors = {
+      ...(br.signals.factors && typeof br.signals.factors === "object" ? br.signals.factors : {}),
+      blockCountMultiplier: paceMult,
+    };
+  }
 }
 
 /**
@@ -543,15 +597,58 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
     force: Boolean(options.force),
     hasExisting: Boolean(doc.shared?.modeRecommendation),
     hasKnowledgeProfile: Boolean(knowledgeProfile),
+    hasOnboarding: Boolean(doc.shared?.onboardingResponses),
     sizeCategory: textMetrics?.sizeCategory ?? null,
     genre: pedagogicalMeta?.genre ?? null,
   });
+
+  const responses = doc.shared?.onboardingResponses;
+  if (responses) {
+    if (doc.shared?.modeRecommendation?.method === "onboarding" && !options.force) {
+      cacheModeRecommendationParams(doc.shared.modeRecommendation.params);
+      const theoryMode =
+        doc.shared.modeRecommendation.onboardingFlow?.[0] ||
+        doc.shared.modeRecommendation.primaryFlow?.[0]?.mode;
+      syncBlockRecommendationPace(
+        doc,
+        doc.shared.modeRecommendation.params,
+        theoryMode,
+      );
+      return hashPayload(doc.shared.modeRecommendation.primaryFlow);
+    }
+    const practiceMatchStatus = doc.shared?.practicePrep?.scope?.matchStatus ?? null;
+    const algo = computeOnboardingModeRecommendation({
+      onboardingResponses: responses,
+      textMetrics,
+      pedagogicalMeta,
+      practiceMatchStatus,
+      images: doc.shared?.images,
+      scopedMarkdown: getStudyMarkdown(doc),
+    });
+    const recommendation = mapOnboardingRecommendationToModeRecommendation(
+      algo,
+      options.force ? null : doc.shared.modeRecommendation,
+    );
+    doc.shared.modeRecommendation = recommendation;
+    cacheModeRecommendationParams(recommendation.params);
+    const theoryMode =
+      recommendation.onboardingFlow?.[0] || recommendation.primaryFlow?.[0]?.mode;
+    syncBlockRecommendationPace(doc, recommendation.params, theoryMode);
+    console.info('[document-preparation.runModeRecommendationPhase] Onboarding recommendation set:', {
+      docId: doc.docId ?? null,
+      primaryFlow: recommendation?.primaryFlow ?? null,
+    });
+    void tryApplySocraticTurnCapOverride(recommendation.params);
+    return hashPayload(recommendation.primaryFlow);
+  }
+
   if (doc.shared?.modeRecommendation && !options.force) {
     // [debug-enrich]
     console.info('[document-preparation.runModeRecommendationPhase] Skipping — already set:', {
       docId: doc.docId ?? null,
       primaryFlow: doc.shared.modeRecommendation.primaryFlow ?? null,
     });
+    cacheModeRecommendationParams(doc.shared.modeRecommendation.params);
     return hashPayload(doc.shared.modeRecommendation.primaryFlow);
   }
   const recommendation = computeModeRecommendation(textMetrics, pedagogicalMeta, {
@@ -559,6 +656,7 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
     knowledgeProfile,
   });
   doc.shared.modeRecommendation = recommendation;
+  cacheModeRecommendationParams(recommendation.params);
   // [debug-enrich]
   console.info('[document-preparation.runModeRecommendationPhase] Recommendation set:', {
     docId: doc.docId ?? null,

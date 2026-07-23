@@ -47,9 +47,16 @@ import {
   splitInventoryIntoConceptBatches,
   validateConceptCoverageQuestions,
 } from "./assessment-coverage.js?v=20260629_02";
+import { buildStudentIntentAppendix } from "./recommendation/student-intent.js";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
+}
+
+/** @param {unknown} studentIntent @param {{ shared?: { studentIntent?: unknown } } | null | undefined} [sessionLike] */
+function resolveStudentIntentAppendix(studentIntent, sessionLike) {
+  const fromOpt = studentIntent != null ? studentIntent : sessionLike?.shared?.studentIntent;
+  return buildStudentIntentAppendix(/** @type {string | null | undefined} */ (fromOpt));
 }
 
 function stripJsonFence(text) {
@@ -689,6 +696,7 @@ export async function deepSeekSocraticTutor({
   scopedMarkdown = "",
   backgroundMarkdown = "",
   scopeContext = "",
+  studentIntent = null,
 }) {
   // [debug-enrich]
   console.info('[api.deepSeekSocraticTutor] Starting tutor call:', {
@@ -709,6 +717,8 @@ export async function deepSeekSocraticTutor({
     scopeBlock +=
       "\n\nIf your answer draws on BACKGROUND CONTEXT, prefix the sentence with [OUT_OF_SCOPE].";
   }
+  const intentAppendix = resolveStudentIntentAppendix(studentIntent);
+  if (intentAppendix) scopeBlock += `\n\n${intentAppendix}`;
 
   const systemPrompt = `You are a Socratic tutor. The student just studied this block: {block.title}.
 ${scopeBlock}
@@ -2695,6 +2705,7 @@ export async function deepSeekPackConceptsToBlocks({
   knowledgeProfile = null,
   docTopics = null,
   vaultSession = null,
+  studentIntent = null,
 }) {
   const model = resolveLlmModelArg(llmModel);
   const n = Math.max(1, Math.floor(Number(maxBlocks ?? nBlocks) || 1));
@@ -2707,6 +2718,7 @@ export async function deepSeekPackConceptsToBlocks({
     .filter((c) => c?.isThreshold === true)
     .map((c) => String(c?.id || c?.canonicalId || "").trim())
     .filter(Boolean);
+  const intentAppendix = resolveStudentIntentAppendix(studentIntent, vaultSession);
 
   let vaultContextBlock = "";
   const sessionForVault =
@@ -2741,6 +2753,12 @@ export async function deepSeekPackConceptsToBlocks({
       messages.push({
         role: "user",
         content: `Student comments / study focus:\n${notes}`,
+      });
+    }
+    if (intentAppendix) {
+      messages.push({
+        role: "user",
+        content: intentAppendix,
       });
     }
     if (compact) {
@@ -3579,6 +3597,7 @@ export function buildBlockGenerationUserContent({
   previousComment,
   gap_focus = [],
   coverageManifest = null,
+  studentIntent = null,
 }) {
   const gaps = formatGapFocusList(gap_focus);
   const gapBlock =
@@ -3588,6 +3607,8 @@ export function buildBlockGenerationUserContent({
   const commentLine = previousComment
     ? `\n\nThe student had this comment after the previous block:\n${previousComment}\nTake it into account for the explanation and questions.`
     : "";
+  const intentAppendix = resolveStudentIntentAppendix(studentIntent);
+  const intentLine = intentAppendix ? `\n\n${intentAppendix}` : "";
 
   const blockNoRaw = Number(blockIndex) + 1;
   const blockNo = Number.isFinite(blockNoRaw) && blockNoRaw > 0 ? blockNoRaw : 1;
@@ -3603,7 +3624,7 @@ export function buildBlockGenerationUserContent({
       ? `\n\n${renderCoverageManifestForPrompt(coverageManifest)}`
       : "";
 
-  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk above—not from future blocks or unexplained asides in the source.${coverageBlock}`;
+  return `Confirmed blocks list:\n${blocksListText}\n\nTarget block:\n${blockNo}. ${blockTitle}${previousBlockLine}\n\nSource material (verbatim chunk for this block only):\n${materialText}${gapBlock}${commentLine}${intentLine}\n\nQuestion scope: questions must be answerable from the explanation you write for this block and the source chunk above—not from future blocks or unexplained asides in the source.${coverageBlock}`;
 }
 
 const QUESTIONS_ONLY_JSON_SCHEMA = `{
@@ -3894,6 +3915,7 @@ export async function deepSeekGenerateBlockExplanation({
   vaultSession = null,
   includeVisualNeed = true,
   sectionHasImages = false,
+  studentIntent = null,
 }) {
   // [debug-enrich]
   console.info('[api.deepSeekGenerateBlockExplanation] Start:', {
@@ -3951,6 +3973,7 @@ export async function deepSeekGenerateBlockExplanation({
     previousComment,
     gap_focus,
     coverageManifest,
+    studentIntent: studentIntent ?? vaultSession?.shared?.studentIntent ?? null,
   });
 
   const paragraphOpts = buildParagraphFormatOpts(blockTitle, explanation_profile);
@@ -4156,6 +4179,8 @@ export async function deepSeekGenerateBlockJson({
   conceptIds = null,
   docTopics = null,
   sectionHasImages = false,
+  vaultSession = null,
+  studentIntent = null,
 }) {
   // [debug-enrich]
   console.info('[api.deepSeekGenerateBlockJson] Start:', {
@@ -4205,8 +4230,10 @@ export async function deepSeekGenerateBlockJson({
     claimCoverageMin,
     conceptIds,
     docTopics,
+    vaultSession,
     includeVisualNeed: true,
     sectionHasImages,
+    studentIntent,
   });
 
   if (strictMode && Array.isArray(claims) && claims.length) {
@@ -4443,6 +4470,7 @@ export async function deepSeekGenerateReviewBatch({
   reviewInstructions,
   type,
   batchSize,
+  studentIntent = null,
 }) {
   // [debug-enrich]
   console.info("[api.deepSeekGenerateReviewBatch] Start:", {
@@ -4484,11 +4512,15 @@ No preamble, no backticks.`
     .join(String(typeWord));
 
   const instructions = String(reviewInstructions || "").trim();
+  const intentAppendix = resolveStudentIntentAppendix(studentIntent);
   const userParts = [];
   if (instructions) {
     userParts.push(
       `Student review focus (follow these preferences when generating questions):\n${instructions}`,
     );
+  }
+  if (intentAppendix) {
+    userParts.push(intentAppendix);
   }
   userParts.push(String(sessionContent || ""));
 
@@ -5651,8 +5683,11 @@ export async function deepSeekReviewSocraticTutor({
   sessionContent,
   question,
   studentAnswer,
+  studentIntent = null,
 }) {
-  const systemPrompt = `You are a Socratic tutor. The student is reviewing a study session.
+  const intentAppendix = resolveStudentIntentAppendix(studentIntent);
+  const intentBlock = intentAppendix ? `\n\n${intentAppendix}` : "";
+  const systemPrompt = `You are a Socratic tutor. The student is reviewing a study session.${intentBlock}
 
 Structure your reply in two parts (use these exact headings, in the same language as the question):
 

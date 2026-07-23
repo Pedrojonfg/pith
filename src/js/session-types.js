@@ -112,6 +112,21 @@ export const PROJECT_STORE_SCHEMA = 1;
  */
 
 /**
+ * One-shot onboarding questionnaire answers (mode-recommendation).
+ * @typedef {object} OnboardingResponses
+ * @property {'voice'|'text'|'avoid'} socraticModality
+ * @property {'deep'|'moderate'|'urgent'} pace
+ * @property {'memorize'|'both'|'understand'} memorizationVsUnderstanding
+ * @property {'original'|'explained'|'indifferent'} sourceVsExplained
+ * @property {number} answeredAt — epoch ms
+ */
+
+/**
+ * Free-text student goal for prompt appendix; null omits appendix.
+ * @typedef {string|null} StudentIntent
+ */
+
+/**
  * @typedef {object} AssessmentSignal
  * @property {string} canonicalId
  * @property {string} conceptLabel
@@ -384,6 +399,36 @@ export function validateDocumentSession(session) {
     }
     if (sh.scopeResolvedAt != null && !Number.isFinite(sh.scopeResolvedAt)) {
       errors.push("shared.scopeResolvedAt must be finite number or null");
+    }
+    // ponytail: mirror scopeContext / scopeSelection — null/absent ok; validate when present
+    if (sh.onboardingResponses != null) {
+      const or = sh.onboardingResponses;
+      if (typeof or !== "object" || Array.isArray(or)) {
+        errors.push("shared.onboardingResponses must be object or null");
+      } else {
+        if (!["voice", "text", "avoid"].includes(or.socraticModality)) {
+          errors.push("onboardingResponses.socraticModality must be voice|text|avoid");
+        }
+        if (!["deep", "moderate", "urgent"].includes(or.pace)) {
+          errors.push("onboardingResponses.pace must be deep|moderate|urgent");
+        }
+        if (!["memorize", "both", "understand"].includes(or.memorizationVsUnderstanding)) {
+          errors.push(
+            "onboardingResponses.memorizationVsUnderstanding must be memorize|both|understand",
+          );
+        }
+        if (!["original", "explained", "indifferent"].includes(or.sourceVsExplained)) {
+          errors.push(
+            "onboardingResponses.sourceVsExplained must be original|explained|indifferent",
+          );
+        }
+        if (!Number.isFinite(or.answeredAt)) {
+          errors.push("onboardingResponses.answeredAt must be a finite number");
+        }
+      }
+    }
+    if (sh.studentIntent != null && typeof sh.studentIntent !== "string") {
+      errors.push("shared.studentIntent must be string or null");
     }
     if (sh.modeRecommendation != null) {
       const rec = sh.modeRecommendation;

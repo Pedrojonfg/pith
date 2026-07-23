@@ -519,6 +519,8 @@ export async function createSession(rawMarkdown, options = {}) {
       annotations: [],
       smItems: [],
       modeRecommendation: null,
+      onboardingResponses: null,
+      studentIntent: null,
       uploadMeta: null,
       assessmentSignals: [],
       docTopics: [],
@@ -842,6 +844,37 @@ export async function updateRecommendation(docId, recommendation) {
   if (!session) throw new Error("session not found");
   session.shared.modeRecommendation = recommendation;
   await saveActiveSession(session);
+}
+
+/**
+ * Write-once onboarding answers (NG4). Rejects if already answered.
+ * @param {string} docId
+ * @param {{
+ *   onboardingResponses: import("./session-types.js").OnboardingResponses,
+ *   studentIntent?: string | null,
+ * }} payload
+ */
+export async function setOnboardingAnswers(docId, payload) {
+  const session = await getSession(docId);
+  if (!session) throw new Error("session not found");
+  if (session.shared.onboardingResponses != null) {
+    throw new Error("onboarding answers already set");
+  }
+  const responses = payload?.onboardingResponses;
+  if (!responses || typeof responses !== "object") {
+    throw new Error("onboardingResponses required");
+  }
+  session.shared.onboardingResponses = {
+    socraticModality: responses.socraticModality,
+    pace: responses.pace,
+    memorizationVsUnderstanding: responses.memorizationVsUnderstanding,
+    sourceVsExplained: responses.sourceVsExplained,
+    answeredAt: Number(responses.answeredAt) || Date.now(),
+  };
+  const intent = String(payload?.studentIntent ?? "").trim();
+  session.shared.studentIntent = intent || null;
+  await saveActiveSession(session);
+  return session;
 }
 
 /**

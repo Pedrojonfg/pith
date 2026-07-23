@@ -1498,6 +1498,110 @@
           </div>
         </section>
 
+        <section
+          id="screenOnboardingQuestionnaire"
+          class="screen onboarding-questionnaire-screen"
+          aria-hidden="true"
+          aria-label="Study preferences"
+        >
+          <h1>Study preferences</h1>
+          <p class="hint onboarding-questionnaire-lead">
+            Answer a few questions so we can recommend how to study this material.
+          </p>
+
+          <fieldset class="onboarding-q-fieldset" data-rq="R-Q1">
+            <legend>
+              Are you comfortable answering Socratic questions out loud using the transcriber?
+            </legend>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq1" value="voice" />
+              Yes, I prefer thinking out loud
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq1" value="text" />
+              I prefer writing my answers
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq1" value="avoid" />
+              I'd rather avoid Socratic questions
+            </label>
+          </fieldset>
+
+          <fieldset class="onboarding-q-fieldset" data-rq="R-Q2">
+            <legend>How much time do you want to spend on this content?</legend>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq2" value="deep" />
+              I want to go deep, I have plenty of time
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq2" value="moderate" />
+              Moderate amount of time
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq2" value="urgent" />
+              I'm in a hurry, just the essentials
+            </label>
+          </fieldset>
+
+          <fieldset class="onboarding-q-fieldset" data-rq="R-Q3">
+            <legend>
+              Do you need this content more to memorize concrete facts, or to understand and reason
+              about ideas?
+            </legend>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq3" value="memorize" />
+              Memorize concrete facts
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq3" value="both" />
+              Both
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq3" value="understand" />
+              Understand and reason
+            </label>
+          </fieldset>
+
+          <fieldset class="onboarding-q-fieldset" data-rq="R-Q4">
+            <legend>
+              Do you want to work directly with the original text (with our help), or would you
+              prefer we explain it to you?
+            </legend>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq4" value="original" />
+              Original text
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq4" value="explained" />
+              Explain it to me
+            </label>
+            <label class="onboarding-q-option">
+              <input type="radio" name="onboardingRq4" value="indifferent" />
+              Doesn't matter
+            </label>
+          </fieldset>
+
+          <div class="onboarding-q-intent">
+            <label for="onboardingStudentIntent">
+              Is there anything about your goal with this content, or your relationship to the topic,
+              that you'd like us to take into account?
+            </label>
+            <textarea
+              id="onboardingStudentIntent"
+              name="onboardingStudentIntent"
+              rows="3"
+              spellcheck="true"
+              placeholder="Optional"
+            ></textarea>
+          </div>
+
+          <div class="row onboarding-questionnaire-actions">
+            <button type="button" id="onboardingQuestionnaireSubmitBtn" class="btn-primary" disabled>
+              Submit
+            </button>
+          </div>
+        </section>
+
         <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
           <div class="card slow-card">
             <h1>Reading scope</h1>
@@ -2023,7 +2127,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260721_03";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260724_02";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -2049,7 +2153,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260721_03");
+        await import("./src/js/main.js?v=20260724_02");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

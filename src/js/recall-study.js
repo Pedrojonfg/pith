@@ -170,6 +170,7 @@ export async function generateRecallSliceForDoc(doc, options = {}) {
     config,
     lang: options.language,
     llmModel: options.llmModel,
+    studentIntent: doc?.shared?.studentIntent ?? null,
   });
   const slice = normalizeRecallSlice({
     status: "ready",

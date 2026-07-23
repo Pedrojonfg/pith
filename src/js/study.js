@@ -68,6 +68,10 @@ import {
 } from "./recommendation/block-count-recommender.js?v=20260625_02";
 import { computeModeRecommendation } from "./recommendation/recommender.js?v=20260625_02";
 import {
+  computeOnboardingModeRecommendation,
+  mapOnboardingRecommendationToModeRecommendation,
+} from "./recommendation/onboarding-recommender.js";
+import {
   buildBlockSplitFingerprint,
   getBlockSplitCache,
   invalidateBlockSplitCache,
@@ -213,6 +217,7 @@ import {
   generateQuestionsBlockForIndex,
   recordResponse,
   resolveBlockQuestionConfig,
+  tryApplySocraticTurnCapOverride,
   resolveRegenMode,
   buildQuestionScopeContext,
   ensureSessionPipelineLevers,
@@ -382,6 +387,7 @@ import {
   setUploadMeta,
   syncAssessmentSignalsToShared,
   updateRecommendation,
+  setOnboardingAnswers,
 } from "./session-store.js?v=20260625_02";
 import {
   findVaultEntryForConceptId,
@@ -1037,6 +1043,14 @@ function wireScopeSelectionHandlers() {
   });
 }
 
+function wireOnboardingQuestionnaireHandlers() {
+  if (els.onboardingQuestionnaireSubmitBtn?._wired) return;
+  if (els.onboardingQuestionnaireSubmitBtn) els.onboardingQuestionnaireSubmitBtn._wired = true;
+  els.onboardingQuestionnaireSubmitBtn?.addEventListener("click", () => {
+    void submitOnboardingQuestionnaire();
+  });
+}
+
 async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   let doc = null;
   if (preparedDoc?.docId) {
@@ -1086,6 +1100,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   }
 
   if (await maybeEnterScopeSelectionGate(doc)) return;
+  if (await maybeEnterOnboardingQuestionnaireGate(doc)) return;
 
   if (guard.decision === "waiting") {
     showDocumentPreparingScreen("Document preparation in progress…");
@@ -1197,9 +1212,13 @@ async function finalizeModeSelectEntry(doc) {
     docId: doc?.docId || null,
     hasModeRec: Boolean(doc?.shared?.modeRecommendation),
     hasSharedProfile: Boolean(doc?.shared?.knowledgeProfile),
+    hasOnboarding: Boolean(doc?.shared?.onboardingResponses),
   }); // [debug-enrich]
   migrateKnowledgeProfileToShared(doc);
-  if (!doc?.shared?.modeRecommendation) {
+  const needsOnboardingRec =
+    Boolean(doc?.shared?.onboardingResponses) &&
+    doc?.shared?.modeRecommendation?.method !== "onboarding";
+  if (!doc?.shared?.modeRecommendation || needsOnboardingRec) {
     await runModeRecommendationPhase(doc, preparationGateOptions(), {
       knowledgeProfile: doc?.shared?.knowledgeProfile ?? null,
       force: true,
@@ -1215,6 +1234,66 @@ async function finalizeModeSelectEntry(doc) {
     hasModeRec: Boolean(doc?.shared?.modeRecommendation),
   }); // [debug-enrich]
   enterModeSelectScreen();
+}
+
+/**
+ * @param {import("./session-store.js").DocumentSession | null | undefined} doc
+ * @returns {Promise<boolean>} true if questionnaire screen shown
+ */
+async function maybeEnterOnboardingQuestionnaireGate(doc) {
+  if (!doc?.docId) return false;
+  if (doc.shared?.onboardingResponses != null) return false;
+  if (isInterviewOriginSession(doc)) return false;
+  showScreen("onboardingQuestionnaire");
+  return true;
+}
+
+/**
+ * @returns {{
+ *   socraticModality: string,
+ *   pace: string,
+ *   memorizationVsUnderstanding: string,
+ *   sourceVsExplained: string,
+ * } | null}
+ */
+function readOnboardingQuestionnaireForm() {
+  const screen = els.screenOnboardingQuestionnaire;
+  if (!screen) return null;
+  const pick = (name) => screen.querySelector(`input[name="${name}"]:checked`)?.value;
+  const socraticModality = pick("onboardingRq1");
+  const pace = pick("onboardingRq2");
+  const memorizationVsUnderstanding = pick("onboardingRq3");
+  const sourceVsExplained = pick("onboardingRq4");
+  if (!socraticModality || !pace || !memorizationVsUnderstanding || !sourceVsExplained) return null;
+  return { socraticModality, pace, memorizationVsUnderstanding, sourceVsExplained };
+}
+
+async function submitOnboardingQuestionnaire() {
+  const doc = await getActiveSession();
+  if (!doc?.docId) return;
+  const answers = readOnboardingQuestionnaireForm();
+  if (!answers) return;
+  const intentEl = els.onboardingStudentIntent;
+  const studentIntent = intentEl ? String(intentEl.value || "").trim() : "";
+  els.onboardingQuestionnaireSubmitBtn && (els.onboardingQuestionnaireSubmitBtn.disabled = true);
+  try {
+    await setOnboardingAnswers(doc.docId, {
+      onboardingResponses: { ...answers, answeredAt: Date.now() },
+      studentIntent,
+    });
+    const refreshed = await getSession(doc.docId);
+    await enterModeSelectAfterTier1Gate(refreshed);
+  } catch (err) {
+    console.warn("[study.submitOnboardingQuestionnaire] failed", err);
+    // ponytail: local re-enable; avoid importing ui sync (circular study↔ui under ?v=)
+    if (els.onboardingQuestionnaireSubmitBtn && els.screenOnboardingQuestionnaire) {
+      const screen = els.screenOnboardingQuestionnaire;
+      const names = ["onboardingRq1", "onboardingRq2", "onboardingRq3", "onboardingRq4"];
+      els.onboardingQuestionnaireSubmitBtn.disabled = !names.every(
+        (name) => !!screen.querySelector(`input[name="${name}"]:checked`),
+      );
+    }
+  }
 }
 
 async function maybeEnterSharedAssessmentGate(doc) {
@@ -1409,6 +1488,37 @@ export async function computeAndPersistModeRecommendation(
   options = {},
 ) {
   if (!doc?.docId) return;
+  const responses = doc.shared?.onboardingResponses;
+  if (responses) {
+    if (doc.shared?.modeRecommendation?.method === "onboarding" && !options.force) return;
+    try {
+      const textMetrics = analyzeText(String(cleanedText || ""));
+      const pedagogicalMeta =
+        hierarchyResult?.pedagogicalMeta ?? buildDeterministicPedagogicalMeta(textMetrics);
+      const practiceMatchStatus = doc.shared?.practicePrep?.scope?.matchStatus ?? null;
+      const algo = computeOnboardingModeRecommendation({
+        onboardingResponses: responses,
+        textMetrics,
+        pedagogicalMeta,
+        practiceMatchStatus,
+        images: doc.shared?.images,
+        scopedMarkdown:
+          typeof doc.shared?.scopedMarkdown === "string"
+            ? doc.shared.scopedMarkdown
+            : String(cleanedText || ""),
+      });
+      const recommendation = mapOnboardingRecommendationToModeRecommendation(
+        algo,
+        options.force ? null : doc.shared.modeRecommendation,
+      );
+      doc.shared.modeRecommendation = recommendation;
+      await updateRecommendation(doc.docId, recommendation);
+      void tryApplySocraticTurnCapOverride(recommendation.params);
+    } catch (err) {
+      console.warn("mode recommendation compute failed", err);
+    }
+    return;
+  }
   if (doc.shared?.modeRecommendation && !options.force) return;
   try {
     const textMetrics = analyzeText(String(cleanedText || ""));
@@ -1466,6 +1576,7 @@ const FLOW_MODE_SHORT_LABELS = {
   rsvp: "RSVP",
   read: "Read",
   questions: "Questions",
+  practice: "Practice",
 };
 
 /**
@@ -1523,7 +1634,7 @@ export function resolveFlowPanelViewState(doc) {
  */
 export function formatIntroFlowLine(steps) {
   if (!Array.isArray(steps) || !steps.length) return "";
-  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" ? ");
+  return steps.map((step) => getFlowModeShortLabel(String(step?.mode || ""))).join(" → ");
 }
 
 /**
@@ -1533,6 +1644,10 @@ export function formatIntroFlowLine(steps) {
  */
 async function resolveFlowWhyText(recommendation, doc = null) {
   if (doc == null) doc = await getActiveSession();
+  // Onboarding reasoning is authoritative when method is onboarding.
+  if (recommendation?.method === "onboarding") {
+    return String(recommendation?.reasoning || "").trim();
+  }
   const hierarchy = doc?.shared?.docHierarchy;
   const pedagogical =
     hierarchy && typeof hierarchy === "object" && hierarchy.pedagogicalMeta
@@ -1553,6 +1668,9 @@ async function resolveFlowWhyText(recommendation, doc = null) {
  */
 async function buildRecommendationSubtitle(recommendation, doc = null) {
   if (doc == null) doc = await getActiveSession();
+  if (recommendation?.method === "onboarding") {
+    return String(recommendation?.reasoning || "").trim();
+  }
   const reasoning = String(recommendation?.reasoning || "").trim();
   const whyText = await resolveFlowWhyText(recommendation, doc);
   const parts = [];
@@ -1770,7 +1888,7 @@ export async function renderFlowPanel(doc = null) {
 
   const primaryFlow = Array.isArray(recommendation.primaryFlow) ? recommendation.primaryFlow : [];
   const totalMin = sumFlowTimeMin(primaryFlow);
-  const subtitle = buildRecommendationSubtitle(recommendation, doc);
+  const subtitle = await buildRecommendationSubtitle(recommendation, doc);
 
   if (els.recommendationFlowTitle) {
     els.recommendationFlowTitle.textContent = formatIntroFlowLine(primaryFlow);
@@ -5742,7 +5860,16 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
       textMetrics,
       pedagogicalMeta,
     );
-    const recommendation = computeBlockCountRecommendation(signals);
+    const paceMult = Number(
+      state.activeSession?.shared?.modeRecommendation?.params?.blockCountMultiplier ??
+        doc?.shared?.modeRecommendation?.params?.blockCountMultiplier,
+    );
+    const recommendation = computeBlockCountRecommendation(
+      signals,
+      Number.isFinite(paceMult) && paceMult !== 1
+        ? { blockCountMultiplier: paceMult }
+        : {},
+    );
     if (runId !== recommendBlockCountRunId) return;
 
     setBlockSplitCache({
@@ -9839,6 +9966,7 @@ export async function wireStudyHandlers() {
   els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());
   wireSlowScopeHandlers();
   wireScopeSelectionHandlers();
+  wireOnboardingQuestionnaireHandlers();
   wireSlowPhase0Handlers();
   wireSlowPhase3Handlers();
   wireMaterialGraphHandlers();
@@ -10963,6 +11091,7 @@ export async function wireStudyHandlers() {
         question: String(q.question),
         studentAnswer: answer,
         ...scopeFields,
+        studentIntent: doc?.shared?.studentIntent ?? null,
       });
       // [debug-enrich]
       console.info('[study.socraticSubmit] Tutor response received:', {

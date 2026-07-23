@@ -658,6 +658,9 @@ export const els = {
   scopeSelectionCharCount: document.getElementById("scopeSelectionCharCount"),
   scopeSelectionFullBtn: document.getElementById("scopeSelectionFullBtn"),
   scopeSelectionConfirmBtn: document.getElementById("scopeSelectionConfirmBtn"),
+  screenOnboardingQuestionnaire: document.getElementById("screenOnboardingQuestionnaire"),
+  onboardingStudentIntent: document.getElementById("onboardingStudentIntent"),
+  onboardingQuestionnaireSubmitBtn: document.getElementById("onboardingQuestionnaireSubmitBtn"),
   screenSlowScope: document.getElementById("screenSlowScope"),
   screenSlowPhase0: document.getElementById("screenSlowPhase0"),
   screenSlowReader: document.getElementById("screenSlowReader"),
@@ -791,6 +794,26 @@ export const els = {
   testNextBtn: document.getElementById("testNextBtn"),
   testError: document.getElementById("testError"),
 };
+
+const ONBOARDING_RQ_NAMES = ["onboardingRq1", "onboardingRq2", "onboardingRq3", "onboardingRq4"];
+
+/** Enables Submit once R-Q1–R-Q4 each have a selection. T04 wires the click handler. */
+export function syncOnboardingQuestionnaireSubmitEnabled() {
+  const submit = els.onboardingQuestionnaireSubmitBtn;
+  const screen = els.screenOnboardingQuestionnaire;
+  if (!submit || !screen) return;
+  submit.disabled = !ONBOARDING_RQ_NAMES.every(
+    (name) => !!screen.querySelector(`input[name="${name}"]:checked`)
+  );
+}
+
+(function wireOnboardingQuestionnaireUi() {
+  const screen = els.screenOnboardingQuestionnaire;
+  if (!screen || screen.dataset.onboardingWired === "1") return;
+  screen.dataset.onboardingWired = "1";
+  screen.addEventListener("change", syncOnboardingQuestionnaireSubmitEnabled);
+  syncOnboardingQuestionnaireSubmitEnabled();
+})();
 
 export function showInventoryStatusBanner(message, { id = "inventory-status-banner" } = {}) {
   if (typeof document === "undefined" || !message) return null;
@@ -1430,6 +1453,7 @@ export function showScreen(which) {
   const showPrePackingResults = which === "prePackingResults";
   const showAssessmentGate = which === "assessmentGate";
   const showScopeSelection = which === "scopeSelection";
+  const showOnboardingQuestionnaire = which === "onboardingQuestionnaire";
   const showBlocks = which === "blocks";
   const showReady = which === "ready";
   const showFullPackGenerating = which === "fullPackGenerating";
@@ -1466,6 +1490,7 @@ export function showScreen(which) {
     [els.screenPrePackingAssessment, showPrePackingAssessment],
     [els.screenAssessmentGate, showAssessmentGate],
     [els.screenScopeSelection, showScopeSelection],
+    [els.screenOnboardingQuestionnaire, showOnboardingQuestionnaire],
     [els.screenPrePackingResults, showPrePackingResults],
     [els.screenBlocksList, showBlocks],
     [els.screenSessionReady, showReady],

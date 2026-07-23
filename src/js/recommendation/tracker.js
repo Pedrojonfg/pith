@@ -135,12 +135,15 @@ async function isModeStepComplete(session, mode) {
       return slow.graphEnrichedUnlocked === true || slow.phase === "complete";
     }
     case "rsvp":
+    case "read":
       return isBlockSessionComplete(slice);
     case "cloze":
       return isClozeModeComplete(slice);
     case "questions":
       return isQuestionsModeComplete(slice);
     case "recall":
+      return String(slice.status || "").trim() === "complete";
+    case "practice":
       return String(slice.status || "").trim() === "complete";
     default:
       return false;

@@ -5,6 +5,7 @@ import {
 } from "./llm.js?v=20260625_02";
 import { resolveSourceFileIdForExcerpt } from "./source-provenance.js";
 import { RECALL_QUESTION_GENERATIVE_RULES, RECALL_TUTOR_GENERATIVE_RULES } from "./pedagogy/generative-pedagogy.js";
+import { buildStudentIntentAppendix } from "./recommendation/student-intent.js";
 
 const RECALL_TYPES = new Set(["synthesis", "relational", "argumentative", "applicative"]);
 const TUTOR_QUALITIES = new Set(["strong", "adequate", "partial", "insufficient"]);
@@ -184,6 +185,7 @@ export function buildRecallQuestionsSystemPrompt({
   materialExcerpt,
   weakConceptIds,
   primaryLearningGoal,
+  studentIntent = null,
 }) {
   const lang = String(language || "English").trim() || "English";
   const count = Math.max(1, Math.min(10, Math.floor(Number(questionCount) || 5)));
@@ -196,6 +198,8 @@ export function buildRecallQuestionsSystemPrompt({
   const inv = Array.isArray(conceptInventory) ? conceptInventory : [];
   const weakIds = Array.isArray(weakConceptIds) ? weakConceptIds.filter(Boolean) : [];
   const excerpt = truncateMaterialExcerpt(materialExcerpt);
+  const intentAppendix = buildStudentIntentAppendix(studentIntent);
+  const intentBlock = intentAppendix ? `\n\n${intentAppendix}` : "";
 
   const weakBlock = weakIds.length
     ? `\nWeak concepts (prioritize these in question selection):\n${JSON.stringify(weakIds)}`
@@ -206,7 +210,7 @@ Rules:
 - Generate exactly ${count} open-ended questions (NO multiple choice).
 - Each question MUST have recall_type: one of synthesis, relational, argumentative, applicative.
 - Include at least one synthesis question.
-- Distribute recall_type values across: ${safeTypes.join(", ")} (aligned with primary learning goal "${goal}").
+- Distribute recall_type values across: ${safeTypes.join(", ")} (aligned with primary learning goal "${goal}").${intentBlock}
 - Each question references 1–3 concept_ids from the inventory below.
 - Each question MUST include source_chunks: 1+ verbatim or lightly trimmed excerpts from the source material (non-empty strings).
 - Questions must require integration beyond a single definition.
@@ -381,6 +385,7 @@ export async function generateRecallQuestions({
   lang,
   language,
   llmModel,
+  studentIntent = null,
 }) {
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
   // [debug-enrich]
@@ -430,6 +435,7 @@ export async function generateRecallQuestions({
     materialExcerpt: material,
     weakConceptIds: weakIds,
     primaryLearningGoal: goal,
+    studentIntent,
   });
 
   const content = await llmChatCompletions({

@@ -158,10 +158,24 @@ function buildReasoning(normalized, ctx) {
 }
 
 /**
- * @param {Record<string, unknown>} signals
- * @returns {{ computedAt: number, nBlocks: number, reasoning: string, signalsUsed: string[], factors: { conceptN: number, wordN: number, sectionN: number, multiplier: number, rawN: number } }}
+ * Apply onboarding pace multiplier to a recommended block count.
+ * @param {number} nBlocks
+ * @param {unknown} blockCountMultiplier
+ * @returns {number}
  */
-export function computeBlockCountRecommendation(signals) {
+export function applyBlockCountMultiplier(nBlocks, blockCountMultiplier) {
+  const base = clamp(Math.round(Number(nBlocks) || 0), MIN_BLOCKS, MAX_BLOCKS);
+  const m = Number(blockCountMultiplier);
+  if (!Number.isFinite(m) || m === 1) return base;
+  return clamp(Math.floor(base * m), MIN_BLOCKS, MAX_BLOCKS);
+}
+
+/**
+ * @param {Record<string, unknown>} signals
+ * @param {{ blockCountMultiplier?: number }} [options]
+ * @returns {{ computedAt: number, nBlocks: number, reasoning: string, signalsUsed: string[], factors: { conceptN: number, wordN: number, sectionN: number, multiplier: number, rawN: number, blockCountMultiplier?: number, baseNBlocks?: number } }}
+ */
+export function computeBlockCountRecommendation(signals, options = {}) {
   const normalized = normalizeSignals(signals);
   // [debug-enrich]
   console.debug('[block-count-recommender.computeBlockCountRecommendation] Normalized signals:', {
@@ -193,7 +207,12 @@ export function computeBlockCountRecommendation(signals) {
   }
 
   const { multiplier, reason: multiplierReason } = resolveMultiplier(normalized);
-  const nBlocks = clamp(Math.round(rawN * multiplier), MIN_BLOCKS, MAX_BLOCKS);
+  let nBlocks = clamp(Math.round(rawN * multiplier), MIN_BLOCKS, MAX_BLOCKS);
+  const baseNBlocks = nBlocks;
+  const paceMult = Number(options?.blockCountMultiplier);
+  if (Number.isFinite(paceMult) && paceMult !== 1) {
+    nBlocks = applyBlockCountMultiplier(nBlocks, paceMult);
+  }
 
   const factors = {
     conceptN,
@@ -201,6 +220,9 @@ export function computeBlockCountRecommendation(signals) {
     sectionN,
     multiplier,
     rawN,
+    ...(Number.isFinite(paceMult) && paceMult !== 1
+      ? { blockCountMultiplier: paceMult, baseNBlocks }
+      : {}),
   };
 
   const signalsUsed = buildSignalsUsed(normalized, {
@@ -220,6 +242,7 @@ export function computeBlockCountRecommendation(signals) {
     tinyCapApplied,
     multiplier,
     multiplierReason,
+    paceMult: Number.isFinite(paceMult) ? paceMult : 1,
     factors,
   });
 

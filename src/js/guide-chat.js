@@ -9,6 +9,7 @@ import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { SOURCE_FIDELITY_RULES } from "./source-fidelity.js";
 import { resolveChatScopeFields } from "./session-types.js";
 import { getBlockChunkFromIndex } from "./session.js";
+import { buildStudentIntentAppendix } from "./recommendation/student-intent.js";
 
 function safeJsonParse(raw) {
   const t = String(raw || "").trim();
@@ -98,9 +99,15 @@ export function clearGuideChatStorage({ sessionId, removeAllStored = false } = {
 }
 
 let guideScopePromptBlock = "";
+/** @type {string | null} */
+let guideStudentIntent = null;
 
 /** Cache scope dual-context block from document session (R12–R14 chat-only). */
 export function setGuideScopeFromDocument(doc) {
+  guideStudentIntent =
+    typeof doc?.shared?.studentIntent === "string" && doc.shared.studentIntent.trim()
+      ? doc.shared.studentIntent.trim()
+      : null;
   const { scopedMarkdown, backgroundMarkdown, scopeContext } = resolveChatScopeFields(doc);
   if (!scopedMarkdown || !backgroundMarkdown) {
     guideScopePromptBlock = "";
@@ -330,6 +337,11 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
       "\n\nSPOILER POLICY: If the answer requires content from blocks the student has not studied yet, reply in one sentence: \"You have not studied the block that develops this yet.\" Mention block number only if listed in session context — do not reveal unread block explanations unread block explanations.";
   }
 
+  const intentAppendix = buildStudentIntentAppendix(
+    guideStudentIntent ?? activeSession?.shared?.studentIntent ?? null,
+  );
+  const intentSection = intentAppendix ? `\n\n${intentAppendix}` : "";
+
   const systemPrompt =
     `You are a study guide tutor grounded in the uploaded study material.\n\n` +
     `${SOURCE_FIDELITY_RULES}\n\n` +
@@ -338,7 +350,7 @@ export function buildGuidePrompt(userMessage, currentBlockIndex) {
     `Author definitions prevail over generic domain knowledge.\n\n` +
     `${GUIDE_SIDEBAR_STYLE}\n\n` +
     `Respond in the same language as the student's latest message.\n\n` +
-    `COMPLETE SESSION CONTEXT:\n${sessionContext}${guideScopePromptBlock}${documentExcerptSection}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
+    `COMPLETE SESSION CONTEXT:\n${sessionContext}${guideScopePromptBlock}${intentSection}${documentExcerptSection}\n\n${currentBlockNote}\n\nLatest student message:\n${safeUser}`;
 
   return systemPrompt;
 }

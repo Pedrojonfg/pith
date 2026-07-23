@@ -24,7 +24,7 @@ import { els, showScreen, typesetMath } from "./ui.js?v=20260625_02";
 import { buildReviewQueue, isOnTime, normalizeSmItem, updateSmItem } from "./sm2.js";
 import { getPedagogicalFlags } from "./config/flags.js";
 import { computeWhyThisExplanation } from "./pedagogy/why-this.js";
-import { getSession, getSmItemsDueToday, upsertSmItem } from "./session-store.js";
+import { getActiveSession, getSession, getSmItemsDueToday, upsertSmItem } from "./session-store.js";
 import {
   filterDueSmItems,
   getReviewableItemsForProject,
@@ -1268,6 +1268,13 @@ async function startReviewGeneration() {
   reviewGenCancelToken = { cancelled: false };
   showScreen("reviewGenerating");
 
+  let studentIntent = null;
+  try {
+    studentIntent = (await getActiveSession())?.shared?.studentIntent ?? null;
+  } catch {
+    studentIntent = null;
+  }
+
   const total = nQuestions;
   let done = 0;
   const batches = [];
@@ -1287,6 +1294,7 @@ async function startReviewGeneration() {
       reviewInstructions,
       type: reviewType,
       batchSize,
+      studentIntent,
     });
 
     const arr = parseJsonArrayFromModel(content);
@@ -1464,11 +1472,18 @@ export async function wireReviewHandlers() {
     els.reviewSocraticStatus.textContent = getLlmCallingLabel(llmModel);
     els.reviewSocraticSendBtn.disabled = true;
     try {
+      let studentIntent = null;
+      try {
+        studentIntent = (await getActiveSession())?.shared?.studentIntent ?? null;
+      } catch {
+        studentIntent = null;
+      }
       const resp = await deepSeekReviewSocraticTutor({
         llmModel,
         sessionContent: reviewSessionContent,
         question: String(q.question || ""),
         studentAnswer: answer,
+        studentIntent,
       });
       els.reviewSocraticResponseBox.hidden = false;
       void renderMarkdown(els.reviewSocraticResponseBox, resp);

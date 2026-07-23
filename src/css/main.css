@@ -3920,6 +3920,62 @@ button[disabled],
   flex-wrap: wrap;
 }
 
+/* Onboarding questionnaire — full-bleed primary screen (no card wrapper) */
+.onboarding-questionnaire-screen.screen[aria-hidden="false"] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md, 16px);
+  padding: var(--space-lg, 24px) var(--space-md, 16px);
+  min-height: calc(100vh - var(--chrome-top-reserve, 60px));
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: var(--bg-base);
+}
+
+.onboarding-questionnaire-lead {
+  margin: 0;
+}
+
+.onboarding-q-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-q-fieldset legend {
+  padding: 0;
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.onboarding-q-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--text-sm, 13px);
+  cursor: pointer;
+}
+
+.onboarding-q-intent {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.onboarding-q-intent textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.onboarding-questionnaire-actions {
+  margin-top: var(--space-sm, 8px);
+}
+
 /* Pack concept graph editor — full-bleed primary screen (gate display like .blocks-screen) */
 .pack-concept-editor-screen.screen[aria-hidden="false"] {
   display: flex;
