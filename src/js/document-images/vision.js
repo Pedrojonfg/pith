@@ -8,7 +8,7 @@ import { logLlmUsage } from "../llm-usage-log.js";
 import { getDocumentImageSignedUrl } from "./storage.js";
 import { EDGE_TYPES } from "../graph/build.js";
 
-const GEMINI_VISION_MODEL = "gemini-2.0-flash";
+const GEMINI_VISION_MODEL = "gemini-2.5-flash";
 
 /** Vision JSON: ~8 fields × ~40 tokens */
 const VISION_ANALYSIS_MAX_TOKENS = 512;
