@@ -57,7 +57,15 @@ let rowCache = null;
 async function readSessionRows() {
   // [debug-enrich]
   console.debug('[session-store.readSessionRows] Fetching session rows from Supabase');
-  const userId = await getAuthUserId();
+  let userId;
+  try {
+    userId = await getAuthUserId();
+  } catch {
+    // Pre-auth boot (e.g. detectAndMigrateV1) must no-op — do not warm rowCache.
+    // [debug-enrich]
+    console.debug('[session-store.readSessionRows] Not authenticated — empty rows');
+    return [];
+  }
   try {
     const rows = await fetchSessionRows(userId);
     rowCache = new Map(rows.map((r) => [r.id, r]));

@@ -290,5 +290,16 @@ async function bootstrap() {
   await continueAppBoot();
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("[main.bootstrap] Boot failed:", {
+    message: err?.message ?? String(err),
+    stack: err?.stack ?? null,
+  });
+  try {
+    showScreen("auth");
+    dismissSplash(false);
+  } catch (recoveryErr) {
+    console.error("[main.bootstrap] Recovery failed:", recoveryErr);
+  }
+});
 
