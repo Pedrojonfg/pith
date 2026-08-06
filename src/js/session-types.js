@@ -746,17 +746,18 @@ export function normalizeScopeSelection(raw) {
 }
 
 /**
- * Resolve study markdown — scoped when set, otherwise full raw markdown.
+ * Resolve study markdown after scope gate resolution.
+ * Unresolved sessions return "" — do not infer intent from a seeded copy of rawMarkdown.
  * @param {unknown} session
  * @returns {string}
  */
 export function resolveScopedMarkdown(session) {
   const sh = session?.shared;
   if (!sh) return "";
-  if (typeof sh.scopedMarkdown === "string" && sh.scopedMarkdown.length > 0) {
-    return sh.scopedMarkdown;
-  }
-  return String(sh.rawMarkdown || "");
+  // ponytail: scopeResolvedAt is the sole discriminator (FR-003)
+  if (!isScopeGateResolved(session)) return "";
+  if (typeof sh.scopedMarkdown === "string") return sh.scopedMarkdown;
+  return "";
 }
 
 /**

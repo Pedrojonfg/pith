@@ -41,12 +41,14 @@ import {
   invalidatePaginationCache,
 } from "./pagination.js?v=20260625_02";
 import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260625_02";
+import { resolveScopedHierarchy } from "../normalization/scoped-hierarchy.js";
 import { renderSlowMarkdownWithImages } from "../document-images/render.js";
 import { replacePithImageTokens } from "../document-images/replace-tokens.js";
 import {
   hideConceptPicker,
   renderSlowSidebar,
   setAnnotationNavigator,
+  setSectionNavigator,
   showConceptPicker,
   wireSidebarToggle,
   wireSidebarIAInput,
@@ -76,22 +78,27 @@ let readerState = {
   editDraft: null,
 };
 
-export function getScopeText(session) {
-  const slow = session?.slow;
-  if (!slow) return "";
-  const full = String(slow.normalizedTextFull || "");
-  const scope = slow.readingScope;
-  if (!scope) return full;
-  const start = Math.max(0, Number(scope.charStart) || 0);
-  const end = Math.min(full.length, Number(scope.charEnd) || full.length);
-  return full.slice(start, end);
+/** Study text for Slow reader = resolved scoped markdown (no secondary slice window). */
+function getSlowStudyText(session) {
+  return String(session?.slow?.normalizedTextFull || "");
+}
+
+/**
+ * Section boundaries in scope-relative coordinates from mini-tree.
+ * Falls back to slice.docHierarchy when shared gate fields are absent on the mode slice.
+ */
+function resolveSlowHierarchyTree(session) {
+  const resolved = resolveScopedHierarchy(session);
+  if (resolved?.tree?.length) return resolved.tree;
+  return session?.docHierarchy?.tree || [];
 }
 
 export function navigateSlowByPhase(session) {
-  const phase = String(session?.slow?.phase || "scope").trim();
+  const phase = String(session?.slow?.phase || "phase0").trim();
   switch (phase) {
+    // Safety net: legacy phase:"scope" → Phase 0 (new sessions never write "scope")
     case "scope":
-      showScreen("slowScope");
+      showScreen("slowPhase0");
       break;
     case "phase0":
       showScreen("slowPhase0");
@@ -105,7 +112,7 @@ export function navigateSlowByPhase(session) {
       showScreen("slowPhase3");
       break;
     default:
-      showScreen("slowScope");
+      showScreen("slowPhase0");
   }
 }
 
@@ -164,24 +171,16 @@ function applyTypographyToMeasureEl(el, typography, usesMd) {
 }
 
 function buildReaderSectionBoundaries(session) {
-  const slow = session?.slow;
-  const scope = slow?.readingScope;
-  if (!scope || !session?.docHierarchy?.tree?.length) return [];
-  const scopeStart = Math.max(0, Number(scope.charStart) || 0);
-  const scopeEnd = Math.min(
-    slow.normalizedTextFull.length,
-    Number(scope.charEnd) || slow.normalizedTextFull.length,
-  );
-  return flattenHierarchy(session.docHierarchy.tree, 2)
-    .filter((n) => n.startOffset >= scopeStart && n.startOffset < scopeEnd)
-    .map((n) => ({
-      charStart: n.startOffset - scopeStart,
-      charEnd: Math.min(n.endOffset, scopeEnd) - scopeStart,
-    }));
+  const tree = resolveSlowHierarchyTree(session);
+  if (!tree.length) return [];
+  return flattenHierarchy(tree, 2).map((n) => ({
+    charStart: Math.max(0, Number(n.startOffset) || 0),
+    charEnd: Math.max(0, Number(n.endOffset) || 0),
+  }));
 }
 
 function recomputeBreakpoints(session) {
-  const scopeText = getScopeText(session);
+  const scopeText = getSlowStudyText(session);
   const container = els.slowReaderPage || document.getElementById("slowReaderPage");
   if (!container) return [];
   const oldBp = readerState.breakpoints;
@@ -896,7 +895,7 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") 
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
       breakpoints: readerState.breakpoints,
-      scopeText: getScopeText(session),
+      scopeText: getSlowStudyText(session),
     });
   } catch {
     showSlowIAOverlay({
@@ -952,7 +951,7 @@ async function handleSidebarIAQuery(session, queryText) {
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
       breakpoints: readerState.breakpoints,
-      scopeText: getScopeText(session),
+      scopeText: getSlowStudyText(session),
     });
   } catch {
     showSlowIAOverlay({
@@ -973,12 +972,19 @@ function navigateToAnnotation(session, annotation) {
   goToReaderPage(session, page);
   const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
-  const scopeText = getScopeText(session);
+  const scopeText = getSlowStudyText(session);
   const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
   highlightRange(pageEl, slice, annotation.charStart, annotation.charEnd, slicePlain);
 }
 
+function navigateToSection(session, startOffset) {
+  if (!session?.slow) return;
+  const page = charOffsetToPage(readerState.breakpoints, startOffset);
+  goToReaderPage(session, page);
+}
+
 setAnnotationNavigator(navigateToAnnotation);
+setSectionNavigator(navigateToSection);
 
 function showFindingToast(conceptTerm) {
   let toast = document.getElementById("slowFindingToast");
@@ -1047,7 +1053,7 @@ function renderFillableMapPanel(session) {
 function applyPedagogyToSlicePlain(session, slicePlain, slice) {
   const inv = session?.shared?.conceptInventory;
   if (!Array.isArray(inv) || !inv.length) return slicePlain;
-  const scopeText = getScopeText(session);
+  const scopeText = getSlowStudyText(session);
   const spans = buildConceptSpanIndex(scopeText, inv);
   const highlights = selectHighlightSpans(spans, getPedagogicalFlags().HIGHLIGHT_WORD_BUDGET);
   const pageSpans = spans
@@ -1073,7 +1079,7 @@ export async function renderSlowReaderPage(session, opts = {}) {
   recomputeBreakpoints(session);
   const idx = Math.max(0, Number(session.slow.currentPageIndex) || 0);
   const slice = getPageSlice(readerState.breakpoints, idx);
-  const scopeText = getScopeText(session);
+  const scopeText = getSlowStudyText(session);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
   const pedagogyPlain = applyPedagogyToSlicePlain(session, slicePlain, slice);
@@ -1132,7 +1138,7 @@ function selectionToScopeOffsets(session) {
   const pageEl = els.slowReaderPage;
   if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
   const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
-  const scopeText = getScopeText(session);
+  const scopeText = getSlowStudyText(session);
   const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
   if (usesMarkdownRender(session)) {
     return selectionToScopeOffsetsFromRendered(pageEl, slice, slicePlain);

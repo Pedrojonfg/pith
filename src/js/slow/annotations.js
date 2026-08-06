@@ -51,9 +51,7 @@ export function isIAQueryAnnotation(ann) {
 
 export async function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
   if (!session?.slow) return null;
-  const scopeLen =
-    Number(session.slow.readingScope?.charEnd) - Number(session.slow.readingScope?.charStart);
-  const max = scopeLen > 0 ? scopeLen : String(session.slow.normalizedTextFull || "").length;
+  const max = String(session.slow.normalizedTextFull || "").length;
   const start = Math.max(0, Math.floor(Number(charStart) || 0));
   const end = Math.min(max, Math.max(start + 1, Math.floor(Number(charEnd) || start + 1)));
   const entry = {

@@ -1082,6 +1082,53 @@
   list-style: none;
 }
 
+.slow-sidebar-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.slow-sidebar-nav-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slow-sidebar-nav-item:hover,
+.slow-sidebar-nav-item:focus-visible {
+  background: var(--accent-muted);
+  outline: none;
+}
+
+.slow-sidebar-nav-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slow-sidebar-nav-page {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
 .slow-sidebar-ann-group {
   margin-bottom: 4px;
 }

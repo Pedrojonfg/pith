@@ -10,6 +10,8 @@ import {
   DEFAULT_CONCEPT_TARGET_WORDS,
 } from "./chunk-alignment.js";
 import { getChunksFromHierarchy } from "./normalization/hierarchy.js";
+import { buildScopedHierarchy } from "./normalization/scoped-hierarchy.js";
+import { resolveScopedMarkdown } from "./session-types.js";
 import { geminiEmbedContent } from "./llm.js?v=20260625_02";
 import { getEmbeddingOutputDimensionality, isSemanticAnchoringEnabled } from "./config/flags.js";
 import { cosineSimilarity } from "./vault/embedding-math.js";
@@ -70,7 +72,8 @@ export function buildConceptAnchorEmbedText(concept) {
  */
 export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
   const inventory = Array.isArray(doc?.shared?.conceptInventory) ? doc.shared.conceptInventory : [];
-  const materialText = String(doc?.shared?.rawMarkdown || "").trim();
+  // ponytail: scoped text only (FR-004); mini-tree when offsets matter
+  const materialText = String(resolveScopedMarkdown(doc) || "").trim();
   const semanticEnabled = isSemanticAnchoringEnabled();
   // [debug-enrich]
   console.info("[concept-anchoring.computeConceptAnchorsForDocument] Start:", {
@@ -86,7 +89,13 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
     return { anchored: 0, failed: false };
   }
 
-  const docHierarchy = doc.shared?.docHierarchy;
+  const sectionIds = Array.isArray(doc?.shared?.scopeSelection?.sectionIds)
+    ? doc.shared.scopeSelection.sectionIds
+    : [];
+  const docHierarchy =
+    sectionIds.length > 0
+      ? buildScopedHierarchy(doc.shared?.docHierarchy, sectionIds, materialText)
+      : doc.shared?.docHierarchy;
   /** @type {Map<string, number[]>} */
   const sectionEmbeddingCache = new Map();
   let sectionEmbedCalls = 0;

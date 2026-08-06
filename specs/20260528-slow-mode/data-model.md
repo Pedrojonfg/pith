@@ -147,3 +147,13 @@ scope → phase0 → phase1 ⇄ phase2 (checkpoints intercalados) → phase3 →
 | `focusMode` | `boolean` | Fase 1 |
 | `sidebarOpen` | `boolean` | Reader sidebar |
 | `activeAnnotationMenu` | `{ charStart, charEnd } \| null` | Selección de texto |
+
+---
+
+## Addendum (2026-08-06) — `readingScope` removed
+
+`SlowSessionData.readingScope` and the Slow-only `screenSlowScope` picker were removed by
+`specs/20260806-scope-gated-generation` (FR-007 / FR-008). Study text is the document’s
+resolved `scopedMarkdown` (stored on the Slow slice as `normalizedTextFull`); section
+boundaries come from the scope mini-tree (`resolveScopedHierarchy`), not a secondary
+char-range window. Historical `ReadingScope` rows above are retained for archival context only.

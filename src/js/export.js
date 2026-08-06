@@ -28,6 +28,7 @@ import {
   extractTopTensions,
   inferErrorType,
   isTestResponseIncorrect,
+  resolveExportScopeLabel,
   resolveSocraticMode,
   resolveStudentSynthesis,
 } from "./export-format.js?v=20260625_02";
@@ -441,7 +442,6 @@ function appendDepthScoreSection(lines, session, depthScore) {
 async function buildSlowMarkdown(session) {
   const safe = session && typeof session === "object" ? session : {};
   const slow = safe.slow || {};
-  const scope = slow.readingScope || {};
   const lang = String(safe.language || "English").trim() || "English";
   const lines = [];
   lines.push(buildExportFrontmatter(safe, { mode: "slow" }));
@@ -449,7 +449,7 @@ async function buildSlowMarkdown(session) {
   lines.push("# Slow Mode Session");
   lines.push(`Material: ${safe.materialMeta?.fileName || "—"}`);
   lines.push(`Language: ${lang}`);
-  lines.push(`Scope: ${scope.label || "—"} (${scope.charStart ?? 0}–${scope.charEnd ?? 0})`);
+  lines.push(`Scope: ${resolveExportScopeLabel(safe)}`);
   lines.push(`Phase: ${slow.phase || "—"}`);
   lines.push(`Critical mode: ${slow.criticalMode ? "yes" : "no"}`);
   lines.push(`Fillable map mode: ${slow.fillableMapMode ? "yes" : "no"}`);

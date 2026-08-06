@@ -518,6 +518,7 @@ export function epistemicGraphFromShared(shared) {
   return normalizeEpistemicGraph({ nodes, edges: [] }) || { nodes: [], edges: [] };
 }
 
+/** Phase-0 skip/reuse: only the cloze slice and `doc.shared` of the same DocumentSession. */
 function shouldSkipClozePhase0(session, doc) {
   const retrySkip = Boolean(
     session?.cloze?.epistemicGraph?.nodes?.length &&
@@ -529,6 +530,7 @@ function shouldSkipClozePhase0(session, doc) {
     return { skip: true, fromShared: false };
   }
 
+  // Same-doc conceptGraph only — never looks up another docId.
   if (doc?.shared?.conceptGraph?.nodes?.length) {
     return { skip: true, fromShared: true };
   }

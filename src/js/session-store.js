@@ -341,9 +341,9 @@ function migrateSessionV4(session) {
     }
   }
 
-  const rawMd = typeof sh.rawMarkdown === "string" ? sh.rawMarkdown : "";
-  if (!("scopedMarkdown" in sh) || (sh.scopedMarkdown == null && rawMd)) {
-    sh.scopedMarkdown = rawMd;
+  // ponytail: do not seed scopedMarkdown from raw — unresolved vs entire-doc must stay distinct
+  if (!("scopedMarkdown" in sh)) {
+    sh.scopedMarkdown = null;
     changed = true;
   }
 
@@ -352,9 +352,9 @@ function migrateSessionV4(session) {
     changed = true;
   }
 
+  // ponytail: never grandfather scopeResolvedAt from inventory (FR-012); T03 also owns this
   if (!("scopeResolvedAt" in sh)) {
-    const hasInventory = Array.isArray(sh.conceptInventory) && sh.conceptInventory.length > 0;
-    sh.scopeResolvedAt = hasInventory ? (session.updatedAt || Date.now()) : null;
+    sh.scopeResolvedAt = null;
     changed = true;
   }
 
@@ -517,7 +517,7 @@ export async function createSession(rawMarkdown, options = {}) {
     updatedAt: now,
     shared: {
       rawMarkdown: markdown,
-      scopedMarkdown: markdown,
+      scopedMarkdown: null,
       scopeSelection: null,
       scopeContext: null,
       scopeResolvedAt: null,

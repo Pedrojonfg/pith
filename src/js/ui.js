@@ -636,8 +636,6 @@ export const els = {
   createBackToModesBtn: document.getElementById("createBackToModesBtn"),
   createModeLabel: document.getElementById("createModeLabel"),
   rsvpBlocksCountGroup: document.getElementById("rsvpBlocksCountGroup"),
-  slowOnlyControls: document.getElementById("slowOnlyControls"),
-  criticalModeToggleBtn: document.getElementById("criticalModeToggleBtn"),
   clozeSessionPanel: document.getElementById("clozeSessionPanel"),
   clozePipelineProgress: document.getElementById("clozePipelineProgress"),
   clozeReadySummary: document.getElementById("clozeReadySummary"),
@@ -661,7 +659,6 @@ export const els = {
   screenOnboardingQuestionnaire: document.getElementById("screenOnboardingQuestionnaire"),
   onboardingStudentIntent: document.getElementById("onboardingStudentIntent"),
   onboardingQuestionnaireSubmitBtn: document.getElementById("onboardingQuestionnaireSubmitBtn"),
-  screenSlowScope: document.getElementById("screenSlowScope"),
   screenSlowPhase0: document.getElementById("screenSlowPhase0"),
   screenSlowReader: document.getElementById("screenSlowReader"),
   screenSlowPhase3: document.getElementById("screenSlowPhase3"),
@@ -678,26 +675,7 @@ export const els = {
   packConceptShareCodeCopyBtn: document.getElementById("packConceptShareCodeCopyBtn"),
   packConceptEditorError: document.getElementById("packConceptEditorError"),
   packConceptGraphMount: document.getElementById("packConceptGraphMount"),
-  slowScopeList: document.getElementById("slowScopeList"),
-  slowScopeFileLabel: document.getElementById("slowScopeFileLabel"),
-  slowScopeFileSelect: document.getElementById("slowScopeFileSelect"),
-  slowScopeHierarchyLoading: document.getElementById("slowScopeHierarchyLoading"),
-  slowScopeWarningBanner: document.getElementById("slowScopeWarningBanner"),
-  slowScopeEditBtn: document.getElementById("slowScopeEditBtn"),
-  slowScopeAutoSplitBtn: document.getElementById("slowScopeAutoSplitBtn"),
-  slowScopeCharCount: document.getElementById("slowScopeCharCount"),
-  slowScopeLongWarning: document.getElementById("slowScopeLongWarning"),
-  slowScopeConfirmBtn: document.getElementById("slowScopeConfirmBtn"),
-  slowScopeBackBtn: document.getElementById("slowScopeBackBtn"),
-  slowScopeFillableMap: document.getElementById("slowScopeFillableMap"),
-  slowScopeFillableHint: document.getElementById("slowScopeFillableHint"),
-  slowScopeCheckpoints: document.getElementById("slowScopeCheckpoints"),
-  slowScopeCheckpointsHint: document.getElementById("slowScopeCheckpointsHint"),
   slowPhase0Progress: document.getElementById("slowPhase0Progress"),
-  slowPhase0FillableMap: document.getElementById("slowPhase0FillableMap"),
-  slowPhase0FillableHint: document.getElementById("slowPhase0FillableHint"),
-  slowPhase0Checkpoints: document.getElementById("slowPhase0Checkpoints"),
-  slowPhase0CheckpointsHint: document.getElementById("slowPhase0CheckpointsHint"),
   slowPhase0CollapseBtn: document.getElementById("slowPhase0CollapseBtn"),
   slowPhase0Content: document.getElementById("slowPhase0Content"),
   slowPhase0Error: document.getElementById("slowPhase0Error"),
@@ -1464,7 +1442,6 @@ export function showScreen(which) {
   const showReviewGenerating = which === "reviewGenerating";
   const showReview = which === "review";
   const showReviewSummary = which === "reviewSummary";
-  const showSlowScope = which === "slowScope";
   const showSlowPhase0 = which === "slowPhase0";
   const showSlowReader = which === "slowReader";
   const showSlowPhase3 = which === "slowPhase3";
@@ -1502,7 +1479,6 @@ export function showScreen(which) {
     [els.screenReviewGenerating, showReviewGenerating],
     [els.screenReview, showReview],
     [els.screenReviewSummary, showReviewSummary],
-    [els.screenSlowScope, showSlowScope],
     [els.screenSlowPhase0, showSlowPhase0],
     [els.screenSlowReader, showSlowReader],
     [els.screenSlowPhase3, showSlowPhase3],

@@ -51,11 +51,7 @@ export function hideCheckpointChip() {
 }
 
 function scopeTextForSession(session) {
-  const slow = session?.slow;
-  return String(slow?.normalizedTextFull || "").slice(
-    slow?.readingScope?.charStart || 0,
-    slow?.readingScope?.charEnd,
-  );
+  return String(session?.slow?.normalizedTextFull || "");
 }
 
 async function dismissCheckpointsOnPage(session, breakpoints, pageIndex) {

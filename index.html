@@ -880,17 +880,6 @@
                 </div>
               </div>
 
-              <div id="slowOnlyControls" class="create-slow-options" hidden>
-                <div class="toggle" role="group" aria-label="Critical reading mode">
-                  <button type="button" id="criticalModeToggleBtn" aria-pressed="false">
-                    Critical reading mode
-                  </button>
-                </div>
-                <div class="hint" id="criticalModeHint">
-                  Prioritizes critical annotations and steel-manning while you read.
-                </div>
-              </div>
-
               <div id="rsvpBlocksCountGroup" class="rsvp-blocks-count-group" hidden>
                 <label for="blocksInput">Blocks</label>
                 <span
@@ -1602,61 +1591,11 @@
           </div>
         </section>
 
-        <section id="screenSlowScope" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode scope">
-          <div class="card slow-card">
-            <h1>Reading scope</h1>
-            <p class="hint">Choose what to read before AI orientation (Phase 0).</p>
-            <div id="slowScopeHierarchyLoading" class="hint" hidden role="status">Analyzing document structure…</div>
-            <div id="slowScopeWarningBanner" class="error" hidden role="status"></div>
-            <label id="slowScopeFileLabel" class="slow-scope-file-label" for="slowScopeFileSelect" hidden>
-              Source file
-            </label>
-            <select id="slowScopeFileSelect" class="slow-scope-file-select" hidden aria-label="Source file"></select>
-            <div id="slowScopeCharCount" class="hint" aria-live="polite"></div>
-            <div id="slowScopeLongWarning" class="error" hidden></div>
-            <div class="row slow-scope-toolbar">
-              <button type="button" id="slowScopeEditBtn" class="btn-secondary">Edit sections</button>
-              <button type="button" id="slowScopeAutoSplitBtn" class="btn-secondary" hidden>
-                Auto-split by length
-              </button>
-            </div>
-            <ul id="slowScopeList" class="slow-scope-list" role="listbox" aria-label="Reading scopes"></ul>
-            <label class="slow-scope-fillable-toggle" for="slowScopeFillableMap">
-              <input type="checkbox" id="slowScopeFillableMap" />
-              Fillable argument map
-            </label>
-            <p class="hint" id="slowScopeFillableHint">Fill in premises and conclusion as you read (Phase 1).</p>
-            <label class="slow-scope-fillable-toggle" for="slowScopeCheckpoints">
-              <input type="checkbox" id="slowScopeCheckpoints" checked />
-              Section checkpoints
-            </label>
-            <p class="hint" id="slowScopeCheckpointsHint">
-              Brief questions at the end of each section while reading (always optional).
-            </p>
-            <div class="row">
-              <button type="button" id="slowScopeConfirmBtn" class="btn-primary" disabled>Continue →</button>
-              <button type="button" id="slowScopeBackBtn">Back</button>
-            </div>
-          </div>
-        </section>
-
         <section id="screenSlowPhase0" class="screen slow-screen" aria-hidden="true" aria-label="Slow Mode orientation">
           <div class="card slow-card">
             <h1>Orientation (Phase 0)</h1>
             <p class="hint">
               Before you read, AI summarizes the thesis, argument map, key concepts, and a guide question.
-            </p>
-            <label class="slow-scope-fillable-toggle" for="slowPhase0FillableMap">
-              <input type="checkbox" id="slowPhase0FillableMap" />
-              Fillable argument map
-            </label>
-            <p class="hint" id="slowPhase0FillableHint">Fill in premises and conclusion as you read (Phase 1).</p>
-            <label class="slow-scope-fillable-toggle" for="slowPhase0Checkpoints">
-              <input type="checkbox" id="slowPhase0Checkpoints" checked />
-              Section checkpoints
-            </label>
-            <p class="hint" id="slowPhase0CheckpointsHint">
-              Brief questions at the end of each section while reading (always optional).
             </p>
             <div id="slowPhase0Progress" class="hint" hidden></div>
             <button type="button" id="slowPhase0CollapseBtn" class="slow-phase0-collapse-btn" hidden>Expand orientation</button>
@@ -1848,6 +1787,10 @@
               </button>
             </header>
             <div class="slow-sidebar-scroll">
+              <section class="slow-sidebar-section" aria-labelledby="slowSidebarNavHeading">
+                <h3 id="slowSidebarNavHeading" class="slow-sidebar-section-title">Sections</h3>
+                <nav id="slowSidebarNav" class="slow-sidebar-nav" aria-label="Section navigation"></nav>
+              </section>
               <section class="slow-sidebar-section" aria-labelledby="slowSidebarAnnHeading">
                 <h3 id="slowSidebarAnnHeading" class="slow-sidebar-section-title">My annotations</h3>
                 <div id="slowSidebarAnnotations" class="slow-sidebar-annotations"></div>
@@ -2127,7 +2070,7 @@
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
     <!-- Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and this comment's neighbors. -->
     <script type="module">
-      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260728_03";
+      import { initServiceWorkerUpdate } from "./src/js/sw-update.js?v=20260807_01";
       import { initSplash, dismissSplash } from "./src/js/splash.js?v=20260710_10";
       initSplash();
 
@@ -2153,7 +2096,7 @@
       }
 
       try {
-        await import("./src/js/main.js?v=20260728_03");
+        await import("./src/js/main.js?v=20260807_01");
       } catch (err) {
         dismissSplash(true);
         showBootFailure(

@@ -9,6 +9,7 @@ import {
   PACK_SOURCE_REQUIRED_MODES,
 } from "./session-types.js";
 import { getValidItems } from "./cloze/pipeline.js";
+import { resolveScopedHierarchy } from "./normalization/scoped-hierarchy.js";
 
 /**
  * @param {import('./session-types.js').DocumentSession | null | undefined} doc
@@ -57,6 +58,9 @@ function hasReadyClozeItems(slice) {
 
 /**
  * Keep an existing cloze slice when it already has generated items or pipeline progress.
+ * Session-local only: callers pass `doc.modes.cloze` for the current DocumentSession.
+ * Safe under scope gate because slices are per-docId and scope is immutable after resolve (R5);
+ * T1.3 (concept graph) is gated until scope, so preserved graphs cannot predate scope.
  * @param {object | null | undefined} slice
  * @returns {boolean}
  */
@@ -271,13 +275,14 @@ export function resolveModeEntryState(doc, mode) {
 /**
  * @param {import('./session-types.js').DocumentSession} doc
  * @param {'rsvp'|'slow'|'cloze'|'questions'|'recall'|'read'|'review'} mode
- * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
+ * @param {{ llmModel?: string, language?: string }} [options]
  * @returns {object}
  */
 export function buildModeSliceFromShared(doc, mode, options = {}) {
   const modeKey = String(mode || "").trim() || "rsvp";
   const slot = modeKey === "review" ? "rsvp" : normalizeStudyMode(modeKey);
-  const normalizedText = String(resolveScopedMarkdown(doc) || doc.shared?.rawMarkdown || "");
+  // ponytail: no rawMarkdown fallback — study slices require resolved scope (FR-004); chat uses resolveChatScopeFields
+  const normalizedText = String(resolveScopedMarkdown(doc) || "");
   const meta = resolveMaterialMeta(doc);
   const common = {
     normalizedText,
@@ -289,13 +294,17 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
   };
 
   if (slot === "slow") {
+    const scopedHierarchy = resolveScopedHierarchy(doc) ?? doc.shared?.docHierarchy ?? null;
+    const pedagogicalMeta =
+      scopedHierarchy?.pedagogical_meta ||
+      scopedHierarchy?.pedagogicalMeta ||
+      null;
     const slice = createSlowSession({
       ...common,
-      criticalMode: Boolean(options.criticalMode),
+      textMetrics: doc.shared?.textMetrics || null,
+      pedagogicalMeta,
     });
-    if (doc.shared?.docHierarchy) {
-      slice.docHierarchy = doc.shared.docHierarchy;
-    }
+    slice.docHierarchy = scopedHierarchy;
     return slice;
   }
 
@@ -305,6 +314,7 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
       return JSON.parse(JSON.stringify(existing));
     }
     const slice = createClozeSession(common);
+    // Seed epistemicGraph from this doc's shared graph only (post-gate T1.3).
     if (doc.shared?.conceptGraph?.nodes?.length) {
       slice.cloze.epistemicGraph = doc.shared.conceptGraph;
     }

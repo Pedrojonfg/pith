@@ -12,6 +12,7 @@ import {
 import { ingestSm2FromRecallAnswer } from "./sm2-ingest.js";
 import { promoteFromRecall } from "./concept-registry/ingest.js";
 import { syncAssessmentSignalsFromRecall, getAssessmentSignals } from "./session-store.js";
+import { resolveScopedMarkdown } from "./session-types.js";
 
 /**
  * @param {object} doc
@@ -21,7 +22,8 @@ import { syncAssessmentSignalsFromRecall, getAssessmentSignals } from "./session
 export function buildDefaultRecallConfig(doc, pedagogicalMeta = null) {
   const meta = pedagogicalMeta || doc?.shared?.docHierarchy?.pedagogical_meta || {};
   const goal = String(meta.primaryLearningGoal || "understand_argument").trim();
-  const chars = String(doc?.shared?.rawMarkdown || "").length;
+  // ponytail: tier off scoped length (FR-004)
+  const chars = String(resolveScopedMarkdown(doc) || "").length;
   return {
     questionCount: deriveRecallQuestionCount(chars),
     types: recallTypesForGoal(goal),
@@ -163,7 +165,8 @@ export async function generateRecallSliceForDoc(doc, options = {}) {
   const config = buildDefaultRecallConfig(doc, meta);
   const signals = await getAssessmentSignals(doc.docId) || doc?.shared?.assessmentSignals || [];
   const questions = await generateRecallQuestions({
-    rawMarkdown: doc.shared.rawMarkdown,
+    // ponytail: gated generation uses scoped study text only (FR-004)
+    rawMarkdown: resolveScopedMarkdown(doc),
     conceptInventory: inventory,
     pedagogicalMeta: meta,
     assessmentSignals: signals,
@@ -187,7 +190,7 @@ export async function generateRecallSliceForDoc(doc, options = {}) {
 }
 
 function buildDeterministicPedagogicalMetaFallback(doc) {
-  const text = String(doc?.shared?.rawMarkdown || "");
+  const text = String(resolveScopedMarkdown(doc) || "");
   return { primaryLearningGoal: "understand_argument", argumentativeDensity: text.length > 20000 ? 3 : 2 };
 }
 

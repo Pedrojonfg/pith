@@ -1,9 +1,8 @@
 import { llmChatCompletions, normalizeLlmModel } from "../llm.js?v=20260625_02";
 import { getStudyLanguage } from "../ui.js?v=20260625_02";
-import { getScopeText } from "./reader.js?v=20260625_02";
 
 export function buildIAContext(slow) {
-  const text = getScopeText({ slow });
+  const text = String(slow?.normalizedTextFull || "");
   const max = Math.max(0, Number(slow?.maxReadCharEnd) || 0);
   return text.slice(0, max);
 }

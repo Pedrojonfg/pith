@@ -1,5 +1,7 @@
 import { storeActiveSession } from "../session.js?v=20260625_02";
 import { getSortedSessionConcepts } from "../dictionary.js?v=20260625_02";
+import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260625_02";
+import { resolveScopedHierarchy } from "../normalization/scoped-hierarchy.js";
 import { ANNOTATION_TYPES } from "./annotations.js?v=20260625_02";
 import { charOffsetToPage } from "./pagination.js?v=20260625_02";
 import { slugGraphTermId } from "./phase0.js?v=20260625_02";
@@ -116,15 +118,74 @@ async function setSidebarOpen(session, open) {
   await storeActiveSession(session);
 }
 
+/**
+ * In-reader TOC entries from mini-tree / resolved scoped hierarchy.
+ * Offsets are relative to scopedMarkdown / normalizedTextFull.
+ * @param {object|null|undefined} session
+ * @returns {{ title: string, startOffset: number, endOffset: number, level: number }[]}
+ */
+export function listSlowNavSections(session) {
+  const resolved = resolveScopedHierarchy(session);
+  const tree = resolved?.tree?.length
+    ? resolved.tree
+    : session?.docHierarchy?.tree || [];
+  if (!Array.isArray(tree) || !tree.length) return [];
+  return flattenHierarchy(tree, 2).map((n) => ({
+    title: String(n?.title || "").trim() || "Section",
+    startOffset: Math.max(0, Number(n?.startOffset) || 0),
+    endOffset: Math.max(0, Number(n?.endOffset) || 0),
+    level: Math.max(1, Number(n?.level) || 1),
+  }));
+}
+
 export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } = {}) {
   if (!session?.slow) return;
 
   applySidebarOpenState(session);
 
+  const navHost = document.getElementById("slowSidebarNav");
   const annHost = document.getElementById("slowSidebarAnnotations");
   const dictHost = document.getElementById("slowSidebarDictionary");
   const iaQueriesHost = document.getElementById("slowSidebarIAQueries");
   if (!annHost || !dictHost || !iaQueriesHost) return;
+
+  if (navHost) {
+    const sections = listSlowNavSections(session);
+    const navSection = navHost.closest?.(".slow-sidebar-section");
+    if (navSection) navSection.hidden = sections.length === 0;
+    navHost.innerHTML = "";
+    if (!sections.length) {
+      const empty = document.createElement("p");
+      empty.className = "slow-sidebar-empty";
+      empty.textContent = "No sections in scope.";
+      navHost.appendChild(empty);
+    } else {
+      const list = document.createElement("ul");
+      list.className = "slow-sidebar-nav-list";
+      for (const sec of sections) {
+        const page = charOffsetToPage(breakpoints, sec.startOffset) + 1;
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "slow-sidebar-nav-item";
+        btn.dataset.startOffset = String(sec.startOffset);
+        btn.style.paddingLeft = `${8 + Math.max(0, sec.level - 1) * 12}px`;
+        btn.title = sec.title;
+        const titleEl = document.createElement("span");
+        titleEl.className = "slow-sidebar-nav-title";
+        titleEl.textContent = sec.title;
+        const pageEl = document.createElement("span");
+        pageEl.className = "slow-sidebar-nav-page";
+        pageEl.textContent = `p.${page}`;
+        btn.appendChild(titleEl);
+        btn.appendChild(pageEl);
+        btn.addEventListener("click", () => jumpToSection(session, sec.startOffset));
+        li.appendChild(btn);
+        list.appendChild(li);
+      }
+      navHost.appendChild(list);
+    }
+  }
 
   const annotations = Array.isArray(session.slow.annotations) ? session.slow.annotations : [];
   const groups = groupAnnotationsByType(annotations);
@@ -227,6 +288,18 @@ export function setAnnotationNavigator(fn) {
 /** Tap-to-source: navigate to page + pulse highlight (wired from reader.js). */
 export function jumpToAnnotation(session, annotation) {
   annotationNavigator?.(session, annotation);
+}
+
+/** @type {null | ((session: object, startOffset: number) => void)} */
+let sectionNavigator = null;
+
+export function setSectionNavigator(fn) {
+  sectionNavigator = typeof fn === "function" ? fn : null;
+}
+
+/** Jump reader pagination to a section startOffset within scoped text. */
+export function jumpToSection(session, startOffset) {
+  sectionNavigator?.(session, Math.max(0, Number(startOffset) || 0));
 }
 
 export function wireSidebarIAInput(getSession, onSubmit) {

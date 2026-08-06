@@ -447,41 +447,35 @@ export async function extractPartialChunkWithRetry(chunk, ctx, depth = 0) {
 }
 
 /**
- * Build section boundaries in scope-relative coordinates.
+ * Build section boundaries in scope-relative coordinates from mini-tree / docHierarchy.
+ * Offsets are already relative to scoped study text (normalizedTextFull).
  */
 export function buildSectionBoundariesForScope(session) {
   const slow = session?.slow;
-  if (!slow?.readingScope) return [];
-  const scope = slow.readingScope;
-  const scopeStart = Math.max(0, Number(scope.charStart) || 0);
-  const scopeEnd = Math.min(
-    slow.normalizedTextFull.length,
-    Number(scope.charEnd) || slow.normalizedTextFull.length,
-  );
+  const tree = session?.docHierarchy?.tree;
 
-  if (session?.docHierarchy?.tree?.length) {
-    return flattenHierarchy(session.docHierarchy.tree, 2)
-      .filter((n) => n.startOffset >= scopeStart && n.startOffset < scopeEnd)
-      .map((n, i) => ({
-        id: `section-${i}`,
-        title: n.title,
-        charStart: n.startOffset - scopeStart,
-        charEnd: Math.min(n.endOffset, scopeEnd) - scopeStart,
-      }));
+  if (tree?.length) {
+    return flattenHierarchy(tree, 2).map((n, i) => ({
+      id: `section-${i}`,
+      title: n.title,
+      charStart: Number(n.startOffset) || 0,
+      charEnd: Number(n.endOffset) || 0,
+    }));
   }
 
-  const headings = parseHeadings(slow.normalizedTextFull, slow.normalizedFormat);
-  const inScope = headings.filter(
-    (h) => h.charStart >= scopeStart && h.charStart < scopeEnd,
-  );
-  return inScope.map((h, i) => {
-    const next = inScope[i + 1];
-    const absEnd = next ? next.charStart : scopeEnd;
+  const text = String(slow?.normalizedTextFull || "");
+  if (!text.length) return [];
+  const headings = parseHeadings(text, slow?.normalizedFormat);
+  if (!headings.length) {
+    return [{ id: "section-0", title: "Document", charStart: 0, charEnd: text.length }];
+  }
+  return headings.map((h, i) => {
+    const next = headings[i + 1];
     return {
       id: `section-${i}`,
       title: h.label,
-      charStart: h.charStart - scopeStart,
-      charEnd: absEnd - scopeStart,
+      charStart: h.charStart,
+      charEnd: next ? next.charStart : text.length,
     };
   });
 }
@@ -615,22 +609,12 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
     language,
     hasSession: Boolean(session),
   });
-  const scope = session?.slow?.readingScope;
-  const scopeStart = Math.max(0, Number(scope?.charStart) || 0);
-  const scopeEnd = scopeStart + text.length;
+  const scopeStart = 0;
+  const scopeEnd = text.length;
   const resolvedTreeSummary =
     treeSummary || buildHierarchyTreeSummary(session?.docHierarchy, scopeStart, scopeEnd);
-  const scopedHierarchy =
-    session?.docHierarchy?.tree?.length && scope
-      ? {
-          ...session.docHierarchy,
-          tree: shiftHierarchyTree(
-            session.docHierarchy.tree,
-            scopeStart,
-            text.length,
-          ),
-        }
-      : null;
+  // Mini-tree offsets are already relative to scoped study text
+  const scopedHierarchy = session?.docHierarchy?.tree?.length ? session.docHierarchy : null;
 
   const chunks = buildMapReduceChunks(
     scopeText,
@@ -746,9 +730,8 @@ export async function generatePhase0ForScope(scopeText, session, opts = {}) {
   const iaText = scopeTextForPhase0IA(text, normalizedFormat);
   const boundaries = buildSectionBoundariesForScope(session);
   const criticalMode = Boolean(session?.slow?.criticalMode);
-  const scope = session?.slow?.readingScope;
-  const scopeStart = Math.max(0, Number(scope?.charStart) || 0);
-  const scopeEnd = scopeStart + text.length;
+  const scopeStart = 0;
+  const scopeEnd = text.length;
   const treeSummary = buildHierarchyTreeSummary(session?.docHierarchy, scopeStart, scopeEnd);
   const baseOpts = {
     criticalMode,
@@ -935,7 +918,11 @@ export function fillBlankFromAnnotation(session, annotation, pageIndex) {
 }
 
 export function getPhase0SeenKeyForSession(session) {
-  return computePhase0SeenKey(session?.materialMeta?.fileName, session?.slow?.readingScope);
+  const text = String(session?.slow?.normalizedTextFull || "");
+  return computePhase0SeenKey(session?.materialMeta?.fileName, {
+    charStart: 0,
+    charEnd: text.length,
+  });
 }
 
 const GENERIC_SUMMARIZE_RE = /summarize (?:this section )?in one sentence/i;

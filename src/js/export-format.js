@@ -1,4 +1,7 @@
 /** Session export markdown format v3 — shared helpers (render-only layer). */
+/* Full export redesign (beyond scope label) is a near-term follow-up. */
+
+import { listSelectableHierarchyNodes } from "./scope-selection.js";
 
 export const EDGE_TYPE_FAMILIES = {
   requires: "epistemic",
@@ -105,6 +108,30 @@ export function resolveDurationMin(session) {
   return null;
 }
 
+/**
+ * Readable export scope label from chosen section titles (not readingScope char range).
+ * @param {unknown} session
+ * @returns {string}
+ */
+export function resolveExportScopeLabel(session) {
+  const sh = session?.shared;
+  const ids = Array.isArray(sh?.scopeSelection?.sectionIds)
+    ? sh.scopeSelection.sectionIds.map((id) => String(id).trim()).filter(Boolean)
+    : [];
+  if (!ids.length) return "Entire document";
+
+  const entries = listSelectableHierarchyNodes(sh?.docHierarchy?.tree || []);
+  const byId = new Map(entries.map((e) => [e.id, e.node]));
+  const titles = ids
+    .map((id) => byId.get(id))
+    .filter(Boolean)
+    .sort((a, b) => (a.startOffset ?? 0) - (b.startOffset ?? 0))
+    .map((node) => String(node.title || "").trim())
+    .filter(Boolean);
+
+  return titles.length ? titles.join(", ") : "—";
+}
+
 export function buildExportFrontmatter(session, { mode } = {}) {
   const safe = session && typeof session === "object" ? session : {};
   const studyMode = String(mode || safe.studyMode || "rsvp").trim().toLowerCase();
@@ -128,11 +155,7 @@ export function buildExportFrontmatter(session, { mode } = {}) {
     if (Number.isFinite(count) && count >= 0) lines.push(`item_count: ${Math.round(count)}`);
   }
   if (exportMode === "slow") {
-    const scope = safe.slow?.readingScope || {};
-    const label = String(scope.label || "—").trim();
-    const start = scope.charStart ?? 0;
-    const end = scope.charEnd ?? 0;
-    lines.push(`scope: ${yamlQuote(`${label} (${start}–${end})`)}`);
+    lines.push(`scope: ${yamlQuote(resolveExportScopeLabel(safe))}`);
     lines.push(`critical: ${Boolean(safe.slow?.criticalMode)}`);
   }
   const duration = resolveDurationMin(safe);

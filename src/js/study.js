@@ -121,10 +121,11 @@ import {
 } from "./interview/origin.js";
 import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
-import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, isScopeGateResolved, isScopeStructureReady, resolveChatScopeFields, setPreparationStatus } from "./session-types.js";
+import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, isScopeGateResolved, isScopeStructureReady, resolveChatScopeFields, resolveScopedMarkdown, setPreparationStatus } from "./session-types.js";
 import { setGuideScopeFromDocument } from "./guide-chat.js";
 import { buildScopedMarkdown, buildScopeSelection, listSelectableHierarchyNodes } from "./scope-selection.js";
-import { MAX_SOURCE_FILES, sliceMarkdownForSourceFile } from "./source-provenance.js";
+import { resolveScopedHierarchy } from "./normalization/scoped-hierarchy.js";
+import { MAX_SOURCE_FILES } from "./source-provenance.js";
 import {
   resolveRsvpInventoryForPack,
   shouldSkipRsvpInventoryLlm,
@@ -294,13 +295,7 @@ import {
   updateSessionCompleteSummary,
 } from "./ui.js?v=20260625_02";
 import { LS_BLOCK_INDEX_KEY, LS_STUDY_NOTES_KEY } from "./config.js?v=20260625_02";
-import {
-  buildScopeOptions,
-  buildEqualLengthSections,
-  scopeCharCount,
-  SCOPE_CHAR_WARN,
-  formatCharCount,
-} from "./slow/headings.js?v=20260625_02";
+import { formatCharCount } from "./slow/headings.js?v=20260625_02";
 import {
   applyFillableMapMode,
   ensurePhase0UserFields,
@@ -313,9 +308,10 @@ import {
   generatePhase0ForScope,
   syncPhase0ConceptsToShared,
 } from "./slow/phase0.js?v=20260625_02";
-import { getScopeText, initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260625_02";
+import { initSlowReader, navigateSlowByPhase, setSlowSessionGetter } from "./slow/reader.js?v=20260625_02";
 import { clearPhase3ScreenContent, initPhase3Screen } from "./slow/phase3.js?v=20260625_02";
 import { computeDepthScore } from "./slow/gamification.js?v=20260625_02";
+import { decideSlowReadingModifiers } from "./slow/reading-modifiers.js";
 import {
   buildGraphSubgraphMarkdown,
   buildRsvpMaterialGraph,
@@ -566,6 +562,8 @@ export async function startDocumentPreparation(doc, options = {}) {
     language: getStudyLanguage(),
     studyNotes: options.studyNotes ?? state.studyNotes ?? "",
     stopAfterTier: options.stopAfterTier,
+    // ponytail: reuse existing option — create-session already passes stopAfterScopeGate: true
+    stopAfterScopeGate: options.stopAfterScopeGate,
     forceRerun,
     onProgress: (msg) => {
       if (runId !== documentPreparationRunId) return;
@@ -1347,7 +1345,8 @@ async function startSharedAssessmentFromGate() {
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
-  const cleanedText = String(doc.shared.rawMarkdown || "");
+  // ponytail: shared assessment uses scoped study text (FR-004)
+  const cleanedText = String(resolveScopedMarkdown(doc) || "");
   const conceptInventory = doc.shared.conceptInventory;
   const prepEdges = deriveInventoryEdges(conceptInventory, doc.shared.conceptGraph);
   resetPrePackingFlow();
@@ -1357,7 +1356,7 @@ async function startSharedAssessmentFromGate() {
     phase: "assessment",
     conceptInventory,
     edges: prepEdges,
-    docHierarchy: doc.shared.docHierarchy ?? null,
+    docHierarchy: resolveScopedHierarchy(doc) ?? doc.shared.docHierarchy ?? null,
     conceptGraph: doc.shared.conceptGraph ?? null,
     cleanedText,
     splitOpts: {
@@ -1976,10 +1975,21 @@ export function createSlowSession({
   fileName,
   originalFormat,
   llmModel,
-  criticalMode = false,
   language,
-}) {
+  textMetrics = null,
+  pedagogicalMeta = null,
+} = {}) {
   const lang = String(language || getStudyLanguage()).trim() || "English";
+  const text = String(normalizedText || "");
+  const metrics =
+    textMetrics && typeof textMetrics === "object"
+      ? textMetrics
+      : analyzeText(text);
+  const pedagogy =
+    pedagogicalMeta && typeof pedagogicalMeta === "object"
+      ? pedagogicalMeta
+      : buildDeterministicPedagogicalMeta(metrics);
+  const modifiers = decideSlowReadingModifiers(metrics, pedagogy);
   return {
     studyMode: "slow",
     rev: 0,
@@ -1992,13 +2002,12 @@ export function createSlowSession({
       uploadedAt: new Date().toISOString(),
     },
     slow: {
-      normalizedTextFull: String(normalizedText || ""),
+      normalizedTextFull: text,
       normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
-      readingScope: null,
       phase: "phase0",
-      criticalMode: Boolean(criticalMode),
-      fillableMapMode: false,
-      checkpointsEnabled: true,
+      criticalMode: Boolean(modifiers.criticalMode),
+      fillableMapMode: Boolean(modifiers.fillableMap),
+      checkpointsEnabled: Boolean(modifiers.checkpoints),
       phase0SeenKey: null,
       phase0SeenReread: false,
       phase0Collapsed: false,
@@ -3904,7 +3913,7 @@ function setMaterialBootstrapUi(active, doc) {
 /**
  * @param {import("./session-store.js").DocumentSession | null} doc
  * @param {string} mode
- * @param {{ llmModel?: string, language?: string, criticalMode?: boolean }} [options]
+ * @param {{ llmModel?: string, language?: string }} [options]
  */
 export async function applyModeEntry(doc, mode, options = {}) {
   const resolution = resolveModeEntryState(doc, mode);
@@ -3948,12 +3957,8 @@ async function showBootstrappedCreateScreen(mode, slice, doc) {
   }
 
   if (mode === "slow") {
-    if (doc.shared?.docHierarchy) {
-      slice.docHierarchy = doc.shared.docHierarchy;
-      await storeActiveSession(slice);
-    }
+    slice.docHierarchy = resolveScopedHierarchy(doc) ?? doc.shared?.docHierarchy ?? null;
     slice.slow.phase = "phase0";
-    slice.slow.readingScope = null;
     prepareSlowPhase0Entry(slice);
     setGenerateBlocksFormHidden(true);
     clearMaterialBootstrapUi();
@@ -4084,7 +4089,6 @@ function updateCreateScreenModeVisibility(mode) {
   if (els.rsvpAssessmentOption) {
     els.rsvpAssessmentOption.hidden = true;
   }
-  if (els.slowOnlyControls) els.slowOnlyControls.hidden = !isSlow;
   if (els.blocksInput) els.blocksInput.required = isBlockPackMode;
   if (!isRsvp) invalidateBlockSplitCacheAndRecommendUi();
   else void maybeAutoRecommendBlockCount();
@@ -4258,6 +4262,7 @@ async function resumeSlowSession(session) {
   state.activeSession = session;
   state.studyMode = "slow";
   await storeActiveSession(session);
+  // Safety net: legacy phase:"scope" → Phase 0 (new sessions never write "scope")
   if (String(session?.slow?.phase || "") === "scope") {
     session.slow.phase = "phase0";
     prepareSlowPhase0Entry(session);
@@ -4308,361 +4313,6 @@ async function resumeQuestionsSession(session) {
   }
   setFullPackEntryCta(n);
   showScreen("ready");
-}
-
-async function selectSlowScope(session, opt, listEl) {
-  const slow = session?.slow;
-  if (!slow || !opt) return;
-  listEl?.querySelectorAll("button[data-scope-id]").forEach((b) => {
-    b.setAttribute("aria-selected", String(b.dataset.scopeId === opt.id));
-  });
-  slow.readingScope = {
-    id: opt.id,
-    kind: opt.kind,
-    charStart: opt.charStart,
-    charEnd: opt.charEnd,
-    label: opt.label,
-  };
-  const chars = scopeCharCount(opt);
-  if (els.slowScopeConfirmBtn) els.slowScopeConfirmBtn.disabled = false;
-  if (els.slowScopeCharCount) {
-    els.slowScopeCharCount.textContent = `Scope selected: ${formatCharCount(chars)} characters`;
-  }
-  if (els.slowScopeLongWarning) {
-    els.slowScopeLongWarning.hidden = chars < SCOPE_CHAR_WARN;
-    if (!els.slowScopeLongWarning.hidden) {
-      els.slowScopeLongWarning.textContent =
-        "Scope ? 60k characters ? Phase 0 will use map-reduce by section.";
-    }
-  }
-  await storeActiveSession(session);
-}
-
-function groupScopeOptionsHierarchical(options) {
-  const full = options.find((o) => o.kind === "full");
-  const sections = options.filter((o) => o.kind !== "full");
-  const l1 = sections.filter((o) => (o.level || 2) === 1);
-  const childrenByParent = new Map();
-  for (const opt of sections) {
-    if ((opt.level || 2) === 1) continue;
-    const parent = opt.parentLabel || "";
-    if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
-    childrenByParent.get(parent).push(opt);
-  }
-  return { full, l1, childrenByParent, sections };
-}
-
-function slowHierarchyLoadingActive(session) {
-  return Boolean(session?._docHierarchyLoading);
-}
-
-async function populateDocumentHierarchy(session, markdownText, llmModel) {
-  const text = String(markdownText || "");
-  const needsLlm = text.length >= 3000 && !hasMarkdownHeadings(text);
-  let llmFn = null;
-  if (needsLlm && getApiKeyForLlmModel(llmModel)) {
-    llmFn = async ({ systemPrompt, userPrompt, temperature, maxTokens, signal }) =>
-      llmChatCompletions({
-        llmModel: normalizeLlmModel(llmModel),
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature,
-        max_tokens: maxTokens,
-        signal,
-      });
-  }
-
-  if (needsLlm && !llmFn) {
-    session.docHierarchy = null;
-    syncSlowDocHierarchyToShared(session);
-    const doc = await getActiveSession();
-    if (doc) await computeAndPersistModeRecommendation(doc, text, null);
-    return;
-  }
-
-  if (needsLlm && llmFn) {
-    session._docHierarchyLoading = true;
-    if (state.activeSession === session) {
-      renderSlowScopeScreen(session);
-    }
-  }
-
-  try {
-    const hierarchyResult = await buildDocumentHierarchy(text, llmFn, { useCache: true });
-    session.docHierarchy = hierarchyResult;
-    syncSlowDocHierarchyToShared(session);
-    const doc = await getActiveSession();
-    if (doc) await computeAndPersistModeRecommendation(doc, text, hierarchyResult);
-  } finally {
-    session._docHierarchyLoading = false;
-    await storeActiveSession(session);
-    if (state.activeSession === session) {
-      renderSlowScopeScreen(session);
-    }
-  }
-}
-
-async function renderSlowScopeScreen(session) {
-  const slow = session?.slow;
-  if (!slow) return;
-
-  if (els.slowScopeHierarchyLoading) {
-    const loading = slowHierarchyLoadingActive(session);
-    els.slowScopeHierarchyLoading.hidden = !loading;
-    if (loading) {
-      els.slowScopeHierarchyLoading.textContent =
-        "Analyzing document structure…";
-    }
-  }
-
-  const uploadFiles = Array.isArray(session?.shared?.uploadMeta?.files)
-    ? session.shared.uploadMeta.files
-    : [];
-  const multiFile = uploadFiles.length > 1;
-  const fileLabel = els.slowScopeFileLabel;
-  const fileSelect = els.slowScopeFileSelect;
-  if (fileLabel) fileLabel.hidden = !multiFile;
-  if (fileSelect) {
-    fileSelect.hidden = !multiFile;
-    if (multiFile) {
-      const selectedId =
-        String(slow.selectedSourceFileId || uploadFiles[0]?.fileId || "").trim() ||
-        uploadFiles[0]?.fileId;
-      if (!slow.selectedSourceFileId) slow.selectedSourceFileId = selectedId;
-      fileSelect.innerHTML = "";
-      for (const f of uploadFiles) {
-        const opt = document.createElement("option");
-        opt.value = f.fileId;
-        opt.textContent = f.fileName;
-        if (f.fileId === selectedId) opt.selected = true;
-        fileSelect.appendChild(opt);
-      }
-      if (!fileSelect._wired) {
-        fileSelect._wired = true;
-        fileSelect.addEventListener("change", async () => {
-          const s = state.activeSession;
-          if (!s?.slow) return;
-          s.slow.selectedSourceFileId = String(fileSelect.value || "").trim();
-          s.slow.readingScope = null;
-          await storeActiveSession(s);
-          renderSlowScopeScreen(s);
-        });
-      }
-    }
-  }
-
-  const scopeMarkdown = multiFile
-    ? sliceMarkdownForSourceFile(
-        slow.normalizedTextFull,
-        slow.selectedSourceFileId || uploadFiles[0]?.fileId,
-      )
-    : slow.normalizedTextFull;
-
-  const options = buildScopeOptions(scopeMarkdown, slow.normalizedFormat, {
-    headingOverrides: slow.headingOverrides || [],
-    fallbackSections: slow.fallbackSections || undefined,
-    docHierarchy: session.docHierarchy,
-  });
-  const listEl = els.slowScopeList;
-  if (!listEl) return;
-  listEl.innerHTML = "";
-
-  if (els.slowScopeWarningBanner) {
-    const lowConf = (slow.structureWarnings || []).includes("low_heading_confidence");
-    els.slowScopeWarningBanner.hidden = !lowConf;
-    if (lowConf) {
-      els.slowScopeWarningBanner.textContent =
-        "No sections were detected automatically. Add divisions manually or study the full document.";
-    }
-  }
-
-  if (els.slowScopeEditBtn) {
-    els.slowScopeEditBtn.textContent = slow.scopeEditMode ? "Done" : "Edit sections";
-    if (!els.slowScopeEditBtn._wired) {
-      els.slowScopeEditBtn._wired = true;
-      els.slowScopeEditBtn.addEventListener("click", async () => {
-        const s = state.activeSession;
-        if (!s?.slow) return;
-        s.slow.scopeEditMode = !s.slow.scopeEditMode;
-        await storeActiveSession(s);
-        renderSlowScopeScreen(s);
-      });
-    }
-  }
-
-  if (els.slowScopeAutoSplitBtn) {
-    const showAuto =
-      (slow.structureWarnings || []).includes("low_heading_confidence") &&
-      !slow.fallbackSections?.length;
-    els.slowScopeAutoSplitBtn.hidden = !showAuto;
-    if (!els.slowScopeAutoSplitBtn._wired) {
-      els.slowScopeAutoSplitBtn._wired = true;
-      els.slowScopeAutoSplitBtn.addEventListener("click", async () => {
-        const s = state.activeSession;
-        if (!s?.slow) return;
-        const files = Array.isArray(s?.shared?.uploadMeta?.files) ? s.shared.uploadMeta.files : [];
-        const splitText =
-          files.length > 1
-            ? sliceMarkdownForSourceFile(
-                s.slow.normalizedTextFull,
-                s.slow.selectedSourceFileId || files[0]?.fileId,
-              )
-            : s.slow.normalizedTextFull;
-        s.slow.fallbackSections = buildEqualLengthSections(splitText, {
-          targetChunkSize: 5000,
-          labelPrefix: "Section",
-        });
-        await storeActiveSession(s);
-        renderSlowScopeScreen(s);
-      });
-    }
-  }
-
-  const selectedId = slow.readingScope?.id || null;
-  const editMode = Boolean(slow.scopeEditMode);
-  const { full, l1, childrenByParent } = groupScopeOptionsHierarchical(options);
-
-  function appendScopeRow(opt, { indent = false, child = false } = {}) {
-    const li = document.createElement("li");
-    li.className = child ? "slow-scope-child" : indent ? "slow-scope-indent" : "";
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.setAttribute("role", "option");
-    btn.dataset.scopeId = opt.id;
-    btn.dataset.charStart = String(opt.charStart);
-    btn.dataset.charEnd = String(opt.charEnd);
-    btn.dataset.kind = opt.kind;
-    const sizeLabel = opt.displaySize || formatCharCount(scopeCharCount(opt));
-    btn.textContent = `${opt.label} (${sizeLabel})`;
-    btn.setAttribute("aria-selected", String(selectedId === opt.id));
-    btn.addEventListener("click", () => selectSlowScope(session, opt, listEl));
-    li.appendChild(btn);
-
-    if (editMode && opt.kind !== "full") {
-      const actions = document.createElement("span");
-      actions.className = "slow-scope-edit-actions";
-      const renameBtn = document.createElement("button");
-      renameBtn.type = "button";
-      renameBtn.textContent = "Renombrar";
-      renameBtn.className = "btn-link";
-      renameBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const newLabel = window.prompt("New section name:", opt.label);
-        if (!newLabel?.trim()) return;
-        slow.headingOverrides = slow.headingOverrides || [];
-        slow.headingOverrides.push({
-          type: "rename",
-          headingId: opt.id,
-          newLabel: newLabel.trim(),
-        });
-        await storeActiveSession(session);
-        renderSlowScopeScreen(session);
-      });
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.textContent = "Eliminar";
-      removeBtn.className = "btn-link";
-      removeBtn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        slow.headingOverrides = slow.headingOverrides || [];
-        slow.headingOverrides.push({ type: "remove", headingId: opt.id });
-        await storeActiveSession(session);
-        renderSlowScopeScreen(session);
-      });
-      actions.append(renameBtn, removeBtn);
-      li.appendChild(actions);
-    }
-
-    listEl.appendChild(li);
-    return li;
-  }
-
-  if (full) appendScopeRow(full);
-
-  for (const parent of l1) {
-    const children = childrenByParent.get(parent.label) || [];
-    const collapsed = slow.scopeCollapsedParents?.[parent.id] !== false;
-    const li = document.createElement("li");
-    li.className = "slow-scope-parent";
-
-    if (children.length) {
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "slow-scope-toggle";
-      toggle.textContent = collapsed ? "▸" : "▾";
-      toggle.setAttribute("aria-label", collapsed ? "Expand" : "Collapse");
-      toggle.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        slow.scopeCollapsedParents = slow.scopeCollapsedParents || {};
-        slow.scopeCollapsedParents[parent.id] = !collapsed;
-        await storeActiveSession(session);
-        renderSlowScopeScreen(session);
-      });
-      li.appendChild(toggle);
-    }
-
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.setAttribute("role", "option");
-    btn.dataset.scopeId = parent.id;
-    btn.dataset.charStart = String(parent.charStart);
-    btn.dataset.charEnd = String(parent.charEnd);
-    btn.dataset.kind = parent.kind;
-    const parentSize = parent.displaySize || formatCharCount(scopeCharCount(parent));
-    btn.textContent = `${parent.label} (${parentSize})`;
-    btn.setAttribute("aria-selected", String(selectedId === parent.id));
-    btn.addEventListener("click", () => selectSlowScope(session, parent, listEl));
-    li.appendChild(btn);
-    listEl.appendChild(li);
-
-    if (!collapsed && children.length) {
-      for (const child of children) {
-        appendScopeRow(child, { child: true });
-      }
-    }
-  }
-
-  const orphanSections = options.filter(
-    (o) => o.kind !== "full" && (o.level || 2) !== 1 && !o.parentLabel,
-  );
-  for (const opt of orphanSections) {
-    if (l1.some((p) => childrenByParent.get(p.label)?.includes(opt))) continue;
-    appendScopeRow(opt, { indent: true });
-  }
-
-  if (els.slowScopeConfirmBtn) {
-    els.slowScopeConfirmBtn.disabled = !slow.readingScope;
-  }
-  if (els.slowScopeCharCount && slow.readingScope) {
-    const chars = scopeCharCount(slow.readingScope);
-    els.slowScopeCharCount.textContent = `Scope selected: ${formatCharCount(chars)} characters`;
-  }
-  if (els.slowScopeFillableMap) {
-    els.slowScopeFillableMap.checked = Boolean(slow.fillableMapMode);
-    if (!els.slowScopeFillableMap._wired) {
-      els.slowScopeFillableMap._wired = true;
-      els.slowScopeFillableMap.addEventListener("change", async () => {
-        const s = state.activeSession;
-        if (!s?.slow) return;
-        s.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
-        await storeActiveSession(s);
-      });
-    }
-  }
-  if (els.slowScopeCheckpoints) {
-    els.slowScopeCheckpoints.checked = slow.checkpointsEnabled !== false;
-    if (!els.slowScopeCheckpoints._wired) {
-      els.slowScopeCheckpoints._wired = true;
-      els.slowScopeCheckpoints.addEventListener("change", async () => {
-        const s = state.activeSession;
-        if (!s?.slow) return;
-        s.slow.checkpointsEnabled = Boolean(els.slowScopeCheckpoints.checked);
-        await storeActiveSession(s);
-      });
-    }
-  }
 }
 
 function setSlowPhase0Controls({ showRetry = false, showSkip = false, showContinue = false } = {}) {
@@ -5049,7 +4699,7 @@ async function runPhase0Generation(session) {
   renderSlowPhase0Screen(session);
   await storeActiveSession(session);
 
-  const scopeText = getScopeText(session);
+  const scopeText = String(session?.slow?.normalizedTextFull || "");
   try {
     const orientation = await generatePhase0ForScope(scopeText, session, {
       language: String(session?.language || getStudyLanguage()).trim() || "English",
@@ -5147,12 +4797,8 @@ async function wireSlowPhase0Handlers() {
 function prepareSlowPhase0Entry(session) {
   const slow = session?.slow;
   if (!slow) return;
-  if (els.slowPhase0FillableMap) {
-    slow.fillableMapMode = Boolean(els.slowPhase0FillableMap.checked);
-  }
-  if (els.slowPhase0Checkpoints) {
-    slow.checkpointsEnabled = Boolean(els.slowPhase0Checkpoints.checked);
-  }
+  // fillableMapMode / checkpointsEnabled / criticalMode set once via
+  // decideSlowReadingModifiers at createSlowSession (FR-010).
   const seenKey = getPhase0SeenKeyForSession(session);
   slow.phase0SeenKey = seenKey;
   slow.phase0SeenReread = isPhase0Reread(seenKey);
@@ -5168,28 +4814,6 @@ function prepareSlowPhase0Entry(session) {
     slow.phase0 = null;
     slow.phase0Error = null;
   }
-}
-
-async function wireSlowScopeHandlers() {
-  els.slowScopeConfirmBtn?.addEventListener("click", async () => {
-    const session = state.activeSession;
-    if (!session?.slow?.readingScope) return;
-    applyFlowRecommendationOnEnterMode("slow");
-    if (els.slowScopeFillableMap) {
-      session.slow.fillableMapMode = Boolean(els.slowScopeFillableMap.checked);
-    }
-    if (els.slowScopeCheckpoints) {
-      session.slow.checkpointsEnabled = Boolean(els.slowScopeCheckpoints.checked);
-    }
-    session.slow.phase = "phase0";
-    prepareSlowPhase0Entry(session);
-    await storeActiveSession(session);
-    enterSlowPhase0(session);
-  });
-
-  els.slowScopeBackBtn?.addEventListener("click", () => {
-    enterModeSelectScreen();
-  });
 }
 
 function wireDocLibraryHandlers() {
@@ -5332,12 +4956,6 @@ function wireStudyModeSelector() {
 
   els.createBackToModesBtn?.addEventListener("click", () => {
     enterModeSelectScreen();
-  });
-
-  els.criticalModeToggleBtn?.addEventListener("click", () => {
-    const pressed = els.criticalModeToggleBtn.getAttribute("aria-pressed") === "true";
-    const next = !pressed;
-    els.criticalModeToggleBtn.setAttribute("aria-pressed", String(next));
   });
 
   // RSVP create-screen assessment toggle removed (shared gate is controlled in Settings).
@@ -9046,14 +8664,17 @@ async function resolveHolisticAssessmentContext(flow) {
   const docId = state.activeDocId || state.activeSession?.docId;
   const doc = docId ? await getSession(docId) : null;
   const conceptGraph = flow?.conceptGraph ?? doc?.shared?.conceptGraph ?? null;
-  const docHierarchy = flow?.docHierarchy ?? doc?.shared?.docHierarchy ?? null;
+  // ponytail: mini-tree × scoped text for coverage chunking
+  const scopedText = resolveScopedMarkdown(doc) || flow?.cleanedText || "";
+  const docHierarchy =
+    resolveScopedHierarchy(doc) ?? flow?.docHierarchy ?? doc?.shared?.docHierarchy ?? null;
   const inventory = flow?.conceptInventory || [];
   const edges =
     Array.isArray(flow?.edges) && flow.edges.length
       ? flow.edges
       : deriveInventoryEdges(inventory, conceptGraph);
   const budget = computeHolisticAssessmentBudget(inventory, edges);
-  const chunks = buildInventoryChunks(docHierarchy, flow?.cleanedText || "");
+  const chunks = buildInventoryChunks(docHierarchy, scopedText);
 
   let plan;
   if (isAdaptiveProbingEnabled()) {
@@ -9061,7 +8682,7 @@ async function resolveHolisticAssessmentContext(flow) {
       inventory,
       edges,
       inventoryChunks: chunks,
-      rawMarkdown: flow?.cleanedText || "",
+      rawMarkdown: scopedText,
       budget,
       conceptGraph,
       projectId: doc?.projectId || getUploadDefaultProjectId(),
@@ -9082,7 +8703,7 @@ async function resolveHolisticAssessmentContext(flow) {
       inventory,
       edges,
       inventoryChunks: chunks,
-      rawMarkdown: flow?.cleanedText || "",
+      rawMarkdown: scopedText,
       budget,
     });
   }
@@ -9177,6 +8798,7 @@ function getCurrentPrefetchConfigKey(flow) {
         ? flow.edges
         : deriveInventoryEdges(inventory, flow.conceptGraph);
     const budget = computeHolisticAssessmentBudget(inventory, edges);
+    // ponytail: flow.docHierarchy set via resolveScopedHierarchy at gate entry
     const chunks = buildInventoryChunks(flow.docHierarchy, flow.cleanedText || "");
     let plan = flow.coveragePlan;
     if (!plan) {
@@ -9964,7 +9586,6 @@ export async function wireStudyHandlers() {
     void handleRetryPreparationClick();
   });
   els.modeSelectBackBtn?.addEventListener("click", () => enterAppHome());
-  wireSlowScopeHandlers();
   wireScopeSelectionHandlers();
   wireOnboardingQuestionnaireHandlers();
   wireSlowPhase0Handlers();
@@ -10332,54 +9953,27 @@ export async function wireStudyHandlers() {
       }
       els.generateBlocksStatus.textContent = "";
       try {
-        const {
-          file,
-          cleanedText,
-          normalizedFormat,
-          originalFormat,
-          warnings,
-          fallbackSections,
-          pendingImages,
-        } = resolvedSlow;
+        const { file, cleanedText, originalFormat, pendingImages } = resolvedSlow;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
-        const criticalMode =
-          els.criticalModeToggleBtn?.getAttribute("aria-pressed") === "true";
         const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
-        const sessionObj = createSlowSession({
-          normalizedText: cleanedText,
-          normalizedFormat,
+        await setUploadMeta(doc.docId, {
           fileName: String(file.name || ""),
-          originalFormat,
-          llmModel,
-          criticalMode,
-          language: getStudyLanguage(),
+          originalFormat: String(originalFormat || ""),
+          uploadedAt: new Date().toISOString(),
         });
-        if (sessionObj.slow) {
-          sessionObj.slow.structureWarnings = warnings || [];
-          sessionObj.slow.fallbackSections = fallbackSections;
-          if ((warnings || []).includes("low_heading_confidence")) {
-            sessionObj.slow.scopeEditMode = true;
-          }
-        }
-        persistModeSliceToDocument(doc, "slow", sessionObj);
-        state.activeSession = sessionObj;
-        await storeActiveSession(sessionObj);
-        showScreen("slowScope");
-        const needsAsyncHierarchy =
-          cleanedText.length >= 3000 && !hasMarkdownHeadings(cleanedText);
-        if (needsAsyncHierarchy) {
-          renderSlowScopeScreen(sessionObj);
-          void populateDocumentHierarchy(sessionObj, cleanedText, llmModel);
-        } else {
-          const hierarchyResult = await buildDocumentHierarchy(cleanedText, null, {
-            useCache: true,
-          });
-          sessionObj.docHierarchy = hierarchyResult;
-          syncSlowDocHierarchyToShared(sessionObj);
-          await computeAndPersistModeRecommendation(doc, cleanedText, hierarchyResult);
-          await storeActiveSession(sessionObj);
-          renderSlowScopeScreen(sessionObj);
-        }
+        state.lastCleanedMaterialText = cleanedText;
+        state.lastCleanedMaterialWordCount = countWords(cleanedText);
+        state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
+        state.materialBootstrapActive = false;
+        showDocumentPreparingScreen("Preparing document…");
+        const prepared = await ensureScopeStructurePreparation(doc, {
+          ...preparationGateOptions((msg) => {
+            if (els.reviewGeneratingLabel) {
+              els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
+            }
+          }),
+        });
+        await enterModeSelectAfterTier1Gate(prepared);
       } catch (err) {
         setGenerateError(err?.message ? String(err.message) : String(err));
       } finally {

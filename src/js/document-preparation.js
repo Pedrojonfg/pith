@@ -68,6 +68,8 @@ import { USER_SPECIFIC_DPP_PHASES } from "./shared-dpp-cache.js";
 import { peekNormalizationDebugBag } from "./input-normalization.js";
 import { computeDocumentQualitySignal } from "./normalization/quality-signal.js";
 import { computeConceptAnchorsForDocument } from "./concept-anchoring.js";
+import { resolveScopedHierarchy } from "./normalization/scoped-hierarchy.js";
+import { findPithImageTokenIds } from "./document-images/tokens.js";
 
 /**
  * [debug-enrich] Emit consolidated normalization quality summary after T1.1.
@@ -258,13 +260,19 @@ function ensurePreparation(doc) {
   return doc.shared.preparation;
 }
 
-function phaseSucceeded(prep, phaseId, fingerprint) {
+function phaseSucceeded(prep, phaseId, runFingerprint, priorFingerprint) {
   const row = prep.phaseResults?.[phaseId];
   const terminal =
     row?.status === "success" ||
     row?.status === "partial" ||
     row?.status === "skipped";
-  return terminal && row?.outputHash && prep.fingerprint === fingerprint;
+  // ponytail: compare priorFingerprint (pre-overwrite) so skip is not vacuously true
+  return (
+    terminal &&
+    Boolean(row?.outputHash) &&
+    priorFingerprint === runFingerprint &&
+    Boolean(runFingerprint)
+  );
 }
 
 function markPhase(prep, phaseId, status, outputHash, error) {
@@ -279,7 +287,7 @@ function markPhase(prep, phaseId, status, outputHash, error) {
   prep.currentPhase = phaseId;
 }
 
-function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
+function allTier1PhasesComplete(prep, fingerprint, stopAfterTier, priorFingerprint = fingerprint) {
   const tier1Ids = phasesForStopTier(Math.min(stopAfterTier, 1));
   return tier1Ids.every((id) => {
     const row = prep.phaseResults?.[id];
@@ -287,7 +295,7 @@ function allTier1PhasesComplete(prep, fingerprint, stopAfterTier) {
       row?.status === "success" ||
       row?.status === "partial" ||
       row?.status === "skipped" ||
-      phaseSucceeded(prep, id, fingerprint)
+      phaseSucceeded(prep, id, fingerprint, priorFingerprint)
     );
   });
 }
@@ -394,17 +402,15 @@ async function runPhaseT12(doc, ctx) {
     return hashPayload(inv.length);
   }
   const text = getStudyMarkdown(doc);
-  const charCount =
-    Number(doc.shared?.docMeta?.charCount) ||
-    Number(doc.shared?.textMetrics?.charCount) ||
-    text.length;
+  // ponytail: T1.2 runs post-gate — scoped text.length is the sparsity base
+  const charCount = text.length;
   const wordCount = text.split(/\s+/).filter(Boolean).length;
   const prep = ensurePreparation(doc);
   const invResult = await runConceptInventoryWithFallback(text, {
     llmModel: ctx.llmModel,
     language: ctx.language,
     studyNotes: ctx.studyNotes,
-    docHierarchy: doc.shared.docHierarchy,
+    docHierarchy: resolveScopedHierarchy(doc) || doc.shared.docHierarchy,
     wordCount,
     charCount,
     onProgress: (msg) => ctx.onProgress?.({ phaseId: "T1.2", label: msg, status: "running" }),
@@ -709,12 +715,22 @@ async function runPhaseT17(doc, ctx) {
     console.debug("[document-preparation.runPhaseT17] No images on document:", { docId: doc.docId }); // [debug-enrich]
     return hashPayload(0);
   }
+  // ponytail: vision only for tokens in scopedMarkdown (FR-014 / countScopedImages pattern)
+  const idsInScope = new Set(findPithImageTokenIds(getStudyMarkdown(doc)));
+  for (const image of images) {
+    const id = String(image?.imageId || "").trim();
+    if (image.visionStatus === "pending" && (!id || !idsInScope.has(id))) {
+      image.visionStatus = "skipped";
+      image.visionDescription = null;
+    }
+  }
   const detectedCount = images.length;
   const pendingCount = images.filter((img) => img.visionStatus === "pending").length;
   console.info("[document-preparation.runPhaseT17] Image vision start:", {
     docId: doc.docId,
     imagesDetected: detectedCount,
     pendingForVision: pendingCount,
+    inScopeTokens: idsInScope.size,
   }); // [debug-enrich]
   if (!meetsConceptInventoryThreshold(doc)) {
     console.warn("[document-preparation.runPhaseT17] Skipping vision — inventory below threshold:", {
@@ -913,15 +929,25 @@ async function runPhaseT23(doc, ctx) {
       normalizedFormat: "markdown",
       criticalMode: false,
     },
-    docHierarchy: doc.shared.docHierarchy,
+    // ponytail: mini-tree offsets already relative to scoped text
+    docHierarchy: resolveScopedHierarchy(doc) || doc.shared.docHierarchy,
   };
   const orientation = await generatePhase0ForScope(text, slowSession, {
     llmModel: ctx.llmModel,
     signal: ctx.signal,
   });
+  // ponytail: scope identity = ordered section ids, else entire-doc key (FR-015)
+  const selection = doc.shared?.scopeSelection;
+  const scopeKey =
+    selection != null
+      ? (Array.isArray(selection.sectionIds) ? selection.sectionIds : [])
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+          .join("|")
+      : "full_document";
   doc.shared.slowOrientation = {
     fingerprint: computePreparationFingerprint(doc, ctx),
-    scopeKey: "full_document",
+    scopeKey,
     payload: orientation,
     generatedAt: Date.now(),
   };
@@ -957,9 +983,12 @@ const PHASE_RUNNERS = {
   "T2.3": runPhaseT23,
 };
 
-function phasesForStopTier(stopAfterTier, options = {}) {
+function phasesForStopTier(stopAfterTier, options = {}, doc = null) {
   const all = Object.keys(PHASE_RUNNERS);
-  if (options.stopAfterScopeGate) return [...SCOPE_PRE_PHASE_IDS];
+  // ponytail: unresolved scope ⇒ same truncation as stopAfterScopeGate (FR-001)
+  if (options.stopAfterScopeGate || (doc && !isScopeGateResolved(doc))) {
+    return [...SCOPE_PRE_PHASE_IDS];
+  }
   if (stopAfterTier <= 0) return all.filter((id) => id.startsWith("T0."));
   if (stopAfterTier === 1) return [...TIER1_GATE_PHASE_IDS];
   return all;
@@ -984,6 +1013,10 @@ export function buildWaves(phaseIds) {
 async function executePhase(doc, phaseId, ctx) {
   const runner = PHASE_RUNNERS[phaseId];
   if (!runner) throw new Error(`Unknown phase ${phaseId}`);
+  // Defensive gate: never run post-structure study phases before scope resolve
+  if (!SCOPE_PRE_PHASE_IDS.includes(phaseId) && !isScopeGateResolved(doc)) {
+    return { skipped: true, hash: "scope_unresolved" };
+  }
   return runner(doc, ctx);
 }
 
@@ -1014,6 +1047,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     priorStatus: workingDoc?.shared?.preparation?.status,
   }); // [debug-enrich]
   const prep = ensurePreparation(workingDoc);
+  const priorFingerprint = prep.fingerprint || "";
   prep.fingerprint = fingerprint;
   prep.runId = generateRunId();
   setPreparationStatus(prep, "running");
@@ -1069,7 +1103,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     };
   }
 
-  const phaseIds = phasesForStopTier(stopAfterTier, options);
+  const phaseIds = phasesForStopTier(stopAfterTier, options, workingDoc);
   const waves = buildWaves(phaseIds);
   prep.waves = waves.map((phaseIdsInWave, i) => ({ wave: i + 1, phaseIds: phaseIdsInWave }));
   let tier1CheckpointDone = false;
@@ -1079,7 +1113,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
       const wave = waves[wi];
       prep.currentWave = wi + 1;
       const runnable = options.resume !== false
-        ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint))
+        ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint, priorFingerprint))
         : wave;
       console.debug("[document-preparation.runDocumentPreparationPipeline] Wave start:", {
         docId: workingDoc.docId,
@@ -1152,7 +1186,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
         }
       }
 
-      if (!tier1CheckpointDone && allTier1PhasesComplete(prep, fingerprint, stopAfterTier)) {
+      if (!tier1CheckpointDone && allTier1PhasesComplete(prep, fingerprint, stopAfterTier, priorFingerprint)) {
         await persistCheckpoint(workingDoc);
         tier1CheckpointDone = true;
       }
@@ -1161,7 +1195,7 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     }
 
     for (const id of phaseIds) {
-      if (!prep.phaseResults[id] && phaseSucceeded(prep, id, fingerprint)) {
+      if (!prep.phaseResults[id] && phaseSucceeded(prep, id, fingerprint, priorFingerprint)) {
         markPhase(prep, id, "skipped", prep.phaseResults[id]?.outputHash);
       }
     }
@@ -1244,12 +1278,16 @@ const scopeStructureInFlight = new Map();
 
 function tier2PhasesPending(doc, fingerprint) {
   const prep = ensurePreparation(doc);
-  return TIER2_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
+  const priorFingerprint = prep.fingerprint || "";
+  return TIER2_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint, priorFingerprint));
 }
 
 function deferredTier1PhasesPending(doc, fingerprint) {
   const prep = ensurePreparation(doc);
-  return TIER1_DEFERRED_PHASE_IDS.some((id) => !phaseSucceeded(prep, id, fingerprint));
+  const priorFingerprint = prep.fingerprint || "";
+  return TIER1_DEFERRED_PHASE_IDS.some(
+    (id) => !phaseSucceeded(prep, id, fingerprint, priorFingerprint),
+  );
 }
 
 /**
@@ -1316,6 +1354,13 @@ export async function ensureTier1Preparation(doc, options = {}) {
     return doc;
   }
   if (!options.forceRerun && isTier1PreparationComplete(doc)) {
+    // FR-013: never treat artifact-complete legacy as skippable without scope resolve
+    if (!isScopeGateResolved(doc)) {
+      console.info("[DPP-GUARD.ensureTier1Preparation] blocked — artifacts without scopeResolvedAt", {
+        docId: doc.docId,
+      }); // [debug-enrich]
+      return doc;
+    }
     console.info("[DPP-GUARD.ensureTier1Preparation] skip — tier-1 already complete", {
       docId: doc.docId,
       conceptCount: doc.shared?.conceptInventory?.length ?? 0,
@@ -1391,8 +1436,9 @@ export async function runPostCacheUserPhases(doc, options = {}) {
   };
   const prep = ensurePreparation(doc);
   const fingerprint = computePreparationFingerprint(doc, options);
+  const priorFingerprint = prep.fingerprint || "";
   for (const phaseId of USER_SPECIFIC_DPP_PHASES) {
-    if (phaseSucceeded(prep, phaseId, fingerprint)) continue;
+    if (phaseSucceeded(prep, phaseId, fingerprint, priorFingerprint)) continue;
     const runner = PHASE_RUNNERS[phaseId];
     if (!runner) continue;
     ctx.onProgress?.({

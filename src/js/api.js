@@ -957,6 +957,9 @@ export function countInventoryWords(text) {
 }
 
 /**
+ * Chunk inventory material by hierarchy section offsets.
+ * Callers must pass hierarchy whose offsets match `rawMarkdown`
+ * (mini-tree × scopedMarkdown when scope is a section subset).
  * @param {{ tree?: { title?: string, startOffset?: number, endOffset?: number, children?: object[] }[] }} docHierarchy
  * @param {string} rawMarkdown
  * @returns {{ label: string, text: string, wordCount: number }[] | null}

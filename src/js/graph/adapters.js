@@ -1,6 +1,5 @@
 import { getSortedSessionConcepts } from "../dictionary.js?v=20260625_02";
 import { getActiveSession } from "../session-store.js?v=20260625_02";
-import { getScopeText } from "../slow/reader.js?v=20260625_02";
 import {
   buildClozeEpistemicGraph,
   buildRsvpMaterialGraph,
@@ -54,7 +53,7 @@ export async function resolveEnrichedGraphInputs(session, overrides = {}) {
     annotations:
       overrides.annotations ??
       (sharedAnns.length ? sharedAnns : slowAnns),
-    scopeText: overrides.scopeText ?? (session ? getScopeText(session) : ""),
+    scopeText: overrides.scopeText ?? String(session?.slow?.normalizedTextFull || ""),
     fillableBlanks: overrides.fillableBlanks ?? phase0?.fillableBlanks ?? [],
     charProximity: overrides.charProximity,
     minTextOverlap: overrides.minTextOverlap,

@@ -4,7 +4,6 @@ import {
   annotationsToFlashcardPayload,
   renderPhase3GamificationPanel,
 } from "./gamification.js?v=20260625_02";
-import { getScopeText } from "./reader.js?v=20260625_02";
 import { charOffsetToPage } from "./pagination.js?v=20260625_02";
 import {
   addSlowFlashcardFromPayload,
@@ -424,7 +423,7 @@ export async function generateRetrievalByType(session, annotations, { llmCall = 
             `Annotations:\n${JSON.stringify(
               anns.map((a) => ({ id: a.id, type: a.type, text: a.userText })),
             )}\n\n` +
-            `Context:\n${getScopeText(session).slice(0, 80000)}`,
+            `Context:\n${String(session?.slow?.normalizedTextFull || "").slice(0, 80000)}`,
         },
       ],
       temperature: 0.1,
@@ -448,7 +447,7 @@ export async function generateDevilsAdvocateQuestions(
   { llmCall = llmChatCompletions } = {},
 ) {
   const lang = getStudyLanguage() || "English";
-  const scope = getScopeText(session);
+  const scope = String(session?.slow?.normalizedTextFull || "");
   const critical = (Array.isArray(annotations) ? annotations : [])
     .filter((a) => DEVILS_ADVOCATE_TYPES.has(a.type) && String(a.userText || "").trim())
     .slice(0, 8);
@@ -761,7 +760,7 @@ function appendPhase3SectionHtml(hostEl, html) {
  */
 export async function renderPhase3Modules(session, hostEl, moduleIds) {
   if (!hostEl || !session?.slow) return;
-  const scopeText = getScopeText(session);
+  const scopeText = String(session?.slow?.normalizedTextFull || "");
   const lang = getStudyLanguage() || "English";
   const es = isSpanishLang(lang);
   const breakpoints = session.slow.breakpoints || [];
@@ -842,7 +841,7 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
 }
 
 export async function generateRetrievalQuestions(session, annotations) {
-  const scope = getScopeText(session);
+  const scope = String(session?.slow?.normalizedTextFull || "");
   const anns = (annotations || []).slice(0, 12);
   const lang = getStudyLanguage() || "English";
   const prompt = `Generate retrieval questions (1 per annotation) as a JSON array {annotationId, question}. Respond entirely in ${lang}. Annotations: ${JSON.stringify(anns.map((a) => ({ id: a.id, type: a.type, text: a.userText })))}`;
