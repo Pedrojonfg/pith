@@ -1420,6 +1420,9 @@ function shouldOfferSharedAssessmentGate(doc) {
   return true;
 }
 
+/** @type {object | null} Known-fresh doc while assessment gate is open (Round-3 stale re-read). */
+let assessmentGateFreshDoc = null;
+
 async function finalizeModeSelectEntry(doc) {
   setGuideScopeFromDocument(doc);
   console.info("[study.finalizeModeSelectEntry] Start:", {
@@ -1577,12 +1580,17 @@ async function maybeEnterSharedAssessmentGate(doc) {
   if (!shouldOfferSharedAssessmentGate(doc)) return false;
   console.info("[study.maybeEnterSharedAssessmentGate] Enter gate:", {
     docId: doc?.docId || null,
+    conceptCount: doc?.shared?.conceptInventory?.length || 0,
   }); // [debug-enrich]
+  // Retain known-fresh doc for Accept — do not re-read store (superseded DPP
+  // checkpoint can leave row cache with conceptInventory: []).
+  assessmentGateFreshDoc = doc;
   showScreen("assessmentGate");
   return true;
 }
 
 async function completeSharedAssessmentGate({ outcome, profile }) {
+  assessmentGateFreshDoc = null;
   let doc = await getActiveSession();
   console.info("[study.completeSharedAssessmentGate] Start:", {
     docId: doc?.docId || null,
@@ -1615,12 +1623,26 @@ async function completeSharedAssessmentGate({ outcome, profile }) {
 }
 
 async function startSharedAssessmentFromGate() {
-  const doc = await getActiveSession();
+  const stashed = assessmentGateFreshDoc;
+  assessmentGateFreshDoc = null;
+  const active = await getActiveSession();
+  // Prefer known-fresh doc stashed at gate show (Round-3: no blind store re-read).
+  const doc =
+    stashed?.docId && (!active?.docId || stashed.docId === active.docId) ? stashed : active;
   console.info("[study.startSharedAssessmentFromGate] Start:", {
     docId: doc?.docId || null,
     inventorySize: doc?.shared?.conceptInventory?.length || 0,
+    usedStash: Boolean(stashed && doc === stashed),
   }); // [debug-enrich]
   if (!doc?.shared?.conceptInventory?.length) {
+    console.warn(
+      "[study.startSharedAssessmentFromGate] assessment gate accepted with empty inventory — possible stale read",
+      {
+        docId: doc?.docId ?? null,
+        hadStash: Boolean(stashed),
+        activeInventorySize: active?.shared?.conceptInventory?.length || 0,
+      },
+    );
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
