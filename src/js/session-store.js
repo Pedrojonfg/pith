@@ -423,23 +423,81 @@ async function stripMarkdownForPersist(session, userId) {
   return { sessionData: clone, markdownRef };
 }
 
+/**
+ * Merge incoming session_data into an existing row-cache payload.
+ * Incoming wins for most fields; a strictly fresher scopeResolvedAt on either
+ * side keeps that side's scope fields (prevents a superseded/older write from
+ * wiping a just-confirmed scope, and vice versa).
+ * @param {object|null|undefined} existing
+ * @param {object|null|undefined} incoming
+ * @returns {object|null|undefined}
+ */
+export function mergeSessionDataForRowCache(existing, incoming) {
+  if (!incoming) return existing ?? null;
+  if (!existing) return incoming;
+  const existScope = Number(existing?.shared?.scopeResolvedAt) || 0;
+  const inScope = Number(incoming?.shared?.scopeResolvedAt) || 0;
+  const shared = {
+    ...(existing.shared && typeof existing.shared === "object" ? existing.shared : {}),
+    ...(incoming.shared && typeof incoming.shared === "object" ? incoming.shared : {}),
+  };
+  if (existScope > inScope && existing.shared) {
+    shared.scopeResolvedAt = existing.shared.scopeResolvedAt;
+    shared.scopeSelection = existing.shared.scopeSelection ?? null;
+    shared.scopedMarkdown = existing.shared.scopedMarkdown ?? null;
+    shared.scopeContext = existing.shared.scopeContext ?? null;
+  }
+  return {
+    ...existing,
+    ...incoming,
+    shared,
+    modes: incoming.modes ?? existing.modes,
+  };
+}
+
+/**
+ * Apply a persist result (or local strip on supersede) to the in-memory row cache.
+ * @param {string} docId
+ * @param {object} sessionData
+ * @param {string|null|undefined} markdownRef
+ */
+export function applySessionDataToRowCache(docId, sessionData, markdownRef) {
+  if (!docId || !sessionData) return;
+  if (!rowCache) rowCache = new Map();
+  const existing = rowCache.get(docId);
+  rowCache.set(docId, {
+    id: docId,
+    session_data: mergeSessionDataForRowCache(existing?.session_data, sessionData),
+    markdown_ref: markdownRef ?? existing?.markdown_ref ?? null,
+  });
+}
+
+/** @type {null | ((session: object) => void | Promise<void>)} */
+let testBeforeSessionUpsert = null;
+
+/**
+ * Cursor-tests only — inject a delay/hook inside withKeyedRetry before the row upsert.
+ * @param {null | ((session: object) => void | Promise<void>)} fn
+ */
+export function setTestBeforeSessionUpsert(fn) {
+  testBeforeSessionUpsert = typeof fn === "function" ? fn : null;
+}
+
 async function upsertSessionInStore(session) {
   const userId = await getAuthUserId();
   const docId = session.docId;
   const key = `session:${docId}`;
   const result = await withKeyedRetry(key, async () => {
+    if (testBeforeSessionUpsert) await testBeforeSessionUpsert(session);
     const stripped = await stripMarkdownForPersist(session, userId);
     await upsertSessionRow(userId, docId, stripped.sessionData, stripped.markdownRef);
     return stripped;
   });
-  if (!result) return;
-  const { sessionData, markdownRef } = result;
-  if (!rowCache) rowCache = new Map();
-  rowCache.set(docId, {
-    id: docId,
-    session_data: sessionData,
-    markdown_ref: markdownRef,
-  });
+  // Even when withKeyedRetry supersedes the wire write (`result` undefined), keep the
+  // row cache aligned with this save intent so immediate getSession cannot miss fields
+  // like scopeResolvedAt / onboardingResponses (Round 3 stale-cache bug).
+  const stripped = result ?? (await stripMarkdownForPersist(session, userId));
+  applySessionDataToRowCache(docId, stripped.sessionData, stripped.markdownRef);
 }
 
 /**

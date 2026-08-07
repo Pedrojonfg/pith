@@ -4,7 +4,7 @@
  */
 
 import { getSession, saveActiveSession } from "./session-store.js";
-import { hasTier1Artifacts } from "./session-types.js";
+import { hasTier1Artifacts, isScopeGateResolved } from "./session-types.js";
 
 /** @type {Map<string, string>} docId → active runId on this device */
 const activeDppRunByDocId = new Map();
@@ -131,6 +131,11 @@ export function shouldCommitPreparedDoc(preparedDoc, storeDoc) {
   if (!preparedDoc?.shared) return false;
   if (!storeDoc?.shared) return true;
   if (isPreparedDocAheadOfStore(preparedDoc, storeDoc)) return true;
+  // Scope confirm can land in-memory while a concurrent/superseded write leaves the
+  // row-cache/store row without scopeResolvedAt — heal that before the gate re-reads.
+  const prepScopeAt = Number(preparedDoc.shared.scopeResolvedAt) || 0;
+  const storeScopeAt = Number(storeDoc.shared.scopeResolvedAt) || 0;
+  if (prepScopeAt > storeScopeAt) return true;
   const prepStatus = String(preparedDoc.shared.preparation?.status || "pending");
   const storeStatus = String(storeDoc.shared.preparation?.status || "pending");
   return (
@@ -181,6 +186,36 @@ export async function commitPreparedDocToStore(preparedDoc) {
     return (await getSession(preparedDoc.docId)) ?? preparedDoc;
   }
   return current ?? preparedDoc;
+}
+
+/**
+ * After a store re-read for the tier-1 gate: keep a known-fresh scopeResolvedAt
+ * from `preparedDoc` when the reload lost it, and optionally re-save to heal cache.
+ * @param {object|null|undefined} preparedDoc
+ * @param {object|null|undefined} reloadedDoc
+ * @param {{ save?: (doc: object) => Promise<unknown> }} [options]
+ * @returns {Promise<object|null|undefined>}
+ */
+export async function healScopeResolutionAfterStoreReload(preparedDoc, reloadedDoc, options = {}) {
+  if (
+    preparedDoc &&
+    isScopeGateResolved(preparedDoc) &&
+    reloadedDoc &&
+    !isScopeGateResolved(reloadedDoc)
+  ) {
+    if (typeof options.save === "function") {
+      try {
+        await options.save(preparedDoc);
+      } catch (err) {
+        console.warn(
+          "[dpp-persistence.healScopeResolutionAfterStoreReload] heal save failed:",
+          err?.message || err,
+        );
+      }
+    }
+    return preparedDoc;
+  }
+  return reloadedDoc ?? preparedDoc ?? null;
 }
 
 /**

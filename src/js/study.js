@@ -97,7 +97,7 @@ import {
 } from "./knowledge-profile-shared.js";
 import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
 import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
-import { commitPreparedDocToStore, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
+import { commitPreparedDocToStore, healScopeResolutionAfterStoreReload, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
 import { computeAverageNovelty } from "./vault/novelty-scoring.js";
 import {
   DOC_SIMILARITY_DUPLICATE_THRESHOLD,
@@ -1066,13 +1066,14 @@ function wireScopeSelectionHandlers() {
         scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
         scopedLen: doc?.shared?.scopedMarkdown?.length ?? 0,
       });
-      const refreshed = (await getActiveSession()) || doc;
+      // Pass the mutated in-memory doc — do not re-read store/row-cache here (can be stale
+      // vs the just-persisted scopeResolvedAt if a concurrent write superseded the cache update).
       // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
       console.log("[BUG-AUDIT.scopeConfirm] calling enterModeSelectAfterTier1Gate", {
-        refreshedDocId: refreshed?.docId ?? null,
-        refreshedScopeResolvedAt: refreshed?.shared?.scopeResolvedAt ?? null,
+        refreshedDocId: doc?.docId ?? null,
+        refreshedScopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
       });
-      await enterModeSelectAfterTier1Gate(refreshed);
+      await enterModeSelectAfterTier1Gate(doc);
       // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
       console.log("[BUG-AUDIT.scopeConfirm] enterModeSelectAfterTier1Gate returned");
     } catch (err) {
@@ -1094,7 +1095,26 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   let doc = null;
   if (preparedDoc?.docId) {
     doc = (await commitPreparedDocToStore(preparedDoc)) ?? preparedDoc;
-    doc = (await reloadSessionForGuard(preparedDoc.docId)) ?? doc;
+    const reloaded = await reloadSessionForGuard(preparedDoc.docId);
+    const beforeHeal = reloaded ?? doc;
+    doc = await healScopeResolutionAfterStoreReload(preparedDoc, beforeHeal, {
+      save: saveDocumentSession,
+    });
+    if (
+      isScopeGateResolved(preparedDoc) &&
+      beforeHeal &&
+      !isScopeGateResolved(beforeHeal) &&
+      doc === preparedDoc
+    ) {
+      console.warn(
+        "[study.enterModeSelectAfterTier1Gate] Store re-read lost scopeResolvedAt — keeping prepared doc",
+        {
+          docId: preparedDoc.docId,
+          preparedScopeResolvedAt: preparedDoc.shared?.scopeResolvedAt ?? null,
+          reloadedScopeResolvedAt: beforeHeal.shared?.scopeResolvedAt ?? null,
+        },
+      );
+    }
   } else {
     const active = await getActiveSession();
     doc = active?.docId ? (await reloadSessionForGuard(active.docId)) ?? active : active;
@@ -1103,6 +1123,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     docId: doc?.docId || null,
     hasPreparedDoc: Boolean(preparedDoc?.docId),
     prepStatus: doc?.shared?.preparation?.status || null,
+    scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
     hasGateResolved: Boolean(doc?.shared?.assessmentGate?.resolvedAt),
     isOffline: isOfflineMode(),
   }); // [debug-enrich]
@@ -1316,12 +1337,13 @@ async function submitOnboardingQuestionnaire() {
   const studentIntent = intentEl ? String(intentEl.value || "").trim() : "";
   els.onboardingQuestionnaireSubmitBtn && (els.onboardingQuestionnaireSubmitBtn.disabled = true);
   try {
-    await setOnboardingAnswers(doc.docId, {
+    const saved = await setOnboardingAnswers(doc.docId, {
       onboardingResponses: { ...answers, answeredAt: Date.now() },
       studentIntent,
     });
-    const refreshed = await getSession(doc.docId);
-    await enterModeSelectAfterTier1Gate(refreshed);
+    // Retain the known-fresh session from setOnboardingAnswers — do not re-read store
+    // (same Round-3 class: superseded write can leave row cache without answers).
+    await enterModeSelectAfterTier1Gate(saved || doc);
   } catch (err) {
     console.warn("[study.submitOnboardingQuestionnaire] failed", err);
     // ponytail: local re-enable; avoid importing ui sync (circular study↔ui under ?v=)
@@ -3145,8 +3167,10 @@ export async function runIngestOnlyPipeline({
     uploadedAt: new Date().toISOString(),
   });
   await setActiveSession(doc.docId);
-  await startDocumentPreparation(doc, { stopAfterTier: 1 });
-  return await getSession(doc.docId);
+  // startDocumentPreparation already returns the reconciled prepared doc — do not discard
+  // it for a getSession re-read (Round-3 class: superseded persist can leave row cache stale).
+  const prepared = await startDocumentPreparation(doc, { stopAfterTier: 1 });
+  return prepared ?? (await getSession(doc.docId));
 }
 
 async function handleIngestOnlyFileSelected() {
