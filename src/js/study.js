@@ -3966,7 +3966,9 @@ function onRetrievalHubPick(modeKey) {
   void enterModeWithContinuity(mode);
 }
 
-/** Active concept ids for mnemonic panel prefill (mode-specific). */
+/** Active concept ids for mnemonic panel prefill (mode-specific).
+ * @returns {Promise<string[]>}
+ */
 export async function resolveMnemonicActiveConceptIds() {
   const screenId = getCurrentScreenId();
   const doc = await getActiveSession();
@@ -7371,7 +7373,7 @@ function setTestMeta() {
   const indexEntry = getBlockIndexEntry(state.activeBlockIndex);
   syncBlockFidelityBanner(block, indexEntry);
   syncKeyTermsGlossaryUi();
-  syncMnemonicButtonBadge();
+  void syncMnemonicButtonBadge();
 }
 
 let testMcAnswered = false;

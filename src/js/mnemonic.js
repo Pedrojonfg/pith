@@ -20,7 +20,7 @@ const MNEMONIC_HIDDEN_SCREENS = new Set([
 
 const VALID_CREATED_MODES = new Set(["rsvp", "questions", "slow", "cloze", "recall", "review"]);
 
-/** @type {(() => string[]) | null} */
+/** @type {(() => Promise<string[]>) | null} */
 let resolveActiveConceptIds = null;
 /** @type {(() => string) | null} */
 let resolveStudyMode = null;
@@ -597,7 +597,7 @@ async function handleMnemonicDelete() {
   if (!session || !panelEditId) return;
   await deleteMnemonicDevice(session, panelEditId);
   closeMnemonicPanel();
-  syncMnemonicButtonBadge();
+  await syncMnemonicButtonBadge();
 }
 
 async function wirePanelHandlers() {
@@ -673,14 +673,14 @@ export async function syncMnemonicButtonBadge() {
   const btn = document.getElementById("mnemonicBtn");
   if (!btn || btn.hidden) return;
   const session = await getActiveSession();
-  const conceptIds = resolveActiveConceptIds?.() || [];
+  const conceptIds = (await resolveActiveConceptIds?.()) || [];
   const hasDevice = conceptIds.some((id) => conceptHasMnemonic(session, id));
   btn.classList.toggle("mnemonic-btn-has-device", hasDevice);
   btn.setAttribute("aria-pressed", hasDevice ? "true" : "false");
 }
 
 /**
- * @param {{ resolveActiveConceptIds?: () => string[], resolveStudyMode?: () => string, resolveScreenId?: () => string }} deps
+ * @param {{ resolveActiveConceptIds?: () => Promise<string[]>, resolveStudyMode?: () => string, resolveScreenId?: () => string }} deps
  */
 export function initMnemonicChrome(deps = {}) {
   resolveActiveConceptIds = deps.resolveActiveConceptIds || null;
@@ -692,9 +692,11 @@ export function initMnemonicChrome(deps = {}) {
     btn.dataset.mnemonicInit = "1";
     wireButtonDrag(btn);
     btn.addEventListener("click", () => {
-      const prefilled = resolveActiveConceptIds?.() || [];
-      const contextId = prefilled.length === 1 ? prefilled[0] : prefilled[0] || "";
-      openMnemonicPanel({ prefilledConceptIds: prefilled, contextConceptId: contextId });
+      void (async () => {
+        const prefilled = (await resolveActiveConceptIds?.()) || [];
+        const contextId = prefilled.length === 1 ? prefilled[0] : prefilled[0] || "";
+        openMnemonicPanel({ prefilledConceptIds: prefilled, contextConceptId: contextId });
+      })().catch(() => {});
     });
   }
   wirePanelHandlers();
