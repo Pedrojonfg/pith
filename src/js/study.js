@@ -1006,6 +1006,11 @@ async function maybeEnterScopeSelectionGate(doc) {
   console.info('[study.maybeEnterScopeSelectionGate] Entering scope selection UI:', {
     docId: doc.docId ?? null,
   });
+  // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+  console.log("[BUG-AUDIT.maybeEnterScopeSelectionGate] RE-SHOWING scope UI (stay on scopeSelection)", {
+    docId: doc.docId ?? null,
+    scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
+  });
   renderScopeSelectionScreen(doc);
   showScreen("scopeSelection");
   return true;
@@ -1014,6 +1019,12 @@ async function maybeEnterScopeSelectionGate(doc) {
 function wireScopeSelectionHandlers() {
   if (els.scopeSelectionFullBtn?._wired) return;
   if (els.scopeSelectionFullBtn) els.scopeSelectionFullBtn._wired = true;
+  // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+  console.log("[BUG-AUDIT.wireScopeSelectionHandlers] wiring", {
+    hasFullBtn: Boolean(els.scopeSelectionFullBtn),
+    hasConfirmBtn: Boolean(els.scopeSelectionConfirmBtn),
+    confirmBtnId: els.scopeSelectionConfirmBtn?.id ?? null,
+  });
 
   els.scopeSelectionFullBtn?.addEventListener("click", async () => {
     const doc = await getActiveSession();
@@ -1024,16 +1035,46 @@ function wireScopeSelectionHandlers() {
   });
 
   els.scopeSelectionConfirmBtn?.addEventListener("click", async () => {
+    // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+    console.log("[BUG-AUDIT.scopeConfirm] click fired", {
+      btnDisabled: els.scopeSelectionConfirmBtn?.disabled ?? null,
+      fullDocument: scopePickerFullDocument,
+      sectionIdCount: scopePickerSelectedIds.size,
+      activeDocIdLs: localStorage.getItem("pith_active_doc_id"),
+    });
     const doc = await getActiveSession();
-    if (!doc) return;
+    // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+    console.log("[BUG-AUDIT.scopeConfirm] getActiveSession resolved", {
+      hasDoc: Boolean(doc),
+      docId: doc?.docId ?? null,
+      scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
+      prepStatus: doc?.shared?.preparation?.status ?? null,
+    });
+    if (!doc) {
+      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+      console.warn("[BUG-AUDIT.scopeConfirm] ABORT — getActiveSession() returned null (silent early-return was here)");
+      return;
+    }
     if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = true;
     try {
       await applyScopeSelectionToDoc(doc, {
         fullDocument: scopePickerFullDocument,
         sectionIds: [...scopePickerSelectedIds],
       });
+      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+      console.log("[BUG-AUDIT.scopeConfirm] applyScopeSelectionToDoc done", {
+        scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
+        scopedLen: doc?.shared?.scopedMarkdown?.length ?? 0,
+      });
       const refreshed = (await getActiveSession()) || doc;
+      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+      console.log("[BUG-AUDIT.scopeConfirm] calling enterModeSelectAfterTier1Gate", {
+        refreshedDocId: refreshed?.docId ?? null,
+        refreshedScopeResolvedAt: refreshed?.shared?.scopeResolvedAt ?? null,
+      });
       await enterModeSelectAfterTier1Gate(refreshed);
+      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
+      console.log("[BUG-AUDIT.scopeConfirm] enterModeSelectAfterTier1Gate returned");
     } catch (err) {
       console.error("[scope] confirm failed:", err);
       if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = false;
