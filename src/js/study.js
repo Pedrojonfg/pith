@@ -1272,12 +1272,28 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     const polled = await pollUntilConceptInventoryReady(() => reloadSessionForGuard(docId));
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
+      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+      console.log("[DIAG-T12-TRIGGER] before ensureTier1Preparation (after poll run/stale_retry)", {
+        docId: doc?.docId ?? null,
+        ts: Date.now(),
+        iso: new Date().toISOString(),
+        polledDecision: polled.decision,
+        prepStatus: doc?.shared?.preparation?.status ?? null,
+      });
       doc = await ensureTier1Preparation(doc, {
         ...preparationGateOptions((msg) => {
           if (els.reviewGeneratingLabel) {
             els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
           }
         }),
+      });
+      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+      console.log("[DIAG-T12-TRIGGER] after ensureTier1Preparation (after poll run/stale_retry)", {
+        docId: doc?.docId ?? null,
+        ts: Date.now(),
+        iso: new Date().toISOString(),
+        prepStatus: doc?.shared?.preparation?.status ?? null,
+        conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
       });
     }
     guard = evaluateConceptInventoryGuard(doc);
@@ -1304,12 +1320,29 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
 
   if (guard.decision === "run") {
     showDocumentPreparingScreen();
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-TRIGGER] before ensureTier1Preparation (guard decision=run)", {
+      docId: doc?.docId ?? null,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      prepStatus: doc?.shared?.preparation?.status ?? null,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
+      scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
+    });
     doc = await ensureTier1Preparation(doc, {
       ...preparationGateOptions((msg) => {
         if (els.reviewGeneratingLabel) {
           els.reviewGeneratingLabel.textContent = formatPreparationProgressMessage(msg);
         }
       }),
+    });
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-TRIGGER] after ensureTier1Preparation (guard decision=run)", {
+      docId: doc?.docId ?? null,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      prepStatus: doc?.shared?.preparation?.status ?? null,
+      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
     });
     guard = evaluateConceptInventoryGuard(doc);
     console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Guard after poll/run", {
@@ -1433,10 +1466,32 @@ function readOnboardingQuestionnaireForm() {
 }
 
 async function submitOnboardingQuestionnaire() {
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire ENTER", {
+    docId: null,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+  });
   const doc = await getActiveSession();
-  if (!doc?.docId) return;
+  if (!doc?.docId) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT early — no doc", {
+      docId: null,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
+    return;
+  }
   const answers = readOnboardingQuestionnaireForm();
-  if (!answers) return;
+  if (!answers) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT early — incomplete form", {
+      docId: doc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
+    return;
+  }
   const intentEl = els.onboardingStudentIntent;
   const studentIntent = intentEl ? String(intentEl.value || "").trim() : "";
   els.onboardingQuestionnaireSubmitBtn && (els.onboardingQuestionnaireSubmitBtn.disabled = true);
@@ -1447,8 +1502,28 @@ async function submitOnboardingQuestionnaire() {
     });
     // Retain the known-fresh session from setOnboardingAnswers — do not re-read store
     // (same Round-3 class: superseded write can leave row cache without answers).
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-ONBOARD] before enterModeSelectAfterTier1Gate", {
+      docId: (saved || doc)?.docId ?? doc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
     await enterModeSelectAfterTier1Gate(saved || doc);
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-ONBOARD] after enterModeSelectAfterTier1Gate", {
+      docId: (saved || doc)?.docId ?? doc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
   } catch (err) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-CATCH] submitOnboardingQuestionnaire catch", {
+      docId: doc?.docId ?? null,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      message: err?.message || String(err),
+      stack: err?.stack ?? null,
+    });
     console.warn("[study.submitOnboardingQuestionnaire] failed", err);
     // ponytail: local re-enable; avoid importing ui sync (circular study↔ui under ?v=)
     if (els.onboardingQuestionnaireSubmitBtn && els.screenOnboardingQuestionnaire) {
@@ -1459,6 +1534,12 @@ async function submitOnboardingQuestionnaire() {
       );
     }
   }
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT", {
+    docId: doc?.docId ?? null,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+  });
 }
 
 async function maybeEnterSharedAssessmentGate(doc) {

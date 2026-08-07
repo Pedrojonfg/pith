@@ -402,6 +402,14 @@ async function runPhaseT12b(doc, ctx) {
 }
 
 async function runPhaseT12(doc, ctx) {
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-TRIGGER] runPhaseT12 ENTER", {
+    docId: doc?.docId ?? null,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    forceRerun: ctx.forceRerun === true,
+    conceptCount: doc.shared?.conceptInventory?.length ?? 0,
+  });
   console.debug("[DPP-GUARD.runPhaseT12] Enter", {
     docId: doc.docId,
     forceRerun: ctx.forceRerun === true,
@@ -1062,11 +1070,28 @@ async function executePhase(doc, phaseId, ctx) {
  */
 export async function runDocumentPreparationPipeline(doc, options = {}) {
   if (!doc?.docId) throw new Error("DPP requires docId");
-  return runDedupedDppFlight(
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-PIPELINE] runDocumentPreparationPipeline ENTER", {
+    docId: doc.docId,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    stopAfterTier: options.stopAfterTier ?? 2,
+    forceRerun: options.forceRerun === true,
+  });
+  const out = await runDedupedDppFlight(
     doc.docId,
     () => runDocumentPreparationPipelineInner(doc, options),
     { force: options.forceRerun === true },
   );
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-PIPELINE] runDocumentPreparationPipeline EXIT", {
+    docId: doc.docId,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    status: out?.status ?? null,
+    errorCount: out?.errors?.length ?? 0,
+  });
+  return out;
 }
 
 async function runDocumentPreparationPipelineInner(doc, options = {}) {
@@ -1094,6 +1119,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   try {
     await persistCheckpoint(workingDoc);
   } catch (err) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner persistCheckpoint catch", {
+      docId: workingDoc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      message: err?.message || String(err),
+      stack: err?.stack ?? null,
+    });
     clearDppRun(workingDoc.docId);
     throw err;
   }
@@ -1124,6 +1157,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     const token = await getSupabaseAuthToken();
     if (!token) throw new Error("Sign in to use AI features.");
   } catch (err) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner auth catch", {
+      docId: workingDoc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      message: err?.message || String(err),
+      stack: err?.stack ?? null,
+    });
     console.warn("[document-preparation.runDocumentPreparationPipeline] Auth unavailable — partial prep only:", {
       docId: workingDoc.docId,
       message: err?.message || String(err),
@@ -1193,6 +1234,15 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             return { phaseId, ok: true };
           } catch (err) {
             const message = err?.message || String(err);
+            // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+            console.log("[DIAG-T12-CATCH] executePhase catch", {
+              docId: workingDoc.docId,
+              ts: Date.now(),
+              iso: new Date().toISOString(),
+              phaseId,
+              message,
+              stack: err?.stack ?? null,
+            });
             console.error("[document-preparation.executePhase] Failed:", {
               docId: workingDoc.docId,
               phaseId,
@@ -1238,6 +1288,14 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   } catch (err) {
     const message = err?.message || String(err);
     prep.errors.push({ phaseId: "pipeline", message, at: Date.now() });
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner pipeline catch", {
+      docId: workingDoc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      message,
+      stack: err?.stack ?? null,
+    });
     console.error("[document-preparation.runDocumentPreparationPipeline] Pipeline error before final status:", {
       docId: workingDoc.docId,
       message,
@@ -1387,6 +1445,12 @@ export async function ensureTier1Preparation(doc, options = {}) {
     console.info("[DPP-GUARD.ensureTier1Preparation] blocked — awaiting scope selection", {
       docId: doc.docId,
     }); // [debug-enrich]
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — scope unresolved", {
+      docId: doc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
     return doc;
   }
   if (!options.forceRerun && isTier1PreparationComplete(doc)) {
@@ -1395,6 +1459,12 @@ export async function ensureTier1Preparation(doc, options = {}) {
       console.info("[DPP-GUARD.ensureTier1Preparation] blocked — artifacts without scopeResolvedAt", {
         docId: doc.docId,
       }); // [debug-enrich]
+      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+      console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — artifacts without scopeResolvedAt", {
+        docId: doc.docId,
+        ts: Date.now(),
+        iso: new Date().toISOString(),
+      });
       return doc;
     }
     console.info("[DPP-GUARD.ensureTier1Preparation] skip — tier-1 already complete", {
@@ -1402,6 +1472,13 @@ export async function ensureTier1Preparation(doc, options = {}) {
       conceptCount: doc.shared?.conceptInventory?.length ?? 0,
       prepStatus: doc.shared?.preparation?.status ?? null,
     }); // [debug-enrich]
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — tier-1 already complete", {
+      docId: doc.docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
+    });
     return doc;
   }
   console.info("[DPP-GUARD.ensureTier1Preparation] Starting tier-1 pipeline", {
@@ -1414,6 +1491,14 @@ export async function ensureTier1Preparation(doc, options = {}) {
   const docId = doc.docId;
   let flight = tier1InFlight.get(docId);
   if (!flight) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-PIPELINE] before runDocumentPreparationPipeline (new flight)", {
+      docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      stopAfterTier: 1,
+      forceRerun: options.forceRerun === true,
+    });
     flight = runDocumentPreparationPipeline(doc, {
       ...options,
       stopAfterTier: 1,
@@ -1421,12 +1506,55 @@ export async function ensureTier1Preparation(doc, options = {}) {
       tier1InFlight.delete(docId);
     });
     tier1InFlight.set(docId, flight);
+  } else {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-PIPELINE] joining existing in-flight runDocumentPreparationPipeline", {
+      docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+    });
   }
-  const result = await flight;
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-PIPELINE] await flight ENTER", {
+    docId,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+  });
+  let result;
+  try {
+    result = await flight;
+  } catch (err) {
+    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+    console.log("[DIAG-T12-CATCH] ensureTier1Preparation await flight catch", {
+      docId,
+      ts: Date.now(),
+      iso: new Date().toISOString(),
+      message: err?.message || String(err),
+      stack: err?.stack ?? null,
+    });
+    throw err;
+  }
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-PIPELINE] await flight EXIT", {
+    docId,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    status: result?.status ?? null,
+    errorCount: result?.errors?.length ?? 0,
+    conceptCount: result?.doc?.shared?.conceptInventory?.length ?? doc?.shared?.conceptInventory?.length ?? 0,
+  });
   const prepared = result?.doc ?? doc;
   let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
   hydrateCallerDocFromPrepared(doc, reconciled);
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT after pipeline", {
+    docId: reconciled?.docId ?? docId,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+    prepStatus: reconciled?.shared?.preparation?.status ?? null,
+    conceptCount: reconciled?.shared?.conceptInventory?.length ?? 0,
+  });
   return reconciled;
 }
 
