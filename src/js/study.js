@@ -97,7 +97,7 @@ import {
 } from "./knowledge-profile-shared.js";
 import { hydrateSessionFromSharedCache } from "./shared-dpp-cache.js";
 import { fetchSharedDppCache } from "./shared-dpp-cache-persist.js";
-import { commitPreparedDocToStore, healScopeResolutionAfterStoreReload, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
+import { commitPreparedDocToStore, healFreshSharedFieldsAfterStoreReload, hydrateCallerDocFromPrepared } from "./dpp-persistence.js";
 import { computeAverageNovelty } from "./vault/novelty-scoring.js";
 import {
   DOC_SIMILARITY_DUPLICATE_THRESHOLD,
@@ -1201,7 +1201,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     doc = (await commitPreparedDocToStore(preparedDoc)) ?? preparedDoc;
     const reloaded = await reloadSessionForGuard(preparedDoc.docId);
     const beforeHeal = reloaded ?? doc;
-    doc = await healScopeResolutionAfterStoreReload(preparedDoc, beforeHeal, {
+    doc = await healFreshSharedFieldsAfterStoreReload(preparedDoc, beforeHeal, {
       save: saveDocumentSession,
     });
     if (
@@ -1216,6 +1216,23 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
           docId: preparedDoc.docId,
           preparedScopeResolvedAt: preparedDoc.shared?.scopeResolvedAt ?? null,
           reloadedScopeResolvedAt: beforeHeal.shared?.scopeResolvedAt ?? null,
+        },
+      );
+    }
+    if (
+      preparedDoc.shared?.onboardingResponses != null &&
+      beforeHeal &&
+      (beforeHeal.shared?.onboardingResponses == null ||
+        (Number(preparedDoc.shared.onboardingResponses.answeredAt) || 0) >
+          (Number(beforeHeal.shared?.onboardingResponses?.answeredAt) || 0)) &&
+      doc === preparedDoc
+    ) {
+      console.warn(
+        "[study.enterModeSelectAfterTier1Gate] Store re-read lost onboardingResponses — keeping prepared doc",
+        {
+          docId: preparedDoc.docId,
+          preparedAnsweredAt: preparedDoc.shared?.onboardingResponses?.answeredAt ?? null,
+          reloadedAnsweredAt: beforeHeal.shared?.onboardingResponses?.answeredAt ?? null,
         },
       );
     }
@@ -1439,7 +1456,14 @@ async function finalizeModeSelectEntry(doc) {
  */
 async function maybeEnterOnboardingQuestionnaireGate(doc) {
   if (!doc?.docId) return false;
-  if (doc.shared?.onboardingResponses != null) return false;
+  const hasOnboarding = doc.shared?.onboardingResponses != null;
+  console.info("[DPP-GUARD.maybeEnterOnboardingQuestionnaireGate]", {
+    docId: doc.docId,
+    hasOnboardingResponses: hasOnboarding,
+    answeredAt: doc.shared?.onboardingResponses?.answeredAt ?? null,
+    willShow: !hasOnboarding && !isInterviewOriginSession(doc),
+  });
+  if (hasOnboarding) return false;
   if (isInterviewOriginSession(doc)) return false;
   showScreen("onboardingQuestionnaire");
   return true;
@@ -1467,12 +1491,19 @@ function readOnboardingQuestionnaireForm() {
 
 async function submitOnboardingQuestionnaire() {
   // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  // Note: docId is null here until getActiveSession resolves (see audit); not a race cause.
   console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire ENTER", {
     docId: null,
     ts: Date.now(),
     iso: new Date().toISOString(),
   });
   const doc = await getActiveSession();
+  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
+  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire after getActiveSession", {
+    docId: doc?.docId ?? null,
+    ts: Date.now(),
+    iso: new Date().toISOString(),
+  });
   if (!doc?.docId) {
     // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
     console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT early — no doc", {

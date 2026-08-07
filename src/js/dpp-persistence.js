@@ -123,6 +123,16 @@ export function isPreparedDocAheadOfStore(prepared, store) {
 }
 
 /**
+ * @param {object|null|undefined} doc
+ * @returns {number}
+ */
+function onboardingAnsweredAt(doc) {
+  const responses = doc?.shared?.onboardingResponses;
+  if (responses == null || typeof responses !== "object") return 0;
+  return Number(responses.answeredAt) || 0;
+}
+
+/**
  * @param {object} preparedDoc
  * @param {object|null|undefined} storeDoc
  * @returns {boolean}
@@ -136,6 +146,16 @@ export function shouldCommitPreparedDoc(preparedDoc, storeDoc) {
   const prepScopeAt = Number(preparedDoc.shared.scopeResolvedAt) || 0;
   const storeScopeAt = Number(storeDoc.shared.scopeResolvedAt) || 0;
   if (prepScopeAt > storeScopeAt) return true;
+  // Same class: onboarding save can be superseded; prefer prepared when store lacks
+  // onboardingResponses or has an older answeredAt.
+  const prepOnboardAt = onboardingAnsweredAt(preparedDoc);
+  const storeOnboardAt = onboardingAnsweredAt(storeDoc);
+  if (
+    preparedDoc.shared.onboardingResponses != null &&
+    (storeDoc.shared.onboardingResponses == null || prepOnboardAt > storeOnboardAt)
+  ) {
+    return true;
+  }
   const prepStatus = String(preparedDoc.shared.preparation?.status || "pending");
   const storeStatus = String(storeDoc.shared.preparation?.status || "pending");
   return (
@@ -189,34 +209,47 @@ export async function commitPreparedDocToStore(preparedDoc) {
 }
 
 /**
- * After a store re-read for the tier-1 gate: keep a known-fresh scopeResolvedAt
- * from `preparedDoc` when the reload lost it, and optionally re-save to heal cache.
+ * After a store re-read for the tier-1 gate: keep known-fresh fields from
+ * `preparedDoc` when the reload lost them (scopeResolvedAt and/or
+ * onboardingResponses), and optionally re-save to heal cache.
  * @param {object|null|undefined} preparedDoc
  * @param {object|null|undefined} reloadedDoc
  * @param {{ save?: (doc: object) => Promise<unknown> }} [options]
  * @returns {Promise<object|null|undefined>}
  */
-export async function healScopeResolutionAfterStoreReload(preparedDoc, reloadedDoc, options = {}) {
-  if (
-    preparedDoc &&
-    isScopeGateResolved(preparedDoc) &&
-    reloadedDoc &&
-    !isScopeGateResolved(reloadedDoc)
-  ) {
-    if (typeof options.save === "function") {
-      try {
-        await options.save(preparedDoc);
-      } catch (err) {
-        console.warn(
-          "[dpp-persistence.healScopeResolutionAfterStoreReload] heal save failed:",
-          err?.message || err,
-        );
-      }
-    }
-    return preparedDoc;
+export async function healFreshSharedFieldsAfterStoreReload(preparedDoc, reloadedDoc, options = {}) {
+  if (!preparedDoc) return reloadedDoc ?? null;
+  if (!reloadedDoc) return preparedDoc;
+
+  const scopeLost =
+    isScopeGateResolved(preparedDoc) && !isScopeGateResolved(reloadedDoc);
+  const prepOnboard = preparedDoc.shared?.onboardingResponses;
+  const reloadOnboard = reloadedDoc.shared?.onboardingResponses;
+  const prepOnboardAt = onboardingAnsweredAt(preparedDoc);
+  const reloadOnboardAt = onboardingAnsweredAt(reloadedDoc);
+  const onboardingLost =
+    prepOnboard != null &&
+    (reloadOnboard == null || prepOnboardAt > reloadOnboardAt);
+
+  if (!scopeLost && !onboardingLost) {
+    return reloadedDoc;
   }
-  return reloadedDoc ?? preparedDoc ?? null;
+
+  if (typeof options.save === "function") {
+    try {
+      await options.save(preparedDoc);
+    } catch (err) {
+      console.warn(
+        "[dpp-persistence.healFreshSharedFieldsAfterStoreReload] heal save failed:",
+        err?.message || err,
+      );
+    }
+  }
+  return preparedDoc;
 }
+
+/** @deprecated use healFreshSharedFieldsAfterStoreReload — kept for existing call sites/tests */
+export const healScopeResolutionAfterStoreReload = healFreshSharedFieldsAfterStoreReload;
 
 /**
  * @param {object} doc

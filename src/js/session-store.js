@@ -425,9 +425,10 @@ async function stripMarkdownForPersist(session, userId) {
 
 /**
  * Merge incoming session_data into an existing row-cache payload.
- * Incoming wins for most fields; a strictly fresher scopeResolvedAt on either
- * side keeps that side's scope fields (prevents a superseded/older write from
- * wiping a just-confirmed scope, and vice versa).
+ * Incoming wins for most fields; a strictly fresher scopeResolvedAt or
+ * onboardingResponses.answeredAt on either side keeps that side's fields
+ * (prevents a superseded/older write from wiping a just-confirmed scope or
+ * just-saved onboarding answers).
  * @param {object|null|undefined} existing
  * @param {object|null|undefined} incoming
  * @returns {object|null|undefined}
@@ -437,6 +438,10 @@ export function mergeSessionDataForRowCache(existing, incoming) {
   if (!existing) return incoming;
   const existScope = Number(existing?.shared?.scopeResolvedAt) || 0;
   const inScope = Number(incoming?.shared?.scopeResolvedAt) || 0;
+  const existOnboard = existing?.shared?.onboardingResponses;
+  const inOnboard = incoming?.shared?.onboardingResponses;
+  const existOnboardAt = Number(existOnboard?.answeredAt) || 0;
+  const inOnboardAt = Number(inOnboard?.answeredAt) || 0;
   const shared = {
     ...(existing.shared && typeof existing.shared === "object" ? existing.shared : {}),
     ...(incoming.shared && typeof incoming.shared === "object" ? incoming.shared : {}),
@@ -446,6 +451,17 @@ export function mergeSessionDataForRowCache(existing, incoming) {
     shared.scopeSelection = existing.shared.scopeSelection ?? null;
     shared.scopedMarkdown = existing.shared.scopedMarkdown ?? null;
     shared.scopeContext = existing.shared.scopeContext ?? null;
+  }
+  // ponytail: same supersede class as scope — keep fresher onboarding when merge would wipe it
+  if (
+    existOnboard != null &&
+    existing.shared &&
+    (inOnboard == null || existOnboardAt > inOnboardAt)
+  ) {
+    shared.onboardingResponses = existOnboard;
+    if ("studentIntent" in existing.shared) {
+      shared.studentIntent = existing.shared.studentIntent;
+    }
   }
   return {
     ...existing,
