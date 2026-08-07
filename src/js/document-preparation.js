@@ -124,8 +124,11 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     charCount: String(doc?.shared?.rawMarkdown || "").length,
   });
   if (!doc.shared) doc.shared = {};
-  doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
-  doc.shared.preparation.qualitySignal = qualitySignal;
+  const prepState = bindPreparationState(
+    doc,
+    normalizePreparationState(doc.shared.preparation),
+  );
+  prepState.qualitySignal = qualitySignal;
   console.info("[document-preparation] Document quality signal:", {
     docId: doc.docId,
     tier: qualitySignal.tier,
@@ -242,8 +245,34 @@ function hashPayload(value) {
   }
 }
 
+/**
+ * Keep a stable preparation object identity on `doc.shared.preparation`.
+ * Replacing the object mid-run orphans the pipeline's `prep` reference so
+ * resolveFinalStatus writes terminal status on a dead object while persistFinal
+ * still saves the live one stuck at `running` (early-stop + T1.1 quality signal).
+ */
+function bindPreparationState(doc, nextPrep) {
+  if (!doc.shared) doc.shared = {};
+  const current = doc.shared.preparation;
+  if (current && typeof current === "object") {
+    Object.assign(current, nextPrep);
+    return current;
+  }
+  doc.shared.preparation = nextPrep;
+  return nextPrep;
+}
+
 /** Finalize preparation status and persist — sole exit write for a DPP run. */
 async function finalizeAndPersist(doc, prep, stopAfterTier) {
+  if (!doc.shared) doc.shared = {};
+  // Defense: if a phase replaced preparation, re-attach the authoritative in-run prep.
+  if (doc.shared.preparation && doc.shared.preparation !== prep) {
+    const liveQuality = doc.shared.preparation.qualitySignal;
+    doc.shared.preparation = prep;
+    if (liveQuality && !prep.qualitySignal) prep.qualitySignal = liveQuality;
+  } else {
+    doc.shared.preparation = prep;
+  }
   prep.completedAt = prep.completedAt || Date.now();
   prep.currentPhase = null;
   prep.currentWave = null;
@@ -256,8 +285,7 @@ const CHECKPOINT_PHASES = new Set(["T1.1", "T1.2"]);
 
 function ensurePreparation(doc) {
   if (!doc.shared) doc.shared = {};
-  doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
-  return doc.shared.preparation;
+  return bindPreparationState(doc, normalizePreparationState(doc.shared.preparation));
 }
 
 function phaseSucceeded(prep, phaseId, runFingerprint, priorFingerprint) {
