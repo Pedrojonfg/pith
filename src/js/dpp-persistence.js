@@ -195,6 +195,8 @@ export function hydrateCallerDocFromPrepared(callerDoc, preparedDoc) {
 
 /**
  * Ensure store reflects the pipeline's in-memory conclusion when store is behind.
+ * Prefers the known-fresh prepared doc when a post-save re-read loses tier-1 fields
+ * (same Round-3 class as enterModeSelectAfterTier1Gate).
  * @param {object} preparedDoc
  * @returns {Promise<object|null>}
  */
@@ -203,15 +205,16 @@ export async function commitPreparedDocToStore(preparedDoc) {
   const current = await getSession(preparedDoc.docId);
   if (shouldCommitPreparedDoc(preparedDoc, current)) {
     await saveActiveSession(preparedDoc);
-    return (await getSession(preparedDoc.docId)) ?? preparedDoc;
+    const reloaded = await getSession(preparedDoc.docId);
+    return (await healFreshSharedFieldsAfterStoreReload(preparedDoc, reloaded)) ?? preparedDoc;
   }
   return current ?? preparedDoc;
 }
 
 /**
  * After a store re-read for the tier-1 gate: keep known-fresh fields from
- * `preparedDoc` when the reload lost them (scopeResolvedAt and/or
- * onboardingResponses), and optionally re-save to heal cache.
+ * `preparedDoc` when the reload lost them (scopeResolvedAt, onboardingResponses,
+ * and/or a longer conceptInventory), and optionally re-save to heal cache.
  * @param {object|null|undefined} preparedDoc
  * @param {object|null|undefined} reloadedDoc
  * @param {{ save?: (doc: object) => Promise<unknown> }} [options]
@@ -230,8 +233,16 @@ export async function healFreshSharedFieldsAfterStoreReload(preparedDoc, reloade
   const onboardingLost =
     prepOnboard != null &&
     (reloadOnboard == null || prepOnboardAt > reloadOnboardAt);
+  const prepInvLen = Array.isArray(preparedDoc.shared?.conceptInventory)
+    ? preparedDoc.shared.conceptInventory.length
+    : 0;
+  const reloadInvLen = Array.isArray(reloadedDoc.shared?.conceptInventory)
+    ? reloadedDoc.shared.conceptInventory.length
+    : 0;
+  // ponytail: same supersede class as scope/onboarding — longer inventory wins
+  const inventoryLost = prepInvLen > reloadInvLen;
 
-  if (!scopeLost && !onboardingLost) {
+  if (!scopeLost && !onboardingLost && !inventoryLost) {
     return reloadedDoc;
   }
 

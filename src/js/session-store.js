@@ -425,10 +425,10 @@ async function stripMarkdownForPersist(session, userId) {
 
 /**
  * Merge incoming session_data into an existing row-cache payload.
- * Incoming wins for most fields; a strictly fresher scopeResolvedAt or
- * onboardingResponses.answeredAt on either side keeps that side's fields
- * (prevents a superseded/older write from wiping a just-confirmed scope or
- * just-saved onboarding answers).
+ * Incoming wins for most fields; a strictly fresher scopeResolvedAt,
+ * onboardingResponses.answeredAt, or a longer conceptInventory on either side
+ * keeps that side's fields (prevents a superseded/older write from wiping a
+ * just-confirmed scope, just-saved onboarding answers, or tier-1 inventory).
  * @param {object|null|undefined} existing
  * @param {object|null|undefined} incoming
  * @returns {object|null|undefined}
@@ -442,6 +442,14 @@ export function mergeSessionDataForRowCache(existing, incoming) {
   const inOnboard = incoming?.shared?.onboardingResponses;
   const existOnboardAt = Number(existOnboard?.answeredAt) || 0;
   const inOnboardAt = Number(inOnboard?.answeredAt) || 0;
+  const existInv = Array.isArray(existing?.shared?.conceptInventory)
+    ? existing.shared.conceptInventory
+    : null;
+  const inInv = Array.isArray(incoming?.shared?.conceptInventory)
+    ? incoming.shared.conceptInventory
+    : null;
+  const existInvLen = existInv?.length ?? 0;
+  const inInvLen = inInv?.length ?? 0;
   const shared = {
     ...(existing.shared && typeof existing.shared === "object" ? existing.shared : {}),
     ...(incoming.shared && typeof incoming.shared === "object" ? incoming.shared : {}),
@@ -462,6 +470,10 @@ export function mergeSessionDataForRowCache(existing, incoming) {
     if ("studentIntent" in existing.shared) {
       shared.studentIntent = existing.shared.studentIntent;
     }
+  }
+  // ponytail: same supersede class — prefer longer non-empty inventory over empty/shorter wipe
+  if (existInvLen > inInvLen && existInv) {
+    shared.conceptInventory = existInv;
   }
   return {
     ...existing,
