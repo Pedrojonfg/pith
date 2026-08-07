@@ -74,6 +74,7 @@ import {
   setPreparationStatus,
   isTier1PreparationComplete,
   hasTier1GateArtifacts,
+  isScopeGateResolved,
 } from "./session-types.js";
 import { getActiveDppRunId, isDppRunActiveOnDevice } from "./dpp-persistence.js";
 
@@ -3277,10 +3278,25 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
   }
 
   if (status === "ready" || status === "partial") {
+    // Scope-gated prep (20260806): early-stop leaves status=partial with empty inventory
+    // before T1.2. That is intentional — not a sparse-inventory quality failure.
+    if (!isScopeGateResolved(session)) {
+      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — scope unresolved, inventory not evaluated yet", guardCtx); // [debug-enrich]
+      return { decision: "run" };
+    }
+    const t12 = normalizePreparationState(session?.shared?.preparation).phaseResults?.["T1.2"];
+    const t12Status = String(t12?.status || "");
+    const t12Attempted =
+      t12Status === "success" || t12Status === "partial" || t12Status === "failed";
+    if (length === 0 && !t12Attempted) {
+      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — scope resolved, T1.2 not yet run", guardCtx); // [debug-enrich]
+      return { decision: "run" };
+    }
     const minRequired = minViableConcepts(charCount);
     console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] degraded — inventory below threshold", {
       ...guardCtx,
       minRequired,
+      t12Status: t12Status || null,
       failReason: session?.shared?.preparation?.failReason ?? null,
     }); // [debug-enrich]
     return { decision: "degraded" };
