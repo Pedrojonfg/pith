@@ -377,6 +377,10 @@ async function runPhaseT11(doc, ctx) {
     useCache: true,
     llmModel: ctx.llmModel,
     signal: ctx.signal,
+    // R6 hop: HeadingCandidates from normalizeDocumentStructure (stashed on session)
+    headings: Array.isArray(doc.shared?.structureHeadings)
+      ? doc.shared.structureHeadings
+      : undefined,
   });
   doc.shared.docHierarchy = hierarchy;
   doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
@@ -968,7 +972,11 @@ async function runPhaseT23(doc, ctx) {
   const selection = doc.shared?.scopeSelection;
   const scopeKey =
     selection != null
-      ? (Array.isArray(selection.sectionIds) ? selection.sectionIds : [])
+      ? [
+          ...(Array.isArray(selection.fullyCheckedIds) ? selection.fullyCheckedIds : []),
+          ...(Array.isArray(selection.indeterminateIds) ? selection.indeterminateIds : []),
+          ...(Array.isArray(selection.sectionIds) ? selection.sectionIds : []),
+        ]
           .map((id) => String(id || "").trim())
           .filter(Boolean)
           .join("|")

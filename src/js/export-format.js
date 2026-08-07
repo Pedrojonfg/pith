@@ -115,14 +115,19 @@ export function resolveDurationMin(session) {
  */
 export function resolveExportScopeLabel(session) {
   const sh = session?.shared;
-  const ids = Array.isArray(sh?.scopeSelection?.sectionIds)
-    ? sh.scopeSelection.sectionIds.map((id) => String(id).trim()).filter(Boolean)
-    : [];
+  const sel = sh?.scopeSelection;
+  const ids = [
+    ...(Array.isArray(sel?.fullyCheckedIds) ? sel.fullyCheckedIds : []),
+    ...(Array.isArray(sel?.indeterminateIds) ? sel.indeterminateIds : []),
+    ...(Array.isArray(sel?.sectionIds) ? sel.sectionIds : []),
+  ]
+    .map((id) => String(id).trim())
+    .filter(Boolean);
   if (!ids.length) return "Entire document";
 
-  const entries = listSelectableHierarchyNodes(sh?.docHierarchy?.tree || []);
+  const entries = listSelectableHierarchyNodes(sh?.docHierarchy?.tree || [], null);
   const byId = new Map(entries.map((e) => [e.id, e.node]));
-  const titles = ids
+  const titles = [...new Set(ids)]
     .map((id) => byId.get(id))
     .filter(Boolean)
     .sort((a, b) => (a.startOffset ?? 0) - (b.startOffset ?? 0))

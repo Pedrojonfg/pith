@@ -32,7 +32,7 @@
  * @property {string} label
  * @property {1|2|3|4|5|6} level
  * @property {number} score
- * @property {"outline"|"font-size"|"pattern"|"html-tag"|"html-heuristic"|"html-inferred"} source
+ * @property {"outline"|"font-size"|"pattern"|"html-tag"|"html-heuristic"|"html-inferred"|"heuristic-unlisted"} source
  * @property {string} blockId
  * @property {number} charStart
  * @property {number} charEnd
@@ -58,10 +58,11 @@
 /**
  * @typedef {Object} HierarchyNode
  * @property {string} title
- * @property {1|2|3} level
+ * @property {number} level — nesting depth ≥ 1 (unbounded; CommonMark headings use 1–6)
  * @property {number} startOffset
  * @property {number} endOffset
  * @property {string} [summary]
+ * @property {'toc'|'heuristic'|'heuristic-unlisted'} [source]
  * @property {HierarchyNode[]} children
  */
 

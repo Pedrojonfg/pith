@@ -5,7 +5,7 @@
 
 import { createStructureReport, aggregateConfidence } from "./types.js";
 import { stripArtifacts } from "./strip-artifacts.js";
-import { inferHeadings } from "./infer-headings.js";
+import { inferHeadings, OUTLINE_HIGH_CONFIDENCE_COVERAGE } from "./infer-headings.js";
 import { extractPdfBlocks } from "./extract-pdf-blocks.js";
 import { extractPdfOutline, matchOutlineToBlocks, computeOutlineCoverage, filterOutlineHeadings } from "./pdf-outline.js";
 import { getFrontMatterPageRange, detectFrontMatterPages } from "./front-matter-detector.js";
@@ -16,6 +16,11 @@ import { emitMarkdown, dehyphenate as dehyphenateRaw } from "./emit-markdown.js"
 import { protectMarkdownTransform } from "../document-images/tokens.js";
 import { buildEqualLengthSections } from "../slow/headings.js";
 import { extractPlainBlocks, mergeGutenbergTitleBlocks, mergeRfcTitleBlocks } from "./plain-text-blocks.js";
+import {
+  parseTextTocEntries,
+  textTocEntriesToOutline,
+  extractHtmlTocOutline,
+} from "./toc-page.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
@@ -202,8 +207,46 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
   if (outline.length > 0) {
     outlineHeadings = matchOutlineToBlocks(outline, contentBlocks);
     outlineCoverage = computeOutlineCoverage(outlineHeadings, outline);
-    if (outlineCoverage < 0.5) {
+    if (outlineCoverage < OUTLINE_HIGH_CONFIDENCE_COVERAGE) {
       warnings.push("outline_partial");
+    }
+  }
+
+  // R18: text-TOC fallback when no outline or coverage below high confidence.
+  if (
+    outline.length === 0 ||
+    outlineCoverage < OUTLINE_HIGH_CONFIDENCE_COVERAGE
+  ) {
+    const textTocEntries = parseTextTocEntries(blocksForInference);
+    if (textTocEntries.length > 0) {
+      const textOutline = textTocEntriesToOutline(textTocEntries);
+      const textMatched = matchOutlineToBlocks(textOutline, contentBlocks);
+      const textCoverage = computeOutlineCoverage(textMatched, textOutline);
+      if (
+        textMatched.length > outlineHeadings.length ||
+        textCoverage > outlineCoverage
+      ) {
+        outlineHeadings = textMatched;
+        outlineCoverage = textCoverage;
+      }
+    }
+  }
+
+  // R19: HTML TOC as structure source (still dropped from body by extract path).
+  if (fmt === "html" && typeof rawContent === "string") {
+    const htmlOutline = extractHtmlTocOutline(rawContent);
+    if (htmlOutline.length > 0) {
+      const matchBlocks = contentBlocks.length ? contentBlocks : blocksForInference;
+      const htmlMatched = matchOutlineToBlocks(htmlOutline, matchBlocks);
+      const htmlCoverage = computeOutlineCoverage(htmlMatched, htmlOutline);
+      if (
+        htmlMatched.length > 0 &&
+        (outlineCoverage < OUTLINE_HIGH_CONFIDENCE_COVERAGE ||
+          htmlMatched.length > outlineHeadings.length)
+      ) {
+        outlineHeadings = htmlMatched;
+        outlineCoverage = htmlCoverage;
+      }
     }
   }
 

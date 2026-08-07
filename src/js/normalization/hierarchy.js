@@ -10,7 +10,7 @@ import {
 } from "./hierarchy-cache.js";
 import { snapToSentenceBoundary } from "../text-boundaries.js";
 
-const HEADING_RE = /^(#{1,3})\s+(.+)$/gm;
+const HEADING_RE = /^(#{1,6})\s+(.+)$/gm;
 const DELIMITER_L1_RE = /^❖\s*(.+)$/gm;
 const DELIMITER_L2_RE = /^[➔➢]\s*(.+)$/gm;
 const MIN_LLM_CHARS = 3000;
@@ -29,6 +29,18 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
   const useCache = options.useCache !== false;
   const includeSummary = options.includeSummary ?? text.length >= SUMMARY_MIN_CHARS;
   const generatedAt = Date.now();
+  // R6: HeadingCandidate provenance from normalizeDocumentStructure → HierarchyNode.source
+  const structureHeadings = Array.isArray(options.headings) ? options.headings : [];
+
+  /**
+   * Metadata-only: does not change offsets, titles, or children.
+   * @param {object | null} result
+   */
+  const withSources = (result) => {
+    if (!result?.tree?.length || !structureHeadings.length) return result;
+    applyHierarchySourcesFromHeadings(result.tree, structureHeadings);
+    return result;
+  };
 
   if (hasMarkdownHeadings(text)) {
     const bag = globalThis.__dppNormalizationDebug;
@@ -39,14 +51,14 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       pathReason: "has_markdown_headings",
       llmAttempted: false,
     }); // [debug-enrich]
-    return {
+    return withSources({
       method: "deterministic",
       tree: buildDeterministicHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       topics: [],
       textHash,
       generatedAt,
-    };
+    });
   }
 
   if (hasDelimiterHeadings(text)) {
@@ -58,14 +70,14 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       pathReason: "has_delimiter_headings",
       llmAttempted: false,
     }); // [debug-enrich]
-    return {
+    return withSources({
       method: "deterministic",
       tree: buildDelimiterHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       topics: [],
       textHash,
       generatedAt,
-    };
+    });
   }
 
   if (text.length < minLlmChars) {
@@ -78,14 +90,14 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     }); // [debug-enrich]
     const bag = globalThis.__dppNormalizationDebug;
     if (bag) bag.hierarchyMethod = "trivial";
-    return {
+    return withSources({
       method: "trivial",
       tree: buildTrivialHierarchy(text),
       pedagogicalMeta: buildDeterministicPedagogicalMeta(analyzeText(text)),
       topics: [],
       textHash,
       generatedAt,
-    };
+    });
   }
 
   if (typeof llmFn !== "function") {
@@ -117,7 +129,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
         method: cached.method || "llm",
         rootCount: cached.tree?.length ?? 0,
       }); // [debug-enrich]
-      return {
+      return withSources({
         method: /** @type {'llm'} */ (cached.method || "llm"),
         tree: /** @type {import("./types.js").HierarchyNode[]} */ (cached.tree),
         pedagogicalMeta:
@@ -127,7 +139,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
         textHash,
         generatedAt,
         fromCache: true,
-      };
+      });
     }
   }
 
@@ -142,32 +154,38 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
       signal: options.signal,
     });
   } catch (err) {
-    return deterministicFallback(text, textHash, generatedAt, {
-      fallbackTrigger: "llm_call_failed",
-      errorType: err?.name || "Error",
-      errorMessage: String(err?.message || err).slice(0, 200),
-      responseLength: 0,
-    });
+    return withSources(
+      deterministicFallback(text, textHash, generatedAt, {
+        fallbackTrigger: "llm_call_failed",
+        errorType: err?.name || "Error",
+        errorMessage: String(err?.message || err).slice(0, 200),
+        responseLength: 0,
+      }),
+    );
   }
 
   const tree = parseLlmHierarchyTree(raw);
   if (!tree) {
-    return deterministicFallback(text, textHash, generatedAt, {
-      fallbackTrigger: "parse_failed",
-      responseLength: raw.length,
-      responsePreview: String(raw).trim().slice(0, 120),
-      parseResult: "null_tree",
-    });
+    return withSources(
+      deterministicFallback(text, textHash, generatedAt, {
+        fallbackTrigger: "parse_failed",
+        responseLength: raw.length,
+        responsePreview: String(raw).trim().slice(0, 120),
+        parseResult: "null_tree",
+      }),
+    );
   }
 
   const validation = validateHierarchy(tree, text.length);
   if (!validation.valid) {
-    return deterministicFallback(text, textHash, generatedAt, {
-      fallbackTrigger: "validation_failed",
-      responseLength: raw.length,
-      validationErrors: validation.errors.slice(0, 8),
-      rootCount: tree.length,
-    });
+    return withSources(
+      deterministicFallback(text, textHash, generatedAt, {
+        fallbackTrigger: "validation_failed",
+        responseLength: raw.length,
+        validationErrors: validation.errors.slice(0, 8),
+        rootCount: tree.length,
+      }),
+    );
   }
 
   const pedagogicalMeta =
@@ -186,7 +204,7 @@ export async function buildDocumentHierarchy(markdownText, llmFn, options = {}) 
     topicCount: topics.length,
   }); // [debug-enrich]
 
-  return { method: "llm", tree, pedagogicalMeta, topics, textHash, generatedAt };
+  return withSources({ method: "llm", tree, pedagogicalMeta, topics, textHash, generatedAt });
 }
 
 /**
@@ -242,7 +260,7 @@ REGLAS ESTRICTAS:
   startOffset del primer nodo raíz = 0.
   endOffset del último nodo raíz = longitud total del texto.
 - Los rangos de nodos hermanos no se solapan y son contiguos.
-- level 1 = sección principal, level 2 = subsección, máximo level 3.
+- level 1 = top-level section; deeper levels reflect actual nesting with no artificial ceiling (CommonMark headings are 1–6).
 - Si el texto no tiene estructura clara, devuelve un solo nodo raíz con el título inferido del contenido.
 ${summaryRule}
 - Además del árbol, devuelve "pedagogical_meta" al mismo nivel que el array raíz del árbol:
@@ -477,7 +495,7 @@ function normalizeParsedNodes(nodes) {
     const children = Array.isArray(n.children) ? normalizeParsedNodes(n.children) : [];
     return {
       title: String(n.title || "").trim() || "Untitled",
-      level: Math.min(3, Math.max(1, Number(n.level) || 1)),
+      level: Math.max(1, Math.floor(Number(n.level) || 1)),
       startOffset: Number(n.startOffset) || 0,
       endOffset: Number(n.endOffset) || 0,
       summary: typeof n.summary === "string" ? n.summary : undefined,
@@ -558,6 +576,7 @@ export function buildDelimiterHierarchy(plainText) {
       level: h.level,
       startOffset: h.startOffset,
       endOffset: h.endOffset,
+      source: /** @type {const} */ ("heuristic"),
       children: [],
     };
 
@@ -577,6 +596,60 @@ export function buildDelimiterHierarchy(plainText) {
 }
 
 /**
+ * Map HeadingCandidate.source → HierarchyNode.source (spec R6).
+ * @param {string} headingSource
+ * @param {boolean} hasToc
+ * @returns {'toc'|'heuristic'|'heuristic-unlisted'}
+ */
+export function hierarchySourceFromHeading(headingSource, hasToc) {
+  if (headingSource === "outline") return "toc";
+  if (headingSource === "heuristic-unlisted") return "heuristic-unlisted";
+  return hasToc ? "heuristic-unlisted" : "heuristic";
+}
+
+/**
+ * Apply HeadingCandidate provenance onto a deterministic hierarchy tree (R6).
+ * Matches by normalized title in document order; unmatched nodes keep existing source.
+ *
+ * @param {import("./types.js").HierarchyNode[]} tree
+ * @param {{ label: string, source: string }[]} headings
+ * @returns {import("./types.js").HierarchyNode[]}
+ */
+export function applyHierarchySourcesFromHeadings(tree, headings) {
+  const list = Array.isArray(headings) ? headings : [];
+  const hasToc = list.some((h) => h.source === "outline" || h.source === "heuristic-unlisted");
+  /** @type {Map<string, string[]>} */
+  const byTitle = new Map();
+  for (const h of list) {
+    const key = String(h.label || "")
+      .trim()
+      .toLowerCase();
+    if (!key) continue;
+    if (!byTitle.has(key)) byTitle.set(key, []);
+    byTitle.get(key).push(h.source);
+  }
+
+  /** @param {import("./types.js").HierarchyNode[]} nodes */
+  const walk = (nodes) => {
+    for (const node of nodes || []) {
+      const key = String(node.title || "")
+        .trim()
+        .toLowerCase();
+      const queue = byTitle.get(key);
+      if (queue?.length) {
+        node.source = hierarchySourceFromHeading(queue.shift(), hasToc);
+      } else if (!node.source) {
+        node.source = hasToc ? "heuristic-unlisted" : "heuristic";
+      }
+      if (node.children?.length) walk(node.children);
+    }
+  };
+
+  walk(tree);
+  return tree;
+}
+
+/**
  * @param {string} markdownText
  * @returns {import("./types.js").HierarchyNode[]}
  */
@@ -589,6 +662,7 @@ export function buildTrivialHierarchy(markdownText) {
       level: 1,
       startOffset: 0,
       endOffset: text.length,
+      source: /** @type {const} */ ("heuristic"),
       children: [],
     },
   ];
@@ -642,6 +716,7 @@ export function buildDeterministicHierarchy(markdownText) {
       level: h.level,
       startOffset: h.startOffset,
       endOffset: h.endOffset,
+      source: /** @type {const} */ ("heuristic"),
       children: [],
     };
 
@@ -810,6 +885,7 @@ function normalizeRootSpan(roots, textLength) {
       level: 1,
       startOffset: 0,
       endOffset: roots[0].startOffset,
+      source: /** @type {const} */ ("heuristic"),
       children: [],
     });
   }
@@ -825,7 +901,7 @@ function normalizeRootSpan(roots, textLength) {
 
   return roots.map((node) => ({
     ...node,
-    level: Math.min(3, Math.max(1, node.level)),
+    level: Math.max(1, Math.floor(Number(node.level) || 1)),
     children: Array.isArray(node.children) ? node.children : [],
   }));
 }
@@ -855,8 +931,8 @@ function validateSiblingGroup(nodes, textLength, path, errors) {
       errors.push(`${nodePath}: title required`);
     }
     const level = Number(node.level);
-    if (!Number.isInteger(level) || level < 1 || level > 3) {
-      errors.push(`${nodePath}: level must be 1..3`);
+    if (!Number.isInteger(level) || level < 1) {
+      errors.push(`${nodePath}: level must be an integer >= 1`);
     }
 
     const start = Number(node.startOffset);

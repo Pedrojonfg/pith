@@ -77,6 +77,7 @@ export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) 
     const result = await buildDocumentHierarchy(text, llmFn, {
       useCache: options.useCache !== false,
       signal: options.signal,
+      headings: options.headings,
     });
     // [debug-enrich]
     console.info('[hierarchy-llm.buildDocumentHierarchyWithLlm] Done:', {

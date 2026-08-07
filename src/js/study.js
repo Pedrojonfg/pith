@@ -123,7 +123,17 @@ import { generateInterviewFollowUp } from "./interview/interview-api.js";
 import { applyInterviewSynthesis } from "./interview/synthesis.js";
 import { normalizePreparationState, isTier1PreparationComplete, hasTier1Artifacts, isScopeGateResolved, isScopeStructureReady, resolveChatScopeFields, resolveScopedMarkdown, setPreparationStatus } from "./session-types.js";
 import { setGuideScopeFromDocument } from "./guide-chat.js";
-import { buildScopedMarkdown, buildScopeSelection, listSelectableHierarchyNodes } from "./scope-selection.js";
+import {
+  SCOPE_TREE_DEFAULT_EXPANDED_LEVEL,
+  buildScopedMarkdown,
+  buildScopeSelection,
+  defaultExpandedScopeIds,
+  listSelectableHierarchyNodes,
+  listSelectableHierarchyTree,
+  scopeSelectionToUiState,
+  toggleScopeNode,
+  uiStateToScopeSelectionIds,
+} from "./scope-selection.js";
 import { resolveScopedHierarchy } from "./normalization/scoped-hierarchy.js";
 import { MAX_SOURCE_FILES } from "./source-provenance.js";
 import {
@@ -495,6 +505,15 @@ export async function ensureDocumentSessionForUpload(markdown, options = {}) {
     }
     await saveDocumentSession(doc);
   }
+  // R6: stash structure HeadingCandidates for T1.1 HierarchyNode.source tagging
+  if (Array.isArray(options.structureHeadings)) {
+    doc.shared.structureHeadings = options.structureHeadings.map((h) => ({
+      label: String(h?.label || ""),
+      source: String(h?.source || "heuristic"),
+      level: Number(h?.level) || 1,
+    }));
+    await saveDocumentSession(doc);
+  }
   if (needsPreparationResetForReuse(doc)) {
     resetPreparationForFreshRun(doc);
     await saveDocumentSession(doc);
@@ -834,58 +853,125 @@ function showDocumentPreparingScreen(initialLabel = "Processing document…") {
   showScreen("reviewGenerating");
 }
 
-/** @type {Set<string>} */
-let scopePickerSelectedIds = new Set();
+/** @type {Map<string, import("./scope-selection.js").ScopeUiNodeState>} */
+let scopePickerNodeState = new Map();
 let scopePickerFullDocument = true;
+/** @type {Set<string>} */
+let scopePickerExpandedIds = new Set();
+/** @type {import("./scope-selection.js").SelectableHierarchyNode[]|null} */
+let scopePickerTree = null;
 
-function renderScopeSelectionScreen(doc) {
+function renderScopeSelectionScreen(doc, { resetState = true } = {}) {
   const sh = doc?.shared;
   if (!sh) return;
   const raw = String(sh.rawMarkdown || "");
-  const entries = listSelectableHierarchyNodes(sh.docHierarchy?.tree || []);
-  const orderedIds = entries.map((e) => e.id);
+  const tree = sh.docHierarchy?.tree || [];
+  // R5: no level cap on scope picker
+  scopePickerTree = listSelectableHierarchyTree(tree, null);
   const listEl = els.scopeSelectionList;
   if (!listEl) return;
   listEl.innerHTML = "";
 
-  scopePickerFullDocument = sh.scopeSelection == null;
-  scopePickerSelectedIds = new Set(sh.scopeSelection?.sectionIds || []);
-
-  for (const { node, id } of entries) {
-    const li = document.createElement("li");
-    const label = document.createElement("label");
-    label.className = "scope-selection-item";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.value = id;
-    cb.checked = scopePickerFullDocument || scopePickerSelectedIds.has(id);
-    cb.addEventListener("change", () => {
-      if (scopePickerFullDocument) {
-        scopePickerFullDocument = false;
-        scopePickerSelectedIds = new Set(orderedIds);
-      }
-      if (cb.checked) scopePickerSelectedIds.add(id);
-      else scopePickerSelectedIds.delete(id);
-      maybePromoteScopePickerToFullDocument(orderedIds);
-      updateScopeSelectionUi(doc, raw);
-    });
-    const span = document.createElement("span");
-    span.textContent = `${node.title} (${formatCharCount(node.endOffset - node.startOffset)})`;
-    label.append(cb, span);
-    li.appendChild(label);
-    listEl.appendChild(li);
+  if (resetState) {
+    scopePickerFullDocument = sh.scopeSelection == null;
+    scopePickerExpandedIds = defaultExpandedScopeIds(
+      scopePickerTree,
+      SCOPE_TREE_DEFAULT_EXPANDED_LEVEL,
+    );
+    scopePickerNodeState = scopePickerFullDocument
+      ? new Map()
+      : scopeSelectionToUiState(scopePickerTree, sh.scopeSelection);
   }
 
+  const appendRows = (nodes, parentUl) => {
+    for (const entry of nodes) {
+      const { node, id, children } = entry;
+      const hasKids = children.length > 0;
+      const expanded = scopePickerExpandedIds.has(id);
+      const li = document.createElement("li");
+      li.className = "scope-selection-row";
+      li.dataset.scopeId = id;
+
+      const row = document.createElement("div");
+      row.className = `scope-selection-item scope-selection-item--level-${node.level}`;
+      row.style.paddingInlineStart = `${Math.max(0, (node.level - 1) * 16)}px`;
+
+      if (hasKids) {
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "scope-selection-expand";
+        toggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+        toggleBtn.setAttribute(
+          "aria-label",
+          expanded ? "Collapse section" : "Expand section",
+        );
+        toggleBtn.textContent = expanded ? "▼" : "▶";
+        toggleBtn.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (scopePickerExpandedIds.has(id)) scopePickerExpandedIds.delete(id);
+          else scopePickerExpandedIds.add(id);
+          renderScopeSelectionScreen(doc, { resetState: false });
+        });
+        row.appendChild(toggleBtn);
+      } else {
+        const spacer = document.createElement("span");
+        spacer.className = "scope-selection-expand-spacer";
+        spacer.setAttribute("aria-hidden", "true");
+        row.appendChild(spacer);
+      }
+
+      const label = document.createElement("label");
+      label.className = "scope-selection-item-label";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = id;
+      const s = scopePickerFullDocument
+        ? "checked"
+        : scopePickerNodeState.get(id) || "unchecked";
+      cb.checked = s === "checked";
+      cb.indeterminate = s === "indeterminate";
+      cb.setAttribute(
+        "aria-checked",
+        s === "indeterminate" ? "mixed" : s === "checked" ? "true" : "false",
+      );
+      cb.addEventListener("change", () => {
+        if (scopePickerFullDocument) {
+          scopePickerFullDocument = false;
+          scopePickerNodeState = scopeSelectionToUiState(scopePickerTree, {
+            fullyCheckedIds: listSelectableHierarchyNodes(tree, null).map((e) => e.id),
+            indeterminateIds: [],
+          });
+        }
+        toggleScopeNode(entry, scopePickerNodeState, scopePickerTree || []);
+        maybePromoteScopePickerToFullDocument(tree);
+        updateScopeSelectionUi(doc, raw);
+      });
+      const span = document.createElement("span");
+      span.textContent = `${node.title} (${formatCharCount(node.endOffset - node.startOffset)})`;
+      label.append(cb, span);
+      row.appendChild(label);
+      li.appendChild(row);
+      if (hasKids && expanded) {
+        const childUl = document.createElement("ul");
+        childUl.className = "scope-selection-list scope-selection-list--nested";
+        appendRows(children, childUl);
+        li.appendChild(childUl);
+      }
+      parentUl.appendChild(li);
+    }
+  };
+
+  appendRows(scopePickerTree, listEl);
   updateScopeSelectionUi(doc, raw);
 }
 
-function maybePromoteScopePickerToFullDocument(orderedIds) {
-  if (
-    orderedIds.length > 0 &&
-    orderedIds.every((sid) => scopePickerSelectedIds.has(sid))
-  ) {
+function maybePromoteScopePickerToFullDocument(tree) {
+  const entries = listSelectableHierarchyNodes(tree || [], null);
+  if (!entries.length) return;
+  if (entries.every((e) => (scopePickerNodeState.get(e.id) || "unchecked") === "checked")) {
     scopePickerFullDocument = true;
-    scopePickerSelectedIds = new Set();
+    scopePickerNodeState = new Map();
   }
 }
 
@@ -895,14 +981,28 @@ function updateScopeSelectionUi(doc, rawMarkdown) {
   let canConfirm = scopePickerFullDocument;
 
   if (!scopePickerFullDocument) {
-    const ids = [...scopePickerSelectedIds];
+    const ids = uiStateToScopeSelectionIds(scopePickerTree || [], scopePickerNodeState);
     const built = buildScopedMarkdown(raw, doc?.shared?.docHierarchy, ids);
     charCount = built.scopedMarkdown.length;
-    canConfirm = ids.length > 0 && charCount > 0;
-  } else {
-    for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
+    canConfirm =
+      (ids.fullyCheckedIds.length > 0 || ids.indeterminateIds.length > 0) && charCount > 0;
+  }
+
+  for (const cb of els.scopeSelectionList?.querySelectorAll("input[type=checkbox]") || []) {
+    const id = cb.value;
+    if (scopePickerFullDocument) {
       cb.checked = true;
+      cb.indeterminate = false;
+      cb.setAttribute("aria-checked", "true");
+      continue;
     }
+    const s = scopePickerNodeState.get(id) || "unchecked";
+    cb.checked = s === "checked";
+    cb.indeterminate = s === "indeterminate";
+    cb.setAttribute(
+      "aria-checked",
+      s === "indeterminate" ? "mixed" : s === "checked" ? "true" : "false",
+    );
   }
 
   if (els.scopeSelectionCharCount) {
@@ -913,13 +1013,13 @@ function updateScopeSelectionUi(doc, rawMarkdown) {
   if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = !canConfirm;
 }
 
-async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
+async function applyScopeSelectionToDoc(doc, { fullDocument, fullyCheckedIds, indeterminateIds }) {
   const raw = String(doc.shared?.rawMarkdown || "");
-  // [debug-enrich]
-  console.info('[study.applyScopeSelectionToDoc] Applying scope:', {
+  console.info("[study.applyScopeSelectionToDoc] Applying scope:", {
     docId: doc.docId ?? null,
     fullDocument: Boolean(fullDocument),
-    sectionIdCount: Array.isArray(sectionIds) ? sectionIds.length : 0,
+    fullyCheckedCount: Array.isArray(fullyCheckedIds) ? fullyCheckedIds.length : 0,
+    indeterminateCount: Array.isArray(indeterminateIds) ? indeterminateIds.length : 0,
     rawLen: raw.length,
     hasHierarchy: Boolean(doc.shared?.docHierarchy),
   });
@@ -928,23 +1028,25 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
     doc.shared.scopedMarkdown = raw;
     doc.shared.scopeContext = null;
   } else {
-    const ids = (sectionIds || []).map((id) => String(id).trim()).filter(Boolean);
-    const { scopedMarkdown } = buildScopedMarkdown(raw, doc.shared.docHierarchy, ids);
+    const selection = {
+      fullyCheckedIds: fullyCheckedIds || [],
+      indeterminateIds: indeterminateIds || [],
+    };
+    const { scopedMarkdown } = buildScopedMarkdown(raw, doc.shared.docHierarchy, selection);
     doc.shared.scopedMarkdown = scopedMarkdown;
-    doc.shared.scopeSelection = buildScopeSelection(raw, doc.shared.docHierarchy, ids);
-    // [debug-enrich]
-    console.info('[study.applyScopeSelectionToDoc] Scoped markdown built:', {
-      docId: doc.docId ?? null,
-      scopedLen: scopedMarkdown?.length ?? 0,
-      selectedCount: ids.length,
-    });
+    doc.shared.scopeSelection = buildScopeSelection(raw, doc.shared.docHierarchy, selection);
     const titleById = new Map(
-      listSelectableHierarchyNodes(doc.shared.docHierarchy?.tree || []).map((e) => [
+      listSelectableHierarchyNodes(doc.shared.docHierarchy?.tree || [], null).map((e) => [
         e.id,
         e.node.title,
       ]),
     );
-    const selectedTitles = ids.map((id) => titleById.get(id)).filter(Boolean);
+    const selectedTitles = [
+      ...(selection.fullyCheckedIds || []),
+      ...(selection.indeterminateIds || []),
+    ]
+      .map((id) => titleById.get(id))
+      .filter(Boolean);
     try {
       doc.shared.scopeContext = await generateScopeContext({
         llmModel: getSessionLlmModel(),
@@ -961,13 +1063,13 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, sectionIds }) {
   doc.updatedAt = Date.now();
   setGuideScopeFromDocument(doc);
   await saveDocumentSession(doc);
-  // [debug-enrich]
-  console.info('[study.applyScopeSelectionToDoc] Scope persisted:', {
+  console.info("[study.applyScopeSelectionToDoc] Scope persisted:", {
     docId: doc.docId ?? null,
     scopedLen: doc.shared?.scopedMarkdown?.length ?? 0,
     hasScopeContext: Boolean(doc.shared?.scopeContext),
   });
 }
+
 
 async function autoResolveScopeWhenNoHeadings(doc) {
   if (isScopeGateResolved(doc) || isScopeStructureReady(doc)) return doc;
@@ -1030,7 +1132,7 @@ function wireScopeSelectionHandlers() {
     const doc = await getActiveSession();
     if (!doc) return;
     scopePickerFullDocument = true;
-    scopePickerSelectedIds = new Set();
+    scopePickerNodeState = new Map();
     updateScopeSelectionUi(doc, doc.shared?.rawMarkdown);
   });
 
@@ -1039,7 +1141,7 @@ function wireScopeSelectionHandlers() {
     console.log("[BUG-AUDIT.scopeConfirm] click fired", {
       btnDisabled: els.scopeSelectionConfirmBtn?.disabled ?? null,
       fullDocument: scopePickerFullDocument,
-      sectionIdCount: scopePickerSelectedIds.size,
+      nodeStateSize: scopePickerNodeState.size,
       activeDocIdLs: localStorage.getItem("pith_active_doc_id"),
     });
     const doc = await getActiveSession();
@@ -1057,9 +1159,11 @@ function wireScopeSelectionHandlers() {
     }
     if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = true;
     try {
+      const ids = uiStateToScopeSelectionIds(scopePickerTree || [], scopePickerNodeState);
       await applyScopeSelectionToDoc(doc, {
         fullDocument: scopePickerFullDocument,
-        sectionIds: [...scopePickerSelectedIds],
+        fullyCheckedIds: ids.fullyCheckedIds,
+        indeterminateIds: ids.indeterminateIds,
       });
       // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
       console.log("[BUG-AUDIT.scopeConfirm] applyScopeSelectionToDoc done", {
@@ -1863,11 +1967,15 @@ async function buildHierarchyForFlowRecommendation(markdownText, llmModel) {
  * @param {File} file
  */
 export async function recommendFlowFromUploadedFile(file) {
-  const { cleanedText, originalFormat, pendingImages } = await readAndCleanMaterialText(file);
+  const { cleanedText, originalFormat, pendingImages, structureHeadings } =
+    await readAndCleanMaterialText(file);
   if (!cleanedText.trim()) {
     throw new Error("The file appears to be empty.");
   }
-  const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
+  const doc = await ensureDocumentSessionForUpload(cleanedText, {
+    pendingImages,
+    structureHeadings,
+  });
   await setUploadMeta(doc.docId, {
     fileName: String(file.name || ""),
     originalFormat: String(originalFormat || ""),
@@ -2878,6 +2986,7 @@ async function processCreateSessionStagedUpload(title) {
 
     const doc = await ensureDocumentSessionForUpload(cleanedText, {
       pendingImages: result.pendingImages,
+      structureHeadings: result.headings,
     });
     await setUploadMeta(doc.docId, {
       fileName: result.files[0]?.fileName || files[0]?.name || "",
@@ -3824,7 +3933,12 @@ async function ensureDocHierarchyForInventory(doc, cleanedText, wordCount, onPro
   let docHierarchy = doc?.shared?.docHierarchy;
   if (docHierarchy?.tree?.length || wordCount <= 8000) return docHierarchy;
   if (typeof onProgress === "function") onProgress("Building document structure…");
-  docHierarchy = await buildDocumentHierarchy(cleanedText, null, { useCache: true });
+  docHierarchy = await buildDocumentHierarchy(cleanedText, null, {
+    useCache: true,
+    headings: Array.isArray(doc?.shared?.structureHeadings)
+      ? doc.shared.structureHeadings
+      : undefined,
+  });
   if (doc?.shared && docHierarchy) {
     doc.shared.docHierarchy = docHierarchy;
     await saveDocumentSession(doc);
@@ -5416,6 +5530,9 @@ async function resolveMaterialForGenerate() {
       fromBootstrap: true,
       warnings: [],
       fallbackSections: null,
+      structureHeadings: Array.isArray(doc.shared?.structureHeadings)
+        ? doc.shared.structureHeadings
+        : [],
     };
   }
 
@@ -5993,7 +6110,7 @@ export async function readAndCleanMaterialText(file) {
       ? await readFileAsArrayBuffer(file)
       : await readFileAsText(file);
 
-  const { normalizedFormat, normalizedContent, warnings, fallbackSections, pendingImages } =
+  const { normalizedFormat, normalizedContent, warnings, fallbackSections, pendingImages, headings } =
     await normalizeStudyMaterial(rawContent, detectedFormat);
 
   const cleanedText = normalizedContent;
@@ -6006,6 +6123,7 @@ export async function readAndCleanMaterialText(file) {
     warningCount: (warnings || []).length,
     warnings: (warnings || []).slice(0, 5),
     pendingImages: (pendingImages || []).length,
+    headingCount: Array.isArray(headings) ? headings.length : 0,
   }); // [debug-enrich]
   return {
     cleanedText,
@@ -6015,6 +6133,7 @@ export async function readAndCleanMaterialText(file) {
     warnings: warnings || [],
     fallbackSections: fallbackSections || null,
     pendingImages: pendingImages || [],
+    structureHeadings: Array.isArray(headings) ? headings : [],
   };
 }
 
@@ -9964,10 +10083,14 @@ export async function wireStudyHandlers() {
       }
       els.generateBlocksStatus.textContent = "";
       try {
-        const { file, cleanedText, normalizedFormat, originalFormat, pendingImages } = resolvedCloze;
+        const { file, cleanedText, normalizedFormat, originalFormat, pendingImages, structureHeadings } =
+          resolvedCloze;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
         const llmModel = getDefaultLlmModel();
-        const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
+        const doc = await ensureDocumentSessionForUpload(cleanedText, {
+          pendingImages,
+          structureHeadings,
+        });
         await computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
@@ -10018,9 +10141,12 @@ export async function wireStudyHandlers() {
       }
       els.generateBlocksStatus.textContent = "";
       try {
-        const { file, cleanedText, originalFormat, pendingImages } = resolvedSlow;
+        const { file, cleanedText, originalFormat, pendingImages, structureHeadings } = resolvedSlow;
         if (!cleanedText.trim()) throw new Error("File appears to be empty.");
-        const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
+        const doc = await ensureDocumentSessionForUpload(cleanedText, {
+          pendingImages,
+          structureHeadings,
+        });
         await setUploadMeta(doc.docId, {
           fileName: String(file.name || ""),
           originalFormat: String(originalFormat || ""),
@@ -10116,7 +10242,7 @@ export async function wireStudyHandlers() {
     els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
-      const { file, cleanedText, wordCount, pendingImages } = resolvedRsvp;
+      const { file, cleanedText, wordCount, pendingImages, structureHeadings } = resolvedRsvp;
       if (!bootstrapRsvp) {
         state.lastCleanedMaterialText = cleanedText;
         state.lastCleanedMaterialWordCount = wordCount;
@@ -10129,7 +10255,10 @@ export async function wireStudyHandlers() {
         throw new Error("File appears to be empty.");
       }
       state.originalMaterialText = cleanedText;
-      const doc = await ensureDocumentSessionForUpload(cleanedText, { pendingImages });
+      const doc = await ensureDocumentSessionForUpload(cleanedText, {
+        pendingImages,
+        structureHeadings,
+      });
       await computeAndPersistModeRecommendation(doc, cleanedText, null);
 
       const fingerprint = buildBlockSplitFingerprint({

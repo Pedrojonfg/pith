@@ -49,8 +49,8 @@ export const PROJECT_STORE_SCHEMA = 1;
 /**
  * User-selected document scope (partial study material).
  * @typedef {object} ScopeSelection
- * @property {string[]} sectionIds — docHierarchy node ids in document order
- * @property {boolean} contiguous — true when sectionIds form one contiguous run
+ * @property {string[]} fullyCheckedIds — entire subtree included via [start,end)
+ * @property {string[]} indeterminateIds — own-text gaps only (see computeNodeOwnTextSpans)
  * @property {number} selectedAt — epoch ms
  * @property {number} charCount — scopedMarkdown length
  */
@@ -377,11 +377,21 @@ export function validateDocumentSession(session) {
       if (typeof sel !== "object" || Array.isArray(sel)) {
         errors.push("shared.scopeSelection must be object or null");
       } else {
-        if (!Array.isArray(sel.sectionIds) || sel.sectionIds.length === 0) {
-          errors.push("scopeSelection.sectionIds must be a non-empty array");
-        }
-        if (typeof sel.contiguous !== "boolean") {
-          errors.push("scopeSelection.contiguous must be boolean");
+        const hasNew =
+          Array.isArray(sel.fullyCheckedIds) || Array.isArray(sel.indeterminateIds);
+        const hasLegacy = Array.isArray(sel.sectionIds);
+        if (hasNew) {
+          const full = Array.isArray(sel.fullyCheckedIds) ? sel.fullyCheckedIds : [];
+          const indet = Array.isArray(sel.indeterminateIds) ? sel.indeterminateIds : [];
+          if (full.length + indet.length === 0) {
+            errors.push("scopeSelection must have fullyCheckedIds or indeterminateIds");
+          }
+        } else if (hasLegacy) {
+          if (sel.sectionIds.length === 0) {
+            errors.push("scopeSelection.sectionIds must be a non-empty array");
+          }
+        } else {
+          errors.push("scopeSelection missing fullyCheckedIds/indeterminateIds (or legacy sectionIds)");
         }
         if (!Number.isFinite(sel.selectedAt)) {
           errors.push("scopeSelection.selectedAt must be a finite number");
@@ -733,15 +743,24 @@ export function normalizePreparationState(raw) {
  */
 export function normalizeScopeSelection(raw) {
   if (!raw || typeof raw !== "object") return null;
-  const sectionIds = Array.isArray(raw.sectionIds)
-    ? raw.sectionIds.map((id) => String(id).trim()).filter(Boolean)
+  const obj = /** @type {Record<string, unknown>} */ (raw);
+  let fullyCheckedIds = Array.isArray(obj.fullyCheckedIds)
+    ? obj.fullyCheckedIds.map((id) => String(id).trim()).filter(Boolean)
     : [];
-  if (!sectionIds.length) return null;
+  let indeterminateIds = Array.isArray(obj.indeterminateIds)
+    ? obj.indeterminateIds.map((id) => String(id).trim()).filter(Boolean)
+    : [];
+  // R10: legacy sectionIds → fullyCheckedIds (read-only compat; do not write sectionIds again)
+  if (!fullyCheckedIds.length && !indeterminateIds.length && Array.isArray(obj.sectionIds)) {
+    fullyCheckedIds = obj.sectionIds.map((id) => String(id).trim()).filter(Boolean);
+    indeterminateIds = [];
+  }
+  if (!fullyCheckedIds.length && !indeterminateIds.length) return null;
   return {
-    sectionIds,
-    contiguous: raw.contiguous === true,
-    selectedAt: Number.isFinite(raw.selectedAt) ? raw.selectedAt : Date.now(),
-    charCount: Number.isFinite(raw.charCount) ? Math.max(0, raw.charCount) : 0,
+    fullyCheckedIds,
+    indeterminateIds,
+    selectedAt: Number.isFinite(obj.selectedAt) ? /** @type {number} */ (obj.selectedAt) : Date.now(),
+    charCount: Number.isFinite(obj.charCount) ? Math.max(0, /** @type {number} */ (obj.charCount)) : 0,
   };
 }
 

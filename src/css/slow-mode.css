@@ -146,6 +146,35 @@
   user-select: none;
 }
 
+.scope-selection-item-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.scope-selection-expand,
+.scope-selection-expand-spacer {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 0.7rem;
+  line-height: 1.5rem;
+  text-align: center;
+  cursor: pointer;
+}
+
+.scope-selection-expand-spacer {
+  cursor: default;
+  visibility: hidden;
+}
+
 .scope-selection-item:hover {
   background: rgba(255, 255, 255, 0.03);
 }

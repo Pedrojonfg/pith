@@ -329,6 +329,14 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
       warnings,
       fallbackSections: pipeline.fallbackSections || null,
       pendingImages: pipeline.pendingImages || [],
+      // R6: preserve HeadingCandidate.source for HierarchyNode tagging at T1.1
+      headings: Array.isArray(pipeline.headings)
+        ? pipeline.headings.map((h) => ({
+            label: String(h.label || ""),
+            source: String(h.source || "heuristic"),
+            level: Number(h.level) || 1,
+          }))
+        : [],
       structure: {
         heading_count: pipeline.structure?.headingCount ?? 0,
         confidence: pipeline.structure?.confidence ?? "low",
@@ -367,6 +375,8 @@ export async function normalizeMultipleFiles(files) {
   const sourceMap = {};
   const warnings = [];
   const pendingImages = [];
+  /** @type {{ label: string, source: string, level: number }[]} */
+  const headings = [];
 
   for (let i = 0; i < list.length; i += 1) {
     const file = list[i];
@@ -392,6 +402,7 @@ export async function normalizeMultipleFiles(files) {
     parts.push(result.normalizedContent);
     warnings.push(...(result.warnings || []));
     pendingImages.push(...(result.pendingImages || []));
+    if (Array.isArray(result.headings)) headings.push(...result.headings);
   }
 
   const markdown = parts.join("");
@@ -405,5 +416,6 @@ export async function normalizeMultipleFiles(files) {
     sourceMap,
     warnings,
     pendingImages,
+    headings,
   };
 }

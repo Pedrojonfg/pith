@@ -15,6 +15,9 @@ import { resolveOutlineLabel } from "./pdf-outline.js";
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
 
+/** When outline coverage ≥ this, outline is authoritative (spec R17 / §8). */
+export const OUTLINE_HIGH_CONFIDENCE_COVERAGE = 0.5;
+
 /** [debug-enrich] instrumentation-only */
 function dppNormDbg() {
   return globalThis.__dppNormalizationDebug;
@@ -693,14 +696,28 @@ export function inferHeadings(blocks, opts = {}) {
   }
 
   const outlineCandidateCount = candidates.filter((c) => c.source === "outline").length;
+  const outlineCoverage = opts.outlineCoverage ?? 0;
+  const outlineAuthoritative =
+    (opts.format === "pdf" || opts.format === "html") &&
+    outlineCoverage >= OUTLINE_HIGH_CONFIDENCE_COVERAGE &&
+    outlineCandidateCount > 0;
   const outlineHeavyPdf =
+    !outlineAuthoritative &&
     outlineCandidateCount >= 15 &&
-    (opts.outlineCoverage ?? 0) >= 0.25 &&
+    outlineCoverage >= 0.25 &&
     opts.format === "pdf";
 
   /** @type {HeadingCandidate[]} */
   let workingCandidates = candidates;
-  if (outlineHeavyPdf) {
+  if (outlineAuthoritative) {
+    // R17: outline defines structure; heuristics only fill gaps (R20 keep + tag later).
+    const outlineBlockIds = new Set(
+      candidates.filter((c) => c.source === "outline").map((c) => c.blockId),
+    );
+    workingCandidates = candidates.filter(
+      (c) => c.source === "outline" || !outlineBlockIds.has(c.blockId),
+    );
+  } else if (outlineHeavyPdf) {
     workingCandidates = candidates.filter(
       (c) => c.source === "outline" || (c.source === "pattern" && c.score >= 90),
     );
@@ -711,10 +728,22 @@ export function inferHeadings(blocks, opts = {}) {
   const deduped = dedupeHeadings(workingCandidates, blocks);
   const merged = mergeLetterheadHeadings(deduped, blocks);
   const sorted =
-    opts.format === "txt" || opts.format === "md" || opts.format === "html" || outlineHeavyPdf
+    opts.format === "txt" ||
+    opts.format === "md" ||
+    opts.format === "html" ||
+    outlineHeavyPdf ||
+    outlineAuthoritative
       ? sortHeadingsByBlockOrder(merged, blocks)
       : sortHeadingsForOutput(merged, blocks);
   const validated = validateHeadingHierarchy(sorted, { blocks });
+
+  // R6/R20: any detected TOC → non-outline extras are heuristic-unlisted.
+  const hasToc = outlineCandidateCount > 0;
+  if (hasToc) {
+    for (const h of validated) {
+      if (h.source !== "outline") h.source = "heuristic-unlisted";
+    }
+  }
 
   const bySource = countHeadingsBySource(validated); // [debug-enrich]
   const primaryMethod =

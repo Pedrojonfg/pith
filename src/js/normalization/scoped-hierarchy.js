@@ -24,10 +24,16 @@ export function resolveScopedHierarchy(session) {
   if (!isScopeGateResolved(session)) return null;
   const sh = session?.shared;
   const docHierarchy = sh?.docHierarchy ?? null;
-  const ids = sh?.scopeSelection?.sectionIds;
+  const ids = sh?.scopeSelection?.fullyCheckedIds;
   // ponytail: recompute on read — no persisted scopedHierarchy
+  // Indeterminate own-text spans live in scopedMarkdown; mini-tree roots use fullyCheckedIds.
   if (Array.isArray(ids) && ids.length) {
     return buildScopedHierarchy(docHierarchy, ids, resolveScopedMarkdown(session));
+  }
+  // R10: legacy in-memory shape before normalize (should be rare)
+  const legacyIds = sh?.scopeSelection?.sectionIds;
+  if (Array.isArray(legacyIds) && legacyIds.length) {
+    return buildScopedHierarchy(docHierarchy, legacyIds, resolveScopedMarkdown(session));
   }
   return docHierarchy;
 }
