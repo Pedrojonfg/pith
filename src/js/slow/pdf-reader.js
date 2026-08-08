@@ -48,6 +48,10 @@ export async function stashPdfSourceOntoShared(shared, file, originalFormat) {
   if (typeof file?.arrayBuffer !== "function") return false;
   const bytes = await file.arrayBuffer();
   shared.pdfSource = encodePdfSourceBase64(bytes);
+  console.debug("[pdf-reader.stashPdfSourceOntoShared] Encoded:", {
+    byteLength: bytes?.byteLength ?? bytes?.length ?? null,
+    dataLen: typeof shared.pdfSource?.data === "string" ? shared.pdfSource.data.length : null,
+  }); // [debug-enrich]
   return true;
 }
 
@@ -217,10 +221,21 @@ export async function extractPdfPageTextLengths(session) {
  * @returns {Promise<string>}
  */
 export async function extractPdfTextThroughPage(session, maxPage) {
+  console.debug("[pdf-reader.extractPdfTextThroughPage] Start:", {
+    maxPage,
+    hasPdfSource: Boolean(session?.slow?.pdfSource),
+    maxReadPdfPage: session?.slow?.maxReadPdfPage ?? null,
+  }); // [debug-enrich]
   const doc = await ensurePdfDocument(session);
   const total = Number(doc.numPages) || 0;
   let max = Math.floor(Number(maxPage) || 0);
-  if (!Number.isFinite(max) || max < 1) return "";
+  if (!Number.isFinite(max) || max < 1) {
+    console.warn("[pdf-reader.extractPdfTextThroughPage] Invalid maxPage:", {
+      maxPage,
+      total,
+    }); // [debug-enrich]
+    return "";
+  }
   if (total > 0 && max > total) max = total;
   const parts = [];
   for (let p = 1; p <= max; p += 1) {
@@ -228,7 +243,13 @@ export async function extractPdfTextThroughPage(session, maxPage) {
     const textContent = await pdfPage.getTextContent();
     parts.push((textContent.items || []).map((it) => String(it?.str || "")).join(""));
   }
-  return parts.join("\n\n");
+  const text = parts.join("\n\n");
+  console.info("[pdf-reader.extractPdfTextThroughPage] Done:", {
+    pagesUsed: max,
+    totalPages: total,
+    contextLen: text.length,
+  }); // [debug-enrich]
+  return text;
 }
 
 /**
@@ -259,9 +280,20 @@ export async function renderPdfViewer(session, containerEl, opts = {}) {
   if (session.slow.viewerMode !== "pdf") return;
 
   if (!session.slow.pdfSource) {
+    console.warn("[pdf-reader.renderPdfViewer] Missing pdfSource — showing re-upload message", {
+      viewerMode: session.slow.viewerMode,
+      hasSharedHint: false,
+    }); // [debug-enrich]
     containerEl.textContent = "PDF source unavailable. Re-upload the PDF to view pages.";
     return;
   }
+
+  console.debug("[pdf-reader.renderPdfViewer] Render:", {
+    page: session.slow.currentPdfPage ?? null,
+    maxReadPdfPage: session.slow.maxReadPdfPage ?? null,
+    pdfPageCount: session.slow.pdfPageCount ?? null,
+    kind: session.slow.pdfSource?.kind ?? null,
+  }); // [debug-enrich]
 
   const pdfjs = await loadPdfJs();
   const doc = await ensurePdfDocument(session);

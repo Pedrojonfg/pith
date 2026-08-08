@@ -490,27 +490,66 @@ function resetPreparationForFreshRun(doc) {
  */
 export async function persistSharedPdfSourceFromFile(docId, file, originalFormat) {
   if (!docId) return;
-  if (String(originalFormat || "").toLowerCase() !== "pdf") return;
-  if (typeof file?.arrayBuffer !== "function") return;
+  if (String(originalFormat || "").toLowerCase() !== "pdf") {
+    console.debug("[study.persistSharedPdfSourceFromFile] Skip non-pdf:", {
+      docId,
+      originalFormat,
+    }); // [debug-enrich]
+    return;
+  }
+  if (typeof file?.arrayBuffer !== "function") {
+    console.warn("[study.persistSharedPdfSourceFromFile] No arrayBuffer on file:", {
+      docId,
+      fileName: file?.name ?? null,
+    }); // [debug-enrich]
+    return;
+  }
   try {
+    console.debug("[study.persistSharedPdfSourceFromFile] Stashing:", {
+      docId,
+      fileName: file?.name ?? null,
+      originalFormat,
+    }); // [debug-enrich]
     const { stashPdfSourceOntoShared } = await import("./slow/pdf-reader.js");
     const fresh = (await getSession(docId)) || null;
-    if (!fresh) return;
+    if (!fresh) {
+      console.warn("[study.persistSharedPdfSourceFromFile] Session missing:", { docId }); // [debug-enrich]
+      return;
+    }
     if (!fresh.shared) fresh.shared = {};
     const wrote = await stashPdfSourceOntoShared(fresh.shared, file, originalFormat);
     if (wrote) {
       // Keep existing Slow slice in sync when re-stashing on a resumed PDF session.
       const slowSlice = fresh.modes?.slow?.slow;
-      if (slowSlice && (slowSlice.viewerMode === "pdf" || !slowSlice.viewerMode)) {
+      const syncedSlow = Boolean(
+        slowSlice && (slowSlice.viewerMode === "pdf" || !slowSlice.viewerMode),
+      );
+      if (syncedSlow) {
         if (String(originalFormat || "").toLowerCase() === "pdf") {
           slowSlice.pdfSource = fresh.shared.pdfSource;
           if (!slowSlice.viewerMode) slowSlice.viewerMode = "pdf";
         }
       }
       await saveDocumentSession(fresh);
+      console.info("[study.persistSharedPdfSourceFromFile] Stashed ok:", {
+        docId,
+        kind: fresh.shared.pdfSource?.kind ?? null,
+        dataLen:
+          typeof fresh.shared.pdfSource?.data === "string"
+            ? fresh.shared.pdfSource.data.length
+            : null,
+        syncedSlowSlice: syncedSlow,
+      }); // [debug-enrich]
+    } else {
+      console.warn("[study.persistSharedPdfSourceFromFile] Stash returned false:", {
+        docId,
+      }); // [debug-enrich]
     }
   } catch (err) {
-    console.warn("[study] Failed to stash pdfSource:", err?.message || err);
+    console.error("[study.persistSharedPdfSourceFromFile] Failed:", {
+      docId,
+      message: err?.message || String(err),
+    }); // [debug-enrich]
   }
 }
 
@@ -4643,8 +4682,21 @@ function showModeResumeOrUpload(mode) {
 async function resumeSlowSession(session) {
   // Hydrate pdfSource from shared if upload-time stash landed after Slow slice was created.
   const doc = await getActiveSession();
-  if (session?.slow && !session.slow.pdfSource && doc?.shared?.pdfSource) {
+  const hydrated =
+    Boolean(session?.slow && !session.slow.pdfSource && doc?.shared?.pdfSource);
+  if (hydrated) {
     session.slow.pdfSource = doc.shared.pdfSource;
+    console.info("[study.resumeSlowSession] Hydrated pdfSource from shared:", {
+      viewerMode: session.slow.viewerMode ?? null,
+      kind: session.slow.pdfSource?.kind ?? null,
+    }); // [debug-enrich]
+  } else {
+    console.debug("[study.resumeSlowSession] Resume:", {
+      phase: session?.slow?.phase ?? null,
+      viewerMode: session?.slow?.viewerMode ?? null,
+      hasSlowPdfSource: Boolean(session?.slow?.pdfSource),
+      hasSharedPdfSource: Boolean(doc?.shared?.pdfSource),
+    }); // [debug-enrich]
   }
   if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;

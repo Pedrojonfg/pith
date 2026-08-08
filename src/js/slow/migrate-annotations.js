@@ -101,6 +101,12 @@ export function migrateSlowAnnotations(modeSlice) {
   }
 
   slow.annotationSchemaVersion = ANNOTATION_SCHEMA_VERSION;
+  console.info("[migrate-annotations.migrateSlowAnnotations] Migrated:", {
+    viewerMode,
+    annotationCount: Array.isArray(slow.annotations) ? slow.annotations.length : 0,
+    droppedPdf,
+    orphaned,
+  }); // [debug-enrich]
   return { migrated: true, droppedPdf, orphaned };
 }
 
@@ -112,8 +118,12 @@ export function migrateSlowAnnotations(modeSlice) {
 export function consumePdfLegacyDropNotice(slow) {
   if (!slow || typeof slow !== "object") return false;
   if (!slow.pdfLegacyAnnotationsDroppedNotice) return false;
-  if (slow.pdfLegacyAnnotationsDroppedNoticeShown) return false;
+  if (slow.pdfLegacyAnnotationsDroppedNoticeShown) {
+    console.debug("[migrate-annotations.consumePdfLegacyDropNotice] Already shown"); // [debug-enrich]
+    return false;
+  }
   slow.pdfLegacyAnnotationsDroppedNoticeShown = true;
+  console.info("[migrate-annotations.consumePdfLegacyDropNotice] Will show notice"); // [debug-enrich]
   return true;
 }
 
@@ -140,6 +150,12 @@ export function migrateSlowAnnotationsInSession(session) {
     const result = migrateSlowAnnotations(slice);
     if (result.migrated) {
       session.__slowAnnotationMigrationDirty = true;
+      console.info("[migrate-annotations.migrateSlowAnnotationsInSession] Dirty flag set:", {
+        docId: session?.docId ?? null,
+        droppedPdf: result.droppedPdf,
+        orphaned: result.orphaned,
+        schemaVersion: slice.slow?.annotationSchemaVersion ?? null,
+      }); // [debug-enrich]
     }
   }
   return session;

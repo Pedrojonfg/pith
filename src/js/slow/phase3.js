@@ -200,6 +200,12 @@ export function comparePhase0ToAnnotations(phase0, annotations, scopeText, optio
   const fillableBlanks = phase0?.fillableBlanks || options.fillableBlanks || [];
   const text = String(scopeText || "");
   const viewerMode = options.viewerMode === "pdf" ? "pdf" : "scroll";
+  console.debug("[phase3.comparePhase0ToAnnotations] Filter:", {
+    totalAnns: allAnns.length,
+    relevant: relevant.length,
+    orphanedSkipped: allAnns.filter((a) => a?.orphaned).length,
+    viewerMode,
+  }); // [debug-enrich]
 
   return map.map((node) => {
     const hasNewShapeAnns = relevant.some((a) => a?.anchor?.kind);

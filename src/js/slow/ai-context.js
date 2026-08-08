@@ -60,19 +60,37 @@ function buildSlowIASystemPrompt(lang, annotationType) {
 export async function askSlowReaderIA(session, userQuery, { annotationType } = {}) {
   const slow = session?.slow;
   if (!slow) throw new Error("No slow session");
+  const viewerMode = String(slow.viewerMode || "scroll");
   let context = buildIAContext(slow);
-  if (String(slow.viewerMode || "") === "pdf" && !Array.isArray(slow._pdfIAPageTexts)) {
+  let contextSource = viewerMode === "pdf" ? "pdf-sync-empty-or-hook" : "scroll-char";
+  if (viewerMode === "pdf" && !Array.isArray(slow._pdfIAPageTexts)) {
     try {
       const { extractPdfTextThroughPage } = await import("./pdf-reader.js");
       const maxPage = Math.max(1, Math.floor(Number(slow.maxReadPdfPage) || 1));
       context = await extractPdfTextThroughPage(session, maxPage);
+      contextSource = "pdf-pages";
     } catch (err) {
-      console.warn("[ai-context] PDF IA context extract failed:", err?.message || err);
+      console.error("[ai-context.askSlowReaderIA] PDF context extract failed:", {
+        maxReadPdfPage: slow.maxReadPdfPage ?? null,
+        hasPdfSource: Boolean(slow.pdfSource),
+        message: err?.message || String(err),
+      }); // [debug-enrich]
       context = "";
+      contextSource = "pdf-extract-error";
     }
   }
   const query = String(userQuery || "").trim();
   if (!query) throw new Error("Empty query");
+
+  console.info("[ai-context.askSlowReaderIA] Context ready:", {
+    viewerMode,
+    contextSource,
+    contextLen: context.length,
+    maxReadPdfPage: slow.maxReadPdfPage ?? null,
+    maxReadCharEnd: slow.maxReadCharEnd ?? null,
+    annotationType: annotationType ?? null,
+    queryLen: query.length,
+  }); // [debug-enrich]
 
   const lang = getStudyLanguage() || "English";
   const system = buildSlowIASystemPrompt(lang, annotationType);

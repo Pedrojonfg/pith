@@ -693,12 +693,19 @@ export async function getSession(docId) {
   if (session?.__slowAnnotationMigrationDirty) {
     delete session.__slowAnnotationMigrationDirty;
     try {
+      console.info("[session-store.getSession] Persisting Slow annotation migration:", {
+        docId: id,
+        schemaVersion: session?.modes?.slow?.slow?.annotationSchemaVersion ?? null,
+        annotationCount: Array.isArray(session?.modes?.slow?.slow?.annotations)
+          ? session.modes.slow.slow.annotations.length
+          : null,
+      }); // [debug-enrich]
       await saveActiveSession(session);
     } catch (err) {
-      console.warn(
-        "[session-store] Failed to persist Slow annotation migration:",
-        err?.message || err,
-      );
+      console.error("[session-store.getSession] Failed to persist Slow annotation migration:", {
+        docId: id,
+        message: err?.message || String(err),
+      }); // [debug-enrich]
     }
   }
   // [debug-enrich]

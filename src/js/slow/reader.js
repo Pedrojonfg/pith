@@ -1079,7 +1079,18 @@ async function handleSidebarIAQuery(session, queryText) {
 
 function navigateToAnnotation(session, annotation) {
   if (!session?.slow || !annotation) return;
-  if (annotation.orphaned) return; // no silent jump to dummy/wrong position
+  if (annotation.orphaned) {
+    console.warn("[reader.navigateToAnnotation] Skip orphaned annotation:", {
+      id: annotation.id ?? null,
+      type: annotation.type ?? null,
+    }); // [debug-enrich]
+    return;
+  }
+  console.debug("[reader.navigateToAnnotation] Navigate:", {
+    id: annotation.id ?? null,
+    anchorKind: annotation.anchor?.kind ?? null,
+    viewerMode: session.slow.viewerMode ?? null,
+  }); // [debug-enrich]
   const scopeText = getSlowStudyText(session);
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
 
@@ -1810,12 +1821,25 @@ export async function initSlowReader(session) {
     session.slow.typography = { ...SLOW_TYPO_DEFAULTS };
   }
 
+  console.info("[reader.initSlowReader] Init:", {
+    viewerMode: session.slow.viewerMode ?? null,
+    phase: session.slow.phase ?? null,
+    hasPdfSource: Boolean(session.slow.pdfSource),
+    maxReadPdfPage: session.slow.maxReadPdfPage ?? null,
+    annotationCount: Array.isArray(session.slow.annotations) ? session.slow.annotations.length : 0,
+    dropNoticePending: Boolean(
+      session.slow.pdfLegacyAnnotationsDroppedNotice &&
+        !session.slow.pdfLegacyAnnotationsDroppedNoticeShown,
+    ),
+  }); // [debug-enrich]
+
   if (consumePdfLegacyDropNotice(session.slow)) {
     showInventoryStatusBanner(
       "We upgraded the reader; your PDF highlights on this document couldn't be carried over. Sorry.",
       { id: "pdf-legacy-drop-notice" },
     );
     await storeActiveSession(session);
+    console.info("[reader.initSlowReader] PDF drop notice shown + persisted"); // [debug-enrich]
   }
 
   document.getElementById("slowReaderLayout")?.classList.remove("focus-mode");
