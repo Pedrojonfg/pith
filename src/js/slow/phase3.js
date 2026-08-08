@@ -18,6 +18,8 @@ import {
   PROXIMITY,
   resolveArgumentMapNodeAnchor,
 } from "../graph/proximity.js?v=20260625_02";
+import { splitTextIntoBlocks } from "./block-ids.js";
+import { STEELMAN_BLOCK_RADIUS, blockIndexFromId } from "./annotations.js";
 
 export { PROXIMITY, resolveArgumentMapNodeAnchor };
 
@@ -102,7 +104,74 @@ function isSpanishLang(lang) {
 }
 
 function annotationMid(ann) {
+  if (ann?.anchor?.kind === "block-offset") {
+    return (Number(ann.anchor.charStart) + Number(ann.anchor.charEnd)) / 2;
+  }
   return (Number(ann?.charStart) + Number(ann?.charEnd)) / 2;
+}
+
+function findBlockIdForNeedle(blocks, needle) {
+  const n = String(needle || "").trim().toLowerCase();
+  if (!n || n.length < 3) return null;
+  for (const b of blocks) {
+    if (String(b.text || "").toLowerCase().includes(n)) return b.blockId;
+  }
+  const words = n.split(/\s+/).filter((w) => w.length >= 5);
+  for (const word of words) {
+    for (const b of blocks) {
+      if (String(b.text || "").toLowerCase().includes(word)) return b.blockId;
+    }
+  }
+  return null;
+}
+
+function annotationCoversNode(ann, nodePos, viewerMode) {
+  if (!ann || !nodePos) return false;
+  if (viewerMode === "pdf") {
+    const page = ann.anchor?.kind === "pdf-rect" ? Number(ann.anchor.page) : null;
+    if (page == null || nodePos.page == null) return false;
+    const delta = Math.abs(page - nodePos.page);
+    // unvalidated placeholder: same page or adjacent
+    return delta <= 1;
+  }
+  // scroll
+  const bi = blockIndexFromId(ann.anchor?.blockId);
+  const ni = blockIndexFromId(nodePos.blockId);
+  if (bi < 0 || ni < 0) return false;
+  return Math.abs(bi - ni) <= STEELMAN_BLOCK_RADIUS;
+}
+
+function resolveNodePosition(node, scopeText, fillableBlanks, annotations, viewerMode) {
+  const nodeId = String(node?.id || "").trim();
+  const blanks = Array.isArray(fillableBlanks) ? fillableBlanks : [];
+  const anns = Array.isArray(annotations) ? annotations : [];
+  const linkedBlank = blanks.find((b) => b?.nodeId === nodeId && b?.annotationId);
+  if (linkedBlank) {
+    const ann = anns.find((a) => a.id === linkedBlank.annotationId);
+    if (ann?.anchor?.kind === "pdf-rect") {
+      return { page: Number(ann.anchor.page), blockId: null, source: "fillable" };
+    }
+    if (ann?.anchor?.kind === "block-offset") {
+      return { page: null, blockId: ann.anchor.blockId, source: "fillable" };
+    }
+    if (linkedBlank.pdfPage != null) {
+      return { page: Number(linkedBlank.pdfPage), blockId: null, source: "fillable" };
+    }
+    if (linkedBlank.blockId) {
+      return { page: null, blockId: linkedBlank.blockId, source: "fillable" };
+    }
+  }
+  if (viewerMode === "scroll") {
+    const blocks = splitTextIntoBlocks(scopeText);
+    const blockId = findBlockIdForNeedle(blocks, node?.text);
+    if (blockId) return { page: null, blockId, source: "text" };
+    return null;
+  }
+  // pdf: prefer blank pdfPage; else no reliable page without page texts
+  if (linkedBlank?.pdfPage != null) {
+    return { page: Number(linkedBlank.pdfPage), blockId: null, source: "fillable" };
+  }
+  return null;
 }
 
 function escapeHtml(text) {
@@ -123,32 +192,66 @@ export function comparePhase0ToAnnotations(phase0, annotations, scopeText, optio
   const map = Array.isArray(phase0?.argumentMap) ? phase0.argumentMap : [];
   const allAnns = Array.isArray(annotations) ? annotations : [];
   const relevant = allAnns.filter(
-    (a) => RELEVANT_ANNOTATION_TYPES.has(a.type) && String(a.userText || "").trim(),
+    (a) =>
+      !a?.orphaned &&
+      RELEVANT_ANNOTATION_TYPES.has(a.type) &&
+      String(a.userText || "").trim(),
   );
   const fillableBlanks = phase0?.fillableBlanks || options.fillableBlanks || [];
   const text = String(scopeText || "");
+  const viewerMode = options.viewerMode === "pdf" ? "pdf" : "scroll";
 
   return map.map((node) => {
-    const resolved = resolveArgumentMapNodeAnchor(node, text, fillableBlanks, allAnns);
-    const anchor = resolved.anchor;
-    if (anchor == null) {
+    const hasNewShapeAnns = relevant.some((a) => a?.anchor?.kind);
+    const nodePos = hasNewShapeAnns
+      ? resolveNodePosition(node, text, fillableBlanks, allAnns, viewerMode)
+      : null;
+    if (!nodePos) {
+      // legacy char fallback when no viewer position / no new-shape anns
+      const resolved = resolveArgumentMapNodeAnchor(node, text, fillableBlanks, allAnns);
+      const anchor = resolved.anchor;
+      if (anchor == null) {
+        return {
+          node,
+          hit: false,
+          anchor: null,
+          source: resolved.source,
+          matchedAnnotation: null,
+          pageIndex: null,
+          snippet: "",
+        };
+      }
+      let matchedAnnotation = null;
+      let bestDist = Infinity;
+      for (const ann of relevant) {
+        if (ann.anchor?.kind) continue; // new-shape anns need viewer proximity only
+        const dist = Math.abs(annotationMid(ann) - anchor);
+        if (dist <= PROXIMITY && dist < bestDist) {
+          bestDist = dist;
+          matchedAnnotation = ann;
+        }
+      }
       return {
         node,
-        hit: false,
-        anchor: null,
+        hit: Boolean(matchedAnnotation),
+        anchor,
         source: resolved.source,
-        matchedAnnotation: null,
-        pageIndex: null,
-        snippet: "",
+        matchedAnnotation,
+        pageIndex: matchedAnnotation ? null : resolved.pageIndex,
+        snippet: matchedAnnotation ? truncate(matchedAnnotation.userText) : "",
       };
     }
 
     let matchedAnnotation = null;
-    let bestDist = Infinity;
+    let bestDelta = Infinity;
     for (const ann of relevant) {
-      const dist = Math.abs(annotationMid(ann) - anchor);
-      if (dist <= PROXIMITY && dist < bestDist) {
-        bestDist = dist;
+      if (!annotationCoversNode(ann, nodePos, viewerMode)) continue;
+      const delta =
+        viewerMode === "pdf"
+          ? Math.abs(Number(ann.anchor.page) - Number(nodePos.page))
+          : Math.abs(blockIndexFromId(ann.anchor.blockId) - blockIndexFromId(nodePos.blockId));
+      if (delta < bestDelta) {
+        bestDelta = delta;
         matchedAnnotation = ann;
       }
     }
@@ -156,13 +259,64 @@ export function comparePhase0ToAnnotations(phase0, annotations, scopeText, optio
     return {
       node,
       hit: Boolean(matchedAnnotation),
-      anchor,
-      source: resolved.source,
+      anchor: nodePos,
+      source: nodePos.source,
       matchedAnnotation,
-      pageIndex: matchedAnnotation ? null : resolved.pageIndex,
+      pageIndex: nodePos.page != null ? nodePos.page - 1 : null,
+      sectionTitle: options.sectionTitle || null,
       snippet: matchedAnnotation ? truncate(matchedAnnotation.userText) : "",
     };
   });
+}
+
+/** Module A label: PDF page number or scroll section title (FR-024). */
+export function pageLabelForModuleARow(row, { viewerMode } = {}) {
+  if (viewerMode === "pdf") {
+    const ann = row?.matchedAnnotation;
+    if (ann?.anchor?.kind === "pdf-rect") return Math.max(1, Math.floor(Number(ann.anchor.page) || 1));
+    if (row?.pageIndex != null) return Number(row.pageIndex) + 1;
+    return null;
+  }
+  if (row?.sectionTitle) return String(row.sectionTitle);
+  return null;
+}
+
+/**
+ * Context slice for Module B / Ask-AI — viewer-mode aware (R-P3-4).
+ * @param {string} scopeText
+ * @param {object} annotation
+ * @param {{ viewerMode?: string, pageText?: string, neighborBlockRadius?: number }} [opts]
+ */
+export function annotationContextSliceForViewer(scopeText, annotation, opts = {}) {
+  // Orphans have no reliable position — never slice the document by dummy anchors.
+  if (annotation?.orphaned) {
+    return String(annotation.snippet || annotation.userText || "");
+  }
+  const viewerMode = opts.viewerMode === "pdf" ? "pdf" : "scroll";
+  if (viewerMode === "pdf") {
+    const pageText = String(opts.pageText || annotation?.snippet || "");
+    if (pageText) return pageText;
+  }
+  const text = String(scopeText || "");
+  if (annotation?.anchor?.kind === "block-offset") {
+    const blocks = splitTextIntoBlocks(text);
+    const idx = blockIndexFromId(annotation.anchor.blockId);
+    if (idx >= 0 && blocks.length) {
+      const r = Math.max(0, Number(opts.neighborBlockRadius) || 1); // unvalidated placeholder ±1
+      const from = Math.max(0, idx - r);
+      const to = Math.min(blocks.length - 1, idx + r);
+      return blocks
+        .slice(from, to + 1)
+        .map((b) => b.text)
+        .join("");
+    }
+  }
+  // legacy char radius
+  const radius = 400;
+  const start = Math.max(0, Number(annotation?.charStart) || 0);
+  const end = Math.min(text.length, Number(annotation?.charEnd) || start);
+  const mid = Math.floor((start + end) / 2);
+  return text.slice(Math.max(0, mid - radius), Math.min(text.length, mid + radius));
 }
 
 export function getEligiblePhase3Modules(session) {
@@ -226,13 +380,17 @@ export function computePhase3WeakPointStats(session) {
   return { found: Math.min(found, total || found), total: total || 0 };
 }
 
-function pageLabelForRow(row, breakpoints) {
+function pageLabelForRow(row, breakpoints, session) {
+  const viewerMode = session?.slow?.viewerMode === "pdf" ? "pdf" : "scroll";
+  const labeled = pageLabelForModuleARow(row, { viewerMode });
+  if (labeled != null) return labeled;
+  // legacy breakpoints fallback for old fixtures (Slow no longer writes session.slow.breakpoints)
   const ann = row.matchedAnnotation;
-  if (ann && Array.isArray(breakpoints) && breakpoints.length) {
+  if (ann && !ann.anchor && Array.isArray(breakpoints) && breakpoints.length) {
     return charOffsetToPage(breakpoints, ann.charStart) + 1;
   }
   if (row.pageIndex != null) return Number(row.pageIndex) + 1;
-  if (row.anchor != null && Array.isArray(breakpoints) && breakpoints.length) {
+  if (row.anchor != null && typeof row.anchor === "number" && Array.isArray(breakpoints) && breakpoints.length) {
     return charOffsetToPage(breakpoints, row.anchor) + 1;
   }
   return null;
@@ -244,24 +402,32 @@ export function renderPhase3ModuleA(rows, session, { lang, breakpoints } = {}) {
   const weakStats = computePhase3WeakPointStats(session);
   const reviewCopy = es ? "oportunidad de revisión" : "review opportunity";
   const coveredCopy = es ? "cubierto por tus anotaciones" : "covered by your notes";
+  const viewerMode = session?.slow?.viewerMode === "pdf" ? "pdf" : "scroll";
 
   const items = (rows || [])
     .map((r) => {
       const label = r.node?.text || r.node?.label || r.node?.id || "Node";
-      const page = pageLabelForRow(r, breakpoints);
-      const pageStr = page != null ? (es ? `pág. ${page}` : `p. ${page}`) : es ? "pág. —" : "p. —";
+      const page = pageLabelForRow(r, breakpoints, session);
+      let pageStr;
+      if (viewerMode === "scroll") {
+        pageStr = page != null ? String(page) : "";
+      } else {
+        pageStr = page != null ? (es ? `pág. ${page}` : `p. ${page}`) : es ? "pág. —" : "p. —";
+      }
       const status = r.hit ? "✓" : "✗";
       const statusText = r.hit ? coveredCopy : reviewCopy;
       const snippet = r.snippet
         ? `<span class="slow-phase3-snippet">«${escapeHtml(r.snippet)}»</span>`
         : "";
+      const pageHtml = pageStr
+        ? `<span class="slow-phase3-page">${escapeHtml(pageStr)}</span>`
+        : "";
       return `<li class="slow-phase3-review-row ${r.hit ? "is-covered" : "is-review"}">
         <span class="slow-phase3-status" aria-hidden="true">${status}</span>
-        <div class="slow-phase3-review-body">
-          <strong>${escapeHtml(label)}</strong>
-          <span class="slow-phase3-meta">${escapeHtml(pageStr)} · ${escapeHtml(statusText)}</span>
-          ${snippet}
-        </div>
+        ${pageHtml}
+        <span class="slow-phase3-label">${escapeHtml(truncate(label, 120))}</span>
+        <span class="slow-phase3-status-text">${escapeHtml(statusText)}</span>
+        ${snippet}
       </li>`;
     })
     .join("");
@@ -373,11 +539,9 @@ function parseJsonArray(raw) {
 }
 
 function annotationContextSlice(scopeText, annotation, radius = 400) {
-  const text = String(scopeText || "");
-  const start = Math.max(0, Number(annotation?.charStart) || 0);
-  const end = Math.min(text.length, Number(annotation?.charEnd) || start);
-  const mid = Math.floor((start + end) / 2);
-  return text.slice(Math.max(0, mid - radius), Math.min(text.length, mid + radius));
+  return annotationContextSliceForViewer(scopeText, annotation, {
+    viewerMode: annotation?.anchor?.kind === "pdf-rect" ? "pdf" : "scroll",
+  });
 }
 
 export function buildRetrievalQuestionShells(annotations, lang) {
@@ -795,6 +959,7 @@ export async function renderPhase3Modules(session, hostEl, moduleIds) {
         session.slow.phase0,
         session.slow.annotations,
         scopeText,
+        { viewerMode: session.slow.viewerMode === "pdf" ? "pdf" : "scroll" },
       );
       const def = PHASE3_MODULE_DEFS.find((m) => m.id === "A");
       appendPhase3SectionHtml(

@@ -372,7 +372,7 @@ export function buildSlowEnrichedGraphFromInputs(inputs = {}) {
 
     const needsArgLink =
       CRITICAL_EDGE_TYPES.has(ann.type) || (RELATES_TYPES.has(ann.type) && links.length === 0);
-    if (needsArgLink) {
+    if (needsArgLink && !ann.orphaned) {
       const match = findNearestArgumentMapNode(ann, {
         argumentMap,
         scopeText,

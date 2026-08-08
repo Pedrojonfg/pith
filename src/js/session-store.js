@@ -38,6 +38,7 @@ import {
 } from "./session-types.js";
 import { persistPendingImages } from "./document-images/storage.js";
 import { withKeyedRetry } from "./net/retry.js";
+import { migrateSlowAnnotationsInSession } from "./slow/migrate-annotations.js";
 import { scheduleActiveDocSync, scheduleProjectsSync } from "./user-store-sync.js";
 
 export {
@@ -256,9 +257,11 @@ function normalizeSessionModes(session) {
 }
 
 function normalizeLoadedSession(session) {
-  return migrateSessionV4(
+  const next = migrateSessionV4(
     migrateSessionV3(normalizeSessionModes(normalizeSessionSmItems(session))),
   );
+  // ponytail: Slow annotation schema v2 (native viewer) — one-shot on load
+  return migrateSlowAnnotationsInSession(next);
 }
 
 function migrateSessionV3(session) {
@@ -686,6 +689,18 @@ export async function getSession(docId) {
   }
   const base = rowToSession(row, true);
   const session = normalizeLoadedSession(await rehydrateMarkdown(base, row.markdown_ref));
+  // Persist annotationSchemaVersion + migrated annotations in the SAME write (FR-006).
+  if (session?.__slowAnnotationMigrationDirty) {
+    delete session.__slowAnnotationMigrationDirty;
+    try {
+      await saveActiveSession(session);
+    } catch (err) {
+      console.warn(
+        "[session-store] Failed to persist Slow annotation migration:",
+        err?.message || err,
+      );
+    }
+  }
   // [debug-enrich]
   console.info('[session-store.getSession] Loaded:', {
     docId: id,
@@ -901,32 +916,6 @@ export function setLocalSessionCache(docId, doc) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
   }
   void doc;
-}
-
-/**
- * @param {string} docId
- * @param {object} annotation
- */
-export async function addAnnotationToShared(docId, annotation) {
-  const session = await getSession(docId);
-  if (!session) throw new Error("session not found");
-  if (!annotation || typeof annotation !== "object") return;
-  if (!Array.isArray(session.shared.annotations)) session.shared.annotations = [];
-  const id = String(annotation.id || "").trim();
-  const existingIdx = id
-    ? session.shared.annotations.findIndex((a) => a?.id === id)
-    : -1;
-  const entry = {
-    id: id || `ann_${Date.now()}`,
-    type: String(annotation.type || "≈"),
-    text: String(annotation.text || annotation.userText || "").trim(),
-    offset: Number(annotation.offset ?? annotation.charStart ?? 0),
-    sectionTitle: annotation.sectionTitle ? String(annotation.sectionTitle) : undefined,
-    createdAt: Number(annotation.createdAt) || Date.now(),
-  };
-  if (existingIdx >= 0) session.shared.annotations[existingIdx] = entry;
-  else session.shared.annotations.push(entry);
-  await saveActiveSession(session);
 }
 
 /**

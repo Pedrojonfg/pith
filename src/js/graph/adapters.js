@@ -11,21 +11,10 @@ import { getConceptDisplayName, getConceptDefinition } from "../concept-graph/co
 
 /**
  * Resolve enriched-graph inputs from session + optional overrides (single I/O adapter).
+ * Annotations come from session.slow only (FR-013 — no shared dual-write).
  * @param {object|null} session
  * @param {object} [overrides]
  */
-function mapSharedAnnotations(shared) {
-  const list = Array.isArray(shared?.annotations) ? shared.annotations : [];
-  return list.map((a) => ({
-    id: a.id,
-    type: a.type,
-    charStart: Number(a.offset ?? a.charStart ?? 0),
-    charEnd: Number(a.offset ?? a.charStart ?? 0) + String(a.text || "").length,
-    userText: String(a.text || a.userText || ""),
-    createdAt: a.createdAt,
-  }));
-}
-
 export async function resolveEnrichedGraphInputs(session, overrides = {}) {
   const doc = overrides.shared ? null : await getActiveSession();
   const shared = overrides.shared ?? doc?.shared ?? session?.shared ?? null;
@@ -43,17 +32,12 @@ export async function resolveEnrichedGraphInputs(session, overrides = {}) {
     overrides.conceptsToFind ??
     (sharedConcepts.length ? sharedConcepts : phase0?.conceptsToFind ?? []);
 
-  const sharedAnns = mapSharedAnnotations(shared);
-  const slowAnns = session?.slow?.annotations ?? [];
-
   return {
     textConcepts:
       overrides.textConcepts ??
       collectTextConceptsFromLists(sessionConcepts, conceptsToFind),
     argumentMap: overrides.argumentMap ?? phase0?.argumentMap ?? [],
-    annotations:
-      overrides.annotations ??
-      (sharedAnns.length ? sharedAnns : slowAnns),
+    annotations: overrides.annotations ?? session?.slow?.annotations ?? [],
     scopeText: overrides.scopeText ?? String(session?.slow?.normalizedTextFull || ""),
     fillableBlanks: overrides.fillableBlanks ?? phase0?.fillableBlanks ?? [],
     charProximity: overrides.charProximity,

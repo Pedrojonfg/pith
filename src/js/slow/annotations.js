@@ -1,9 +1,12 @@
 import { LITERATURE_TERM_ID } from "../graph/ids.js?v=20260625_02";
-import { addAnnotationToShared, getActiveSession } from "../session-store.js";
+import { resolveBlockOffset, splitTextIntoBlocks } from "./block-ids.js";
 
 /** Annotation types registry — FR-004, FR-013, FR-016 */
 
 export const IA_QUERY_TYPE = "ia-query";
+
+/** Unvalidated placeholder — scroll steel-man proximity in blocks (R-ANN-2). */
+export const STEELMAN_BLOCK_RADIUS = 3;
 
 export const ANNOTATION_TYPES = [
   { symbol: "≈", id: "approx", tier: "primary", criticalMenu: false, label: "Paraphrase", hotkey: "1" },
@@ -49,44 +52,81 @@ export function isIAQueryAnnotation(ann) {
   return (ann.type === "⚑" || ann.type === "⇑") && Boolean(ann.aiReply);
 }
 
-export async function addAnnotation(session, { type, charStart, charEnd, userText = "", aiReply = null }) {
+export function blockIndexFromId(blockId) {
+  const m = String(blockId || "").match(/^b(\d+)$/i);
+  return m ? Number(m[1]) : -1;
+}
+
+/**
+ * Resolve legacy global offsets or explicit anchor into v2 shape.
+ * @returns {{ anchor: object, snippet: string } | null}
+ */
+export function resolveCreateAnchor(session, opts = {}) {
+  const snippetIn = String(opts.snippet || "").trim();
+  if (opts.anchor && typeof opts.anchor === "object" && opts.anchor.kind) {
+    if (!snippetIn) return null;
+    return { anchor: { ...opts.anchor }, snippet: snippetIn };
+  }
+
+  // Legacy shim: charStart/charEnd → block-offset + snippet
+  if (!Number.isFinite(Number(opts.charStart)) && !Number.isFinite(Number(opts.charEnd))) {
+    return null;
+  }
+  const text = String(session?.slow?.normalizedTextFull || "");
+  const max = text.length;
+  const start = Math.max(0, Math.floor(Number(opts.charStart) || 0));
+  const end = Math.min(max, Math.max(start + 1, Math.floor(Number(opts.charEnd) || start + 1)));
+  const snippet = snippetIn || text.slice(start, end);
+  if (!String(snippet).trim()) return null;
+  const blocks = splitTextIntoBlocks(text);
+  const local = resolveBlockOffset(blocks, start, end);
+  if (!local) {
+    return {
+      anchor: {
+        kind: "block-offset",
+        blockId: blocks[0]?.blockId || "b0",
+        charStart: 0,
+        charEnd: 0,
+      },
+      snippet: String(snippet).trim(),
+      orphaned: true,
+    };
+  }
+  return {
+    anchor: { kind: "block-offset", ...local },
+    snippet: String(snippet).trim(),
+  };
+}
+
+export async function addAnnotation(session, opts = {}) {
   if (!session?.slow) return null;
-  const max = String(session.slow.normalizedTextFull || "").length;
-  const start = Math.max(0, Math.floor(Number(charStart) || 0));
-  const end = Math.min(max, Math.max(start + 1, Math.floor(Number(charEnd) || start + 1)));
+  const resolved = resolveCreateAnchor(session, opts);
+  if (!resolved) return null;
+
   const entry = {
     id: newAnnotationId(),
-    type: String(type || "≈"),
-    charStart: start,
-    charEnd: end,
-    userText: String(userText || "").trim(),
+    type: String(opts.type || "≈"),
+    anchor: resolved.anchor,
+    snippet: resolved.snippet,
+    userText: String(opts.userText || "").trim(),
     createdAt: Date.now(),
-    aiReply: aiReply != null ? String(aiReply) : null,
+    aiReply: opts.aiReply != null ? String(opts.aiReply) : null,
     graphLinks: [],
   };
-  if (type === IA_QUERY_TYPE) entry.isIAQuery = true;
+  if (opts.type === IA_QUERY_TYPE) entry.isIAQuery = true;
+  if (resolved.orphaned) entry.orphaned = true;
+
   if (!Array.isArray(session.slow.annotations)) session.slow.annotations = [];
   session.slow.annotations.push(entry);
-  try {
-    const doc = await getActiveSession();
-    if (doc?.docId) {
-      await addAnnotationToShared(doc.docId, {
-        type: entry.type,
-        text: entry.userText,
-        offset: entry.charStart,
-        id: entry.id,
-        createdAt: entry.createdAt,
-      });
-    }
-  } catch (err) {
-    console.warn("[annotations] shared dual-write failed", err);
-  }
+  // ponytail: no shared.annotations dual-write (FR-013 / T09)
   return entry;
 }
 
-export async function addIAQueryAnnotation(session, { userText, charStart, charEnd, aiReply = null }) {
+export async function addIAQueryAnnotation(session, { userText, anchor, snippet, charStart, charEnd, aiReply = null } = {}) {
   return await addAnnotation(session, {
     type: IA_QUERY_TYPE,
+    anchor,
+    snippet,
     charStart,
     charEnd,
     userText,
@@ -136,11 +176,19 @@ export function addLiteratureGraphLink(session, annotationId, note) {
   return addGraphLink(session, annotationId, { termId: LITERATURE_TERM_ID, relation: rel });
 }
 
+/** Legacy global-offset helper + block-offset mapped via optional globalStart on ann. */
 export function annotationsOnPage(annotations, pageSlice) {
   const { charStart, charEnd } = pageSlice;
-  return (annotations || []).filter(
-    (a) => a.charEnd > charStart && a.charStart < charEnd,
-  );
+  return (annotations || []).filter((a) => {
+    if (a?.orphaned) return false;
+    if (a?.anchor?.kind === "block-offset") {
+      // When highlight path maps locals onto a 0-based block slice, treat like local.
+      const aStart = Number(a.charStart ?? a.anchor.charStart) || 0;
+      const aEnd = Number(a.charEnd ?? a.anchor.charEnd) || aStart;
+      return aEnd > charStart && aStart < charEnd;
+    }
+    return a.charEnd > charStart && a.charStart < charEnd;
+  });
 }
 
 /** CSS slug per annotation type for inline highlights (one distinct color each). */
@@ -199,15 +247,20 @@ export function createNestedHighlightSpans(covering, doc, contents) {
 
 /**
  * Split page plain text into segments with covering annotations (for inline highlights).
+ * Accepts legacy top-level charStart/charEnd or mapped locals on the ann object.
  * @returns {Array<{ segStart: number, segEnd: number, text: string, covering: object[] }>}
  */
 export function buildAnnotationHighlightSegments(pageSlice, slicePlain, annotations) {
   const anns = annotationsOnPage(annotations, pageSlice)
-    .map((a) => ({
-      ...a,
-      localStart: a.charStart - pageSlice.charStart,
-      localEnd: a.charEnd - pageSlice.charStart,
-    }))
+    .map((a) => {
+      const aStart = Number(a.charStart ?? a.anchor?.charStart) || 0;
+      const aEnd = Number(a.charEnd ?? a.anchor?.charEnd) || aStart;
+      return {
+        ...a,
+        localStart: aStart - pageSlice.charStart,
+        localEnd: aEnd - pageSlice.charStart,
+      };
+    })
     .filter((a) => a.localStart < a.localEnd);
   if (!anns.length) return [];
 
@@ -234,17 +287,133 @@ export function buildAnnotationHighlightSegments(pageSlice, slicePlain, annotati
   return segments;
 }
 
+/**
+ * Find snippet in blocks starting at ±initialRadius from origin, expanding until exhausted (R-SCR-7).
+ * @param {{ blockId: string, text: string }[]} blocks
+ * @returns {{ blockId: string, charStart: number, charEnd: number } | null}
+ */
+export function findSnippetInBlocks(blocks, snippet, originIndex, initialRadius = STEELMAN_BLOCK_RADIUS) {
+  const needle = String(snippet || "");
+  if (!needle || !Array.isArray(blocks) || !blocks.length) return null;
+  const n = blocks.length;
+  const origin = Number.isFinite(originIndex) && originIndex >= 0 ? originIndex : 0;
+  const searched = new Set();
+
+  for (let radius = initialRadius; ; radius += initialRadius) {
+    const lo = Math.max(0, origin - radius);
+    const hi = Math.min(n - 1, origin + radius);
+    for (let i = lo; i <= hi; i += 1) {
+      if (searched.has(i)) continue;
+      searched.add(i);
+      const idx = String(blocks[i].text || "").indexOf(needle);
+      if (idx >= 0) {
+        return {
+          blockId: blocks[i].blockId,
+          charStart: idx,
+          charEnd: idx + needle.length,
+        };
+      }
+    }
+    if (searched.size >= n) break;
+  }
+  return null;
+}
+
+/**
+ * Repair block-offset annotations against current block texts (R-SCR-7).
+ * Mutates annotations in place.
+ * @param {{ slow?: { annotations?: object[] } }} session
+ * @param {{ blockId: string, text: string }[]} blocks
+ * @returns {{ repaired: number, orphaned: number }}
+ */
+export function repairScrollAnnotations(session, blocks) {
+  const list = session?.slow?.annotations;
+  if (!Array.isArray(list) || !Array.isArray(blocks)) {
+    return { repaired: 0, orphaned: 0 };
+  }
+  let repaired = 0;
+  let orphaned = 0;
+
+  for (const ann of list) {
+    if (ann?.anchor?.kind !== "block-offset") continue;
+    const snippet = String(ann.snippet || "");
+    if (!snippet) {
+      ann.orphaned = true;
+      orphaned += 1;
+      continue;
+    }
+
+    const block = blocks.find((b) => b.blockId === ann.anchor.blockId);
+    if (block) {
+      const local = String(block.text || "").slice(ann.anchor.charStart, ann.anchor.charEnd);
+      if (local === snippet) {
+        if (ann.orphaned) delete ann.orphaned;
+        continue;
+      }
+      const sameIdx = String(block.text || "").indexOf(snippet);
+      if (sameIdx >= 0) {
+        ann.anchor.charStart = sameIdx;
+        ann.anchor.charEnd = sameIdx + snippet.length;
+        if (ann.orphaned) delete ann.orphaned;
+        repaired += 1;
+        continue;
+      }
+    }
+
+    const origin = blockIndexFromId(ann.anchor.blockId);
+    const hit = findSnippetInBlocks(blocks, snippet, origin, STEELMAN_BLOCK_RADIUS);
+    if (hit) {
+      ann.anchor = { kind: "block-offset", ...hit };
+      if (ann.orphaned) delete ann.orphaned;
+      repaired += 1;
+    } else {
+      ann.orphaned = true;
+      orphaned += 1;
+    }
+  }
+
+  return { repaired, orphaned };
+}
+
+/** Collect {blockId, text} from a rendered root with data-block-id nodes. */
+export function collectBlockTextsFromRoot(root) {
+  if (!root?.querySelectorAll) return [];
+  return Array.from(root.querySelectorAll("[data-block-id]")).map((el) => ({
+    blockId: el.getAttribute("data-block-id"),
+    text: el.textContent || "",
+  }));
+}
+
 /** Critical types that trigger steel-man nudge on confirm (T07). */
 export const STEELMAN_NUDGE_TYPES = new Set(["⊘", "↯", "⚠"]);
 
 /** Prior annotation types that satisfy steel-man prerequisite (T07). */
 export const STEELMAN_PRECURSOR_TYPES = new Set(["⇑", "≈"]);
 
+function steelManBlockNearby(annotations, targetAnn) {
+  const origin = blockIndexFromId(targetAnn?.anchor?.blockId);
+  if (origin < 0) return false;
+  const list = Array.isArray(annotations) ? annotations : [];
+  return list.some((a) => {
+    if (a.id === targetAnn.id) return false;
+    if (!STEELMAN_PRECURSOR_TYPES.has(a.type)) return false;
+    if (!String(a.userText || "").trim()) return false;
+    if (a.anchor?.kind !== "block-offset") return false;
+    const bi = blockIndexFromId(a.anchor.blockId);
+    return bi >= 0 && Math.abs(bi - origin) <= STEELMAN_BLOCK_RADIUS;
+  });
+}
+
 /**
- * True if a ⇑/≈ annotation with user text exists within ±windowChars of target.
+ * True if a ⇑/≈ annotation with user text exists nearby.
+ * Scroll block-offset: within STEELMAN_BLOCK_RADIUS blocks.
+ * Legacy / other: ±windowChars on global offsets.
  */
 export function hasSteelManPrecursorNearby(annotations, targetAnn, windowChars = 500) {
   if (!targetAnn) return false;
+  if (targetAnn.anchor?.kind === "block-offset") {
+    return steelManBlockNearby(annotations, targetAnn);
+  }
   const list = Array.isArray(annotations) ? annotations : [];
   const lo = Math.max(0, (Number(targetAnn.charStart) || 0) - windowChars);
   const hi = (Number(targetAnn.charEnd) || 0) + windowChars;
@@ -252,6 +421,7 @@ export function hasSteelManPrecursorNearby(annotations, targetAnn, windowChars =
     if (a.id === targetAnn.id) return false;
     if (!STEELMAN_PRECURSOR_TYPES.has(a.type)) return false;
     if (!String(a.userText || "").trim()) return false;
+    if (a.anchor?.kind === "block-offset") return false;
     const aStart = Number(a.charStart) || 0;
     const aEnd = Number(a.charEnd) || aStart;
     return aEnd > lo && aStart < hi;

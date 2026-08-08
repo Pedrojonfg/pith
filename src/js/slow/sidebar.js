@@ -3,7 +3,6 @@ import { getSortedSessionConcepts } from "../dictionary.js?v=20260625_02";
 import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260625_02";
 import { resolveScopedHierarchy } from "../normalization/scoped-hierarchy.js";
 import { ANNOTATION_TYPES } from "./annotations.js?v=20260625_02";
-import { charOffsetToPage } from "./pagination.js?v=20260625_02";
 import { slugGraphTermId } from "./phase0.js?v=20260625_02";
 
 const TYPE_LABELS_ES = {
@@ -43,8 +42,11 @@ export function typeLabelEs(symbol) {
 
 export function annotationExcerpt(scopeText, ann, maxLen = 40) {
   const fromUser = String(ann?.userText || "").trim();
-  const fromScope = String(scopeText || "").slice(ann?.charStart ?? 0, ann?.charEnd ?? 0).trim();
-  const raw = fromUser || fromScope;
+  const fromSnippet = String(ann?.snippet || "").trim();
+  const fromScope = ann?.anchor
+    ? ""
+    : String(scopeText || "").slice(ann?.charStart ?? 0, ann?.charEnd ?? 0).trim();
+  const raw = fromUser || fromSnippet || fromScope;
   if (raw.length <= maxLen) return raw;
   return `${raw.slice(0, Math.max(0, maxLen - 1))}…`;
 }
@@ -138,7 +140,7 @@ export function listSlowNavSections(session) {
   }));
 }
 
-export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } = {}) {
+export function renderSlowSidebar(session, { scopeText = "" } = {}) {
   if (!session?.slow) return;
 
   applySidebarOpenState(session);
@@ -163,7 +165,6 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
       const list = document.createElement("ul");
       list.className = "slow-sidebar-nav-list";
       for (const sec of sections) {
-        const page = charOffsetToPage(breakpoints, sec.startOffset) + 1;
         const li = document.createElement("li");
         const btn = document.createElement("button");
         btn.type = "button";
@@ -174,11 +175,7 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
         const titleEl = document.createElement("span");
         titleEl.className = "slow-sidebar-nav-title";
         titleEl.textContent = sec.title;
-        const pageEl = document.createElement("span");
-        pageEl.className = "slow-sidebar-nav-page";
-        pageEl.textContent = `p.${page}`;
         btn.appendChild(titleEl);
-        btn.appendChild(pageEl);
         btn.addEventListener("click", () => jumpToSection(session, sec.startOffset));
         li.appendChild(btn);
         list.appendChild(li);
@@ -210,14 +207,20 @@ export function renderSlowSidebar(session, { breakpoints = [], scopeText = "" } 
       const list = document.createElement("ul");
       list.className = "slow-sidebar-ann-list";
       for (const ann of items) {
-        const page = charOffsetToPage(breakpoints, ann.charStart) + 1;
         const li = document.createElement("li");
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "slow-sidebar-ann-item";
+        if (ann.orphaned) btn.classList.add("slow-sidebar-ann-item--orphaned");
         btn.dataset.annId = ann.id;
-        btn.title = annotationExcerpt(scopeText, ann, 200);
-        btn.innerHTML = `<span class="slow-sidebar-ann-symbol">${type}</span><span class="slow-sidebar-ann-excerpt">${annotationExcerpt(scopeText, ann)}</span><span class="slow-sidebar-ann-page">p.${page}</span>`;
+        btn.title = ann.orphaned
+          ? "Original text couldn't be located"
+          : annotationExcerpt(scopeText, ann, 200);
+        let locLabel = "";
+        if (ann.orphaned) locLabel = "orphaned";
+        else if (ann.anchor?.kind === "block-offset") locLabel = String(ann.anchor.blockId || "");
+        else if (ann.anchor?.kind === "pdf-rect") locLabel = `p.${Math.max(1, Number(ann.anchor.page) || 1)}`;
+        btn.innerHTML = `<span class="slow-sidebar-ann-symbol">${type}</span><span class="slow-sidebar-ann-excerpt">${annotationExcerpt(scopeText, ann)}</span><span class="slow-sidebar-ann-page">${locLabel}</span>`;
         btn.addEventListener("click", () => jumpToAnnotation(session, ann));
         li.appendChild(btn);
         list.appendChild(li);

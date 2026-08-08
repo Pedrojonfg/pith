@@ -845,7 +845,10 @@ export function normalizeFillableBlank(raw) {
   const out = {
     nodeId,
     userText: normalizeString(raw.userText || raw.text),
+    // deprecated viewport page — retained on read for legacy blanks only
     pageIndex: raw.pageIndex == null ? null : Math.max(0, Math.floor(Number(raw.pageIndex) || 0)),
+    pdfPage: raw.pdfPage == null ? null : Math.max(1, Math.floor(Number(raw.pdfPage) || 1)),
+    blockId: raw.blockId ? String(raw.blockId) : null,
   };
   const annotationId = normalizeString(raw.annotationId);
   if (annotationId) out.annotationId = annotationId;
@@ -879,7 +882,7 @@ export function ensurePhase0UserFields(phase0) {
  * Fill the next matching blank during Phase 1 (fillable map mode).
  * @returns {object | null} filled blank entry
  */
-export function fillBlankFromAnnotation(session, annotation, pageIndex) {
+export function fillBlankFromAnnotation(session, annotation, _legacyPageIndex) {
   const slow = session?.slow;
   if (!slow?.fillableMapMode || !slow.phase0?.fillableBlanks) return null;
   const userText = normalizeString(annotation?.userText);
@@ -912,7 +915,19 @@ export function fillBlankFromAnnotation(session, annotation, pageIndex) {
   if (!target) return null;
 
   target.userText = userText;
-  target.pageIndex = Math.max(0, Math.floor(Number(pageIndex) || 0));
+  // ponytail: position from annotation anchor (viewer-mode), not viewport pageIndex
+  target.pageIndex = null;
+  const kind = annotation?.anchor?.kind;
+  if (kind === "pdf-rect") {
+    target.pdfPage = Math.max(1, Math.floor(Number(annotation.anchor.page) || 1));
+    target.blockId = null;
+  } else if (kind === "block-offset") {
+    target.blockId = String(annotation.anchor.blockId || "") || null;
+    target.pdfPage = null;
+  } else {
+    target.pdfPage = null;
+    target.blockId = null;
+  }
   if (annotation?.id) target.annotationId = annotation.id;
   return target;
 }

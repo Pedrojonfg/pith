@@ -6,19 +6,29 @@ import {
   wrapPlainTextWithPedagogyMarks,
 } from "../pedagogy/concept-span-index.js";
 import { getPedagogicalFlags } from "../config/flags.js";
-import { els, showScreen } from "../ui.js?v=20260625_02";
-import { maybeScheduleCheckpoint, hideCheckpointChip } from "./checkpoints.js?v=20260625_02";
+import { els, showScreen, showInventoryStatusBanner } from "../ui.js?v=20260625_02";
+import {
+  attachScrollCheckpointObserver,
+  buildProportionalPdfPageCharEnds,
+  detachScrollCheckpointObserver,
+  findPdfPageForCharOffset,
+  hideCheckpointChip,
+  maybeSchedulePdfCheckpoint,
+  pageLengthsToCharEnds,
+  scalePdfPageCharEnds,
+} from "./checkpoints.js?v=20260625_02";
 import { matchConceptFindings } from "./gamification.js?v=20260625_02";
 import { fillBlankFromAnnotation } from "./phase0.js?v=20260625_02";
 import { askSlowReaderIA } from "./ai-context.js?v=20260625_02";
 import {
   ANNOTATION_TYPES,
-  annotationsOnPage,
   annotationHighlightClass,
   annotationMarkClass,
   buildAnnotationHighlightSegments,
+  collectBlockTextsFromRoot,
   createNestedHighlightSpans,
   pickPrimaryAnnotation,
+  repairScrollAnnotations,
   visibleAnnotationTypes,
   findAnnotationTypeByHotkey,
   addAnnotation,
@@ -32,18 +42,15 @@ import {
   updateAnnotation,
 } from "./annotations.js?v=20260625_02";
 import { extractWordAtOffset, getSortedSessionConcepts, lookupSessionTerm } from "../dictionary.js?v=20260625_02";
+import { assignBlockIdsToElement, splitTextIntoBlocks } from "./block-ids.js";
 import {
-  charOffsetToPage,
-  closestPageAfterRecompute,
-  computePageBreakpoints,
-  getPageCount,
-  getPageSlice,
-  invalidatePaginationCache,
-} from "./pagination.js?v=20260625_02";
-import { flattenHierarchy } from "../normalization/hierarchy.js?v=20260625_02";
-import { resolveScopedHierarchy } from "../normalization/scoped-hierarchy.js";
+  clientRectsToNormalizedPageRects,
+  extractPdfPageTextLengths,
+  goToPdfPage,
+  renderPdfViewer,
+} from "./pdf-reader.js";
+import { consumePdfLegacyDropNotice } from "./migrate-annotations.js";
 import { renderSlowMarkdownWithImages } from "../document-images/render.js";
-import { replacePithImageTokens } from "../document-images/replace-tokens.js";
 import {
   hideConceptPicker,
   renderSlowSidebar,
@@ -64,9 +71,13 @@ const SLOW_TYPO_DEFAULTS = {
 };
 
 let readerState = {
-  breakpoints: [],
-  contentHeightUsed: 0,
+  /** PDF 0-indexed page mirror of currentPdfPage (nav / toolbar). */
+  pageIndex: 0,
+  /** Cached cumulative char ends per PDF page for checkpoints (R-CP-2). */
+  pdfPageCharEnds: null,
   debounceTimer: null,
+  scrollDebounceTimer: null,
+  scrollListenerWired: false,
   pendingSelection: null,
   menuShowSecondary: false,
   noteDraft: null,
@@ -78,19 +89,97 @@ let readerState = {
   editDraft: null,
 };
 
+function isPdfViewer(session) {
+  return session?.slow?.viewerMode === "pdf";
+}
+
+/** 0-indexed page for toolbar/keyboard; PDF source of truth is currentPdfPage (1-indexed). */
+function getReaderPageIndex(session) {
+  if (!isPdfViewer(session)) return 0;
+  const page1 = Math.max(1, Number(session?.slow?.currentPdfPage) || 1);
+  readerState.pageIndex = page1 - 1;
+  return page1 - 1;
+}
+
+function setReaderPageIndex(session, idx) {
+  if (!isPdfViewer(session)) return;
+  const zero = Math.max(0, Math.floor(Number(idx) || 0));
+  readerState.pageIndex = zero;
+  goToPdfPage(session, zero + 1);
+}
+
+function getScrollContainer() {
+  return document.querySelector(".slow-reader-content");
+}
+
+function setScrollContentClass(enabled) {
+  const el = getScrollContainer();
+  if (!el) return;
+  el.classList.toggle("slow-reader-content--scroll", Boolean(enabled));
+}
+
+function fullDocSlice(session) {
+  const text = getSlowStudyText(session);
+  return { charStart: 0, charEnd: text.length };
+}
+
+function activePageSlice(session) {
+  if (!isPdfViewer(session)) return fullDocSlice(session);
+  // PDF text layer is page-local — not Slow page-fit breakpoints (FR-004).
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  const len = (pageEl?.textContent || "").length;
+  return { charStart: 0, charEnd: len };
+}
+
 /** Study text for Slow reader = resolved scoped markdown (no secondary slice window). */
 function getSlowStudyText(session) {
   return String(session?.slow?.normalizedTextFull || "");
 }
 
-/**
- * Section boundaries in scope-relative coordinates from mini-tree.
- * Falls back to slice.docHierarchy when shared gate fields are absent on the mode slice.
- */
-function resolveSlowHierarchyTree(session) {
-  const resolved = resolveScopedHierarchy(session);
-  if (resolved?.tree?.length) return resolved.tree;
-  return session?.docHierarchy?.tree || [];
+function onCheckpointAnswerRefresh() {
+  const s = stateSession();
+  if (!s?.slow) return;
+  const scopeText = getSlowStudyText(s);
+  renderSlowSidebar(s, { scopeText });
+  renderMarginMarks(s, fullDocSlice(s));
+}
+
+async function ensurePdfPageCharEnds(session) {
+  const pageCount = Math.max(1, Number(session?.slow?.pdfPageCount) || 1);
+  if (
+    Array.isArray(readerState.pdfPageCharEnds) &&
+    readerState.pdfPageCharEnds.length === pageCount
+  ) {
+    return readerState.pdfPageCharEnds;
+  }
+  const fullLen = getSlowStudyText(session).length;
+  try {
+    const lengths = await extractPdfPageTextLengths(session);
+    let ends = pageLengthsToCharEnds(lengths);
+    if (!ends.length) {
+      ends = buildProportionalPdfPageCharEnds(fullLen, pageCount);
+    } else {
+      ends = scalePdfPageCharEnds(ends, fullLen);
+    }
+    readerState.pdfPageCharEnds = ends;
+  } catch {
+    readerState.pdfPageCharEnds = buildProportionalPdfPageCharEnds(fullLen, pageCount);
+  }
+  return readerState.pdfPageCharEnds;
+}
+
+function setupScrollCheckpoints(session) {
+  detachScrollCheckpointObserver();
+  if (!session?.slow || isPdfViewer(session)) return;
+  const rootEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  const scrollRoot = getScrollContainer();
+  if (!rootEl || !scrollRoot) return;
+  attachScrollCheckpointObserver({
+    rootEl,
+    scrollRoot,
+    getSession: stateSession,
+    onAnswer: onCheckpointAnswerRefresh,
+  });
 }
 
 export function navigateSlowByPhase(session) {
@@ -125,97 +214,18 @@ function applyTypographyToPage(session) {
   pageEl.style.fontFamily = String(t.fontFamily || '"DM Sans", sans-serif');
 }
 
-function getReaderContentHeight() {
-  const content = document.querySelector(".slow-reader-content");
-  if (content && content.clientHeight > 50) return content.clientHeight;
-
-  const main = document.querySelector(".slow-reader-main");
-  const toolbar = document.querySelector(".slow-reader-toolbar");
-  if (main && toolbar) {
-    const style = window.getComputedStyle(main);
-    const padTop = parseFloat(style.paddingTop) || 0;
-    const padBottom = parseFloat(style.paddingBottom) || 0;
-    const gap = parseFloat(style.rowGap || style.gap) || 12;
-    return Math.max(100, main.clientHeight - toolbar.offsetHeight - padTop - padBottom - gap);
-  }
-
-  return Math.max(300, window.innerHeight - 160);
-}
-
-function buildPaginationMeasureContent(session, typography) {
-  const usesMd = usesMarkdownRender(session);
-  const images = session.shared?.images || [];
-  return (el, slice) => {
-    applyTypographyToMeasureEl(el, typography, usesMd);
-    if (usesMd) {
-      const html = images.length
-        ? markdownToHtml(replacePithImageTokens(slice, images, {}))
-        : markdownToHtml(slice);
-      el.innerHTML = html;
-    } else {
-      el.textContent = slice;
-    }
-  };
-}
-
-function applyTypographyToMeasureEl(el, typography, usesMd) {
-  const t = typography && typeof typography === "object" ? typography : {};
-  el.className = usesMd ? "slow-reader-page md-content" : "slow-reader-page";
-  el.style.fontSize = `${Number(t.fontSizePx) || SLOW_TYPO_DEFAULTS.fontSizePx}px`;
-  el.style.lineHeight = String(Number(t.lineHeight) || SLOW_TYPO_DEFAULTS.lineHeight);
-  el.style.fontFamily = String(t.fontFamily || SLOW_TYPO_DEFAULTS.fontFamily);
-  el.style.whiteSpace = usesMd ? "normal" : "pre-wrap";
-  el.style.wordBreak = "break-word";
-  el.style.width = "100%";
-  el.style.boxSizing = "border-box";
-}
-
-function buildReaderSectionBoundaries(session) {
-  const tree = resolveSlowHierarchyTree(session);
-  if (!tree.length) return [];
-  return flattenHierarchy(tree, 2).map((n) => ({
-    charStart: Math.max(0, Number(n.startOffset) || 0),
-    charEnd: Math.max(0, Number(n.endOffset) || 0),
-  }));
-}
-
-function recomputeBreakpoints(session) {
-  const scopeText = getSlowStudyText(session);
-  const container = els.slowReaderPage || document.getElementById("slowReaderPage");
-  if (!container) return [];
-  const oldBp = readerState.breakpoints;
-  const oldPage = Number(session?.slow?.currentPageIndex) || 0;
-  const usesMd = usesMarkdownRender(session);
-  const contentHeight = getReaderContentHeight();
-  readerState.contentHeightUsed = contentHeight;
-  const sectionBoundaries = buildReaderSectionBoundaries(session);
-  readerState.breakpoints = computePageBreakpoints(scopeText, container, session.slow.typography, {
-    availableHeight: contentHeight,
-    measureMode: usesMd ? "md" : "plain",
-    measureContent: buildPaginationMeasureContent(session, session.slow.typography),
-    sectionBoundaries,
-    sectionSnapSlack: sectionBoundaries.length ? 200 : 0,
-  });
-  if (oldBp.length && session?.slow) {
-    session.slow.currentPageIndex = closestPageAfterRecompute(oldBp, oldPage, readerState.breakpoints);
-  }
-  return readerState.breakpoints;
-}
-
-function updateMaxReadCharEnd(session) {
-  const bp = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
-  session.slow.maxReadCharEnd = Math.max(Number(session.slow.maxReadCharEnd) || 0, bp.charEnd);
-}
-
 function renderProgress(session) {
-  const total = getPageCount(readerState.breakpoints);
-  const idx = Number(session?.slow?.currentPageIndex) || 0;
   const indicator = document.getElementById("slowReaderPageIndicator");
-  if (indicator) {
-    if (!total) indicator.textContent = "—";
-    else if (total === 1) indicator.textContent = "1 página";
-    else indicator.textContent = `Página ${idx + 1} de ${total}`;
+  if (!indicator) return;
+  if (!isPdfViewer(session)) {
+    indicator.textContent = "Scroll";
+    return;
   }
+  const total = Math.max(0, Number(session?.slow?.pdfPageCount) || 0);
+  const page = Math.max(1, Number(session?.slow?.currentPdfPage) || 1);
+  if (!total) indicator.textContent = "—";
+  else if (total === 1) indicator.textContent = "1 page";
+  else indicator.textContent = `Page ${page} of ${total}`;
 }
 
 function renderTypographyLabels(session) {
@@ -232,7 +242,6 @@ function applyTypographyChange(session, changes) {
   if (!session?.slow) return;
   if (!session.slow.typography) session.slow.typography = { ...SLOW_TYPO_DEFAULTS };
   Object.assign(session.slow.typography, changes);
-  invalidatePaginationCache();
   clearTimeout(readerState.debounceTimer);
   readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(session), 150);
 }
@@ -440,9 +449,49 @@ function wrapLocalHighlightSegment(pageEl, slicePlain, segStart, segEnd, coverin
   domRange.insertNode(current);
 }
 
+function applyBlockOffsetHighlights(session, pageEl) {
+  const anns = (session.slow.annotations || []).filter(
+    (a) => !a.orphaned && a.anchor?.kind === "block-offset",
+  );
+  if (!anns.length) return;
+
+  const byBlock = new Map();
+  for (const ann of anns) {
+    const id = ann.anchor.blockId;
+    if (!byBlock.has(id)) byBlock.set(id, []);
+    byBlock.get(id).push({
+      ...ann,
+      charStart: ann.anchor.charStart,
+      charEnd: ann.anchor.charEnd,
+    });
+  }
+
+  for (const [blockId, blockAnns] of byBlock) {
+    const el = pageEl.querySelector(`[data-block-id="${CSS.escape(String(blockId))}"]`);
+    if (!el) continue;
+    const plain = el.textContent || "";
+    const slice = { charStart: 0, charEnd: plain.length };
+    const segments = buildAnnotationHighlightSegments(slice, plain, blockAnns);
+    const highlighted = segments.filter((s) => s.covering.length);
+    for (let i = highlighted.length - 1; i >= 0; i -= 1) {
+      const { segStart, segEnd, covering } = highlighted[i];
+      wrapLocalHighlightSegment(el, plain, segStart, segEnd, covering, session);
+    }
+  }
+}
+
 function applyInlineAnnotationHighlights(session, pageEl, pageSlice, slicePlain) {
   if (!pageEl || !session?.slow) return;
-  const segments = buildAnnotationHighlightSegments(pageSlice, slicePlain, session.slow.annotations);
+
+  const list = session.slow.annotations || [];
+  const hasBlockOffset = list.some((a) => a.anchor?.kind === "block-offset");
+  if (hasBlockOffset && !isPdfViewer(session)) {
+    repairScrollAnnotations(session, collectBlockTextsFromRoot(pageEl));
+    applyBlockOffsetHighlights(session, pageEl);
+    return;
+  }
+
+  const segments = buildAnnotationHighlightSegments(pageSlice, slicePlain, list);
   const highlighted = segments.filter((s) => s.covering.length);
   if (!highlighted.length) return;
 
@@ -637,7 +686,7 @@ function showDictionaryPopup({ term, definition, rect }) {
 async function handleWordLongPress(session, clientX, clientY) {
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   if (!pageEl || !session?.slow) return;
-  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
+  const slice = activePageSlice(session);
   const pageText = pageEl.textContent || "";
   const charOffset = charOffsetFromPoint(pageEl, clientX, clientY, slice);
   if (charOffset == null) return;
@@ -701,15 +750,53 @@ function renderMarginMarks(session, pageSlice) {
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
   if (!margin) return;
   margin.innerHTML = "";
-  const anns = annotationsOnPage(session.slow.annotations, pageSlice);
-  const pageHeight = pageEl?.clientHeight || margin.clientHeight || 400;
+
+  let anns;
+  if (!isPdfViewer(session)) {
+    // Scroll: place marks from block DOM when possible
+    anns = (session.slow.annotations || []).filter(
+      (a) => !a.orphaned && a.anchor?.kind === "block-offset",
+    );
+  } else {
+    const page = Math.floor(Number(session.slow.currentPdfPage) || 1);
+    anns = (session.slow.annotations || []).filter(
+      (a) => !a.orphaned && a.anchor?.kind === "pdf-rect" && Number(a.anchor.page) === page,
+    );
+  }
+  const pageHeight =
+    pageEl?.querySelector(".slow-pdf-page")?.clientHeight ||
+    pageEl?.clientHeight ||
+    margin.clientHeight ||
+    400;
 
   const slicePlain = pageEl?._slowSlicePlain || "";
   anns.forEach((a, index) => {
-    const charOffsetInPage = a.charStart - pageSlice.charStart;
-    let y = pageEl ? measureMarkY(pageEl, margin, charOffsetInPage, slicePlain) : null;
+    let y = null;
+    if (isPdfViewer(session) && a.anchor?.kind === "pdf-rect") {
+      // R-PDF-6: margin mark y from first normalized rect
+      const ry = Number(a.anchor.rects?.[0]?.y);
+      y = Number.isFinite(ry) ? ry * pageHeight : null;
+    } else if (!isPdfViewer(session) && a.anchor?.kind === "block-offset" && pageEl) {
+      const blockEl = pageEl.querySelector(
+        `[data-block-id="${CSS.escape(String(a.anchor.blockId))}"]`,
+      );
+      if (blockEl) {
+        const marginRect = margin.getBoundingClientRect();
+        const blockRect = blockEl.getBoundingClientRect();
+        const frac =
+          (Number(a.anchor.charStart) || 0) / Math.max(1, (blockEl.textContent || "").length);
+        y = blockRect.top - marginRect.top + frac * blockRect.height;
+      }
+    } else {
+      const aStart = Number(a.charStart ?? a.anchor?.charStart) || 0;
+      const charOffsetInPage = aStart - pageSlice.charStart;
+      y = pageEl ? measureMarkY(pageEl, margin, charOffsetInPage, slicePlain) : null;
+      if (y == null || !Number.isFinite(y)) {
+        y = computeMarkYFallback(aStart, pageSlice, pageHeight, index, anns.length);
+      }
+    }
     if (y == null || !Number.isFinite(y)) {
-      y = computeMarkYFallback(a.charStart, pageSlice, pageHeight, index, anns.length);
+      y = (index / Math.max(1, anns.length)) * Math.max(0, pageHeight - 16);
     }
 
     const mark = document.createElement("span");
@@ -743,11 +830,35 @@ function renderMarginMarks(session, pageSlice) {
 }
 
 export function getReadAnchor(session) {
-  const idx = Math.max(0, Number(session?.slow?.currentPageIndex) || 0);
-  const slice = getPageSlice(readerState.breakpoints, idx);
-  const charEnd = Math.max(Number(session?.slow?.maxReadCharEnd) || 0, slice.charEnd);
-  const charStart = Math.max(0, charEnd - 1);
-  return { charStart, charEnd: Math.max(charStart + 1, charEnd) };
+  if (!isPdfViewer(session)) {
+    const blockId = session?.slow?.scrollAnchorBlockId || "b0";
+    const charEnd = Math.max(1, Number(session?.slow?.maxReadCharEnd) || 1);
+    const charStart = Math.max(0, charEnd - 1);
+    // FR-011: read-head = scrollAnchorBlockId; anti-spoiler still maxReadCharEnd
+    return {
+      anchor: { kind: "block-offset", blockId, charStart: 0, charEnd: 1 },
+      snippet: blockId,
+      charStart,
+      charEnd: Math.max(charStart + 1, charEnd),
+    };
+  }
+  const page = Math.max(1, Number(session?.slow?.currentPdfPage) || 1);
+  const ends = readerState.pdfPageCharEnds;
+  const idx = page - 1;
+  let pageStart = 0;
+  let pageEnd = 0;
+  if (Array.isArray(ends) && ends.length) {
+    pageEnd = ends[Math.min(idx, ends.length - 1)] || 0;
+    pageStart = idx > 0 ? ends[idx - 1] || 0 : 0;
+  }
+  const charEnd = Math.max(Number(session?.slow?.maxReadCharEnd) || 0, pageEnd, pageStart + 1);
+  const charStart = Math.max(0, Math.min(pageStart, charEnd - 1));
+  return {
+    anchor: { kind: "pdf-rect", page, rects: [{ x: 0, y: 0, width: 1, height: 0.01 }] },
+    snippet: `p.${page}`,
+    charStart,
+    charEnd,
+  };
 }
 
 function ensureIAOverlay() {
@@ -894,7 +1005,6 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") 
     await storeActiveSession(session);
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
-      breakpoints: readerState.breakpoints,
       scopeText: getSlowStudyText(session),
     });
   } catch {
@@ -907,10 +1017,12 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") 
 
 async function requestSteelManForRange(session, offsets, userText = "") {
   if (!session?.slow || !offsets) return null;
-  const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "?");
+  const steelType = ANNOTATION_TYPES.find((t) => t.symbol === "⇑");
   if (!steelType) return null;
   const ann = await addAnnotation(session, {
     type: steelType.symbol,
+    anchor: offsets.anchor,
+    snippet: offsets.snippet || offsets.selectedText || "·",
     charStart: offsets.charStart,
     charEnd: offsets.charEnd,
     userText,
@@ -927,8 +1039,10 @@ function maybeShowSteelManNudge(session, ann) {
   showSteelManNudgeModal(session, ann, {
     onSteelMan: () => {
       void requestSteelManForRange(session, {
-        charStart: ann.charStart,
-        charEnd: ann.charEnd,
+        anchor: ann.anchor,
+        snippet: ann.snippet,
+        charStart: ann.charStart ?? ann.anchor?.charStart,
+        charEnd: ann.charEnd ?? ann.anchor?.charEnd,
       });
     },
   });
@@ -936,13 +1050,15 @@ function maybeShowSteelManNudge(session, ann) {
 
 async function handleSidebarIAQuery(session, queryText) {
   if (!session?.slow) return;
-  const savedPage = session.slow.currentPageIndex;
+  const savedPage = getReaderPageIndex(session);
   const anchor = getReadAnchor(session);
   showSlowIAOverlay({ query: queryText, loading: true });
   try {
     const reply = await askSlowReaderIA(session, queryText);
     await addIAQueryAnnotation(session, {
       userText: queryText,
+      anchor: anchor.anchor,
+      snippet: anchor.snippet || session.slow.scrollAnchorBlockId || "read-head",
       charStart: anchor.charStart,
       charEnd: anchor.charEnd,
       aiReply: reply,
@@ -950,7 +1066,6 @@ async function handleSidebarIAQuery(session, queryText) {
     await storeActiveSession(session);
     showSlowIAOverlay({ query: queryText, reply });
     renderSlowSidebar(session, {
-      breakpoints: readerState.breakpoints,
       scopeText: getSlowStudyText(session),
     });
   } catch {
@@ -959,28 +1074,69 @@ async function handleSidebarIAQuery(session, queryText) {
       reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
     });
   }
-  session.slow.currentPageIndex = savedPage;
-}
-
-export function getReaderBreakpoints() {
-  return readerState.breakpoints;
+  setReaderPageIndex(session, savedPage);
 }
 
 function navigateToAnnotation(session, annotation) {
   if (!session?.slow || !annotation) return;
-  const page = charOffsetToPage(readerState.breakpoints, annotation.charStart);
-  goToReaderPage(session, page);
-  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
-  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  if (annotation.orphaned) return; // no silent jump to dummy/wrong position
   const scopeText = getSlowStudyText(session);
-  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
-  highlightRange(pageEl, slice, annotation.charStart, annotation.charEnd, slicePlain);
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+
+  if (!isPdfViewer(session)) {
+    if (annotation.anchor?.kind === "block-offset" && pageEl) {
+      const blockEl = pageEl.querySelector(
+        `[data-block-id="${CSS.escape(String(annotation.anchor.blockId))}"]`,
+      );
+      if (blockEl) {
+        const plain = blockEl.textContent || "";
+        const slice = { charStart: 0, charEnd: plain.length };
+        highlightRange(
+          blockEl,
+          slice,
+          annotation.anchor.charStart,
+          annotation.anchor.charEnd,
+          plain,
+        );
+        blockEl.scrollIntoView({ block: "center", behavior: "smooth" });
+        return;
+      }
+    }
+    const slice = fullDocSlice(session);
+    const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+    const charStart = Number(annotation.charStart ?? annotation.anchor?.charStart) || 0;
+    const charEnd = Number(annotation.charEnd ?? annotation.anchor?.charEnd) || charStart;
+    highlightRange(pageEl, slice, charStart, charEnd, slicePlain);
+    pageEl?.querySelector(".slow-highlight-pulse")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
+
+  // PDF: jump to annotation page; overlays re-render with the page (no page-fit slices).
+  let page1 = Number(annotation.anchor?.page);
+  if (!Number.isFinite(page1) || page1 < 1) {
+    const off = Number(annotation.charStart ?? annotation.anchor?.charStart) || 0;
+    page1 = findPdfPageForCharOffset(readerState.pdfPageCharEnds || [], off);
+  }
+  goToReaderPage(session, page1 - 1);
 }
 
 function navigateToSection(session, startOffset) {
   if (!session?.slow) return;
-  const page = charOffsetToPage(readerState.breakpoints, startOffset);
-  goToReaderPage(session, page);
+  if (!isPdfViewer(session)) {
+    const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+    const container = getScrollContainer();
+    if (!pageEl || !container) return;
+    // Approximate: scroll by char ratio until T07 section heading IO.
+    const len = Math.max(1, getSlowStudyText(session).length);
+    const ratio = Math.max(0, Math.min(1, (Number(startOffset) || 0) / len));
+    container.scrollTop = ratio * Math.max(0, container.scrollHeight - container.clientHeight);
+    return;
+  }
+  void (async () => {
+    const ends = await ensurePdfPageCharEnds(session);
+    const page1 = findPdfPageForCharOffset(ends, startOffset);
+    goToReaderPage(session, page1 - 1);
+  })();
 }
 
 setAnnotationNavigator(navigateToAnnotation);
@@ -1073,16 +1229,106 @@ function applyPedagogyToSlicePlain(session, slicePlain, slice) {
   return wrapPlainTextWithPedagogyMarks(slicePlain, pageSpans, pageHighlights);
 }
 
-export async function renderSlowReaderPage(session, opts = {}) {
-  if (!session?.slow) return;
-  applyTypographyToPage(session);
-  recomputeBreakpoints(session);
-  const idx = Math.max(0, Number(session.slow.currentPageIndex) || 0);
-  const slice = getPageSlice(readerState.breakpoints, idx);
-  const scopeText = getSlowStudyText(session);
+function persistScrollAnchor(session) {
+  if (!session?.slow || isPdfViewer(session)) return;
+  const container = getScrollContainer();
   const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
-  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
+  if (!container || !pageEl) return;
+
+  const top = container.getBoundingClientRect().top;
+  const blocks = pageEl.querySelectorAll("[data-block-id]");
+  let chosen = null;
+  let chosenOffset = 0;
+
+  for (const el of blocks) {
+    const rect = el.getBoundingClientRect();
+    if (rect.bottom <= top) continue;
+    if (rect.top <= top + 1) {
+      chosen = el;
+      chosenOffset = rect.height > 0 ? Math.min(1, Math.max(0, (top - rect.top) / rect.height)) : 0;
+      break;
+    }
+    chosen = el;
+    chosenOffset = 0;
+    break;
+  }
+
+  if (chosen) {
+    session.slow.scrollAnchorBlockId = chosen.getAttribute("data-block-id");
+    session.slow.scrollAnchorOffset = chosenOffset;
+  }
+
+  const scopeLen = getSlowStudyText(session).length;
+  const denom = Math.max(1, container.scrollHeight);
+  const ratio = Math.min(1, (container.scrollTop + container.clientHeight) / denom);
+  session.slow.maxReadCharEnd = Math.max(
+    Number(session.slow.maxReadCharEnd) || 0,
+    Math.floor(ratio * scopeLen),
+  );
+}
+
+function restoreScrollAnchor(session) {
+  if (!session?.slow || isPdfViewer(session)) return;
+  const blockId = session.slow.scrollAnchorBlockId;
+  if (!blockId) return;
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  const container = getScrollContainer();
+  const el = pageEl?.querySelector(`[data-block-id="${CSS.escape(String(blockId))}"]`);
+  if (!el || !container) return;
+  const offset = Math.min(1, Math.max(0, Number(session.slow.scrollAnchorOffset) || 0));
+  const containerTop = container.getBoundingClientRect().top;
+  const elTop = el.getBoundingClientRect().top - containerTop + container.scrollTop;
+  container.scrollTop = elTop + offset * (el.offsetHeight || 0);
+}
+
+function wireScrollAnchorPersistence() {
+  const container = getScrollContainer();
+  if (!container || readerState.scrollListenerWired) return;
+  readerState.scrollListenerWired = true;
+  container.addEventListener(
+    "scroll",
+    () => {
+      clearTimeout(readerState.scrollDebounceTimer);
+      readerState.scrollDebounceTimer = setTimeout(async () => {
+        const s = stateSession();
+        if (!s?.slow || isPdfViewer(s)) return;
+        persistScrollAnchor(s);
+        await storeActiveSession(s);
+      }, 200);
+    },
+    { passive: true },
+  );
+}
+
+function renderPlainScrollBlocks(pageEl, pedagogyPlain, slicePlain) {
+  pageEl.classList.remove("md-content");
+  if (pedagogyPlain.includes("<span")) {
+    pageEl.innerHTML = pedagogyPlain;
+    assignBlockIdsToElement(pageEl);
+    return;
+  }
+  const blocks = splitTextIntoBlocks(slicePlain);
+  if (!blocks.length) {
+    pageEl.textContent = "";
+    return;
+  }
+  pageEl.textContent = "";
+  for (const b of blocks) {
+    const div = document.createElement("div");
+    div.setAttribute("data-block-id", b.blockId);
+    div.textContent = b.text;
+    pageEl.appendChild(div);
+  }
+}
+
+async function renderScrollViewer(session, opts = {}) {
+  setScrollContentClass(true);
+  const scopeText = getSlowStudyText(session);
+  const slice = fullDocSlice(session);
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  const slicePlain = scopeText;
   const pedagogyPlain = applyPedagogyToSlicePlain(session, slicePlain, slice);
+
   if (pageEl) {
     if (usesMarkdownRender(session)) {
       pageEl.classList.add("md-content");
@@ -1092,44 +1338,146 @@ export async function renderSlowReaderPage(session, opts = {}) {
       } else {
         pageEl.innerHTML = markdownToHtml(pedagogyPlain);
       }
+      assignBlockIdsToElement(pageEl);
       pageEl._slowSlicePlain = slicePlain;
     } else {
-      pageEl.classList.remove("md-content");
-      if (pedagogyPlain.includes("<span")) pageEl.innerHTML = pedagogyPlain;
-      else pageEl.textContent = pedagogyPlain;
+      renderPlainScrollBlocks(pageEl, pedagogyPlain, slicePlain);
       pageEl._slowSlicePlain = slicePlain;
     }
     applyInlineAnnotationHighlights(session, pageEl, slice, slicePlain);
   }
-  updateMaxReadCharEnd(session);
+
   renderProgress(session);
   renderTypographyLabels(session);
   renderMarginMarks(session, slice);
   renderFillableMapPanel(session);
-  renderSlowSidebar(session, { breakpoints: readerState.breakpoints, scopeText });
-  maybeScheduleCheckpoint(session, readerState.breakpoints, idx, () => renderSlowReaderPage(session));
-  await storeActiveSession(session);
-
-  if (!opts.skipLayoutRetry && isSlowReaderActive()) {
-    requestAnimationFrame(() => {
-      const h = getReaderContentHeight();
-      if (h > 50 && Math.abs(h - readerState.contentHeightUsed) > 4) {
-        renderSlowReaderPage(session, { skipLayoutRetry: true });
-      }
-    });
+  renderSlowSidebar(session, { scopeText });
+  wireScrollAnchorPersistence();
+  setupScrollCheckpoints(session);
+  if (!opts.skipScrollRestore) {
+    requestAnimationFrame(() => restoreScrollAnchor(session));
   }
+  await storeActiveSession(session);
+}
+
+export async function renderSlowReaderPage(session, opts = {}) {
+  if (!session?.slow) return;
+  applyTypographyToPage(session);
+
+  if (!isPdfViewer(session)) {
+    await renderScrollViewer(session, opts);
+    return;
+  }
+
+  // Native pdf.js viewer — do not call pagination measure APIs (FM-01 / FR-004).
+  detachScrollCheckpointObserver();
+  setScrollContentClass(false);
+  const pageEl = els.slowReaderPage || document.getElementById("slowReaderPage");
+  await renderPdfViewer(session, pageEl, opts);
+  const scopeText = getSlowStudyText(session);
+  const slice = { charStart: 0, charEnd: scopeText.length };
+  renderProgress(session);
+  renderTypographyLabels(session);
+  renderMarginMarks(session, slice);
+  renderFillableMapPanel(session);
+  renderSlowSidebar(session, { scopeText });
+  // Warm section→page map for R-CP-2 (cached).
+  void ensurePdfPageCharEnds(session);
+  await storeActiveSession(session);
 }
 
 export function goToReaderPage(session, pageIndex) {
-  const total = getPageCount(readerState.breakpoints);
+  if (!isPdfViewer(session)) {
+    const container = getScrollContainer();
+    if (!container) return;
+    const delta = Math.floor(Number(pageIndex) || 0) - getReaderPageIndex(session);
+    // Prev/next pass absolute indices; scroll by viewport when they differ.
+    const dir = delta === 0 ? 0 : delta > 0 ? 1 : -1;
+    if (dir !== 0) container.scrollBy({ top: dir * container.clientHeight * 0.9, behavior: "smooth" });
+    return;
+  }
+  const prevPage1 = Math.max(1, Number(session?.slow?.currentPdfPage) || 1);
+  const total = Math.max(0, Number(session?.slow?.pdfPageCount) || 0);
   const idx = Math.min(Math.max(0, Math.floor(Number(pageIndex) || 0)), Math.max(0, total - 1));
-  session.slow.currentPageIndex = idx;
+  const nextPage1 = idx + 1;
+  const advancing = nextPage1 > prevPage1;
+  setReaderPageIndex(session, idx);
   hideAnnotationMenu();
   hideAnnotationEditMenu();
   hideConceptPicker();
   hideCheckpointChip();
   readerState.pendingSelection = null;
-  renderSlowReaderPage(session);
+  void (async () => {
+    await renderSlowReaderPage(session);
+    if (!advancing) return;
+    const ends = await ensurePdfPageCharEnds(session);
+    maybeSchedulePdfCheckpoint(session, prevPage1, ends, onCheckpointAnswerRefresh);
+  })();
+}
+
+function selectionToBlockOffset(pageEl) {
+  const sel = window.getSelection?.();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
+  const range = sel.getRangeAt(0);
+  let node = range.commonAncestorContainer;
+  if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  const blockEl = node?.closest?.("[data-block-id]");
+  if (!blockEl || !pageEl.contains(blockEl)) return null;
+
+  const pre = range.cloneRange();
+  pre.selectNodeContents(blockEl);
+  pre.setEnd(range.startContainer, range.startOffset);
+  const localStart = pre.toString().length;
+  const selected = range.toString();
+  if (!selected.length) return null;
+  const blockId = blockEl.getAttribute("data-block-id");
+  return {
+    anchor: {
+      kind: "block-offset",
+      blockId,
+      charStart: localStart,
+      charEnd: localStart + selected.length,
+    },
+    snippet: selected,
+    selectedText: selected,
+    // ponytail: dual-write shim fields until T09
+    charStart: localStart,
+    charEnd: localStart + selected.length,
+    rect:
+      typeof range.getBoundingClientRect === "function"
+        ? range.getBoundingClientRect()
+        : { top: 0, bottom: 0, left: 0, width: 0, height: 0 },
+  };
+}
+
+/** PDF text-layer selection → pdf-rect + snippet (R-PDF-4). */
+function selectionToPdfRect(pageEl, session) {
+  const sel = window.getSelection?.();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
+  if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
+  const pageWrap = pageEl.querySelector(".slow-pdf-page");
+  if (!pageWrap || !pageWrap.contains(sel.anchorNode)) return null;
+
+  const range = sel.getRangeAt(0);
+  const snippet = range.toString();
+  if (!String(snippet).trim()) return null;
+
+  const pageBox = pageWrap.getBoundingClientRect();
+  const clientRects = typeof range.getClientRects === "function" ? range.getClientRects() : [];
+  const rects = clientRectsToNormalizedPageRects(clientRects, pageBox);
+  if (!rects.length) return null;
+
+  const page = Math.floor(Number(session?.slow?.currentPdfPage) || 1);
+  return {
+    anchor: { kind: "pdf-rect", page, rects },
+    snippet,
+    selectedText: snippet,
+    rect:
+      typeof range.getBoundingClientRect === "function"
+        ? range.getBoundingClientRect()
+        : { top: 0, bottom: 0, left: 0, width: 0, height: 0 },
+  };
 }
 
 function selectionToScopeOffsets(session) {
@@ -1137,25 +1485,11 @@ function selectionToScopeOffsets(session) {
   if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
   const pageEl = els.slowReaderPage;
   if (!pageEl || !pageEl.contains(sel.anchorNode)) return null;
-  const slice = getPageSlice(readerState.breakpoints, session.slow.currentPageIndex);
-  const scopeText = getSlowStudyText(session);
-  const slicePlain = scopeText.slice(slice.charStart, slice.charEnd);
-  if (usesMarkdownRender(session)) {
-    return selectionToScopeOffsetsFromRendered(pageEl, slice, slicePlain);
+
+  if (isPdfViewer(session)) {
+    return selectionToPdfRect(pageEl, session);
   }
-  const range = sel.getRangeAt(0);
-  const pre = range.cloneRange();
-  pre.selectNodeContents(pageEl);
-  pre.setEnd(range.startContainer, range.startOffset);
-  const startInPage = pre.toString().length;
-  const selected = range.toString().length;
-  if (selected <= 0) return null;
-  return {
-    charStart: slice.charStart + startInPage,
-    charEnd: slice.charStart + startInPage + selected,
-    selectedText: range.toString(),
-    rect: range.getBoundingClientRect(),
-  };
+  return selectionToBlockOffset(pageEl);
 }
 
 function isSlowReaderActive() {
@@ -1279,11 +1613,14 @@ function showAnnotationMenu(session, selection) {
 function beginAnnotationNote(session, typeDef) {
   if (!session?.slow || !readerState.pendingSelection || !typeDef) return;
   const menu = ensureAnnotationMenu();
+  const pending = readerState.pendingSelection;
   readerState.noteDraft = {
     type: typeDef.symbol,
     offsets: {
-      charStart: readerState.pendingSelection.charStart,
-      charEnd: readerState.pendingSelection.charEnd,
+      anchor: pending.anchor,
+      snippet: pending.snippet || pending.selectedText,
+      charStart: pending.charStart,
+      charEnd: pending.charEnd,
     },
   };
   menu.querySelector(".slow-annotation-types")?.setAttribute("hidden", "");
@@ -1311,6 +1648,8 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
   const anchorRect = readerState.pendingSelection?.rect;
   const ann = await addAnnotation(session, {
     type: typeDef.symbol,
+    anchor: offsets.anchor,
+    snippet: offsets.snippet || offsets.selectedText || readerState.pendingSelection?.selectedText,
     charStart: offsets.charStart,
     charEnd: offsets.charEnd,
     userText,
@@ -1322,7 +1661,7 @@ async function commitAnnotation(session, typeDef, offsets, userText) {
     const finding = matchConceptFindings(session, ann);
     if (finding?.revealedInPhase1) showFindingToast(finding.conceptTerm);
     if (session.slow.fillableMapMode) {
-      fillBlankFromAnnotation(session, ann, session.slow.currentPageIndex);
+      fillBlankFromAnnotation(session, ann, isPdfViewer(session) ? getReaderPageIndex(session) : null);
     }
     if (typeDef.symbol === "??" && userText) {
       addLiteratureGraphLink(session, ann.id, userText);
@@ -1433,8 +1772,16 @@ function onSlowReaderKeydown(e) {
   const inFormField = activeTag === "INPUT" || activeTag === "TEXTAREA";
 
   if (!inFormField && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
-    const idx = Number(session.slow.currentPageIndex) || 0;
     e.preventDefault();
+    if (!isPdfViewer(session)) {
+      const container = getScrollContainer();
+      if (container) {
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        container.scrollBy({ top: dir * container.clientHeight * 0.9, behavior: "smooth" });
+      }
+      return;
+    }
+    const idx = getReaderPageIndex(session);
     goToReaderPage(session, e.key === "ArrowLeft" ? idx - 1 : idx + 1);
     return;
   }
@@ -1463,6 +1810,14 @@ export async function initSlowReader(session) {
     session.slow.typography = { ...SLOW_TYPO_DEFAULTS };
   }
 
+  if (consumePdfLegacyDropNotice(session.slow)) {
+    showInventoryStatusBanner(
+      "We upgraded the reader; your PDF highlights on this document couldn't be carried over. Sorry.",
+      { id: "pdf-legacy-drop-notice" },
+    );
+    await storeActiveSession(session);
+  }
+
   document.getElementById("slowReaderLayout")?.classList.remove("focus-mode");
 
   renderSlowReaderPage(session);
@@ -1474,16 +1829,31 @@ export async function initSlowReader(session) {
   wired = true;
 
   els.slowReaderPrevBtn?.addEventListener("click", () => {
-    goToReaderPage(stateSession(), (stateSession()?.slow?.currentPageIndex || 0) - 1);
+    const s = stateSession();
+    if (!s?.slow) return;
+    if (!isPdfViewer(s)) {
+      const c = getScrollContainer();
+      if (c) c.scrollBy({ top: -c.clientHeight * 0.9, behavior: "smooth" });
+      return;
+    }
+    goToReaderPage(s, getReaderPageIndex(s) - 1);
   });
   els.slowReaderNextBtn?.addEventListener("click", () => {
-    goToReaderPage(stateSession(), (stateSession()?.slow?.currentPageIndex || 0) + 1);
+    const s = stateSession();
+    if (!s?.slow) return;
+    if (!isPdfViewer(s)) {
+      const c = getScrollContainer();
+      if (c) c.scrollBy({ top: c.clientHeight * 0.9, behavior: "smooth" });
+      return;
+    }
+    goToReaderPage(s, getReaderPageIndex(s) + 1);
   });
 
   els.slowReaderCompleteBtn?.addEventListener("click", async () => {
     const s = stateSession();
     if (!s?.slow) return;
     hideCheckpointChip();
+    detachScrollCheckpointObserver();
     s.slow.phase = "phase3";
     await storeActiveSession(s);
     // Phase 3 init is owned by the MutationObserver in study.js (sole path for
@@ -1522,8 +1892,14 @@ export async function initSlowReader(session) {
     const dx = (e.changedTouches?.[0]?.clientX || 0) - touchStartX;
     if (Math.abs(dx) < 40) return;
     const s = stateSession();
-    if (dx < 0) goToReaderPage(s, (s?.slow?.currentPageIndex || 0) + 1);
-    else goToReaderPage(s, (s?.slow?.currentPageIndex || 0) - 1);
+    if (!s?.slow) return;
+    if (!isPdfViewer(s)) {
+      const c = getScrollContainer();
+      if (c) c.scrollBy({ top: (dx < 0 ? 1 : -1) * c.clientHeight * 0.9, behavior: "smooth" });
+      return;
+    }
+    if (dx < 0) goToReaderPage(s, getReaderPageIndex(s) + 1);
+    else goToReaderPage(s, getReaderPageIndex(s) - 1);
   }, { passive: true });
   els.slowReaderPage?.addEventListener("touchcancel", () => {
     if (pageLongPressTimer) clearTimeout(pageLongPressTimer);
@@ -1565,7 +1941,15 @@ export async function initSlowReader(session) {
   window.addEventListener("resize", () => {
     const s = stateSession();
     if (!s?.slow || els.screenSlowReader?.getAttribute("aria-hidden") !== "false") return;
-    invalidatePaginationCache();
+    if (!isPdfViewer(s)) {
+      // Scroll mode: no page-fit recompute; keep anchor after layout shift.
+      clearTimeout(readerState.debounceTimer);
+      readerState.debounceTimer = setTimeout(() => {
+        persistScrollAnchor(s);
+        storeActiveSession(s);
+      }, 200);
+      return;
+    }
     clearTimeout(readerState.debounceTimer);
     readerState.debounceTimer = setTimeout(() => renderSlowReaderPage(s), 200);
   });
@@ -1586,6 +1970,4 @@ export {
   buildVisibleToSourceMap,
   sourceOffsetToVisible,
   selectionToScopeOffsetsFromRendered,
-  charOffsetToPage,
-  getPageSlice,
 };

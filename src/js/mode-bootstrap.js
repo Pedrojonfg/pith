@@ -303,6 +303,7 @@ export function buildModeSliceFromShared(doc, mode, options = {}) {
       ...common,
       textMetrics: doc.shared?.textMetrics || null,
       pedagogicalMeta,
+      pdfSource: doc.shared?.pdfSource || null,
     });
     slice.docHierarchy = scopedHierarchy;
     return slice;

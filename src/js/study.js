@@ -481,6 +481,39 @@ function resetPreparationForFreshRun(doc) {
   doc.shared.modeRecommendation = null;
 }
 
+/**
+ * Persist shared.pdfSource while the original File is still available.
+ * Document-level property — independent of which mode the user opens first.
+ * @param {string} docId
+ * @param {{ arrayBuffer?: () => Promise<ArrayBuffer> } | null | undefined} file
+ * @param {string} [originalFormat]
+ */
+export async function persistSharedPdfSourceFromFile(docId, file, originalFormat) {
+  if (!docId) return;
+  if (String(originalFormat || "").toLowerCase() !== "pdf") return;
+  if (typeof file?.arrayBuffer !== "function") return;
+  try {
+    const { stashPdfSourceOntoShared } = await import("./slow/pdf-reader.js");
+    const fresh = (await getSession(docId)) || null;
+    if (!fresh) return;
+    if (!fresh.shared) fresh.shared = {};
+    const wrote = await stashPdfSourceOntoShared(fresh.shared, file, originalFormat);
+    if (wrote) {
+      // Keep existing Slow slice in sync when re-stashing on a resumed PDF session.
+      const slowSlice = fresh.modes?.slow?.slow;
+      if (slowSlice && (slowSlice.viewerMode === "pdf" || !slowSlice.viewerMode)) {
+        if (String(originalFormat || "").toLowerCase() === "pdf") {
+          slowSlice.pdfSource = fresh.shared.pdfSource;
+          if (!slowSlice.viewerMode) slowSlice.viewerMode = "pdf";
+        }
+      }
+      await saveDocumentSession(fresh);
+    }
+  } catch (err) {
+    console.warn("[study] Failed to stash pdfSource:", err?.message || err);
+  }
+}
+
 export async function ensureDocumentSessionForUpload(markdown, options = {}) {
   const text = String(markdown || "");
   const docId = await computeDocId(text);
@@ -2117,6 +2150,7 @@ export async function recommendFlowFromUploadedFile(file) {
     originalFormat: String(originalFormat || ""),
     uploadedAt: new Date().toISOString(),
   });
+  await persistSharedPdfSourceFromFile(doc.docId, file, originalFormat);
   state.lastCleanedMaterialText = cleanedText;
   state.lastCleanedMaterialWordCount = countWords(cleanedText);
   state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
@@ -2285,6 +2319,7 @@ export function createSlowSession({
   language,
   textMetrics = null,
   pedagogicalMeta = null,
+  pdfSource = null,
 } = {}) {
   const lang = String(language || getStudyLanguage()).trim() || "English";
   const text = String(normalizedText || "");
@@ -2308,34 +2343,48 @@ export function createSlowSession({
       originalFormat: String(originalFormat || "").trim(),
       uploadedAt: new Date().toISOString(),
     },
-    slow: {
-      normalizedTextFull: text,
-      normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
-      phase: "phase0",
-      criticalMode: Boolean(modifiers.criticalMode),
-      fillableMapMode: Boolean(modifiers.fillableMap),
-      checkpointsEnabled: Boolean(modifiers.checkpoints),
-      phase0SeenKey: null,
-      phase0SeenReread: false,
-      phase0Collapsed: false,
-      phase0: null,
-      phase0Status: "idle",
-      currentPageIndex: 0,
-      maxReadCharEnd: 0,
-      typography: { fontSizePx: 15, lineHeight: 1.4, fontFamily: '"DM Sans", sans-serif' },
-      annotations: [],
-      findings: [],
-      checkpointsDismissed: [],
-      depthScore: null,
-      graphEnrichedUnlocked: false,
-      graphNodes: [],
-      sidebarOpen: true,
-      headingOverrides: [],
-      structureWarnings: [],
-      fallbackSections: null,
-      scopeEditMode: false,
-      scopeCollapsedParents: {},
-    },
+    slow: (() => {
+      // ponytail: one-shot viewerMode from upload format (immutable for session life)
+      const viewerMode = String(originalFormat || "").trim().toLowerCase() === "pdf" ? "pdf" : "scroll";
+      const base = {
+        normalizedTextFull: text,
+        normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
+        phase: "phase0",
+        viewerMode,
+        annotationSchemaVersion: 2,
+        criticalMode: Boolean(modifiers.criticalMode),
+        fillableMapMode: Boolean(modifiers.fillableMap),
+        checkpointsEnabled: Boolean(modifiers.checkpoints),
+        phase0SeenKey: null,
+        phase0SeenReread: false,
+        phase0Collapsed: false,
+        phase0: null,
+        phase0Status: "idle",
+        typography: { fontSizePx: 15, lineHeight: 1.4, fontFamily: '"DM Sans", sans-serif' },
+        annotations: [],
+        findings: [],
+        checkpointsDismissed: [],
+        depthScore: null,
+        graphEnrichedUnlocked: false,
+        graphNodes: [],
+        sidebarOpen: true,
+      };
+      if (viewerMode === "pdf") {
+        return {
+          ...base,
+          currentPdfPage: 1,
+          pdfPageCount: 0,
+          maxReadPdfPage: 1,
+          pdfSource: pdfSource && typeof pdfSource === "object" ? pdfSource : null,
+        };
+      }
+      return {
+        ...base,
+        scrollAnchorBlockId: null,
+        scrollAnchorOffset: 0,
+        maxReadCharEnd: 0,
+      };
+    })(),
   };
 }
 
@@ -3131,6 +3180,17 @@ async function processCreateSessionStagedUpload(title) {
       files: result.files,
       sourceMap: result.sourceMap,
     });
+    // First PDF among staged files owns shared.pdfSource for native Slow viewer.
+    const pdfIdx = result.files.findIndex(
+      (f) => String(f?.originalFormat || "").toLowerCase() === "pdf",
+    );
+    if (pdfIdx >= 0) {
+      await persistSharedPdfSourceFromFile(
+        doc.docId,
+        files[pdfIdx],
+        result.files[pdfIdx].originalFormat,
+      );
+    }
     doc.shared.docMeta = {
       ...(doc.shared.docMeta || {}),
       titleInferred: title,
@@ -3428,11 +3488,14 @@ async function handleIngestOnlyFileSelected() {
       alert("File appears to be empty.");
       return;
     }
-    await runIngestOnlyPipeline({
+    const ingested = await runIngestOnlyPipeline({
       cleanedText: material.cleanedText,
       fileName: file.name,
       originalFormat: material.originalFormat,
     });
+    if (ingested?.docId) {
+      await persistSharedPdfSourceFromFile(ingested.docId, file, material.originalFormat);
+    }
     if (els.ingestOnlyFileInput) els.ingestOnlyFileInput.value = "";
     enterDocLibraryScreen();
   } catch (err) {
@@ -4578,6 +4641,11 @@ function showModeResumeOrUpload(mode) {
 }
 
 async function resumeSlowSession(session) {
+  // Hydrate pdfSource from shared if upload-time stash landed after Slow slice was created.
+  const doc = await getActiveSession();
+  if (session?.slow && !session.slow.pdfSource && doc?.shared?.pdfSource) {
+    session.slow.pdfSource = doc.shared.pdfSource;
+  }
   if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;
   state.studyMode = "slow";
@@ -10239,6 +10307,12 @@ export async function wireStudyHandlers() {
           pendingImages,
           structureHeadings,
         });
+        await setUploadMeta(doc.docId, {
+          fileName: String(file.name || ""),
+          originalFormat: String(originalFormat || ""),
+          uploadedAt: new Date().toISOString(),
+        });
+        await persistSharedPdfSourceFromFile(doc.docId, file, originalFormat);
         await computeAndPersistModeRecommendation(doc, cleanedText, null);
         const sessionObj = createClozeSession({
           normalizedText: cleanedText,
@@ -10300,6 +10374,8 @@ export async function wireStudyHandlers() {
           originalFormat: String(originalFormat || ""),
           uploadedAt: new Date().toISOString(),
         });
+        // R2b: no binary IndexedDB for originals — stash base64 on shared while File is available.
+        await persistSharedPdfSourceFromFile(doc.docId, file, originalFormat);
         state.lastCleanedMaterialText = cleanedText;
         state.lastCleanedMaterialWordCount = countWords(cleanedText);
         state.lastUploadedFileNames = [String(file.name || "")].filter(Boolean);
@@ -10390,7 +10466,8 @@ export async function wireStudyHandlers() {
     els.generateBlocksStatus.textContent = getLlmCallingLabel(llmModel);
 
     try {
-      const { file, cleanedText, wordCount, pendingImages, structureHeadings } = resolvedRsvp;
+      const { file, cleanedText, wordCount, pendingImages, structureHeadings, originalFormat } =
+        resolvedRsvp;
       if (!bootstrapRsvp) {
         state.lastCleanedMaterialText = cleanedText;
         state.lastCleanedMaterialWordCount = wordCount;
@@ -10407,6 +10484,7 @@ export async function wireStudyHandlers() {
         pendingImages,
         structureHeadings,
       });
+      await persistSharedPdfSourceFromFile(doc.docId, file, originalFormat);
       await computeAndPersistModeRecommendation(doc, cleanedText, null);
 
       const fingerprint = buildBlockSplitFingerprint({
