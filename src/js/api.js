@@ -698,15 +698,6 @@ export async function deepSeekSocraticTutor({
   scopeContext = "",
   studentIntent = null,
 }) {
-  // [debug-enrich]
-  console.info('[api.deepSeekSocraticTutor] Starting tutor call:', {
-    blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
-    questionLen: question ? String(question).length : 0,
-    answerLen: studentAnswer ? String(studentAnswer).length : 0,
-    hasScopedMarkdown: Boolean(scopedMarkdown),
-    hasBackgroundMarkdown: Boolean(backgroundMarkdown),
-    hasScopeContext: Boolean(scopeContext),
-  });
   // R14: generative DPP contracts stay scoped-only; dual-context is chat-only.
   let scopeBlock = "";
   if (scopedMarkdown && backgroundMarkdown) {
@@ -751,20 +742,8 @@ Be concise overall. Respond in the same language as the question and student ans
       ],
       temperature: 0.6,
     });
-    // [debug-enrich]
-    console.info('[api.deepSeekSocraticTutor] Tutor reply received:', {
-      replyLen: result ? String(result).length : 0,
-      hasCritique: typeof result === "string" && /critique/i.test(result),
-      hasSuggested: typeof result === "string" && /suggested answer/i.test(result),
-    });
     return result;
   } catch (err) {
-    // [debug-enrich]
-    console.error('[api.deepSeekSocraticTutor] Tutor call failed:', {
-      blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
-      message: err?.message ?? String(err),
-      status: err?.status ?? null,
-    });
     throw err;
   }
 }
@@ -1149,31 +1128,17 @@ ${boundaryContextsJson}`;
 export async function refineCharFallbackBoundaries(rawMarkdown, mechanicalChunks, splitOpts = {}) {
   const material = String(rawMarkdown || "");
   const chunks = Array.isArray(mechanicalChunks) ? mechanicalChunks : [];
-  // [debug-enrich]
-  console.debug("[api.refineCharFallbackBoundaries] Entry:", {
-    materialLen: material.length,
-    chunkCount: chunks.length,
-    llmModel: splitOpts.llmModel ?? null,
-  });
   if (chunks.length < 2 || material.length < 50000) {
-    // [debug-enrich]
-    console.debug("[api.refineCharFallbackBoundaries] Skip — below threshold");
     return chunks;
   }
 
   const model = resolveLlmModelArg(splitOpts.llmModel);
   if (!model) {
-    // [debug-enrich]
-    console.warn("[api.refineCharFallbackBoundaries] Skip — no LLM model");
     return chunks;
   }
 
   const baseOffsets = mechanicalCharFallbackOffsets(material.length);
   if (baseOffsets.length < 3) {
-    // [debug-enrich]
-    console.debug("[api.refineCharFallbackBoundaries] Skip — insufficient offsets:", {
-      offsetCount: baseOffsets.length,
-    });
     return chunks;
   }
 
@@ -1292,12 +1257,6 @@ export function looksLikeTruncatedModelJson(text) {
 }
 
 async function callLlmSplit({ llmModel, messages, useJsonObjectMode, max_tokens }) {
-  console.debug("[api.callLlmSplit] Request:", {
-    llmModel,
-    messageCount: messages?.length || 0,
-    useJsonObjectMode: Boolean(useJsonObjectMode),
-    max_tokens: max_tokens ?? null,
-  }); // [debug-enrich]
   const content = await llmChatCompletions({
     llmModel,
     messages,
@@ -1305,11 +1264,6 @@ async function callLlmSplit({ llmModel, messages, useJsonObjectMode, max_tokens 
     max_tokens,
     response_format: useJsonObjectMode ? { type: "json_object" } : undefined,
   });
-  console.debug("[api.callLlmSplit] Response:", {
-    llmModel,
-    charLength: String(content || "").length,
-    truncated: looksLikeTruncatedModelJson(content),
-  }); // [debug-enrich]
   return content;
 }
 
@@ -1327,14 +1281,6 @@ export async function deepSeekSplitIntoBlocks({
   const notes = String(studyNotes || "").trim();
   const material = String(materialText || "").trim();
 
-  // [debug-enrich]
-  console.info("[api.deepSeekSplitIntoBlocks] Start:", {
-    nBlocks: n,
-    materialLen: material.length,
-    hasStudyNotes: Boolean(notes),
-    language: lang,
-    llmModel: model,
-  });
 
   function buildMessages(compact) {
     const messages = [{ role: "system", content: buildSplitBlocksPrompt(n, lang, { compact }) }];
@@ -1361,12 +1307,6 @@ export async function deepSeekSplitIntoBlocks({
   for (let attemptIdx = 0; attemptIdx < attempts.length; attemptIdx += 1) {
     const attempt = attempts[attemptIdx];
     try {
-      // [debug-enrich]
-      console.debug("[api.deepSeekSplitIntoBlocks] Attempt:", {
-        attempt: attemptIdx + 1,
-        compact: attempt.compact,
-        useJsonObjectMode: attempt.useJsonObjectMode,
-      });
       lastRaw = await callLlmSplit({
         llmModel: model,
         messages: buildMessages(attempt.compact),
@@ -1374,35 +1314,22 @@ export async function deepSeekSplitIntoBlocks({
       });
     } catch (err) {
       if (attempt.useJsonObjectMode && (err?.status === 400 || /response_format/i.test(String(err?.message)))) {
-        // [debug-enrich]
-        console.warn("[api.deepSeekSplitIntoBlocks] JSON mode failed — retry without:", err?.message || err);
         lastRaw = await callLlmSplit({
           llmModel: model,
           messages: buildMessages(attempt.compact),
           useJsonObjectMode: false,
         });
       } else {
-        // [debug-enrich]
-        console.error("[api.deepSeekSplitIntoBlocks] LLM call failed:", err?.message || err);
         throw err;
       }
     }
 
     const blocks = parseBlockIndexFromModelResponse(lastRaw);
     if (Array.isArray(blocks) && blocks.length) {
-      // [debug-enrich]
-      console.info("[api.deepSeekSplitIntoBlocks] Done:", { blockCount: blocks.length, attempt: attemptIdx + 1 });
       return blocks;
     }
-    // [debug-enrich]
-    console.warn("[api.deepSeekSplitIntoBlocks] Parse failed — next attempt:", {
-      attempt: attemptIdx + 1,
-      rawPreview: lastRaw.slice(0, 400),
-    });
   }
 
-  // [debug-enrich]
-  console.error("[api.deepSeekSplitIntoBlocks] All attempts failed:", { rawPreview: lastRaw.slice(0, 800) });
   throw new Error(
     "Model returned blocks JSON we could not parse. Please try generating blocks again.",
   );
@@ -1555,14 +1482,6 @@ export async function callConceptInventoryLlm({
 
   let lastRaw = "";
   for (const attempt of attempts) {
-    console.debug("[api.callConceptInventoryLlm] Attempt:", {
-      compact: attempt.compact,
-      terse: attempt.terse,
-      useJsonObjectMode: attempt.useJsonObjectMode,
-      max_tokens,
-      chunkLabel: chunkLabel || null,
-      estimatedConceptTarget,
-    }); // [debug-enrich]
     try {
       lastRaw = await callLlmSplit({
         llmModel: model,
@@ -1585,29 +1504,13 @@ export async function callConceptInventoryLlm({
 
     const concepts = parseConceptInventoryFromModelResponse(lastRaw);
     if (Array.isArray(concepts) && concepts.length) {
-      console.info("[api.callConceptInventoryLlm] Parsed:", {
-        conceptCount: concepts.length,
-        inventoryMode: attempt.terse ? "terse" : "full",
-        responseChars: lastRaw.length,
-      }); // [debug-enrich]
       return {
         concepts,
         inventoryMode: attempt.terse ? "terse" : "full",
       };
     }
-    console.warn("[api.callConceptInventoryLlm] Parse failed, next attempt:", {
-      attempt: { compact: attempt.compact, terse: attempt.terse, useJsonObjectMode: attempt.useJsonObjectMode },
-      responseChars: lastRaw.length,
-      truncated: looksLikeTruncatedModelJson(lastRaw),
-      tail: lastRaw.slice(-120),
-    }); // [debug-enrich]
   }
 
-  console.error("[api.callConceptInventoryLlm] All attempts failed:", {
-    responseChars: lastRaw.length,
-    truncated: looksLikeTruncatedModelJson(lastRaw),
-    tail: lastRaw.slice(-200),
-  }); // [debug-enrich]
   throwConceptInventoryParseError(lastRaw);
 }
 
@@ -2784,20 +2687,7 @@ export async function deepSeekPackConceptsToBlocks({
 
   let lastRaw = "";
   let lastTruncated = false;
-  console.info("[api.deepSeekPackConceptsToBlocks] Start:", {
-    nBlocks: n,
-    inventorySize: Array.isArray(inventory) ? inventory.length : 0,
-    inventoryJsonChars: inventoryJson.length,
-    hasKnowledgeProfile: Boolean(profile),
-    hasVaultContext: Boolean(vaultContextBlock),
-  }); // [debug-enrich]
   for (const attempt of attempts) {
-    console.debug("[api.deepSeekPackConceptsToBlocks] Attempt:", {
-      compact: attempt.compact,
-      terse: attempt.terse,
-      useJsonObjectMode: attempt.useJsonObjectMode,
-      max_tokens: CONCEPT_PACK_MAX_TOKENS,
-    }); // [debug-enrich]
     const splitOpts = {
       llmModel: model,
       messages: buildMessages(attempt.compact, attempt.terse),
@@ -2817,25 +2707,10 @@ export async function deepSeekPackConceptsToBlocks({
     lastTruncated = looksLikeTruncatedModelJson(lastRaw);
     const packed = parseConceptPackFromModelResponse(lastRaw, { targetN: n });
     if (packed?.blocks?.length) {
-      console.info("[api.deepSeekPackConceptsToBlocks] Parsed:", {
-        blockCount: packed.blocks.length,
-        responseChars: lastRaw.length,
-        truncated: lastTruncated,
-      }); // [debug-enrich]
       return packed;
     }
-    console.warn("[api.deepSeekPackConceptsToBlocks] Parse failed, next attempt:", {
-      responseChars: lastRaw.length,
-      truncated: lastTruncated,
-      tail: lastRaw.slice(-120),
-    }); // [debug-enrich]
   }
 
-  console.error("[api.deepSeekPackConceptsToBlocks] All attempts failed:", {
-    responseChars: lastRaw.length,
-    truncated: lastTruncated,
-    tail: lastRaw.slice(-200),
-  }); // [debug-enrich]
   if (lastTruncated) {
     throw new Error(
       "Model response was cut off before finishing the block pack. Try again, or lower the block count slightly.",
@@ -2849,12 +2724,6 @@ export async function deepSeekPackConceptsToBlocks({
 export async function deepSeekAuditBlockIndex({ llmModel, apiKey: _legacyApiKey, blockIndexJson, language }) {
   const model = resolveLlmModelArg(llmModel);
   const indexJson = String(blockIndexJson || "[]");
-  // [debug-enrich]
-  console.info("[api.deepSeekAuditBlockIndex] Start:", {
-    llmModel: model,
-    language: language ?? null,
-    indexJsonLen: indexJson.length,
-  });
   const systemPrompt = `You are auditing a study session block index for conceptual overlap.
 
 Here is the block index (id, title, summary, signature):
@@ -2892,8 +2761,6 @@ Respond ONLY with valid JSON.`
     temperature: 0.1,
     max_tokens: 2000,
   });
-  // [debug-enrich]
-  console.info("[api.deepSeekAuditBlockIndex] Done:", { responseLen: String(raw || "").length });
   return raw;
 }
 
@@ -3019,15 +2886,6 @@ export async function deepSeekAuditBlockOverlap({
   language,
 }) {
   const model = resolveLlmModelArg(llmModel);
-  const priors = Array.isArray(priorBlocks) ? priorBlocks : [];
-  // [debug-enrich]
-  console.info("[api.deepSeekAuditBlockOverlap] Start:", {
-    llmModel: model,
-    blockTitle: blockTitle ?? null,
-    priorBlockCount: priors.length,
-    candidateLen: String(candidateExplanation || "").length,
-    language: language ?? null,
-  });
   const systemPrompt = buildOverlapAuditPrompt({
     blockTitle,
     candidateExplanation,
@@ -3049,29 +2907,13 @@ export async function deepSeekAuditBlockOverlap({
     raw = await request(true);
   } catch (err) {
     if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
-      // [debug-enrich]
-      console.warn("[api.deepSeekAuditBlockOverlap] JSON mode failed — retry without:", err?.message || err);
       raw = await request(false);
     } else {
-      // [debug-enrich]
-      console.error("[api.deepSeekAuditBlockOverlap] LLM failed:", err?.message || err);
       throw err;
     }
   }
 
   const result = parseOverlapAuditFromModelResponse(raw);
-  if (!result) {
-    // [debug-enrich]
-    console.warn("[api.deepSeekAuditBlockOverlap] Parse failed — treating as pass:", {
-      rawPreview: String(raw || "").slice(0, 400),
-    });
-  } else {
-    // [debug-enrich]
-    console.info("[api.deepSeekAuditBlockOverlap] Done:", {
-      overlapDetected: result?.overlap_detected ?? null,
-      action: result?.action ?? null,
-    });
-  }
   return result;
 }
 
@@ -3784,16 +3626,6 @@ export async function deepSeekRegenerateBlockQuestions({
   prevBlockSummaryForConnection = "",
   userExtra = "",
 }) {
-  // [debug-enrich]
-  console.debug('[api.deepSeekRegenerateBlockQuestions] Entry:', {
-    blockIndex,
-    blockTitle: blockTitle ?? null,
-    n_test,
-    n_socratic,
-    include_connection_questions,
-    explanationLen: String(explanation || "").length,
-    materialLen: String(materialText || "").length,
-  });
   const manifestSlice = Array.isArray(coverageManifest) ? coverageManifest.slice(-20) : [];
   const systemPrompt =
     buildQuestionsOnlySystemPrompt({
@@ -3830,39 +3662,14 @@ export async function deepSeekRegenerateBlockQuestions({
 
   const obj = parseModelJsonObject(raw);
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
-    // [debug-enrich]
-    console.warn('[api.deepSeekRegenerateBlockQuestions] Invalid JSON:', {
-      blockIndex,
-      rawPreview: String(raw || "").slice(0, 120),
-    });
     throw new Error("Model did not return valid JSON for questions. Please try again.");
   }
   if (Object.prototype.hasOwnProperty.call(obj, "explanation")) {
-    // [debug-enrich]
-    console.warn('[api.deepSeekRegenerateBlockQuestions] Forbidden explanation field — ignoring');
     delete obj.explanation;
   }
   if (Object.prototype.hasOwnProperty.call(obj, "title")) {
     delete obj.title;
   }
-  const qCount = Array.isArray(obj.questions) ? obj.questions.length : 0;
-  const expected = Math.max(0, Math.round(Number(n_test) || 0)) + Math.max(0, Math.round(Number(n_socratic) || 0));
-  if (expected > 0 && qCount !== expected) {
-    // [debug-enrich]
-    console.warn('[api.deepSeekRegenerateBlockQuestions] Question count mismatch:', {
-      blockIndex,
-      expected,
-      actual: qCount,
-      n_test,
-      n_socratic,
-    });
-  }
-  // [debug-enrich]
-  console.info('[api.deepSeekRegenerateBlockQuestions] Done:', {
-    blockIndex,
-    questionCount: qCount,
-    conceptCount: Array.isArray(obj.concepts) ? obj.concepts.length : 0,
-  });
   return obj;
 }
 
@@ -3920,17 +3727,6 @@ export async function deepSeekGenerateBlockExplanation({
   sectionHasImages = false,
   studentIntent = null,
 }) {
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockExplanation] Start:', {
-    blockIndex,
-    blockTitle: blockTitle ?? null,
-    language: language ?? null,
-    explanation_profile,
-    strictMode,
-    materialLen: String(materialText || "").length,
-    conceptIdCount: Array.isArray(conceptIds) ? conceptIds.length : 0,
-    sectionHasImages: Boolean(sectionHasImages),
-  });
   let vaultHint = "";
   const sessionForVault =
     vaultSession ||
@@ -3943,9 +3739,7 @@ export async function deepSeekGenerateBlockExplanation({
         "./vault/prompt-injection.js"
       );
       vaultHint = buildBlockVaultHint(conceptIds, getVaultContextForDoc(sessionForVault));
-    } catch (err) {
-      // [debug-enrich]
-      console.warn('[api.deepSeekGenerateBlockExplanation] Vault hint failed:', err?.message || err);
+    } catch {
       vaultHint = "";
     }
   }
@@ -4012,12 +3806,6 @@ export async function deepSeekGenerateBlockExplanation({
   };
 
   const callLlm = async (userExtra = "") => {
-    // [debug-enrich]
-    console.debug('[api.deepSeekGenerateBlockExplanation] LLM call:', {
-      blockIndex,
-      retryExtra: Boolean(userExtra),
-      extraPreview: userExtra ? String(userExtra).slice(0, 80) : null,
-    });
     const raw = await llmChatCompletions({
       llmModel: resolveLlmModelArg(llmModel),
       response_format: { type: "json_object" },
@@ -4033,8 +3821,6 @@ export async function deepSeekGenerateBlockExplanation({
   let blockObj = await callLlm();
   if (!hasValidExplanationParagraphs(blockObj.explanation, paragraphOpts)) {
     const min = getMinExplanationParagraphs(paragraphOpts);
-    // [debug-enrich]
-    console.warn('[api.deepSeekGenerateBlockExplanation] Paragraph retry:', { blockIndex, min });
     blockObj = await callLlm(
       `\n\nRETRY REQUIRED: The explanation field MUST contain at least ${min} distinct paragraphs separated by blank lines.`,
     );
@@ -4053,12 +3839,6 @@ export async function deepSeekGenerateBlockExplanation({
   };
   let validation = validateBlockFidelity(fidelityMeta);
   if (!validation.ok && validation.action === "retry") {
-    // [debug-enrich]
-    console.warn('[api.deepSeekGenerateBlockExplanation] Fidelity retry:', {
-      blockIndex,
-      uncoveredClaims: validation.uncoveredClaims?.length ?? 0,
-      unsupportedTerms: validation.unsupported_terms?.length ?? 0,
-    });
     if (validation.uncoveredClaims?.length) {
       const phrases = validation.uncoveredClaims.map((c) => c.source_phrase).filter(Boolean);
       blockObj = await callLlm(
@@ -4072,11 +3852,6 @@ export async function deepSeekGenerateBlockExplanation({
     validation = validateBlockFidelity({ ...fidelityMeta, explanation: blockObj.explanation, isRetry: true });
   }
   if (!validation.ok) {
-    // [debug-enrich]
-    console.warn('[api.deepSeekGenerateBlockExplanation] Fidelity warn status:', {
-      blockIndex,
-      unsupportedTerms: validation.unsupported_terms?.length ?? 0,
-    });
     blockObj.fidelity_status = "warn";
     blockObj.fidelity_issues = validation.unsupported_terms;
   }
@@ -4086,15 +3861,6 @@ export async function deepSeekGenerateBlockExplanation({
     claimCoverageRatio: validation.claimCoverageRatio,
     severity: validation.severity,
   };
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockExplanation] Done:', {
-    blockIndex,
-    explanationLen: String(blockObj.explanation || "").length,
-    conceptCount: Array.isArray(blockObj.concepts) ? blockObj.concepts.length : 0,
-    fidelityOk: validation.ok,
-    fidelityStatus: blockObj.fidelity_status || "ok",
-    hasVisualNeed: Boolean(blockObj.visualNeed),
-  });
   return blockObj;
 }
 
@@ -4115,14 +3881,6 @@ export async function deepSeekGenerateBlockQuestions({
   avoidOverlapWith,
   prevBlockSummaryForConnection,
 }) {
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockQuestions] Start:', {
-    blockIndex,
-    blockTitle: blockTitle ?? null,
-    n_test,
-    n_socratic,
-    include_connection_questions,
-  });
   const prevTitles = [];
   const list = String(blocksListText || "").trim();
   if (list) {
@@ -4147,11 +3905,6 @@ export async function deepSeekGenerateBlockQuestions({
     questionScope,
     avoidOverlapWith,
     prevBlockSummaryForConnection,
-  });
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockQuestions] Done:', {
-    blockIndex,
-    questionCount: Array.isArray(result?.questions) ? result.questions.length : 0,
   });
   return result;
 }
@@ -4185,29 +3938,13 @@ export async function deepSeekGenerateBlockJson({
   vaultSession = null,
   studentIntent = null,
 }) {
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockJson] Start:', {
-    blockIndex,
-    blockTitle: blockTitle ?? null,
-    n_test,
-    n_socratic,
-    strictMode,
-    explanation_profile,
-    materialLen: String(materialText || "").length,
-  });
   let claims = extractedClaims;
   if (strictMode && !Array.isArray(claims)) {
-    // [debug-enrich]
-    console.debug('[api.deepSeekGenerateBlockJson] Extracting source claims (strict)');
     claims = await deepSeekExtractSourceClaims({
       llmModel,
       materialText,
       blockTitle,
       language,
-    });
-    // [debug-enrich]
-    console.debug('[api.deepSeekGenerateBlockJson] Claims extracted:', {
-      claimCount: Array.isArray(claims) ? claims.length : 0,
     });
   }
 
@@ -4282,20 +4019,10 @@ export async function deepSeekGenerateBlockJson({
         explanation: blockObj.explanation,
         concepts: conceptList,
       });
-    } catch (err) {
-      // [debug-enrich]
-      console.warn('[api.deepSeekGenerateBlockJson] Concept dictionary enrichment failed:', err?.message || err);
+    } catch {
     }
   }
 
-  // [debug-enrich]
-  console.info('[api.deepSeekGenerateBlockJson] Done:', {
-    blockIndex,
-    explanationLen: String(blockObj.explanation || "").length,
-    questionCount: Array.isArray(blockObj.questions) ? blockObj.questions.length : 0,
-    conceptCount: Array.isArray(blockObj.concepts) ? blockObj.concepts.length : 0,
-    fidelityStatus: blockObj.fidelity_status || "ok",
-  });
   return blockObj;
 }
 
@@ -4364,14 +4091,6 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
       ? Boolean(config.include_connection_questions)
       : true;
 
-  // [debug-enrich]
-  console.info('[api.generateBlockFromChunk] Start:', {
-    id,
-    title,
-    source,
-    nTest,
-    materialLen: materialText.length,
-  });
 
   const blocksListText = `${id}. ${title}`;
   const sourceLine = `Source: block ${id} '${title}' from ${source}`;
@@ -4396,13 +4115,6 @@ export async function generateBlockFromChunk(block, chunk, config = {}, language
     questions: Array.isArray(blockObj?.questions) ? blockObj.questions : [],
     concepts: Array.isArray(blockObj?.concepts) ? blockObj.concepts : [],
   };
-  // [debug-enrich]
-  console.info('[api.generateBlockFromChunk] Done:', {
-    id,
-    explanationLen: out.explanation.length,
-    questionCount: out.questions.length,
-    conceptCount: out.concepts.length,
-  });
   return out;
 }
 
@@ -4445,7 +4157,7 @@ export async function generateAllBlocks(blockIndex, config = {}) {
           n_socratic,
         });
         break;
-      } catch (err) {
+      } catch {
         if (attempt === 0) {
           if (onWarning) onWarning(`Block ${i + 1} failed — retrying...`);
           continue;
@@ -4475,13 +4187,6 @@ export async function deepSeekGenerateReviewBatch({
   batchSize,
   studentIntent = null,
 }) {
-  // [debug-enrich]
-  console.info("[api.deepSeekGenerateReviewBatch] Start:", {
-    type: type ?? null,
-    batchSize,
-    sessionContentLen: String(sessionContent || "").length,
-    hasInstructions: Boolean(String(reviewInstructions || "").trim()),
-  });
   const typeWord =
     type === "both"
       ? "mixed (test and socratic)"
@@ -4535,8 +4240,6 @@ No preamble, no backticks.`
     ],
     temperature: 0.1,
   });
-  // [debug-enrich]
-  console.info("[api.deepSeekGenerateReviewBatch] Done:", { responseLen: String(raw || "").length });
   return raw;
 }
 
@@ -5298,14 +5001,6 @@ export async function generatePrePackingAssessmentItems({
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
   if (!inventory.length) throw new Error("Missing concept inventory.");
   const lang = String(language || "English").trim() || "English";
-  console.debug("[api.generatePrePackingAssessmentItems] Start:", {
-    inventorySize: inventory.length,
-    n_test,
-    n_socratic,
-    holisticBatch: Boolean(holisticBatch),
-    coverageBatchId: coverageBatchId || null,
-    materialChars: String(materialText ?? "").length,
-  }); // [debug-enrich]
   const edgeList = Array.isArray(edges) ? edges : [];
   const useLegacy =
     legacyMcq === true || (!isAssessmentQuestionsUiEnabled() && legacyMcq !== false);
@@ -5408,10 +5103,6 @@ Respond in ${lang}.`;
   if (!parsed) {
     const recovered = recoverPartialQuestionArray(content);
     if (recovered.length) {
-      // [debug-enrich]
-      console.warn("[api.generatePrePackingAssessmentItems] Partial recovery from truncated response:", {
-        recoveredCount: recovered.length,
-      });
       parsed = { questions: recovered };
     }
   }
@@ -5428,11 +5119,6 @@ Respond in ${lang}.`;
   } catch (err) {
     const recovered = recoverPartialQuestionArray(content);
     if (recovered.length) {
-      // [debug-enrich]
-      console.warn("[api.generatePrePackingAssessmentItems] Parse failed — partial recovery:", {
-        recoveredCount: recovered.length,
-        error: err?.message || String(err),
-      });
       try {
         normalized = normalizePrePackingAssessmentQuestions(
           { questions: recovered },
@@ -5454,13 +5140,6 @@ Respond in ${lang}.`;
   const tagged = coverageBatchId
     ? normalized.map((q) => ({ ...q, coverage_batch: coverageBatchId }))
     : normalized;
-  console.info("[api.generatePrePackingAssessmentItems] Done:", {
-    questionCount: tagged.length,
-    n_test: nTest,
-    n_socratic: nSocratic,
-    holisticBatch: Boolean(holisticBatch),
-    coverageBatchId: coverageBatchId || null,
-  }); // [debug-enrich]
   return shuffleTestQuestionsInList(tagged);
 }
 
@@ -5515,9 +5194,7 @@ export async function generateHolisticPrePackingAssessmentItems({
               llmModel,
               language,
             });
-          } catch (err) {
-            // [debug-enrich]
-            console.error("[api.generateHolisticPrePackingAssessmentItems] Batch error:", err?.message || err);
+          } catch {
             return [];
           }
         }),
@@ -5535,10 +5212,6 @@ export async function generateHolisticPrePackingAssessmentItems({
   for (let retry = 0; retry < MAX_RETRY_ROUNDS; retry += 1) {
     const uncovered = inventory.filter((c) => !covered.has(getConceptId(c)));
     if (!uncovered.length) break;
-    console.info("[api.generateHolisticPrePackingAssessmentItems] Retry round:", {
-      round: retry + 1,
-      uncoveredCount: uncovered.length,
-    }); // [debug-enrich]
     await runConceptBatches(uncovered, `retry-${retry + 1}`);
   }
 
@@ -5561,15 +5234,7 @@ export async function evaluatePrePackingAssessmentResponses({
   const qs = Array.isArray(items) ? items : [];
   const resp = normalizeAssessmentResponseRows(responses);
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
-  // [debug-enrich]
-  console.info("[api.evaluatePrePackingAssessmentResponses] Start:", {
-    itemCount: qs.length,
-    responseCount: resp.length,
-    inventorySize: inventory.length,
-  });
   if (!qs.length) {
-    // [debug-enrich]
-    console.debug("[api.evaluatePrePackingAssessmentResponses] No items — null profile");
     return null;
   }
 
@@ -5610,14 +5275,8 @@ Respond in ${lang}.`;
 
       const parsed = parseModelJsonValue(content);
       const profile = normalizeKnowledgeProfile(parsed, { inventory, items: qs, responses: resp });
-      // [debug-enrich]
-      console.info("[api.evaluatePrePackingAssessmentResponses] Legacy LLM profile ok:", {
-        itemCount: profile?.items?.length ?? 0,
-      });
       return profile;
-    } catch (err) {
-      // [debug-enrich]
-      console.warn("[api.evaluatePrePackingAssessmentResponses] Legacy eval failed:", err?.message || err);
+    } catch {
       return null;
     }
   }
@@ -5631,14 +5290,7 @@ Respond in ${lang}.`;
     !qs.some((q) => String(q?.type || "").trim().toLowerCase() === "socratic");
 
   if (conceptCoverageMode) {
-    // [debug-enrich]
-    console.info("[api.evaluatePrePackingAssessmentResponses] Concept-coverage mode");
     const profile = buildConceptCoverageKnowledgeProfile(qs, resp, inventory);
-    // [debug-enrich]
-    console.info("[api.evaluatePrePackingAssessmentResponses] Done:", {
-      mode: "concept_coverage",
-      itemCount: profile?.items?.length ?? 0,
-    });
     return profile;
   }
 
@@ -5653,15 +5305,11 @@ Respond in ${lang}.`;
         llmModel,
         language,
       });
-    } catch (err) {
-      // [debug-enrich]
-      console.warn("[api.evaluatePrePackingAssessmentResponses] Socratic eval failed:", err?.message || err);
+    } catch {
     }
 
     const merged = mergeProfileRows([...testRows, ...socraticRows]);
     if (!merged.length) {
-      // [debug-enrich]
-      console.warn("[api.evaluatePrePackingAssessmentResponses] No profile rows after merge");
       return null;
     }
 
@@ -5669,15 +5317,8 @@ Respond in ${lang}.`;
       { items: merged },
       { inventory, items: qs, responses: resp },
     );
-    // [debug-enrich]
-    console.info("[api.evaluatePrePackingAssessmentResponses] Done:", {
-      mode: "test+socratic",
-      itemCount: profile?.items?.length ?? 0,
-    });
     return profile;
-  } catch (err) {
-    // [debug-enrich]
-    console.warn("[api.evaluatePrePackingAssessmentResponses] Eval failed:", err?.message || err);
+  } catch {
     return null;
   }
 }
@@ -5780,23 +5421,10 @@ export async function normalizeConceptsToVault({
 }) {
   const existing = Array.isArray(existingEntries) ? existingEntries : [];
   const concepts = Array.isArray(newConcepts) ? newConcepts : [];
-  // [debug-enrich]
-  console.debug('[api.normalizeConceptsToVault] Entry:', {
-    existingCount: existing.length,
-    newCount: concepts.length,
-    topic: topic ?? null,
-    hasBatchContext: Boolean(batchContext),
-  });
   if (!concepts.length) {
-    // [debug-enrich]
-    console.debug('[api.normalizeConceptsToVault] Empty newConcepts — skip');
     return [];
   }
   if (!existing.length) {
-    // [debug-enrich]
-    console.info('[api.normalizeConceptsToVault] No existing vault — all-new short-circuit:', {
-      newCount: concepts.length,
-    });
     return concepts
       .map((c) => ({
         conceptId: String(c.id || "").trim(),
@@ -5841,12 +5469,6 @@ Respond with JSON only:
   };
 
   try {
-    // [debug-enrich]
-    console.info('[api.normalizeConceptsToVault] LLM call:', {
-      topic: topicLabel,
-      existingCount: existing.length,
-      newCount: concepts.length,
-    });
     const raw = await llmChatCompletions({
       llmModel: resolveLlmModelArg(null),
       response_format: { type: "json_object" },
@@ -5888,27 +5510,10 @@ Respond with JSON only:
         relatedCandidates,
       });
     }
-    if (out.length) {
-      const byAction = { merge: 0, alias: 0, new: 0 };
-      for (const m of out) {
-        if (byAction[m.action] != null) byAction[m.action] += 1;
-      }
-      // [debug-enrich]
-      console.info('[api.normalizeConceptsToVault] LLM mappings ok:', {
-        mappingCount: out.length,
-        byAction,
-      });
-      return out;
-    }
-    // [debug-enrich]
-    console.warn('[api.normalizeConceptsToVault] Empty/invalid mappings — fallback all-new');
-  } catch (err) {
-    // [debug-enrich]
-    console.warn('[api.normalizeConceptsToVault] LLM failed — fallback all-new:', err?.message || err);
+    if (out.length) return out;
+  } catch {
   }
 
-  // [debug-enrich]
-  console.info('[api.normalizeConceptsToVault] Fallback all-new:', { newCount: concepts.length });
   return concepts
     .map((c) => ({
       conceptId: String(c.id || "").trim(),

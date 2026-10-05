@@ -20,9 +20,12 @@ const PACK_CODE_ASSIGN_ATTEMPTS = 8;
  * @returns {string}
  */
 export function generatePackCode() {
+  const bytes = new Uint8Array(PACK_CODE_LENGTH);
+  (globalThis.crypto || crypto).getRandomValues(bytes);
+  const alphabetLength = PACK_CODE_ALPHABET.length;
   let out = "";
   for (let i = 0; i < PACK_CODE_LENGTH; i += 1) {
-    out += PACK_CODE_ALPHABET[(Math.random() * PACK_CODE_ALPHABET.length) | 0];
+    out += PACK_CODE_ALPHABET[bytes[i] % alphabetLength];
   }
   return out;
 }

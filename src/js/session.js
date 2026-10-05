@@ -1022,25 +1022,11 @@ export function getBlockSummaryFromList(blockIndex) {
 /** Questions mode: generate test/socratic items from block summary + source chunk (no RSVP explanation). */
 export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_socratic } = {}) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
-  // [debug-enrich]
-  console.info("[session.generateQuestionsBlockForIndex] Start:", {
-    blockIndex: idx,
-    n_test: n_test ?? null,
-    n_socratic: n_socratic ?? null,
-    offline: isOfflineMode(),
-  });
   if (isOfflineMode()) {
     const block = getBlock(idx);
     if (!block) {
-      // [debug-enrich]
-      console.error("[session.generateQuestionsBlockForIndex] Missing offline block:", { idx });
       throw new Error("Missing offline block.");
     }
-    // [debug-enrich]
-    console.info("[session.generateQuestionsBlockForIndex] Offline hit:", {
-      idx,
-      questionCount: Array.isArray(block?.questions) ? block.questions.length : 0,
-    });
     return block;
   }
 
@@ -1064,8 +1050,6 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
 
   const materialChunk = getBlockChunkFromIndex(idx);
   if (!materialChunk) {
-    // [debug-enrich]
-    console.error("[session.generateQuestionsBlockForIndex] Missing block chunk:", { idx });
     throw new Error("Missing block chunk for this session. Please regenerate blocks.");
   }
 
@@ -1089,15 +1073,6 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   const questionScope = buildQuestionScopeContext(idx, blockIndexArr, inventory, coverageManifest);
 
   const factualBundle = await buildFactualQuestionsForBlock(idx, cfg);
-  // [debug-enrich]
-  console.debug("[session.generateQuestionsBlockForIndex] Config:", {
-    idx,
-    blockTitle,
-    cfg,
-    factualCount: Array.isArray(factualBundle.questions) ? factualBundle.questions.length : 0,
-    remainingNTest: factualBundle.remainingNTest,
-    materialLen: String(materialChunk).length,
-  });
 
   const request = {
     llmModel,
@@ -1122,11 +1097,6 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
     } catch (err) {
       const message = err?.message ? String(err.message) : String(err);
       if (!message.includes("valid JSON")) throw err;
-      // [debug-enrich]
-      console.warn("[session.generateQuestionsBlockForIndex] JSON retry after parse fail:", {
-        idx,
-        message,
-      });
       response = await deepSeekRegenerateBlockQuestions(request);
     }
     warnQuestionsOnlyCountMismatch(response, { ...cfg, n_test: factualBundle.remainingNTest });
@@ -1148,13 +1118,6 @@ export async function generateQuestionsBlockForIndex(blockIndex, { n_test, n_soc
   if (Array.isArray(merged.questions)) {
     merged.questions = shuffleTestQuestionsInList(merged.questions);
   }
-  // [debug-enrich]
-  console.info("[session.generateQuestionsBlockForIndex] Done:", {
-    idx,
-    questionCount: Array.isArray(merged.questions) ? merged.questions.length : 0,
-    llmQuestionCount: llmQuestions.length,
-    factualCount: Array.isArray(factualBundle.questions) ? factualBundle.questions.length : 0,
-  });
   return merged;
 }
 
@@ -2615,11 +2578,6 @@ export async function runConceptInventoryMapReduce(
     Number(splitOpts.wordCount) ||
     materialText.split(/\s+/).filter(Boolean).length;
   if (wordCount <= INVENTORY_MAP_REDUCE_WORD_THRESHOLD || !docHierarchy?.tree?.length) {
-    console.debug("[session.runConceptInventoryMapReduce] Skipped — below threshold or no hierarchy:", {
-      wordCount,
-      threshold: INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
-      hasHierarchy: Boolean(docHierarchy?.tree?.length),
-    }); // [debug-enrich]
     return null;
   }
 
@@ -2627,10 +2585,6 @@ export async function runConceptInventoryMapReduce(
     buildInventoryChunks(docHierarchy, materialText) ||
     buildCharFallbackInventoryChunks(materialText, splitOpts.charCount);
   if (!chunks || chunks.length < 2) {
-    console.debug("[session.runConceptInventoryMapReduce] Skipped — insufficient chunks:", {
-      chunkCount: chunks?.length || 0,
-      charFallback: !docHierarchy?.tree?.length,
-    }); // [debug-enrich]
     return null;
   }
 
@@ -2644,11 +2598,6 @@ export async function runConceptInventoryMapReduce(
       })) || chunks;
   }
 
-  console.info("[session.runConceptInventoryMapReduce] Start:", {
-    wordCount,
-    chunkCount: inventoryChunks.length,
-    parallelCap: INVENTORY_MAX_PARALLEL_CALLS,
-  }); // [debug-enrich]
 
   const progress = (msg) => {
     if (typeof splitOpts.onProgress === "function" && msg) splitOpts.onProgress(String(msg));
@@ -2733,21 +2682,12 @@ export async function runConceptInventoryMapReduce(
   }
 
   if (!partials.length) {
-    console.error("[session.runConceptInventoryMapReduce] All chunks failed:", {
-      chunkCount: inventoryChunks.length,
-      failedChunks,
-    }); // [debug-enrich]
     throw new Error("All inventory chunks failed.");
   }
 
   progress("Merging concept inventories…");
   const merged = await deepSeekMergeConceptInventories(partials, splitOpts);
   if (merged.failReason || !Array.isArray(merged.concepts) || !merged.concepts.length) {
-    console.error("[session.runConceptInventoryMapReduce] Merge failed:", {
-      failReason: merged.failReason,
-      partialCount: partials.length,
-      mergedConceptCount: merged.concepts?.length || 0,
-    }); // [debug-enrich]
     const err = new Error(merged.failReason || "MERGE_TRUNCATED");
     err.code = "CONCEPT_INVENTORY_TRUNCATED";
     throw err;
@@ -2768,12 +2708,6 @@ export async function runConceptInventory(
   const materialText = String(material || "").trim();
   const model = llmModel ?? state.pendingLlmModel ?? getActiveSessionLlmModel();
   const notes = String(studyNotes ?? state.studyNotes ?? "").trim();
-  console.debug("[session.runConceptInventory] Start:", {
-    charCount: materialText.length,
-    wordCountIn,
-    hasDocHierarchy: Boolean(docHierarchy?.tree?.length),
-    llmModel: model,
-  }); // [debug-enrich]
   const session = state.activeSession && typeof state.activeSession === "object" ? state.activeSession : {};
   const strict =
     String(session._meta?.source_fidelity_mode || "").trim().toLowerCase() === "strict";
@@ -2812,12 +2746,6 @@ export async function runConceptInventory(
 
   const mapResult = await runConceptInventoryMapReduce(materialText, hierarchy, splitOpts);
   if (mapResult) {
-    console.info("[session.runConceptInventory] Map-reduce complete:", {
-      conceptCount: mapResult.inventory.length,
-      inventoryMode: mapResult.inventoryMode,
-      chunkCount: mapResult.chunkCount,
-      failedChunks: mapResult.failedChunks,
-    }); // [debug-enrich]
     return {
       inventory: mapResult.inventory,
       inventoryMode: mapResult.inventoryMode,
@@ -2840,11 +2768,6 @@ export async function runConceptInventory(
     wordCount,
   });
 
-  console.info("[session.runConceptInventory] Single-pass complete:", {
-    conceptCount: result.concepts.length,
-    inventoryMode: result.inventoryMode || "full",
-    estimatedConceptTarget,
-  }); // [debug-enrich]
 
   return {
     inventory: result.concepts,
@@ -2863,32 +2786,17 @@ export async function runConceptInventory(
 export function meetsConceptInventoryThreshold(session) {
   const shared = session?.shared;
   if (!shared) {
-    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — no shared slice", {
-      docId: session?.docId ?? null,
-    }); // [debug-enrich]
     return false;
   }
 
   const inventory = shared.conceptInventory;
   if (!Array.isArray(inventory) || inventory.length === 0) {
-    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — empty inventory", {
-      docId: session?.docId ?? null,
-      prepStatus: shared.preparation?.status ?? null,
-    }); // [debug-enrich]
     return false;
   }
 
   const charCount = shared.docMeta?.charCount ?? 0;
   const minRequired = minViableConcepts(charCount);
   const meets = inventory.length >= minRequired;
-  if (!meets) {
-    console.debug("[DPP-GUARD.meetsConceptInventoryThreshold] FALSE — below minViableConcepts", {
-      docId: session?.docId ?? null,
-      conceptCount: inventory.length,
-      minRequired,
-      charCount,
-    }); // [debug-enrich]
-  }
   return meets;
 }
 
@@ -2929,13 +2837,6 @@ export async function markStalePreparationSession(session, options = {}) {
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
   prep.completedAt = prep.completedAt || Date.now();
-  console.warn("[DPP-GUARD.markStalePreparationSession] Marked stale preparation failed (STALE_RUN)", {
-    docId,
-    runId: prep.runId ?? null,
-    startedAt: prep.startedAt ?? null,
-    updatedAt: prep.updatedAt ?? null,
-    conceptCount: session.shared.conceptInventory?.length ?? 0,
-  }); // [debug-enrich]
   if (options.persist !== false) {
     await saveDocumentSession(session);
   }
@@ -2950,17 +2851,9 @@ export async function markStalePreparationSession(session, options = {}) {
 export async function scanStalePreparationSessions(sessions) {
   const list = Array.isArray(sessions) ? sessions : [];
   const out = [];
-  let marked = 0;
   for (const session of list) {
     const result = await markStalePreparationSession(session);
-    if (result.changed) marked += 1;
     out.push(result.session);
-  }
-  if (marked > 0) {
-    console.info("[DPP-GUARD.scanStalePreparationSessions] Stale sessions marked failed", {
-      scanned: list.length,
-      marked,
-    }); // [debug-enrich]
   }
   return out;
 }
@@ -3021,40 +2914,16 @@ export async function repairStuckRunningPreparationIfNeeded(session) {
  * @returns {boolean}
  */
 export function isConceptInventoryValid(session) {
-  const docId = session?.docId ?? null;
-  const invLen = Array.isArray(session?.shared?.conceptInventory)
-    ? session.shared.conceptInventory.length
-    : 0;
-  const charCount = session?.shared?.docMeta?.charCount ?? 0;
   const status = session?.shared?.preparation?.status ?? null;
 
   if (!meetsConceptInventoryThreshold(session)) {
-    console.debug("[DPP-GUARD.isConceptInventoryValid] FALSE — threshold not met", {
-      docId,
-      invLen,
-      minRequired: minViableConcepts(charCount),
-      charCount,
-      status,
-    }); // [debug-enrich]
     return false;
   }
 
   if (status === "ready" || status === "partial" || status === "legacy") {
-    console.debug("[DPP-GUARD.isConceptInventoryValid] TRUE", {
-      docId,
-      invLen,
-      charCount,
-      status,
-    }); // [debug-enrich]
     return true;
   }
 
-  console.debug("[DPP-GUARD.isConceptInventoryValid] FALSE — non-terminal prep status", {
-    docId,
-    invLen,
-    charCount,
-    status,
-  }); // [debug-enrich]
   return false;
 }
 
@@ -3106,15 +2975,8 @@ export function runDedupedDppFlight(docId, factory, options = {}) {
   const id = String(docId || "").trim();
   if (!id) return Promise.resolve(factory());
   if (!options.force && dppFlights.has(id)) {
-    console.debug("[DPP-GUARD.runDedupedDppFlight] Deduped — flight already in progress", {
-      docId: id,
-    }); // [debug-enrich]
     return dppFlights.get(id);
   }
-  console.debug("[DPP-GUARD.runDedupedDppFlight] Starting new flight", {
-    docId: id,
-    force: options.force === true,
-  }); // [debug-enrich]
   const flight = Promise.resolve()
     .then(factory)
     .finally(() => {
@@ -3176,11 +3038,6 @@ async function handlePreparationStaleRun(session) {
   prep.failReason = "STALE_RUN";
   prep.updatedAt = Date.now();
   prep.completedAt = prep.completedAt || Date.now();
-  console.warn("[DPP-GUARD.handlePreparationStaleRun] Stale preparation — marking failed (STALE_RUN)", {
-    docId,
-    runId: prep.runId ?? null,
-    conceptCount: session.shared.conceptInventory?.length ?? 0,
-  }); // [debug-enrich]
   await saveDocumentSession(session);
   return { retried: false, session };
 }
@@ -3191,50 +3048,20 @@ async function handlePreparationStaleRun(session) {
  * @returns {{ decision: 'skip'|'run'|'failed'|'waiting'|'degraded' }}
  */
 export function evaluateConceptInventoryGuard(session, options = {}) {
-  const docId = session?.docId ?? null;
   const status = session?.shared?.preparation?.status ?? "undefined";
   const length = Array.isArray(session?.shared?.conceptInventory)
     ? session.shared.conceptInventory.length
     : 0;
-  const charCount = session?.shared?.docMeta?.charCount ?? 0;
-  const guardCtx = { docId, status, conceptCount: length, charCount, forceRerun: options.forceRerun === true }; // [debug-enrich]
 
   if (options.forceRerun) {
-    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] Force rerun — bypassing guard", guardCtx); // [debug-enrich]
     return { decision: "run" };
   }
 
   if (isTier1PreparationComplete(session)) {
-    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — tier-1 complete", {
-      ...guardCtx,
-      minRequired: minViableConcepts(charCount),
-      hasModeRec: Boolean(session?.shared?.modeRecommendation),
-      hasBlockRec: Boolean(session?.shared?.blockRecommendation?.nBlocks),
-    }); // [debug-enrich]
     return { decision: "skip" };
   }
 
-  console.debug("[DPP-GUARD.evaluateConceptInventoryGuard] inventory not yet valid for skip", {
-    ...guardCtx,
-    inventoryValid: isConceptInventoryValid(session),
-    tier1Complete: false,
-  }); // [debug-enrich]
-
   if (status === "failed") {
-    const prep = normalizePreparationState(session?.shared?.preparation);
-    if (prep.failReason === "STALE_RUN") {
-      console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] failed — STALE_RUN (user may retry)", {
-        ...guardCtx,
-        failReason: prep.failReason,
-        staleRetryCount: prep.staleRetryCount ?? 0,
-      }); // [debug-enrich]
-      return { decision: "failed" };
-    }
-    console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] failed — surfacing error, no auto-retry", {
-      ...guardCtx,
-      failReason: prep.failReason ?? null,
-      lastError: prep.errors?.[prep.errors.length - 1]?.message ?? null,
-    }); // [debug-enrich]
     return { decision: "failed" };
   }
 
@@ -3245,41 +3072,17 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     const stale = isPreparationStale(prep, session);
     const superseded = isSupersededRunningPreparation(session, prep);
     if (superseded) {
-      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — superseded running status (gate artifacts, run inactive)", {
-        ...guardCtx,
-        runId: prep.runId ?? null,
-        activeRunId: getActiveDppRunId(prepDocId),
-      }); // [debug-enrich]
       return { decision: "skip" };
     }
     if (!inFlight && hasTier1GateArtifacts(session)) {
-      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] skip — gate artifacts present, pipeline not in flight", {
-        ...guardCtx,
-        runId: prep.runId ?? null,
-      }); // [debug-enrich]
       return { decision: "skip" };
     }
     if (inFlight) {
-      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] waiting — pipeline in flight", {
-        ...guardCtx,
-        runId: prep.runId ?? null,
-        inFlight: true,
-      }); // [debug-enrich]
       return { decision: "waiting" };
     }
     if (stale) {
-      console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] run — stale preparation, no in-flight pipeline", {
-        ...guardCtx,
-        runId: prep.runId ?? null,
-        startedAt: prep.startedAt ?? null,
-        updatedAt: prep.updatedAt ?? null,
-      }); // [debug-enrich]
       return { decision: "run" };
     }
-    console.info("[DPP-GUARD.evaluateConceptInventoryGuard] waiting — preparation already running", {
-      ...guardCtx,
-      runId: prep.runId ?? null,
-    }); // [debug-enrich]
     return { decision: "waiting" };
   }
 
@@ -3287,7 +3090,6 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     // Scope-gated prep (20260806): early-stop leaves status=partial with empty inventory
     // before T1.2. That is intentional — not a sparse-inventory quality failure.
     if (!isScopeGateResolved(session)) {
-      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — scope unresolved, inventory not evaluated yet", guardCtx); // [debug-enrich]
       return { decision: "run" };
     }
     const t12 = normalizePreparationState(session?.shared?.preparation).phaseResults?.["T1.2"];
@@ -3295,20 +3097,11 @@ export function evaluateConceptInventoryGuard(session, options = {}) {
     const t12Attempted =
       t12Status === "success" || t12Status === "partial" || t12Status === "failed";
     if (length === 0 && !t12Attempted) {
-      console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — scope resolved, T1.2 not yet run", guardCtx); // [debug-enrich]
       return { decision: "run" };
     }
-    const minRequired = minViableConcepts(charCount);
-    console.warn("[DPP-GUARD.evaluateConceptInventoryGuard] degraded — inventory below threshold", {
-      ...guardCtx,
-      minRequired,
-      t12Status: t12Status || null,
-      failReason: session?.shared?.preparation?.failReason ?? null,
-    }); // [debug-enrich]
     return { decision: "degraded" };
   }
 
-  console.info("[DPP-GUARD.evaluateConceptInventoryGuard] run — no valid inventory, will trigger DPP", guardCtx); // [debug-enrich]
   return { decision: "run" };
 }
 
@@ -3322,17 +3115,10 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
   const pollMs = options.pollMs ?? 2000;
   const maxWaitMs = options.maxWaitMs ?? DPP_GUARD_POLL_MAX_MS;
   const started = Date.now();
-  let iteration = 0;
-  console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Start", { pollMs, maxWaitMs }); // [debug-enrich]
 
   while (Date.now() - started < maxWaitMs) {
-    iteration += 1;
     let session = await reloadSession();
     if (!session) {
-      console.error("[DPP-GUARD.pollUntilConceptInventoryReady] Session disappeared", {
-        iteration,
-        elapsedMs: Date.now() - started,
-      }); // [debug-enrich]
       return { decision: "failed", session: null };
     }
 
@@ -3345,62 +3131,24 @@ export async function pollUntilConceptInventoryReady(reloadSession, options = {}
       !isDppInFlight(session.docId)
     ) {
       if (isPreparationStale(prep, session)) {
-        console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Stale run detected during poll", {
-          iteration,
-          docId: session.docId,
-          elapsedMs: Date.now() - started,
-          runId: prep.runId ?? null,
-        }); // [debug-enrich]
         const stale = await handlePreparationStaleRun(session);
         return { decision: "failed", session: stale.session };
       }
     }
 
     const guard = evaluateConceptInventoryGuard(session);
-    console.debug("[DPP-GUARD.pollUntilConceptInventoryReady] Poll tick", {
-      iteration,
-      elapsedMs: Date.now() - started,
-      docId: session.docId,
-      decision: guard.decision,
-      prepStatus: prep.status,
-      conceptCount: session.shared?.conceptInventory?.length ?? 0,
-      inFlight: isDppInFlight(session.docId),
-    }); // [debug-enrich]
     if (guard.decision === "skip" || guard.decision === "degraded") {
-      console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Resolved", {
-        decision: guard.decision,
-        iteration,
-        elapsedMs: Date.now() - started,
-        docId: session.docId,
-      }); // [debug-enrich]
       return { decision: guard.decision, session };
     }
     if (guard.decision === "failed") {
-      console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Guard failed", {
-        iteration,
-        elapsedMs: Date.now() - started,
-        docId: session.docId,
-      }); // [debug-enrich]
       return { decision: "failed", session };
     }
     if (guard.decision === "run") {
-      console.info("[DPP-GUARD.pollUntilConceptInventoryReady] Guard requests run", {
-        iteration,
-        elapsedMs: Date.now() - started,
-        docId: session.docId,
-      }); // [debug-enrich]
       return { decision: "run", session };
     }
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
   const timedOutSession = await reloadSession();
-  console.warn("[DPP-GUARD.pollUntilConceptInventoryReady] Timed out", {
-    iteration,
-    elapsedMs: Date.now() - started,
-    maxWaitMs,
-    docId: timedOutSession?.docId ?? null,
-    prepStatus: timedOutSession?.shared?.preparation?.status ?? null,
-  }); // [debug-enrich]
   return { decision: "waiting", session: timedOutSession };
 }
 
@@ -3422,11 +3170,6 @@ export async function runConceptInventoryWithFallback(
   };
 
   const runFallback = async (reason) => {
-    console.warn("[session.runConceptInventoryWithFallback] Falling back to mono split:", {
-      reason,
-      requested_n,
-      charCount: materialText.length,
-    }); // [debug-enrich]
     progress("Using classic split (fallback)…");
     const { deepSeekSplitIntoBlocks } = await import("./api.js?v=20260625_02");
     const parsed = await deepSeekSplitIntoBlocks({
@@ -3456,11 +3199,6 @@ export async function runConceptInventoryWithFallback(
   };
 
   try {
-    console.debug("[session.runConceptInventoryWithFallback] Start:", {
-      charCount: materialText.length,
-      requested_n,
-      hasDocHierarchy: Boolean(docHierarchy?.tree?.length),
-    }); // [debug-enrich]
     const result = await runConceptInventory(materialText, {
       llmModel: model,
       studyNotes: notes,
@@ -3473,11 +3211,6 @@ export async function runConceptInventoryWithFallback(
     return { kind: "inventory", ...result };
   } catch (err) {
     const truncated = err?.code === "CONCEPT_INVENTORY_TRUNCATED";
-    console.warn("[session.runConceptInventoryWithFallback] Inventory failed:", {
-      truncated,
-      code: err?.code,
-      message: err?.message || String(err),
-    }); // [debug-enrich]
     return runFallback(truncated ? "truncated" : "parse_error");
   }
 }
@@ -3656,13 +3389,6 @@ export async function packInventoryToBlocks(
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
-  console.info("[session.packInventoryToBlocks] Start:", {
-    requested_n,
-    inventorySize: Array.isArray(inventory) ? inventory.length : 0,
-    materialChars: materialText.length,
-    hasKnowledgeProfile: Boolean(profile),
-    hasDocHierarchy: Boolean(docHierarchy || resolveDocHierarchyForAlignment(vaultSession)),
-  }); // [debug-enrich]
 
   const { deepSeekPackConceptsToBlocks, deepSeekSplitIntoBlocks } = await import(
     "./api.js?v=20260625_02",
@@ -3687,11 +3413,6 @@ export async function packInventoryToBlocks(
     }));
   } catch (packErr) {
     const packReason = String(packErr?.message || packErr);
-    console.warn("[session.packInventoryToBlocks] LLM pack failed:", {
-      reason: packReason,
-      requested_n,
-      inventorySize: inventory?.length || 0,
-    }); // [debug-enrich]
     progress("Packing blocks locally…");
     const det = packInventoryDeterministic(inventory, requested_n, lang, {
       edges: edgesOpt,
@@ -3703,11 +3424,7 @@ export async function packInventoryToBlocks(
         pack_fallback_reason: packReason,
       };
       packPipeline = "deterministic_fallback";
-      console.info("[session.packInventoryToBlocks] Using deterministic fallback:", {
-        blockCount: blocks?.length || 0,
-      }); // [debug-enrich]
     } else {
-      console.warn("[session.packInventoryToBlocks] Deterministic fallback empty — mono split"); // [debug-enrich]
       progress("Using classic split (fallback)…");
       const parsed = await deepSeekSplitIntoBlocks({
         llmModel: model,
@@ -3807,31 +3524,6 @@ export async function packInventoryToBlocks(
     dedup_merges_skipped: dedupResult.dedup_merges_skipped,
   };
 
-  const invariant = validatePackInvariants({
-    conceptInventory: inventory,
-    blockIndex: dedupResult.blockIndex,
-    requested_n,
-    knowledgeProfile: profile,
-    splitRunMeta,
-  });
-  if (!invariant.ok) {
-    console.warn("[session.packInventoryToBlocks] Invariant violations:", {
-      errors: invariant.errors,
-      requested_n,
-      final_n: dedupResult.blockIndex.length,
-      concept_count,
-      pipeline: packPipeline,
-    }); // [debug-enrich]
-  }
-
-  console.info("[session.packInventoryToBlocks] Done:", {
-    pipeline: packPipeline,
-    requested_n,
-    final_n: dedupResult.blockIndex.length,
-    concept_count,
-    dedup_merged_count: dedupResult.merged_count,
-  }); // [debug-enrich]
-
   const sortedBlockIndex = isThresholdConceptsEnabled()
     ? sortBlockIndexForThresholds(dedupResult.blockIndex, inventory)
     : dedupResult.blockIndex;
@@ -3857,10 +3549,6 @@ export async function twoPhaseConceptSplit(
     if (typeof onProgress === "function" && msg) onProgress(String(msg));
   };
 
-  console.debug("[session.twoPhaseConceptSplit] Start:", {
-    requested_n,
-    materialChars: materialText.length,
-  }); // [debug-enrich]
 
   const runFallback = async () => {
     progress("Using classic split (fallback)…");
@@ -3897,9 +3585,6 @@ export async function twoPhaseConceptSplit(
       nBlocks: requested_n,
     });
     if (invResult.kind === "fallback_mono") {
-      console.info("[session.twoPhaseConceptSplit] Inventory fallback_mono:", {
-        blockCount: invResult.blockIndex?.length || 0,
-      }); // [debug-enrich]
       return {
         blockIndex: invResult.blockIndex,
         splitRunMeta: invResult.splitRunMeta,
@@ -3911,11 +3596,7 @@ export async function twoPhaseConceptSplit(
       language,
       onProgress,
     });
-  } catch (err) {
-    console.error("[session.twoPhaseConceptSplit] Failed — mono split fallback:", {
-      message: err?.message || String(err),
-      stack: err?.stack,
-    }); // [debug-enrich]
+  } catch {
     return runFallback();
   }
 }

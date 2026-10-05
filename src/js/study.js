@@ -491,29 +491,15 @@ function resetPreparationForFreshRun(doc) {
 export async function persistSharedPdfSourceFromFile(docId, file, originalFormat) {
   if (!docId) return;
   if (String(originalFormat || "").toLowerCase() !== "pdf") {
-    console.debug("[study.persistSharedPdfSourceFromFile] Skip non-pdf:", {
-      docId,
-      originalFormat,
-    }); // [debug-enrich]
     return;
   }
   if (typeof file?.arrayBuffer !== "function") {
-    console.warn("[study.persistSharedPdfSourceFromFile] No arrayBuffer on file:", {
-      docId,
-      fileName: file?.name ?? null,
-    }); // [debug-enrich]
     return;
   }
   try {
-    console.debug("[study.persistSharedPdfSourceFromFile] Stashing:", {
-      docId,
-      fileName: file?.name ?? null,
-      originalFormat,
-    }); // [debug-enrich]
     const { stashPdfSourceOntoShared } = await import("./slow/pdf-reader.js");
     const fresh = (await getSession(docId)) || null;
     if (!fresh) {
-      console.warn("[study.persistSharedPdfSourceFromFile] Session missing:", { docId }); // [debug-enrich]
       return;
     }
     if (!fresh.shared) fresh.shared = {};
@@ -531,26 +517,8 @@ export async function persistSharedPdfSourceFromFile(docId, file, originalFormat
         }
       }
       await saveDocumentSession(fresh);
-      console.info("[study.persistSharedPdfSourceFromFile] Stashed ok:", {
-        docId,
-        kind: fresh.shared.pdfSource?.kind ?? null,
-        dataLen:
-          typeof fresh.shared.pdfSource?.data === "string"
-            ? fresh.shared.pdfSource.data.length
-            : null,
-        syncedSlowSlice: syncedSlow,
-      }); // [debug-enrich]
-    } else {
-      console.warn("[study.persistSharedPdfSourceFromFile] Stash returned false:", {
-        docId,
-      }); // [debug-enrich]
     }
-  } catch (err) {
-    console.error("[study.persistSharedPdfSourceFromFile] Failed:", {
-      docId,
-      message: err?.message || String(err),
-    }); // [debug-enrich]
-  }
+  } catch {}
 }
 
 export async function ensureDocumentSessionForUpload(markdown, options = {}) {
@@ -605,20 +573,8 @@ let documentPreparationRunId = 0;
  */
 export async function startDocumentPreparation(doc, options = {}) {
   if (!doc?.docId) return null;
-  console.debug("[study.startDocumentPreparation] Called:", {
-    docId: doc.docId,
-    stopAfterTier: options.stopAfterTier ?? 2,
-    forceRerun: options.forceRerun === true,
-    prepStatus: doc?.shared?.preparation?.status,
-    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-  }); // [debug-enrich]
   const forceRerun = options.forceRerun === true;
   if (forceRerun) {
-    console.info("[DPP-GUARD.startDocumentPreparation] Force rerun — bypassing guard", {
-      docId: doc.docId,
-      priorStatus: doc?.shared?.preparation?.status ?? null,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    }); // [debug-enrich]
     if (!doc.shared) doc.shared = {};
     doc.shared.preparation = normalizePreparationState(doc.shared.preparation);
     setPreparationStatus(doc.shared.preparation, "pending");
@@ -695,13 +651,6 @@ export async function startDocumentPreparation(doc, options = {}) {
     reconciled = (await getSession(prepared.docId)) ?? prepared;
   }
   hydrateCallerDocFromPrepared(doc, reconciled);
-  console.info("[study.startDocumentPreparation] Finished:", {
-    docId: doc.docId,
-    runId,
-    status: reconciled?.shared?.preparation?.status ?? result?.status,
-    conceptCount: reconciled?.shared?.conceptInventory?.length ?? 0,
-    errorCount: result?.errors?.length ?? 0,
-  }); // [debug-enrich]
   return reconciled;
 }
 
@@ -774,12 +723,6 @@ async function handleRetryPreparationClick() {
     }),
   });
   const guard = evaluateConceptInventoryGuard(prepared);
-  console.info("[DPP-GUARD.retryPreparation] Post-rerun guard", {
-    docId: prepared?.docId,
-    decision: guard.decision,
-    prepStatus: prepared?.shared?.preparation?.status ?? null,
-    conceptCount: prepared?.shared?.conceptInventory?.length ?? 0,
-  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(prepared);
     enterModeSelectScreen();
@@ -791,13 +734,6 @@ async function handleRetryPreparationClick() {
 async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOpts, statusEl) {
   doc = await repairStuckRunningPreparationIfNeeded(doc);
   const guard = evaluateConceptInventoryGuard(doc);
-  console.debug("[study.resolveInventoryForBlockFlow] Guard:", {
-    docId: doc?.docId,
-    decision: guard.decision,
-    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    prepStatus: doc?.shared?.preparation?.status,
-    wordCount,
-  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(doc);
     throw new Error(PREPARATION_FAILED_MSG);
@@ -840,10 +776,6 @@ async function resolveInventoryForBlockFlow(doc, cleanedText, wordCount, splitOp
     }
   }
   if (isConceptInventoryValid(doc)) {
-    console.debug("[DPP-GUARD.resolveInventoryForBlockFlow] Using valid shared inventory", {
-      docId: doc?.docId,
-      conceptCount: doc.shared.conceptInventory?.length ?? 0,
-    }); // [debug-enrich]
     return { inventory: doc.shared.conceptInventory, doc };
   }
   if (guard.decision === "degraded" || evaluateConceptInventoryGuard(doc).decision === "degraded") {
@@ -1147,10 +1079,6 @@ async function applyScopeSelectionToDoc(doc, { fullDocument, fullyCheckedIds, in
 
 async function autoResolveScopeWhenNoHeadings(doc) {
   if (isScopeGateResolved(doc) || isScopeStructureReady(doc)) return doc;
-  // [debug-enrich]
-  console.info('[study.autoResolveScopeWhenNoHeadings] Auto full-document scope:', {
-    docId: doc.docId ?? null,
-  });
   const raw = String(doc.shared?.rawMarkdown || "");
   doc.shared.scopeSelection = null;
   doc.shared.scopedMarkdown = raw;
@@ -1163,30 +1091,15 @@ async function autoResolveScopeWhenNoHeadings(doc) {
 
 async function maybeEnterScopeSelectionGate(doc) {
   if (isScopeGateResolved(doc)) {
-    // [debug-enrich]
-    console.debug('[study.maybeEnterScopeSelectionGate] Already resolved — skip');
     return false;
   }
   doc = await autoResolveScopeWhenNoHeadings(doc);
   if (isScopeGateResolved(doc)) {
-    // [debug-enrich]
-    console.debug('[study.maybeEnterScopeSelectionGate] Resolved after auto — skip UI');
     return false;
   }
   if (!isScopeStructureReady(doc)) {
-    // [debug-enrich]
-    console.debug('[study.maybeEnterScopeSelectionGate] Structure not ready — skip UI');
     return false;
   }
-  // [debug-enrich]
-  console.info('[study.maybeEnterScopeSelectionGate] Entering scope selection UI:', {
-    docId: doc.docId ?? null,
-  });
-  // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-  console.log("[BUG-AUDIT.maybeEnterScopeSelectionGate] RE-SHOWING scope UI (stay on scopeSelection)", {
-    docId: doc.docId ?? null,
-    scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-  });
   renderScopeSelectionScreen(doc);
   showScreen("scopeSelection");
   return true;
@@ -1195,12 +1108,6 @@ async function maybeEnterScopeSelectionGate(doc) {
 function wireScopeSelectionHandlers() {
   if (els.scopeSelectionFullBtn?._wired) return;
   if (els.scopeSelectionFullBtn) els.scopeSelectionFullBtn._wired = true;
-  // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-  console.log("[BUG-AUDIT.wireScopeSelectionHandlers] wiring", {
-    hasFullBtn: Boolean(els.scopeSelectionFullBtn),
-    hasConfirmBtn: Boolean(els.scopeSelectionConfirmBtn),
-    confirmBtnId: els.scopeSelectionConfirmBtn?.id ?? null,
-  });
 
   els.scopeSelectionFullBtn?.addEventListener("click", async () => {
     const doc = await getActiveSession();
@@ -1211,24 +1118,8 @@ function wireScopeSelectionHandlers() {
   });
 
   els.scopeSelectionConfirmBtn?.addEventListener("click", async () => {
-    // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-    console.log("[BUG-AUDIT.scopeConfirm] click fired", {
-      btnDisabled: els.scopeSelectionConfirmBtn?.disabled ?? null,
-      fullDocument: scopePickerFullDocument,
-      nodeStateSize: scopePickerNodeState.size,
-      activeDocIdLs: localStorage.getItem("pith_active_doc_id"),
-    });
     const doc = await getActiveSession();
-    // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-    console.log("[BUG-AUDIT.scopeConfirm] getActiveSession resolved", {
-      hasDoc: Boolean(doc),
-      docId: doc?.docId ?? null,
-      scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-      prepStatus: doc?.shared?.preparation?.status ?? null,
-    });
     if (!doc) {
-      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-      console.warn("[BUG-AUDIT.scopeConfirm] ABORT — getActiveSession() returned null (silent early-return was here)");
       return;
     }
     if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = true;
@@ -1239,21 +1130,9 @@ function wireScopeSelectionHandlers() {
         fullyCheckedIds: ids.fullyCheckedIds,
         indeterminateIds: ids.indeterminateIds,
       });
-      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-      console.log("[BUG-AUDIT.scopeConfirm] applyScopeSelectionToDoc done", {
-        scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-        scopedLen: doc?.shared?.scopedMarkdown?.length ?? 0,
-      });
       // Pass the mutated in-memory doc — do not re-read store/row-cache here (can be stale
       // vs the just-persisted scopeResolvedAt if a concurrent write superseded the cache update).
-      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-      console.log("[BUG-AUDIT.scopeConfirm] calling enterModeSelectAfterTier1Gate", {
-        refreshedDocId: doc?.docId ?? null,
-        refreshedScopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-      });
       await enterModeSelectAfterTier1Gate(doc);
-      // [BUG-AUDIT] temporary — remove after confirm-hang diagnosis
-      console.log("[BUG-AUDIT.scopeConfirm] enterModeSelectAfterTier1Gate returned");
     } catch (err) {
       console.error("[scope] confirm failed:", err);
       if (els.scopeSelectionConfirmBtn) els.scopeSelectionConfirmBtn.disabled = false;
@@ -1314,14 +1193,6 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     const active = await getActiveSession();
     doc = active?.docId ? (await reloadSessionForGuard(active.docId)) ?? active : active;
   }
-  console.info("[study.enterModeSelectAfterTier1Gate] Start:", {
-    docId: doc?.docId || null,
-    hasPreparedDoc: Boolean(preparedDoc?.docId),
-    prepStatus: doc?.shared?.preparation?.status || null,
-    scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-    hasGateResolved: Boolean(doc?.shared?.assessmentGate?.resolvedAt),
-    isOffline: isOfflineMode(),
-  }); // [debug-enrich]
   if (!doc?.docId) {
     enterModeSelectScreen();
     return;
@@ -1330,13 +1201,6 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
   doc = await repairStuckRunningPreparationIfNeeded(doc);
   clearPreparationFailedUi();
   let guard = evaluateConceptInventoryGuard(doc);
-  console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Initial guard", {
-    docId: doc.docId,
-    decision: guard.decision,
-    prepStatus: doc?.shared?.preparation?.status ?? null,
-    conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    tier1Complete: isTier1PreparationComplete(doc),
-  }); // [debug-enrich]
   if (guard.decision === "failed") {
     renderPreparationFailedUi(doc);
     enterModeSelectScreen();
@@ -1363,14 +1227,6 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
     const polled = await pollUntilConceptInventoryReady(() => reloadSessionForGuard(docId));
     doc = polled.session || doc;
     if (polled.decision === "stale_retry" || polled.decision === "run") {
-      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-      console.log("[DIAG-T12-TRIGGER] before ensureTier1Preparation (after poll run/stale_retry)", {
-        docId: doc?.docId ?? null,
-        ts: Date.now(),
-        iso: new Date().toISOString(),
-        polledDecision: polled.decision,
-        prepStatus: doc?.shared?.preparation?.status ?? null,
-      });
       doc = await ensureTier1Preparation(doc, {
         ...preparationGateOptions((msg) => {
           if (els.reviewGeneratingLabel) {
@@ -1378,22 +1234,8 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
           }
         }),
       });
-      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-      console.log("[DIAG-T12-TRIGGER] after ensureTier1Preparation (after poll run/stale_retry)", {
-        docId: doc?.docId ?? null,
-        ts: Date.now(),
-        iso: new Date().toISOString(),
-        prepStatus: doc?.shared?.preparation?.status ?? null,
-        conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-      });
     }
     guard = evaluateConceptInventoryGuard(doc);
-    console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Guard after poll/run", {
-      docId: doc?.docId,
-      decision: guard.decision,
-      prepStatus: doc?.shared?.preparation?.status ?? null,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    }); // [debug-enrich]
     if (guard.decision === "failed") {
       renderPreparationFailedUi(doc);
       enterModeSelectScreen();
@@ -1411,15 +1253,6 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
 
   if (guard.decision === "run") {
     showDocumentPreparingScreen();
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-TRIGGER] before ensureTier1Preparation (guard decision=run)", {
-      docId: doc?.docId ?? null,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      prepStatus: doc?.shared?.preparation?.status ?? null,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-      scopeResolvedAt: doc?.shared?.scopeResolvedAt ?? null,
-    });
     doc = await ensureTier1Preparation(doc, {
       ...preparationGateOptions((msg) => {
         if (els.reviewGeneratingLabel) {
@@ -1427,21 +1260,7 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
         }
       }),
     });
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-TRIGGER] after ensureTier1Preparation (guard decision=run)", {
-      docId: doc?.docId ?? null,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      prepStatus: doc?.shared?.preparation?.status ?? null,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    });
     guard = evaluateConceptInventoryGuard(doc);
-    console.info("[DPP-GUARD.enterModeSelectAfterTier1Gate] Guard after poll/run", {
-      docId: doc?.docId,
-      decision: guard.decision,
-      prepStatus: doc?.shared?.preparation?.status ?? null,
-      conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-    }); // [debug-enrich]
     if (guard.decision === "failed") {
       renderPreparationFailedUi(doc);
       enterModeSelectScreen();
@@ -1478,14 +1297,6 @@ async function enterModeSelectAfterTier1Gate(preparedDoc = null) {
 }
 
 function shouldOfferSharedAssessmentGate(doc) {
-  console.debug("[study.shouldOfferSharedAssessmentGate] Evaluate:", {
-    docId: doc?.docId || null,
-    enabled: isSharedPreModeAssessmentEnabled(),
-    offline: isOfflineMode(),
-    interview: isInterviewOriginSession(doc),
-    tier1Ready: isTier1PreparationComplete(doc),
-    alreadyResolved: isAssessmentGateResolved(doc),
-  }); // [debug-enrich]
   if (!isSharedPreModeAssessmentEnabled()) return false;
   if (isOfflineMode()) return false;
   if (isInterviewOriginSession(doc)) return false;
@@ -1499,12 +1310,6 @@ let assessmentGateFreshDoc = null;
 
 async function finalizeModeSelectEntry(doc) {
   setGuideScopeFromDocument(doc);
-  console.info("[study.finalizeModeSelectEntry] Start:", {
-    docId: doc?.docId || null,
-    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
-    hasSharedProfile: Boolean(doc?.shared?.knowledgeProfile),
-    hasOnboarding: Boolean(doc?.shared?.onboardingResponses),
-  }); // [debug-enrich]
   migrateKnowledgeProfileToShared(doc);
   const needsOnboardingRec =
     Boolean(doc?.shared?.onboardingResponses) &&
@@ -1520,10 +1325,6 @@ async function finalizeModeSelectEntry(doc) {
     }
   }
   kickoffTier2PreparationInBackground(doc, preparationGateOptions());
-  console.info("[study.finalizeModeSelectEntry] Done:", {
-    docId: doc?.docId || null,
-    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
-  }); // [debug-enrich]
   enterModeSelectScreen();
 }
 
@@ -1567,37 +1368,12 @@ function readOnboardingQuestionnaireForm() {
 }
 
 async function submitOnboardingQuestionnaire() {
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  // Note: docId is null here until getActiveSession resolves (see audit); not a race cause.
-  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire ENTER", {
-    docId: null,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-  });
   const doc = await getActiveSession();
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire after getActiveSession", {
-    docId: doc?.docId ?? null,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-  });
   if (!doc?.docId) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT early — no doc", {
-      docId: null,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
     return;
   }
   const answers = readOnboardingQuestionnaireForm();
   if (!answers) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT early — incomplete form", {
-      docId: doc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
     return;
   }
   const intentEl = els.onboardingStudentIntent;
@@ -1610,28 +1386,8 @@ async function submitOnboardingQuestionnaire() {
     });
     // Retain the known-fresh session from setOnboardingAnswers — do not re-read store
     // (same Round-3 class: superseded write can leave row cache without answers).
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-ONBOARD] before enterModeSelectAfterTier1Gate", {
-      docId: (saved || doc)?.docId ?? doc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
     await enterModeSelectAfterTier1Gate(saved || doc);
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-ONBOARD] after enterModeSelectAfterTier1Gate", {
-      docId: (saved || doc)?.docId ?? doc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
   } catch (err) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-CATCH] submitOnboardingQuestionnaire catch", {
-      docId: doc?.docId ?? null,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      message: err?.message || String(err),
-      stack: err?.stack ?? null,
-    });
     console.warn("[study.submitOnboardingQuestionnaire] failed", err);
     // ponytail: local re-enable; avoid importing ui sync (circular study↔ui under ?v=)
     if (els.onboardingQuestionnaireSubmitBtn && els.screenOnboardingQuestionnaire) {
@@ -1642,20 +1398,10 @@ async function submitOnboardingQuestionnaire() {
       );
     }
   }
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-ONBOARD] submitOnboardingQuestionnaire EXIT", {
-    docId: doc?.docId ?? null,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-  });
 }
 
 async function maybeEnterSharedAssessmentGate(doc) {
   if (!shouldOfferSharedAssessmentGate(doc)) return false;
-  console.info("[study.maybeEnterSharedAssessmentGate] Enter gate:", {
-    docId: doc?.docId || null,
-    conceptCount: doc?.shared?.conceptInventory?.length || 0,
-  }); // [debug-enrich]
   // Retain known-fresh doc for Accept — do not re-read store (superseded DPP
   // checkpoint can leave row cache with conceptInventory: []).
   assessmentGateFreshDoc = doc;
@@ -1666,11 +1412,6 @@ async function maybeEnterSharedAssessmentGate(doc) {
 async function completeSharedAssessmentGate({ outcome, profile }) {
   assessmentGateFreshDoc = null;
   let doc = await getActiveSession();
-  console.info("[study.completeSharedAssessmentGate] Start:", {
-    docId: doc?.docId || null,
-    outcome,
-    hasProfile: Boolean(profile),
-  }); // [debug-enrich]
   if (!doc?.docId) {
     resetPrePackingFlow();
     enterModeSelectScreen();
@@ -1688,11 +1429,6 @@ async function completeSharedAssessmentGate({ outcome, profile }) {
   }
   resetPrePackingFlow();
   kickoffTier2PreparationInBackground(doc, preparationGateOptions());
-  console.info("[study.completeSharedAssessmentGate] Done:", {
-    docId: doc?.docId || null,
-    hasModeRec: Boolean(doc?.shared?.modeRecommendation),
-    gateOutcome: doc?.shared?.assessmentGate?.outcome || null,
-  }); // [debug-enrich]
   enterModeSelectScreen();
 }
 
@@ -1703,11 +1439,6 @@ async function startSharedAssessmentFromGate() {
   // Prefer known-fresh doc stashed at gate show (Round-3: no blind store re-read).
   const doc =
     stashed?.docId && (!active?.docId || stashed.docId === active.docId) ? stashed : active;
-  console.info("[study.startSharedAssessmentFromGate] Start:", {
-    docId: doc?.docId || null,
-    inventorySize: doc?.shared?.conceptInventory?.length || 0,
-    usedStash: Boolean(stashed && doc === stashed),
-  }); // [debug-enrich]
   if (!doc?.shared?.conceptInventory?.length) {
     console.warn(
       "[study.startSharedAssessmentFromGate] assessment gate accepted with empty inventory — possible stale read",
@@ -1744,12 +1475,6 @@ async function startSharedAssessmentFromGate() {
     knowledgeProfile: null,
     questionIndex: 0,
   };
-  console.debug("[study.startSharedAssessmentFromGate] Flow initialized:", {
-    docId: doc?.docId || null,
-    runnerMode: prePackingFlow.runnerMode,
-    inventorySize: conceptInventory.length,
-    edgeCount: prepEdges.length,
-  }); // [debug-enrich]
   if (els.prePackingAssessmentSkip) {
     els.prePackingAssessmentSkip.textContent = "Skip for now";
   }
@@ -1762,28 +1487,20 @@ async function startSharedAssessmentFromGate() {
 }
 
 async function handleAssessmentGateAccept() {
-  console.info("[study.handleAssessmentGateAccept] User accepted gate"); // [debug-enrich]
   await startSharedAssessmentFromGate();
 }
 
 async function handleAssessmentGateSkip() {
-  console.info("[study.handleAssessmentGateSkip] User skipped gate"); // [debug-enrich]
   await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
 }
 
 async function handleRedoAssessmentRequest() {
   const doc = await getActiveSession();
   if (!doc?.docId) return;
-  console.warn("[study.handleRedoAssessmentRequest] Confirm redo requested:", {
-    docId: doc.docId,
-  }); // [debug-enrich]
   const ok = window.confirm(
     "Retaking the knowledge check will reset your study progress for this document (modes, spaced repetition, annotations, and assessment signals). Document content and your mnemonics will be kept. Continue?",
   );
   if (!ok) return;
-  console.warn("[study.handleRedoAssessmentRequest] Redo confirmed:", {
-    docId: doc.docId,
-  }); // [debug-enrich]
   resetSessionForAssessmentRedo(doc);
   await saveDocumentSession(doc);
   await maybeEnterSharedAssessmentGate(doc);
@@ -2489,11 +2206,6 @@ async function getRecallController() {
       runConceptInventoryForDoc: async () => {
         const doc = await getActiveSession();
         const guard = evaluateConceptInventoryGuard(doc);
-        console.debug("[DPP-GUARD.recall.runConceptInventoryForDoc] Guard", {
-          docId: doc?.docId,
-          decision: guard.decision,
-          conceptCount: doc?.shared?.conceptInventory?.length ?? 0,
-        }); // [debug-enrich]
         if (guard.decision === "skip" || guard.decision === "degraded") return;
         if (guard.decision === "failed") {
           throw new Error(PREPARATION_FAILED_MSG);
@@ -4686,17 +4398,6 @@ async function resumeSlowSession(session) {
     Boolean(session?.slow && !session.slow.pdfSource && doc?.shared?.pdfSource);
   if (hydrated) {
     session.slow.pdfSource = doc.shared.pdfSource;
-    console.info("[study.resumeSlowSession] Hydrated pdfSource from shared:", {
-      viewerMode: session.slow.viewerMode ?? null,
-      kind: session.slow.pdfSource?.kind ?? null,
-    }); // [debug-enrich]
-  } else {
-    console.debug("[study.resumeSlowSession] Resume:", {
-      phase: session?.slow?.phase ?? null,
-      viewerMode: session?.slow?.viewerMode ?? null,
-      hasSlowPdfSource: Boolean(session?.slow?.pdfSource),
-      hasSharedPdfSource: Boolean(doc?.shared?.pdfSource),
-    }); // [debug-enrich]
   }
   if (session?.language) syncStudyLanguage(session.language);
   state.activeSession = session;
@@ -4801,7 +4502,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     input.type = "text";
     input.className = "slow-phase0-input";
     input.value = text;
-    input.placeholder = "Pregunta antes de leer?";
+    input.placeholder = "Question before reading?";
     input.addEventListener("input", () => {
       phase0.prequestions[index] = input.value.trim();
       persistPhase0Edits(session);
@@ -4810,7 +4511,7 @@ function renderSlowPhase0Prequestions(session, parent) {
     del.type = "button";
     del.className = "slow-phase0-icon-btn";
     del.textContent = "×";
-    del.title = "Eliminar pregunta";
+    del.title = "Delete question";
     del.addEventListener("click", () => {
       phase0.prequestions.splice(index, 1);
       renderSlowPhase0Content(session);
@@ -5872,27 +5573,13 @@ async function handleRecommendBlockCount(runId = ++recommendBlockCountRunId) {
     const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
 
     if (preparedPack) {
-      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: preparedPack", {
-        conceptCount: preparedPack.inventory?.length ?? 0,
-      }); // [debug-enrich]
       inventory = preparedPack.inventory;
     } else if (isBlockSplitCacheValid(cache, fingerprint)) {
-      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: blockSplitCache", {
-        conceptCount: cache.conceptInventory?.length ?? 0,
-      }); // [debug-enrich]
       inventory = cache.conceptInventory;
     } else if (isConceptInventoryValid(doc)) {
-      console.debug("[DPP-GUARD.recommendBlockCount] Inventory path: shared.conceptInventory", {
-        docId: doc?.docId,
-        conceptCount: doc.shared.conceptInventory?.length ?? 0,
-      }); // [debug-enrich]
       inventory = doc.shared.conceptInventory;
       setBlockSplitCache({ fingerprint, conceptInventory: inventory, recommendation: null });
     } else {
-      console.info("[DPP-GUARD.recommendBlockCount] Inventory path: resolveInventoryForBlockFlow", {
-        docId: doc?.docId,
-        prepStatus: doc?.shared?.preparation?.status ?? null,
-      }); // [debug-enrich]
       const resolved = await resolveInventoryForBlockFlow(
         doc,
         cleanedText,
@@ -6375,17 +6062,6 @@ export async function readAndCleanMaterialText(file) {
     await normalizeStudyMaterial(rawContent, detectedFormat);
 
   const cleanedText = normalizedContent;
-  console.info("[study.readAndCleanMaterialText] Done:", {
-    fileName: file?.name || "",
-    detectedFormat,
-    normalizedFormat,
-    wordCount: countWords(cleanedText),
-    charCount: cleanedText.length,
-    warningCount: (warnings || []).length,
-    warnings: (warnings || []).slice(0, 5),
-    pendingImages: (pendingImages || []).length,
-    headingCount: Array.isArray(headings) ? headings.length : 0,
-  }); // [debug-enrich]
   return {
     cleanedText,
     wordCount: countWords(cleanedText),
@@ -6461,22 +6137,9 @@ function computeSessionCompleteSummary() {
 }
 
 function showSessionComplete() {
-  // [debug-enrich]
-  console.info('[study.showSessionComplete] Session complete:', {
-    activeBlockIndex: state.activeBlockIndex,
-    totalBlocks: getTotalBlocksSafe(),
-    docId: state.activeSession?.docId ?? null,
-    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
-  });
   try {
     commitSessionConceptsForBlock(state.activeBlockIndex);
-  } catch (err) {
-    // [debug-enrich]
-    console.warn('[study.showSessionComplete] commitSessionConceptsForBlock failed (ignored):', {
-      blockIndex: state.activeBlockIndex,
-      message: err?.message ?? String(err),
-    });
-  }
+  } catch {}
   void maybeApplyRsvpWpmCalibration();
   persistFlowRecommendationProgress();
   syncOfflinePackButtonVisibility();
@@ -6487,31 +6150,14 @@ function showSessionComplete() {
 function maybeApplyRsvpWpmCalibration() {
   const session = state.activeSession;
   if (!session || !shouldCalibrateStudyMode(session.studyMode || state.studyMode)) {
-    // [debug-enrich]
-    console.debug('[study.maybeApplyRsvpWpmCalibration] Skipped', {
-      hasSession: Boolean(session),
-      studyMode: session?.studyMode ?? state.studyMode ?? null,
-    });
     return;
   }
   void (async () => {
-    try {
-      const doc = await getActiveSession();
-      const inventory = Array.isArray(doc?.shared?.conceptInventory)
-        ? doc.shared.conceptInventory
-        : [];
-      // [debug-enrich]
-      console.info('[study.maybeApplyRsvpWpmCalibration] Applying calibration:', {
-        docId: doc?.docId ?? session?.docId ?? null,
-        inventoryCount: inventory.length,
-      });
-      applySessionWpmCalibration(session, inventory);
-    } catch (err) {
-      // [debug-enrich]
-      console.warn('[study.maybeApplyRsvpWpmCalibration] Calibration failed (silent):', {
-        message: err?.message ?? String(err),
-      });
-    }
+    const doc = await getActiveSession();
+    const inventory = Array.isArray(doc?.shared?.conceptInventory)
+      ? doc.shared.conceptInventory
+      : [];
+    applySessionWpmCalibration(session, inventory);
   })();
 }
 
@@ -7092,23 +6738,11 @@ function attachQuestionCountDiagnostics(block, cfg, counts) {
 async function ensureBlockGenerated(blockIndex) {
   const existing = getBlock(blockIndex);
   const needsReaderText = !isQuestionsStudyMode(state.activeSession);
-  // [debug-enrich]
-  console.debug('[study.ensureBlockGenerated] Check:', {
-    blockIndex,
-    needsReaderText,
-    hasExisting: Boolean(existing),
-    hasReadable: existing ? blockHasReadableExplanation(existing) : false,
-    hasGenerated: existing ? hasGeneratedBlockContent(existing) : false,
-  });
   if (needsReaderText) {
     if (blockHasReadableExplanation(existing) && hasGeneratedBlockContent(existing)) {
-      // [debug-enrich]
-      console.debug('[study.ensureBlockGenerated] Cache hit (with explanation)');
       return existing;
     }
   } else if (hasGeneratedBlockContent(existing)) {
-    // [debug-enrich]
-    console.debug('[study.ensureBlockGenerated] Cache hit (questions mode)');
     return existing;
   }
   if (isOfflineMode()) {
@@ -7185,28 +6819,12 @@ async function ensureBlockGenerated(blockIndex) {
       sectionHasImages,
     };
 
-    // [debug-enrich]
-    console.info('[study.ensureBlockGenerated] Generating block via LLM:', {
-      blockIndex,
-      blockTitle: blockTitle ? String(blockTitle).slice(0, 80) : null,
-      n_test: cfg.n_test,
-      n_socratic: cfg.n_socratic,
-      materialLen: materialChunk ? String(materialChunk).length : 0,
-      strictMode,
-      sectionHasImages,
-    });
 
     let obj = null;
     try {
       obj = await deepSeekGenerateBlockJson(blockRequest);
     } catch (err) {
       const message = err?.message ? String(err.message) : String(err);
-      // [debug-enrich]
-      console.warn('[study.ensureBlockGenerated] First gen attempt failed:', {
-        blockIndex,
-        message,
-        willRetryJson: message.includes("valid JSON"),
-      });
       if (!message.includes("valid JSON")) throw err;
       obj = await deepSeekGenerateBlockJson(blockRequest);
     }
@@ -7420,11 +7038,11 @@ export function syncBlockFidelityBanner(block, blockIndexEntry) {
 
   let message = "";
   if (anchor === "weak") {
-    message = "Anclaje débil al documento — contrasta con tu PDF.";
+    message = "Weak document anchor — compare with your PDF.";
   } else if (anchor === "proportional_fallback") {
-    message = "Este bloque usa un trozo aproximado del archivo; revisa la fuente.";
+    message = "This block uses an approximate slice of the file; check the source.";
   } else if (fidelity === "warn") {
-    message = "Fidelidad reducida: parte del contenido podría no reflejar la fuente.";
+    message = "Reduced fidelity: some content may not reflect the source.";
   }
 
   if (!message) {
@@ -7568,24 +7186,13 @@ function showTestQuestions() {
 function beginRsvpForCurrentBlock({ onDone }) {
   const blocks = getBlocksSafe();
   const block = blocks[state.activeBlockIndex];
-  // [debug-enrich]
-  console.info('[study.beginRsvpForCurrentBlock] Starting RSVP overlay:', {
-    activeBlockIndex: state.activeBlockIndex,
-    hasBlock: Boolean(block),
-    explanationLen: block?.explanation ? String(block.explanation).length : 0,
-    readable: block ? blockHasReadableExplanation(block) : false,
-  });
   if (!block) {
     const msg = "Missing block.";
-    // [debug-enrich]
-    console.error('[study.beginRsvpForCurrentBlock] Missing block at index', state.activeBlockIndex);
     setTestError(msg);
     showScreen("test");
     return;
   }
   if (!blockHasReadableExplanation(block)) {
-    // [debug-enrich]
-    console.warn('[study.beginRsvpForCurrentBlock] No readable explanation — skipping RSVP');
     if (typeof onDone === "function") {
       onDone();
       return;
@@ -7642,12 +7249,6 @@ function beginBlockReading({ onDone }) {
     : isPacedReaderPreferred()
       ? "paced"
       : "rsvp";
-  // [debug-enrich]
-  console.info('[study.beginBlockReading] Choosing reading mode:', {
-    mode,
-    activeBlockIndex: state.activeBlockIndex,
-    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
-  });
   if (isReadStudyMode(state.activeSession)) beginReadForCurrentBlock({ onDone });
   else if (isPacedReaderPreferred()) beginPacedReadForCurrentBlock({ onDone });
   else beginRsvpForCurrentBlock({ onDone });
@@ -7867,15 +7468,6 @@ function renderTestQuestion() {
 
 async function handleTestAnswer({ chosen, correct, feedback }) {
   testMcAnswered = true;
-  // [debug-enrich]
-  console.info('[study.handleTestAnswer] MCQ answer:', {
-    chosen,
-    correctAnswer: correct != null ? String(correct).slice(0, 8) : null,
-    isCorrect: String(chosen || "") === String(correct || ""),
-    blockIndex: state.activeBlockIndex,
-    questionIndex: state.activeQuestionIndex,
-    isAssessment: isPrePackingAssessmentRunner(),
-  });
   if (isPrePackingAssessmentRunner()) {
     handleAssessmentTestAnswer({ chosen, correct, feedback });
     return;
@@ -8007,21 +7599,12 @@ function renderSocraticQuestion() {
 
 async function startBlock(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
-  // [debug-enrich]
-  console.info('[study.startBlock] Starting block:', {
-    blockIndex: idx,
-    totalBlocks: getTotalBlocksSafe(),
-    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
-    docId: state.activeSession?.docId ?? null,
-  });
 
   // 1) triggerPrefetch(N+1) ? fire and forget
   const total = Math.max(1, getTotalBlocksSafe());
   const blockIndexArr = loadBlockIndex() || state.lastBlockIndex || [];
   const nextIdx = resolveNextStudyBlockIndex(idx, blockIndexArr, total);
   if (nextIdx < total) {
-    // [debug-enrich]
-    console.debug('[study.startBlock] Prefetching next block:', { nextIdx });
     prefetchStartedAtByIndex.set(nextIdx, Date.now());
     setPrefetchIndicator("generating");
     const cfg = resolveBlockQuestionConfig(nextIdx);
@@ -8083,21 +7666,11 @@ async function generateBlockDirect(blockIndex, { timeoutMs, n_test, n_socratic }
 }
 
 function finishRSVP(blockIndex) {
-  // [debug-enrich]
-  console.info('[study.finishRSVP] Reading finished — showing questions:', {
-    blockIndex: Math.max(0, Math.floor(Number(blockIndex) || 0)),
-    activeBlockIndex: state.activeBlockIndex,
-  });
   showQuestions(blockIndex);
 }
 
 async function showQuestions(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
-  // [debug-enrich]
-  console.info('[study.showQuestions] Entering questions for block:', {
-    blockIndex: idx,
-    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
-  });
   state.activeBlockIndex = idx;
   state.activeQuestionIndex = 0;
   if (state.activeSession && typeof state.activeSession === "object") {
@@ -8136,40 +7709,17 @@ async function finishQuestions(blockIndex) {
   const idx = Math.max(0, Math.floor(Number(blockIndex) || 0));
   const total = Math.max(1, getTotalBlocksSafe());
   const studyOrder = isQuestionsStudyMode(state.activeSession) ? state.questionsStudyOrder : null;
-  // [debug-enrich]
-  console.info('[study.finishQuestions] Block questions finished:', {
-    blockIndex: idx,
-    totalBlocks: total,
-    isLast: isLastQuestionsStudyBlock(idx, studyOrder, total),
-    hasStudyOrder: Array.isArray(studyOrder) && studyOrder.length > 0,
-    studyMode: state.activeSession?.studyMode ?? state.studyMode ?? null,
-  });
   if (isLastQuestionsStudyBlock(idx, studyOrder, total)) {
-    // [debug-enrich]
-    console.info('[study.finishQuestions] Last block — showing session complete');
     showSessionComplete();
     return;
   }
 
   try {
     commitSessionConceptsForBlock(idx);
-  } catch (err) {
-    // [debug-enrich]
-    console.warn('[study.finishQuestions] commitSessionConceptsForBlock failed (ignored):', {
-      blockIndex: idx,
-      message: err?.message ?? String(err),
-    });
-  }
+  } catch {}
 
   const o = getOrCreateTransitionOverlay();
   const nextIndex = resolveNextStudyBlockForSession(idx, total);
-  // [debug-enrich]
-  console.info('[study.finishQuestions] Opening transition overlay:', {
-    finishedBlockIndex: idx,
-    nextIndex,
-    prefetchStatus: prefetchState?.status ?? null,
-    prefetchBlockIndex: prefetchState?.blockIndex ?? null,
-  });
   o.title.textContent = `Continue to block ${nextIndex + 1} of ${total}`;
 
   o.finishedBlockIndex = idx;
@@ -9067,11 +8617,6 @@ let prePackingDraftMeta = null;
 
 function resetPrePackingFlow() {
   if (prePackingFlow) {
-    console.debug("[study.resetPrePackingFlow] Clearing flow:", {
-      phase: prePackingFlow.phase,
-      hadItemsPromise: Boolean(prePackingFlow.itemsPromise),
-      hadPackingPromise: Boolean(prePackingFlow.packingPromise),
-    }); // [debug-enrich]
   }
   clearAssessmentChrome();
   prePackingFlow = null;
@@ -9173,12 +8718,6 @@ async function persistAdaptiveBeliefToSession(doc, flow) {
 }
 
 function createPrePackingItemsPromise(flow) {
-  console.debug("[study.createPrePackingItemsPromise] Start:", {
-    holistic: isHolisticAssessmentEnabled(),
-    inventorySize: flow?.conceptInventory?.length || 0,
-    nBlocks: flow?.nBlocks,
-    prefetchConfigKey: flow?.prefetchConfigKey || null,
-  }); // [debug-enrich]
   if (isHolisticAssessmentEnabled()) {
     return Promise.resolve(resolveHolisticAssessmentContext(flow)).then((ctx) => {
       flow.edges = ctx.edges;
@@ -9392,17 +8931,7 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   const finalIndex = packed.blockIndex;
   const splitRunMeta = packed.splitRunMeta;
   const inventory = conceptInventory || packed.conceptInventory || [];
-  // [debug-enrich]
-  console.info('[study.applyPackedBlocksToEditor] Applying packed blocks to editor:', {
-    blockCount: Array.isArray(finalIndex) ? finalIndex.length : null,
-    inventoryCount: Array.isArray(inventory) ? inventory.length : 0,
-    pipeline: splitRunMeta?.pipeline ?? null,
-    packFallback: splitRunMeta?.pack_fallback_reason ?? null,
-    hasPacked: Boolean(packed),
-  });
   if (!Array.isArray(finalIndex) || !finalIndex.length) {
-    // [debug-enrich]
-    console.warn('[study.applyPackedBlocksToEditor] Empty or missing blockIndex — editor may be blank');
   }
   state.lastBlockIndex = finalIndex;
   state.lastNBlocks = finalIndex.length;
@@ -9414,8 +8943,6 @@ function applyPackedBlocksToEditor(packed, conceptInventory) {
   renderBlockIndexEditor(finalIndex, { readOnly: false });
   setBlocksListJsonCache(formatBlockIndexForConfirmation(finalIndex));
   showScreen("blocks");
-  // [debug-enrich]
-  console.debug('[study.applyPackedBlocksToEditor] Blocks screen shown');
 }
 
 function renderPrePackingAssessmentGraph(inventory) {
@@ -9725,13 +9252,9 @@ async function enterPrePackingAssessmentScreen() {
 
 async function handlePrePackingSkip() {
   if (!prePackingFlow) {
-    // [debug-enrich]
-    console.warn("[study.handlePrePackingSkip] No prePackingFlow — noop");
     return;
   }
   if (prePackingFlow.runnerMode === "shared_gate" || prePackingFlow.fromSharedGate) {
-    // [debug-enrich]
-    console.info("[study.handlePrePackingSkip] Shared gate assessment skipped");
     await completeSharedAssessmentGate({ outcome: "skipped", profile: null });
     return;
   }
@@ -9789,11 +9312,6 @@ async function advancePrePackingAssessment() {
 
 async function finishPrePackingAssessment() {
   if (!prePackingFlow) return;
-  console.info("[study.finishPrePackingAssessment] Start:", {
-    runnerMode: prePackingFlow.runnerMode,
-    responseCount: (prePackingFlow.assessmentResponses || prePackingFlow.responses || []).length,
-    hasParallelPack: Boolean(ASSESSMENT_FLAGS.ASSESSMENT_PARALLEL_PACKING),
-  }); // [debug-enrich]
   clearAssessmentChrome();
   if (els.prePackingAssessmentStatus) {
     els.prePackingAssessmentStatus.textContent = "Evaluating responses…";
@@ -9828,16 +9346,8 @@ async function finishPrePackingAssessment() {
   prePackingFlow.knowledgeProfile = profile;
   prePackingFlow.assessmentSkipped = false;
   prePackingFlow.packingIgnoredProfile = false;
-  console.debug("[study.finishPrePackingAssessment] Profile evaluated:", {
-    hasProfile: Boolean(profile),
-    masteryCounts: countProfileMastery(profile),
-    adaptiveEarlyStop: Boolean(prePackingFlow.adaptiveEarlyStop),
-  }); // [debug-enrich]
 
   if (prePackingFlow.runnerMode === "shared_gate" || prePackingFlow.fromSharedGate) {
-    console.info("[study.finishPrePackingAssessment] Completing shared gate with accepted outcome", {
-      hasProfile: Boolean(profile),
-    }); // [debug-enrich]
     await completeSharedAssessmentGate({ outcome: "accepted", profile });
     return;
   }
@@ -10085,13 +9595,6 @@ export async function wireStudyHandlers() {
 
   function goToSessionReady(nBlocks) {
     const n = Math.max(1, Math.floor(Number(nBlocks) || 1));
-    // [debug-enrich]
-    console.info('[study.goToSessionReady] Showing session ready:', {
-      nBlocksRequested: nBlocks,
-      nBlocksResolved: n,
-      studyMode: state.studyMode ?? null,
-      docId: state.activeSession?.docId ?? null,
-    });
     setFullPackEntryCta(n);
     if (els.sessionReadyMeta) {
       els.sessionReadyMeta.textContent = `Session ready. Blocks: ${n}`;
@@ -10100,11 +9603,6 @@ export async function wireStudyHandlers() {
   }
 
   async function startStudyingNow() {
-    // [debug-enrich]
-    console.info('[study.startStudyingNow] Start studying clicked:', {
-      studyModeRadio: getSelectedStudyModeRadio(),
-      stateStudyMode: state.studyMode ?? null,
-    });
     els.startStudyingError.hidden = true;
     els.startStudyingError.textContent = "";
     els.startStudyingStatus.textContent = "";
@@ -10113,8 +9611,6 @@ export async function wireStudyHandlers() {
     await applyFlowRecommendationOnEnterMode(studyMode);
     state.activeSession = await loadActiveSession();
     if (!state.activeSession) {
-      // [debug-enrich]
-      console.error('[study.startStudyingNow] No active session — returning to create');
       els.startStudyingError.hidden = false;
       els.startStudyingError.textContent = "No saved session found. Generate blocks first.";
       returnToCreateScreen();
@@ -10146,17 +9642,6 @@ export async function wireStudyHandlers() {
     ) {
       state.activeBlockIndex = state.questionsStudyOrder[0];
     }
-    // [debug-enrich]
-    console.info('[study.startStudyingNow] Entering study loop:', {
-      docId: state.activeSession?.docId ?? null,
-      studyMode: state.activeSession?.studyMode ?? studyMode,
-      activeBlockIndex: state.activeBlockIndex,
-      activeQuestionIndex: state.activeQuestionIndex,
-      nTest: state.nTest,
-      nSocratic: state.nSocratic,
-      totalBlocks: getTotalBlocksSafe(),
-      studyStartedAt: state.activeSession?._meta?.study_started_at ?? null,
-    });
     updateStudyProgressUi();
     startBlock(state.activeBlockIndex);
   }
@@ -10559,20 +10044,10 @@ export async function wireStudyHandlers() {
       migrateKnowledgeProfileToShared(doc);
       const packKnowledgeProfile = resolvePackKnowledgeProfile(doc);
       const packOpts = { ...splitOpts, knowledgeProfile: packKnowledgeProfile };
-      console.info("[study.generateBlocks] RSVP split start:", {
-        docId: doc?.docId,
-        nBlocks,
-        wordCount,
-        hasSharedProfile: Boolean(packKnowledgeProfile),
-        hasCachedInventory: isConceptInventoryValid(doc),
-        cacheValid: isBlockSplitCacheValid(cache, fingerprint),
-        preparedPack: Boolean(resolveRsvpInventoryForPack(doc, { fingerprint })),
-      }); // [debug-enrich]
 
       let packed;
       const preparedPack = resolveRsvpInventoryForPack(doc, { fingerprint });
       if (preparedPack) {
-        console.debug("[study.generateBlocks] Pack path: preparedPack"); // [debug-enrich]
         packed = await packInventoryToBlocks(
           preparedPack.inventory,
           nBlocks,
@@ -10580,7 +10055,6 @@ export async function wireStudyHandlers() {
           packOpts,
         );
       } else if (isBlockSplitCacheValid(cache, fingerprint)) {
-        console.debug("[study.generateBlocks] Pack path: blockSplitCache"); // [debug-enrich]
         packed = await packInventoryToBlocks(
           cache.conceptInventory,
           nBlocks,
@@ -10588,7 +10062,6 @@ export async function wireStudyHandlers() {
           packOpts,
         );
       } else if (isConceptInventoryValid(doc)) {
-        console.debug("[study.generateBlocks] Pack path: shared.conceptInventory"); // [debug-enrich]
         packed = await packInventoryToBlocks(
           doc.shared.conceptInventory,
           nBlocks,
@@ -10603,12 +10076,8 @@ export async function wireStudyHandlers() {
           Array.isArray(sparseInv) &&
           sparseInv.length > 0
         ) {
-          console.warn("[study.generateBlocks] Pack path: degraded sparse inventory", {
-            conceptCount: sparseInv.length,
-          }); // [debug-enrich]
           packed = await packInventoryToBlocks(sparseInv, nBlocks, cleanedText, packOpts);
         } else {
-          console.debug("[study.generateBlocks] Pack path: twoPhaseConceptSplit"); // [debug-enrich]
           const splitResult = await twoPhaseConceptSplit(cleanedText, nBlocks, splitOpts);
           packed = {
             blockIndex: splitResult.blockIndex,
@@ -10643,11 +10112,6 @@ export async function wireStudyHandlers() {
       );
       return;
     } catch (err) {
-      console.error("[study.generateBlocks] Failed:", {
-        message: err?.message || String(err),
-        stack: err?.stack,
-        prePackingActive: Boolean(prePackingFlow),
-      }); // [debug-enrich]
       setGenerateError(err?.message ? String(err.message) : String(err));
     } finally {
       setGenerateLoading(false);
@@ -10656,15 +10120,6 @@ export async function wireStudyHandlers() {
   });
 
   els.confirmBlocksBtn.addEventListener("click", async () => {
-    // [debug-enrich]
-    console.info('[study.confirmBlocks] Confirm clicked:', {
-      offlineMode: window.offlineMode === true,
-      lastNBlocks: state.lastNBlocks ?? null,
-      lastBlockIndexLen: Array.isArray(state.lastBlockIndex) ? state.lastBlockIndex.length : 0,
-      indexWasImported: Boolean(window.indexWasImported),
-      hasOriginalMaterial: Boolean(state.originalMaterialText?.trim?.()),
-      studyMode: state.studyMode ?? null,
-    });
     clearConfirmError();
     els.confirmBlocksStatus.textContent = "";
 
@@ -10896,19 +10351,8 @@ export async function wireStudyHandlers() {
         prePackingDraftMeta = null;
       }
 
-      // [debug-enrich]
-      console.info('[study.confirmBlocks] Session initialized from blocks:', {
-        nBlocks,
-        docId: sessionObj?.docId ?? null,
-        studyMode: sessionObj?.studyMode ?? null,
-        mergedCount: merged.length,
-      });
       goAfterBlocksConfirmed(nBlocks);
     } catch (err) {
-      // [debug-enrich]
-      console.error('[study.confirmBlocks] Confirm failed:', {
-        message: err?.message ?? String(err),
-      });
       setConfirmError(err?.message ? String(err.message) : String(err));
     } finally {
       setConfirmLoading(false);
@@ -11082,14 +10526,6 @@ export async function wireStudyHandlers() {
   });
 
   els.socraticSubmitBtn.addEventListener("click", async () => {
-    // [debug-enrich]
-    console.info('[study.socraticSubmit] Submit clicked:', {
-      isAssessment: isPrePackingAssessmentRunner(),
-      offline: isOfflineMode(),
-      blockIndex: state.activeBlockIndex,
-      questionIndex: state.activeQuestionIndex,
-      answerLen: String(els.socraticAnswer?.value || "").trim().length,
-    });
     if (isPrePackingAssessmentRunner()) {
       clearSocraticError();
       const answer = String(els.socraticAnswer.value || "").trim();
@@ -11159,11 +10595,6 @@ export async function wireStudyHandlers() {
         ...scopeFields,
         studentIntent: doc?.shared?.studentIntent ?? null,
       });
-      // [debug-enrich]
-      console.info('[study.socraticSubmit] Tutor response received:', {
-        blockIndex: state.activeBlockIndex,
-        replyLen: resp ? String(resp).length : 0,
-      });
 
       els.socraticResponseBox.hidden = false;
       void renderMarkdown(els.socraticResponseBox, resp);
@@ -11206,12 +10637,6 @@ export async function wireStudyHandlers() {
         els.socraticNextBlockBtn.textContent = "Finish";
       }
     } catch (err) {
-      // [debug-enrich]
-      console.error('[study.socraticSubmit] Tutor submit failed:', {
-        blockIndex: state.activeBlockIndex,
-        message: err?.message ?? String(err),
-        status: err?.status ?? null,
-      });
       setSocraticError(err?.message ? String(err.message) : String(err));
     } finally {
       setSocraticLoading(false);

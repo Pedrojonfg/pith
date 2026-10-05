@@ -45,8 +45,17 @@ export function isMockAuthEnabled() {
   }
   if (typeof window !== "undefined" && window.location?.search) {
     try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("MOCK_AUTH") === "true") return true;
+      const host = String(window.location.hostname || "").toLowerCase();
+      const localHost =
+        host === "" ||
+        host === "localhost" ||
+        host === "127.0.0.1" ||
+        host === "[::1]" ||
+        host === "::1";
+      if (localHost) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("MOCK_AUTH") === "true") return true;
+      }
     } catch {
       // ignore
     }

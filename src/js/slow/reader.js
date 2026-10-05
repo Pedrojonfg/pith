@@ -551,14 +551,14 @@ function ensureAnnotationEditMenu() {
   menu.hidden = true;
   menu.setAttribute("role", "menu");
   menu.innerHTML = `
-    <div class="slow-annotation-edit-actions" role="group" aria-label="Editar anotación">
-      <button type="button" class="slow-annotation-edit-btn" data-action="type">Editar tipo</button>
-      <button type="button" class="slow-annotation-edit-btn" data-action="text">Editar texto</button>
-      <button type="button" class="slow-annotation-edit-btn slow-annotation-edit-btn--danger" data-action="delete">Eliminar</button>
+    <div class="slow-annotation-edit-actions" role="group" aria-label="Edit annotation">
+      <button type="button" class="slow-annotation-edit-btn" data-action="type">Edit type</button>
+      <button type="button" class="slow-annotation-edit-btn" data-action="text">Edit text</button>
+      <button type="button" class="slow-annotation-edit-btn slow-annotation-edit-btn--danger" data-action="delete">Delete</button>
     </div>
-    <div class="slow-annotation-edit-types" hidden role="toolbar" aria-label="Cambiar tipo"></div>
+    <div class="slow-annotation-edit-types" hidden role="toolbar" aria-label="Change type"></div>
     <div class="slow-annotation-edit-text" hidden>
-      <label class="slow-annotation-edit-text-label">Texto de la anotación</label>
+      <label class="slow-annotation-edit-text-label">Annotation text</label>
       <input type="text" class="slow-annotation-edit-text-input" spellcheck="true" />
     </div>
   `;
@@ -679,7 +679,7 @@ function charOffsetFromPoint(pageEl, clientX, clientY, pageSlice) {
 function showDictionaryPopup({ term, definition, rect }) {
   showSlowIAOverlay({
     query: term,
-    reply: definition || "Sin definición en el diccionario de sesi—n.",
+    reply: definition || "No definition in the session dictionary.",
   });
 }
 
@@ -704,7 +704,7 @@ async function handleWordLongPress(session, clientX, clientY) {
     return;
   }
 
-  const query = `¿Qué significa «${word}» en este contexto?`;
+  const query = `What does «${word}» mean in this context?`;
   showSlowIAOverlay({ query, loading: true });
   try {
     const reply = await askSlowReaderIA(session, query);
@@ -712,7 +712,7 @@ async function handleWordLongPress(session, clientX, clientY) {
   } catch {
     showSlowIAOverlay({
       query,
-      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+      reply: "Could not get a response. Try again.",
     });
   }
 }
@@ -808,7 +808,7 @@ function renderMarginMarks(session, pageSlice) {
     if (isIAQueryAnnotation(a) && a.aiReply) {
       mark.classList.add("annotation-mark--ia");
       mark.setAttribute("role", "button");
-      mark.setAttribute("aria-label", `Ver respuesta IA: ${a.userText || a.type}`);
+      mark.setAttribute("aria-label", `View AI response: ${a.userText || a.type}`);
     }
     wireLongPress(mark, {
       onLongPress: (e) => {
@@ -873,7 +873,7 @@ function ensureIAOverlay() {
   overlay.setAttribute("aria-labelledby", "slowIAOverlayQuery");
   overlay.innerHTML = `
     <div class="slow-ia-overlay-panel">
-      <button type="button" class="slow-ia-overlay-close" aria-label="Cerrar respuesta IA">×</button>
+      <button type="button" class="slow-ia-overlay-close" aria-label="Close AI response">×</button>
       <p id="slowIAOverlayQuery" class="slow-ia-overlay-query"></p>
       <p class="slow-ia-overlay-reply"></p>
     </div>
@@ -904,9 +904,9 @@ export function showSlowIAOverlay({ query = "", reply = "", loading = false } = 
   const overlay = ensureIAOverlay();
   const queryEl = overlay.querySelector(".slow-ia-overlay-query");
   const replyEl = overlay.querySelector(".slow-ia-overlay-reply");
-  if (queryEl) queryEl.textContent = String(query || "").trim() || "Consulta IA";
+  if (queryEl) queryEl.textContent = String(query || "").trim() || "AI query";
   if (replyEl) {
-    replyEl.textContent = loading ? "Pensando…" : String(reply || "").trim();
+    replyEl.textContent = loading ? "Thinking…" : String(reply || "").trim();
     replyEl.classList.toggle("slow-ia-overlay-reply--loading", loading);
   }
   overlay.hidden = false;
@@ -917,7 +917,7 @@ export function showSlowIAOverlay({ query = "", reply = "", loading = false } = 
 export function showSlowIAOverlayFromAnnotation(ann) {
   const query =
     ann?.userText ||
-    (ann?.type === "?" ? "Steel man del fragmento" : "Explica este fragmento");
+    (ann?.type === "?" ? "Steel man for this excerpt" : "Explain this excerpt");
   showSlowIAOverlay({ query, reply: ann?.aiReply || "" });
 }
 
@@ -944,11 +944,11 @@ function ensureSteelManNudgeModal() {
   modal.setAttribute("aria-labelledby", "slowSteelManNudgeTitle");
   modal.innerHTML = `
     <div class="slow-steelman-nudge-panel">
-      <p id="slowSteelManNudgeTitle" class="slow-steelman-nudge-title">¿Has formulado el mejor argumento del autor?</p>
-      <p class="slow-steelman-nudge-hint">Antes de objetar, conviene articular la versión más fuerte del texto (steel man).</p>
+      <p id="slowSteelManNudgeTitle" class="slow-steelman-nudge-title">Have you stated the author's strongest argument?</p>
+      <p class="slow-steelman-nudge-hint">Before objecting, articulate the strongest version of the text (steel man).</p>
       <div class="slow-steelman-nudge-actions">
-        <button type="button" class="btn btn-primary slow-steelman-nudge-steel">Pedir steel man</button>
-        <button type="button" class="btn btn-secondary slow-steelman-nudge-continue">Continuar</button>
+        <button type="button" class="btn btn-primary slow-steelman-nudge-steel">Request steel man</button>
+        <button type="button" class="btn btn-secondary slow-steelman-nudge-continue">Continue</button>
       </div>
     </div>
   `;
@@ -995,10 +995,10 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") 
   if (!session?.slow || !ann) return;
   const queryText =
     userText ||
-    (typeSymbol === "?" ? "Steel man del fragmento" : "Explica este fragmento");
+    (typeSymbol === "?" ? "Steel man for this excerpt" : "Explain this excerpt");
   showSlowIAOverlay({ query: queryText, loading: true });
   try {
-    const reply = await askSlowReaderIA(session, userText || "Explica este fragmento", {
+    const reply = await askSlowReaderIA(session, userText || "Explain this excerpt", {
       annotationType: typeSymbol,
     });
     ann.aiReply = reply;
@@ -1010,7 +1010,7 @@ async function runSteelManIAFlow(session, ann, userText = "", typeSymbol = "?") 
   } catch {
     showSlowIAOverlay({
       query: queryText,
-      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+      reply: "Could not get a response. Try again.",
     });
   }
 }
@@ -1071,7 +1071,7 @@ async function handleSidebarIAQuery(session, queryText) {
   } catch {
     showSlowIAOverlay({
       query: queryText,
-      reply: "No se pudo obtener respuesta. Inténtalo de nuevo.",
+      reply: "Could not get a response. Try again.",
     });
   }
   setReaderPageIndex(session, savedPage);
@@ -1163,7 +1163,7 @@ function showFindingToast(conceptTerm) {
     toast.setAttribute("aria-live", "polite");
     document.body.appendChild(toast);
   }
-  toast.textContent = `★ HALLAZGO — ${conceptTerm}`;
+  toast.textContent = `★ FINDING — ${conceptTerm}`;
   toast.hidden = false;
   clearTimeout(showFindingToast._timer);
   showFindingToast._timer = setTimeout(() => {
@@ -1191,7 +1191,7 @@ function renderFillableMapPanel(session) {
   panel.innerHTML = "";
   const title = document.createElement("p");
   title.className = "slow-fillable-map-title";
-  title.textContent = "Mapa rellenable";
+  title.textContent = "Fillable map";
   panel.appendChild(title);
   const list = document.createElement("ul");
   list.className = "slow-fillable-map-list";
@@ -1518,9 +1518,9 @@ function ensureAnnotationMenu() {
     <div class="slow-annotation-types" role="toolbar" aria-label="Annotation types"></div>
     <div class="slow-annotation-note" hidden>
       <label class="slow-annotation-note-label"></label>
-      <input type="text" class="slow-annotation-note-input" placeholder="Nota (opcional) · Enter para guardar" spellcheck="true" />
+      <input type="text" class="slow-annotation-note-input" placeholder="Note (optional) · Enter to save" spellcheck="true" />
     </div>
-    <p class="slow-annotation-hint">Pulsa 1–9 para marcar — Esc cancelar</p>
+    <p class="slow-annotation-hint">Press 1–9 to annotate — Esc to cancel</p>
   `;
   document.body.appendChild(menu);
   return menu;
@@ -1595,7 +1595,7 @@ function renderAnnotationTypeButtons(session, menu) {
     more.type = "button";
     more.className = "slow-annotation-type-btn slow-annotation-more-btn";
     more.textContent = "⋯";
-    more.title = "Más tipos";
+    more.title = "More types";
     more.addEventListener("mousedown", (e) => e.preventDefault());
     more.addEventListener("click", () => {
       readerState.menuShowSecondary = true;
@@ -1606,7 +1606,7 @@ function renderAnnotationTypeButtons(session, menu) {
   const hint = menu.querySelector(".slow-annotation-hint");
   if (hint && types.length) {
     const keys = types.map((t) => t.hotkey).join(" · ");
-    hint.textContent = `Pulsa ${keys} para marcar · Esc cancelar`;
+    hint.textContent = `Press ${keys} to annotate · Esc to cancel`;
   }
 }
 
@@ -1643,11 +1643,11 @@ function beginAnnotationNote(session, typeDef) {
   label.textContent = `${typeDef.symbol} ${typeDef.label}`;
   input.value = "";
   if (typeDef.symbol === "??") {
-    input.placeholder = "URL o nota de literatura · Enter para guardar";
+    input.placeholder = "URL or literature note · Enter to save";
   } else if (typeDef.symbol === "?") {
-    input.placeholder = "Describe la conexión · Enter para elegir concepto";
+    input.placeholder = "Describe the connection · Enter to pick concept";
   } else {
-    input.placeholder = "Nota (opcional) · Enter para guardar";
+    input.placeholder = "Note (optional) · Enter to save";
   }
   notePanel.hidden = false;
   positionAnnotationMenu(menu, readerState.pendingSelection.rect);

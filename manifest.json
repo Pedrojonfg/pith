@@ -4,8 +4,8 @@
   "short_name": "Pith",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f0f0f",
-  "theme_color": "#0f0f0f",
+  "background_color": "#111318",
+  "theme_color": "#111318",
   "description": "AI-powered study sessions",
   "icons": [
     {

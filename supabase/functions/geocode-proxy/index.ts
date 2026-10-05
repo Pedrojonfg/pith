@@ -11,7 +11,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const NOMINATIM_UA = "MyLearning/1.0 (vault-geocode; https://github.com/local/mylearning)";
+const NOMINATIM_UA = "Pith/1.0 (vault-geocode; https://github.com/Pedrojonfg/pith)";
 const MIN_INTERVAL_MS = 1100;
 
 let lastNominatimAt = 0;
@@ -22,6 +22,16 @@ function jsonResponse(body: unknown, status = 200) {
     status,
     headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
   });
+}
+
+/** Optional comma-separated auth.users ids. Empty = all authenticated users. */
+function isUserAllowlisted(userId: string): boolean {
+  const raw = (Deno.env.get("LLM_PROXY_ALLOWED_USER_IDS") ?? "").trim();
+  if (!raw) return true;
+  const allowed = new Set(
+    raw.split(",").map((s) => s.trim()).filter(Boolean),
+  );
+  return allowed.has(userId);
 }
 
 function normalizePlaceName(raw: string): string {
@@ -64,6 +74,10 @@ serve(async (req) => {
   const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
   if (authError || !user) {
     return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
+  }
+
+  if (!isUserAllowlisted(user.id)) {
+    return new Response("Forbidden", { status: 403, headers: CORS_HEADERS });
   }
 
   let payload: { placeName?: string };

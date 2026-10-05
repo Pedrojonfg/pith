@@ -6,21 +6,21 @@ import { ANNOTATION_TYPES } from "./annotations.js?v=20260625_02";
 import { slugGraphTermId } from "./phase0.js?v=20260625_02";
 
 const TYPE_LABELS_ES = {
-  "≈": "Paráfrasis",
-  "?": "Pregunta",
-  "→": "Autoexplicación",
-  "⟷": "Conexión",
-  "⚑": "Preguntar a IA",
-  "⊘": "Objeción",
-  "↯": "Tensión",
-  "⚠": "Debilidad",
-  "★": "Fortaleza",
+  "≈": "Paraphrase",
+  "?": "Question",
+  "→": "Self-explain",
+  "⟷": "Connection",
+  "⚑": "Ask AI",
+  "⊘": "Objection",
+  "↯": "Tension",
+  "⚠": "Weakness",
+  "★": "Strength",
   "⇑": "Steel man",
-  "ia-query": "Consulta IA",
-  "📌": "Marcador",
+  "ia-query": "AI query",
+  "📌": "Pin",
   "⚡": "Insight",
-  "↩": "Retorno",
-  "🔗": "Grafo",
+  "↩": "Return",
+  "🔗": "Graph",
 };
 
 const TYPE_ORDER = new Map(ANNOTATION_TYPES.map((t, i) => [t.symbol, i]));
@@ -191,7 +191,7 @@ export function renderSlowSidebar(session, { scopeText = "" } = {}) {
   if (!groups.length) {
     const empty = document.createElement("p");
     empty.className = "slow-sidebar-empty";
-    empty.textContent = "Sin anotaciones todavía.";
+    empty.textContent = "No annotations yet.";
     annHost.appendChild(empty);
   } else {
     for (const [type, items] of groups) {
@@ -235,7 +235,7 @@ export function renderSlowSidebar(session, { scopeText = "" } = {}) {
   if (!terms.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin términos todavía.";
+    li.textContent = "No terms yet.";
     dictHost.appendChild(li);
   } else {
     for (const t of terms) {
@@ -259,7 +259,7 @@ export function renderSlowSidebar(session, { scopeText = "" } = {}) {
   if (!iaQueries.length) {
     const li = document.createElement("li");
     li.className = "slow-sidebar-empty";
-    li.textContent = "Sin consultas todavía.";
+    li.textContent = "No AI queries yet.";
     iaQueriesHost.appendChild(li);
   } else {
     for (const q of iaQueries) {
@@ -388,9 +388,9 @@ function ensureConceptPicker() {
   picker.setAttribute("aria-modal", "true");
   picker.setAttribute("aria-labelledby", "slowConceptPickerTitle");
   picker.innerHTML = `
-    <p id="slowConceptPickerTitle" class="slow-concept-picker-title">Conectar con concepto</p>
+    <p id="slowConceptPickerTitle" class="slow-concept-picker-title">Link to concept</p>
     <ul class="slow-concept-picker-list" role="listbox"></ul>
-    <button type="button" class="slow-concept-picker-cancel">Cancelar</button>
+    <button type="button" class="slow-concept-picker-cancel">Cancel</button>
   `;
   document.body.appendChild(picker);
   return picker;

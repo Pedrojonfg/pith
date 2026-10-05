@@ -73,7 +73,7 @@ import { resolveScopedHierarchy } from "./normalization/scoped-hierarchy.js";
 import { findPithImageTokenIds } from "./document-images/tokens.js";
 
 /**
- * [debug-enrich] Emit consolidated normalization quality summary after T1.1.
+ * Emit consolidated normalization quality summary after T1.1.
  * @param {object} doc
  * @param {object} [hierarchy]
  */
@@ -86,7 +86,7 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
   const imagesSkipped = images.filter((img) => img.visionStatus === "skipped").length;
   const sampleSnippets = Array.isArray(bag.finalMarkdownSampleSnippets)
     ? bag.finalMarkdownSampleSnippets
-    : []; // [debug-enrich]
+    : [];
   const summary = {
     docId: doc.docId,
     totalPages: bag.totalPages ?? 0,
@@ -130,35 +130,6 @@ function emitNormalizationQualitySummary(doc, hierarchy) {
     normalizePreparationState(doc.shared.preparation),
   );
   prepState.qualitySignal = qualitySignal;
-  console.info("[document-preparation] Document quality signal:", {
-    docId: doc.docId,
-    tier: qualitySignal.tier,
-    reasons: qualitySignal.reasons,
-    reasonDetails: qualitySignal.reasonDetails,
-  }); // [debug-enrich]
-
-  if ((summary.replacementCharsFound || 0) > 0 || (summary.suspiciousStripRemovals || 0) > 0) {
-    console.warn("[document-preparation] Normalization math diagnostics warning:", {
-      docId: summary.docId,
-      replacementCharsFound: summary.replacementCharsFound,
-      suspiciousStripRemovals: summary.suspiciousStripRemovals,
-      sampleSnippets: summary.sampleSnippets,
-    }); // [debug-enrich]
-  } else if (
-    (summary.totalPages || 0) >= 3 &&
-    (summary.mathIndicatorsFound || 0) === 0 &&
-    (bag.pagesWithReplacementChars || 0) === 0 &&
-    (bag.pagesWithSuspiciousUnicode || 0) > 0
-  ) {
-    console.warn("[document-preparation] Potential silent math loss:", {
-      docId: summary.docId,
-      mathIndicatorsFound: summary.mathIndicatorsFound,
-      pagesWithSuspiciousUnicode: bag.pagesWithSuspiciousUnicode,
-      suspiciousUnicodeCharsFound: bag.suspiciousUnicodeCharsFound || 0,
-      note: "Healthy char counts can still hide garbled/dropped formula glyphs (custom encodings)",
-    }); // [debug-enrich]
-  }
-
   return summary;
 }
 
@@ -349,12 +320,6 @@ function resolveFinalStatus(prep, doc, stopAfterTier) {
 async function runPhaseT01(doc, ctx) {
   const text = getRawMarkdown(doc);
   if (!text) throw new Error("T0.1: empty document");
-  console.info("[document-preparation.runPhaseT01] Normalized markdown present:", {
-    docId: doc.docId,
-    charCount: text.length,
-    wordCount: text.split(/\s+/).filter(Boolean).length,
-    pendingImages: Array.isArray(doc?.shared?.images) ? doc.shared.images.length : 0,
-  }); // [debug-enrich]
   return hashPayload(text.slice(0, 200));
 }
 
@@ -362,13 +327,6 @@ async function runPhaseT02(doc, ctx) {
   const metrics = analyzeText(getRawMarkdown(doc));
   doc.shared = doc.shared || {};
   doc.shared.textMetrics = metrics;
-  console.info("[document-preparation.runPhaseT02] Text metrics:", {
-    docId: doc.docId,
-    charCount: metrics.charCount,
-    wordCount: metrics.wordCount,
-    sizeCategory: metrics.sizeCategory,
-    hasExplicitHeadings: metrics.structureSignals?.hasExplicitHeadings,
-  }); // [debug-enrich]
   return hashPayload(metrics);
 }
 
@@ -385,7 +343,7 @@ async function runPhaseT11(doc, ctx) {
   });
   doc.shared.docHierarchy = hierarchy;
   doc.shared.docTopics = Array.isArray(hierarchy?.topics) ? hierarchy.topics : [];
-  emitNormalizationQualitySummary(doc, hierarchy); // [debug-enrich]
+  emitNormalizationQualitySummary(doc, hierarchy);
   return hashPayload(hierarchy);
 }
 
@@ -403,42 +361,17 @@ async function runPhaseT12b(doc, ctx) {
 }
 
 async function runPhaseT12(doc, ctx) {
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-TRIGGER] runPhaseT12 ENTER", {
-    docId: doc?.docId ?? null,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    forceRerun: ctx.forceRerun === true,
-    conceptCount: doc.shared?.conceptInventory?.length ?? 0,
-  });
-  console.debug("[DPP-GUARD.runPhaseT12] Enter", {
-    docId: doc.docId,
-    forceRerun: ctx.forceRerun === true,
-    prepStatus: doc.shared?.preparation?.status ?? null,
-    conceptCount: doc.shared?.conceptInventory?.length ?? 0,
-    interviewSynthesisComplete: doc.shared?.interviewSynthesisComplete === true,
-  }); // [debug-enrich]
   if (
     doc.shared?.interviewSynthesisComplete === true &&
     Array.isArray(doc.shared.conceptInventory) &&
     doc.shared.conceptInventory.length > 0
   ) {
-    console.info("[DPP-GUARD.runPhaseT12] skip — interview synthesis inventory present", {
-      docId: doc.docId,
-      conceptCount: doc.shared.conceptInventory.length,
-    }); // [debug-enrich]
     await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(doc.shared.conceptInventory.length);
   }
   if (!ctx.forceRerun && isConceptInventoryValid(doc)) {
     const inv = doc.shared.conceptInventory;
     const charCount = doc.shared?.docMeta?.charCount ?? 0;
-    console.info("[DPP-GUARD.runPhaseT12] skip — isConceptInventoryValid", {
-      docId: doc.docId,
-      conceptCount: inv.length,
-      charCount,
-      prepStatus: doc.shared?.preparation?.status ?? null,
-    }); // [debug-enrich]
     await ensureThresholdTagsOnInventory(doc, ctx);
     return hashPayload(inv.length);
   }
@@ -456,14 +389,6 @@ async function runPhaseT12(doc, ctx) {
     charCount,
     onProgress: (msg) => ctx.onProgress?.({ phaseId: "T1.2", label: msg, status: "running" }),
   });
-  console.debug("[document-preparation.runPhaseT12] Inventory result:", {
-    docId: doc.docId,
-    kind: invResult.kind,
-    conceptCount: invResult.kind === "inventory" ? invResult.inventory?.length : 0,
-    inventoryMode: invResult.inventoryMode,
-    chunkCount: invResult.chunkCount,
-    failedChunks: invResult.failedChunks,
-  }); // [debug-enrich]
   if (invResult.kind === "fallback_mono") {
     doc.shared.conceptInventory = [];
     prep.failReason = "INVENTORY_MERGE_FAILED";
@@ -550,17 +475,6 @@ async function runPhaseT14(doc) {
     firstPersonRatio: textMetrics.contentSignals?.firstPersonRatio || 0,
     sizeCategory: textMetrics.sizeCategory,
   };
-  // [debug-enrich]
-  console.info('[document-preparation.runPhaseT14] Computing block recommendation:', {
-    docId: doc.id ?? null,
-    conceptCount: signals.conceptCount,
-    wordCount: signals.wordCount,
-    sectionCount: signals.sectionCount,
-    sizeCategory: signals.sizeCategory,
-    conceptualLoad: signals.conceptualLoad,
-    genre: signals.genre,
-    hasHierarchy: Boolean(hierarchy),
-  });
   const theoryMode =
     doc.shared?.modeRecommendation?.onboardingFlow?.[0] ||
     doc.shared?.modeRecommendation?.primaryFlow?.[0]?.mode;
@@ -572,15 +486,6 @@ async function runPhaseT14(doc) {
       ? { blockCountMultiplier: paceMult }
       : {};
   const recommendation = computeBlockCountRecommendation(signals, blockOpts);
-  // [debug-enrich]
-  console.info('[document-preparation.runPhaseT14] Block recommendation result:', {
-    docId: doc.id ?? null,
-    nBlocks: recommendation?.nBlocks ?? null,
-    reasoningPresent: recommendation?.reasoning != null,
-    factors: recommendation?.factors ?? null,
-    signalsUsed: recommendation?.signalsUsed ?? null,
-    blockCountMultiplier: blockOpts.blockCountMultiplier ?? 1,
-  });
   doc.shared.blockRecommendation = {
     nBlocks: recommendation.nBlocks,
     reasoning: recommendation.reasoning,
@@ -650,17 +555,6 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
     options.knowledgeProfile !== undefined
       ? options.knowledgeProfile
       : doc.shared?.knowledgeProfile ?? null;
-  // [debug-enrich]
-  console.info('[document-preparation.runModeRecommendationPhase] Computing:', {
-    docId: doc.docId ?? null,
-    method,
-    force: Boolean(options.force),
-    hasExisting: Boolean(doc.shared?.modeRecommendation),
-    hasKnowledgeProfile: Boolean(knowledgeProfile),
-    hasOnboarding: Boolean(doc.shared?.onboardingResponses),
-    sizeCategory: textMetrics?.sizeCategory ?? null,
-    genre: pedagogicalMeta?.genre ?? null,
-  });
 
   const responses = doc.shared?.onboardingResponses;
   if (responses) {
@@ -703,11 +597,6 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
   }
 
   if (doc.shared?.modeRecommendation && !options.force) {
-    // [debug-enrich]
-    console.info('[document-preparation.runModeRecommendationPhase] Skipping — already set:', {
-      docId: doc.docId ?? null,
-      primaryFlow: doc.shared.modeRecommendation.primaryFlow ?? null,
-    });
     cacheModeRecommendationParams(doc.shared.modeRecommendation.params);
     return hashPayload(doc.shared.modeRecommendation.primaryFlow);
   }
@@ -717,14 +606,6 @@ export async function runModeRecommendationPhase(doc, ctx = {}, options = {}) {
   });
   doc.shared.modeRecommendation = recommendation;
   cacheModeRecommendationParams(recommendation.params);
-  // [debug-enrich]
-  console.info('[document-preparation.runModeRecommendationPhase] Recommendation set:', {
-    docId: doc.docId ?? null,
-    primaryFlow: recommendation?.primaryFlow ?? null,
-    rationale: recommendation?.rationale
-      ? String(recommendation.rationale).slice(0, 120)
-      : null,
-  });
   return hashPayload(recommendation.primaryFlow);
 }
 
@@ -777,7 +658,6 @@ export async function runVaultLinkPhase(doc, deps = {}) {
 async function runPhaseT17(doc, ctx) {
   const images = doc.shared?.images;
   if (!Array.isArray(images) || !images.length) {
-    console.debug("[document-preparation.runPhaseT17] No images on document:", { docId: doc.docId }); // [debug-enrich]
     return hashPayload(0);
   }
   // ponytail: vision only for tokens in scopedMarkdown (FR-014 / countScopedImages pattern)
@@ -790,19 +670,7 @@ async function runPhaseT17(doc, ctx) {
     }
   }
   const detectedCount = images.length;
-  const pendingCount = images.filter((img) => img.visionStatus === "pending").length;
-  console.info("[document-preparation.runPhaseT17] Image vision start:", {
-    docId: doc.docId,
-    imagesDetected: detectedCount,
-    pendingForVision: pendingCount,
-    inScopeTokens: idsInScope.size,
-  }); // [debug-enrich]
   if (!meetsConceptInventoryThreshold(doc)) {
-    console.warn("[document-preparation.runPhaseT17] Skipping vision — inventory below threshold:", {
-      docId: doc.docId,
-      imagesDetected: detectedCount,
-      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
-    }); // [debug-enrich]
     for (const image of images) {
       if (image.visionStatus === "pending") {
         image.visionStatus = "skipped";
@@ -813,27 +681,10 @@ async function runPhaseT17(doc, ctx) {
     if (bag) {
       bag.imagesSkipped = detectedCount;
     }
-    console.info("[document-preparation.runPhaseT17] Vision skipped summary:", {
-      docId: doc.docId,
-      imagesDetected: detectedCount,
-      imagesAnalyzed: 0,
-      imagesFailed: 0,
-      imagesSkipped: detectedCount,
-    }); // [debug-enrich]
     return hashPayload("skipped-no-inventory");
   }
   const pending = images.filter((img) => img.visionStatus === "pending");
   if (!pending.length) {
-    const analyzed = images.filter((img) => img.visionStatus === "ready").length;
-    const failed = images.filter((img) => img.visionStatus === "failed").length;
-    const skipped = images.filter((img) => img.visionStatus === "skipped").length;
-    console.info("[document-preparation.runPhaseT17] Vision already complete:", {
-      docId: doc.docId,
-      imagesDetected: detectedCount,
-      imagesAnalyzed: analyzed,
-      imagesFailed: failed,
-      imagesSkipped: skipped,
-    }); // [debug-enrich]
     return hashPayload(images.map((img) => img.imageId));
   }
   const { runImageVisionAnalysis } = await import("./document-images/vision.js");
@@ -853,7 +704,6 @@ async function runPhaseT17(doc, ctx) {
     runAnalyzed: result.analyzed,
     runFailed: result.failed,
   };
-  console.info("[document-preparation.runPhaseT17] Vision complete:", visionSummary); // [debug-enrich]
   const bag = peekNormalizationDebugBag();
   if (bag) {
     bag.imagesAnalyzed = visionSummary.imagesAnalyzed;
@@ -959,12 +809,6 @@ async function runPhaseT21(doc, ctx) {
   if (!validItems.length) {
     const prep = ensurePreparation(doc);
     prep.failReason = prep.failReason || "CLOZE_NO_VALID_ITEMS";
-    console.warn("[document-preparation.runPhaseT21] CLOZE_NO_VALID_ITEMS:", {
-      docId: doc.docId,
-      failReason: prep.failReason,
-      pipelineDiagnostics: result.diagnostics,
-      clozeFailureAnalysis: diagnoseClozePipelineFailure(result, allItems),
-    }); // [debug-enrich]
     return { partial: true, hash: hashPayload("cloze_degraded") };
   }
   return hashPayload(validItems.map((i) => i.id));
@@ -1095,27 +939,11 @@ async function executePhase(doc, phaseId, ctx) {
  */
 export async function runDocumentPreparationPipeline(doc, options = {}) {
   if (!doc?.docId) throw new Error("DPP requires docId");
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-PIPELINE] runDocumentPreparationPipeline ENTER", {
-    docId: doc.docId,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    stopAfterTier: options.stopAfterTier ?? 2,
-    forceRerun: options.forceRerun === true,
-  });
   const out = await runDedupedDppFlight(
     doc.docId,
     () => runDocumentPreparationPipelineInner(doc, options),
     { force: options.forceRerun === true },
   );
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-PIPELINE] runDocumentPreparationPipeline EXIT", {
-    docId: doc.docId,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    status: out?.status ?? null,
-    errorCount: out?.errors?.length ?? 0,
-  });
   return out;
 }
 
@@ -1124,14 +952,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   const workingDoc = deepCloneSession(doc);
   const stopAfterTier = options.stopAfterTier ?? 2;
   const fingerprint = computePreparationFingerprint(workingDoc, options);
-  console.info("[document-preparation.runDocumentPreparationPipeline] Start:", {
-    docId: workingDoc.docId,
-    stopAfterTier,
-    forceRerun: options.forceRerun === true,
-    fingerprint: fingerprint.slice(0, 12),
-    charCount: String(workingDoc?.shared?.rawMarkdown || "").length,
-    priorStatus: workingDoc?.shared?.preparation?.status,
-  }); // [debug-enrich]
   const prep = ensurePreparation(workingDoc);
   const priorFingerprint = prep.fingerprint || "";
   prep.fingerprint = fingerprint;
@@ -1144,14 +964,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   try {
     await persistCheckpoint(workingDoc);
   } catch (err) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner persistCheckpoint catch", {
-      docId: workingDoc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      message: err?.message || String(err),
-      stack: err?.stack ?? null,
-    });
     clearDppRun(workingDoc.docId);
     throw err;
   }
@@ -1166,9 +978,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   };
 
   if (isOfflineMode()) {
-    console.warn("[document-preparation.runDocumentPreparationPipeline] Offline — stopping after Tier 0", {
-      docId: workingDoc.docId,
-    }); // [debug-enrich]
     await finalizeAndPersist(workingDoc, prep, stopAfterTier);
     return {
       doc: workingDoc,
@@ -1182,18 +991,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
     const token = await getSupabaseAuthToken();
     if (!token) throw new Error("Sign in to use AI features.");
   } catch (err) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner auth catch", {
-      docId: workingDoc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      message: err?.message || String(err),
-      stack: err?.stack ?? null,
-    });
-    console.warn("[document-preparation.runDocumentPreparationPipeline] Auth unavailable — partial prep only:", {
-      docId: workingDoc.docId,
-      message: err?.message || String(err),
-    }); // [debug-enrich]
     setPreparationStatus(prep, "partial");
     prep.errors.push({ phaseId: "T1.1", message: err?.message || "Sign in required", at: Date.now() });
     await finalizeAndPersist(workingDoc, prep, stopAfterTier);
@@ -1217,17 +1014,9 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
       const runnable = options.resume !== false
         ? wave.filter((id) => !phaseSucceeded(prep, id, fingerprint, priorFingerprint))
         : wave;
-      console.debug("[document-preparation.runDocumentPreparationPipeline] Wave start:", {
-        docId: workingDoc.docId,
-        wave: wi + 1,
-        totalWaves: waves.length,
-        runnablePhases: runnable,
-        skippedPhases: wave.filter((id) => !runnable.includes(id)),
-      }); // [debug-enrich]
 
       const results = await Promise.allSettled(
         runnable.map(async (phaseId) => {
-          console.debug("[document-preparation.executePhase] Start:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
           options.onProgress?.({
             phaseId,
             wave: wi + 1,
@@ -1238,17 +1027,10 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             const output = await executePhase(workingDoc, phaseId, ctx);
             if (output && typeof output === "object" && output.skipped) {
               markPhase(prep, phaseId, "skipped", output.hash || "skipped");
-              console.info("[document-preparation.executePhase] Skipped:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
             } else if (output && typeof output === "object" && output.partial) {
               markPhase(prep, phaseId, "partial", output.hash || "partial");
-              console.warn("[document-preparation.executePhase] Partial:", { docId: workingDoc.docId, phaseId }); // [debug-enrich]
             } else {
               markPhase(prep, phaseId, "success", output);
-              console.info("[document-preparation.executePhase] Success:", {
-                docId: workingDoc.docId,
-                phaseId,
-                outputHash: typeof output === "string" ? output.slice(0, 12) : null,
-              }); // [debug-enrich]
             }
             options.onProgress?.({
               phaseId,
@@ -1259,21 +1041,6 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
             return { phaseId, ok: true };
           } catch (err) {
             const message = err?.message || String(err);
-            // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-            console.log("[DIAG-T12-CATCH] executePhase catch", {
-              docId: workingDoc.docId,
-              ts: Date.now(),
-              iso: new Date().toISOString(),
-              phaseId,
-              message,
-              stack: err?.stack ?? null,
-            });
-            console.error("[document-preparation.executePhase] Failed:", {
-              docId: workingDoc.docId,
-              phaseId,
-              message,
-              stack: err?.stack,
-            }); // [debug-enrich]
             markPhase(prep, phaseId, "failed", null, message);
             prep.errors.push({ phaseId, message, at: Date.now() });
             options.onProgress?.({
@@ -1313,31 +1080,8 @@ async function runDocumentPreparationPipelineInner(doc, options = {}) {
   } catch (err) {
     const message = err?.message || String(err);
     prep.errors.push({ phaseId: "pipeline", message, at: Date.now() });
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-CATCH] runDocumentPreparationPipelineInner pipeline catch", {
-      docId: workingDoc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      message,
-      stack: err?.stack ?? null,
-    });
-    console.error("[document-preparation.runDocumentPreparationPipeline] Pipeline error before final status:", {
-      docId: workingDoc.docId,
-      message,
-      stack: err?.stack,
-    }); // [debug-enrich]
   } finally {
     await finalizeAndPersist(workingDoc, prep, stopAfterTier);
-    console.info("[document-preparation.runDocumentPreparationPipeline] Finished:", {
-      docId: workingDoc.docId,
-      status: prep.status,
-      failReason: prep.failReason || null,
-      errorCount: prep.errors?.length || 0,
-      conceptCount: workingDoc?.shared?.conceptInventory?.length ?? 0,
-      phaseSummary: Object.fromEntries(
-        Object.entries(prep.phaseResults || {}).map(([id, r]) => [id, r?.status]),
-      ),
-    }); // [debug-enrich]
   }
 
   return {
@@ -1416,25 +1160,13 @@ function deferredTier1PhasesPending(doc, fingerprint) {
  */
 export async function ensureScopeStructurePreparation(doc, options = {}) {
   if (!doc?.docId) {
-    // [debug-enrich]
-    console.warn('[document-preparation.ensureScopeStructurePreparation] Missing docId');
     return null;
   }
   if (isScopeStructureReady(doc)) {
-    // [debug-enrich]
-    console.debug('[document-preparation.ensureScopeStructurePreparation] Already ready:', {
-      docId: doc.docId,
-    });
     return doc;
   }
   const docId = doc.docId;
   let flight = scopeStructureInFlight.get(docId);
-  const joinedExisting = Boolean(flight);
-  // [debug-enrich]
-  console.info('[document-preparation.ensureScopeStructurePreparation] Ensuring T0.1–T1.1:', {
-    docId,
-    joinedExistingFlight: joinedExisting,
-  });
   if (!flight) {
     flight = runDocumentPreparationPipeline(doc, {
       ...options,
@@ -1449,13 +1181,6 @@ export async function ensureScopeStructurePreparation(doc, options = {}) {
   let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
   hydrateCallerDocFromPrepared(doc, reconciled);
-  // [debug-enrich]
-  console.info('[document-preparation.ensureScopeStructurePreparation] Done:', {
-    docId,
-    prepStatus: reconciled?.shared?.preparation?.status ?? null,
-    hasHierarchy: Boolean(reconciled?.shared?.docHierarchy),
-    scopeReady: isScopeStructureReady(reconciled),
-  });
   return reconciled;
 }
 
@@ -1467,63 +1192,19 @@ export async function ensureScopeStructurePreparation(doc, options = {}) {
 export async function ensureTier1Preparation(doc, options = {}) {
   if (!doc?.docId) return null;
   if (!options.forceRerun && isScopeStructureReady(doc) && !isScopeGateResolved(doc)) {
-    console.info("[DPP-GUARD.ensureTier1Preparation] blocked — awaiting scope selection", {
-      docId: doc.docId,
-    }); // [debug-enrich]
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — scope unresolved", {
-      docId: doc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
     return doc;
   }
   if (!options.forceRerun && isTier1PreparationComplete(doc)) {
     // FR-013: never treat artifact-complete legacy as skippable without scope resolve
     if (!isScopeGateResolved(doc)) {
-      console.info("[DPP-GUARD.ensureTier1Preparation] blocked — artifacts without scopeResolvedAt", {
-        docId: doc.docId,
-      }); // [debug-enrich]
-      // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-      console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — artifacts without scopeResolvedAt", {
-        docId: doc.docId,
-        ts: Date.now(),
-        iso: new Date().toISOString(),
-      });
       return doc;
     }
-    console.info("[DPP-GUARD.ensureTier1Preparation] skip — tier-1 already complete", {
-      docId: doc.docId,
-      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
-      prepStatus: doc.shared?.preparation?.status ?? null,
-    }); // [debug-enrich]
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT early — tier-1 already complete", {
-      docId: doc.docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      conceptCount: doc.shared?.conceptInventory?.length ?? 0,
-    });
     return doc;
   }
-  console.info("[DPP-GUARD.ensureTier1Preparation] Starting tier-1 pipeline", {
-    docId: doc.docId,
-    forceRerun: options.forceRerun === true,
-    prepStatus: doc.shared?.preparation?.status ?? null,
-    inFlight: tier1InFlight.has(doc.docId),
-  }); // [debug-enrich]
 
   const docId = doc.docId;
   let flight = tier1InFlight.get(docId);
   if (!flight) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-PIPELINE] before runDocumentPreparationPipeline (new flight)", {
-      docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      stopAfterTier: 1,
-      forceRerun: options.forceRerun === true,
-    });
     flight = runDocumentPreparationPipeline(doc, {
       ...options,
       stopAfterTier: 1,
@@ -1531,55 +1212,12 @@ export async function ensureTier1Preparation(doc, options = {}) {
       tier1InFlight.delete(docId);
     });
     tier1InFlight.set(docId, flight);
-  } else {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-PIPELINE] joining existing in-flight runDocumentPreparationPipeline", {
-      docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-    });
   }
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-PIPELINE] await flight ENTER", {
-    docId,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-  });
-  let result;
-  try {
-    result = await flight;
-  } catch (err) {
-    // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-    console.log("[DIAG-T12-CATCH] ensureTier1Preparation await flight catch", {
-      docId,
-      ts: Date.now(),
-      iso: new Date().toISOString(),
-      message: err?.message || String(err),
-      stack: err?.stack ?? null,
-    });
-    throw err;
-  }
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-PIPELINE] await flight EXIT", {
-    docId,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    status: result?.status ?? null,
-    errorCount: result?.errors?.length ?? 0,
-    conceptCount: result?.doc?.shared?.conceptInventory?.length ?? doc?.shared?.conceptInventory?.length ?? 0,
-  });
+  const result = await flight;
   const prepared = result?.doc ?? doc;
   let reconciled = (await commitPreparedDocToStore(prepared)) ?? prepared;
   reconciled = (await repairStuckRunningPreparationIfNeeded(reconciled)) ?? reconciled;
   hydrateCallerDocFromPrepared(doc, reconciled);
-  // [DIAG-T12] temporary — remove after T1.2 hang diagnosis
-  console.log("[DIAG-T12-TRIGGER] ensureTier1Preparation EXIT after pipeline", {
-    docId: reconciled?.docId ?? docId,
-    ts: Date.now(),
-    iso: new Date().toISOString(),
-    prepStatus: reconciled?.shared?.preparation?.status ?? null,
-    conceptCount: reconciled?.shared?.conceptInventory?.length ?? 0,
-  });
   return reconciled;
 }
 

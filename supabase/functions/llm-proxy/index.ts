@@ -125,8 +125,11 @@ serve(async (req) => {
     .gte("created_at", sinceIso);
 
   if (rateErr) {
-    console.warn("[llm-proxy.serve] Rate-limit check failed:", rateErr.message);
-  } else if ((recentCount ?? 0) >= maxPerHour) {
+    // Fail closed: never hit the paid upstream without a working rate limiter.
+    console.error("[llm-proxy.serve] Rate-limit check failed:", rateErr.message);
+    return jsonResponse({ error: "rate_limit_unavailable" }, 503);
+  }
+  if ((recentCount ?? 0) >= maxPerHour) {
     console.warn("[llm-proxy.serve] Rate limited:", {
       userId: user.id,
       recentCount,

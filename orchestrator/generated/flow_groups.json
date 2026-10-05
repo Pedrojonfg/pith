@@ -1,6 +1,6 @@
 {
   "generated_at": "2026-07-20T12:53:04Z",
-  "inventory_path": "/home/ubuntu/pith/audit/process-inventory-20260717.md",
+  "inventory_path": "audit/process-inventory-20260717.md",
   "groups": [
     {
       "group_id": "01-1-auth-app-boot",
