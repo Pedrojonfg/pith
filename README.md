@@ -2,110 +2,81 @@
 
 [![CI](https://github.com/Pedrojonfg/pith/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 
-AI study PWA: turn documents into faithful, multi-mode study sessions, then consolidate what you learn in a cross-document knowledge vault. Preparation stays tied to the source; practice spans RSVP, reading, slow study, questions, cloze, recall, and spaced review.
+**AI study PWA:** upload documents, run a preparation pipeline, then study across RSVP, reading, cloze, recall, and spaced review with a cross-document knowledge vault.
 
-<!-- Record steps: docs/demo-flow.md -->
-![30s demo flow](docs/demo-flow.gif)
+**Status:** Feature-frozen portfolio project — not maintained as a product. Live demo at [pith.pedrojon.com](https://pith.pedrojon.com) is invite-only (platform LLM keys + proxy allowlist).
 
-## Try it
+![Demo flow](docs/media/demo.gif)
 
-**Live demo:** [https://pith.pedrojon.com](https://pith.pedrojon.com)
+_Add `docs/media/demo.gif` locally (see [docs/repo-artifacts.md](docs/repo-artifacts.md)); path is tracked once the file exists._
 
-AI features use **allowlisted** platform keys (invite-only). To run with your own backend, fork the repo and wire up your Supabase project.
+## What it does
 
-Edge proxies enforce a **fail-closed** browser allowlist via `PITH_CORS_ORIGINS` (comma-separated origins). If it is unset or your origin is not listed, cross-origin proxy calls return **403** — intentional for a public repo with a live demo.
-
-## A hard technical decision: DPP source fidelity over lazy generation
-
-**Problem.** Study apps often generate flashcards or summaries on demand inside each mode. That is fast to ship but drifts from the uploaded document: modes disagree, users wait again at every entry, and there is no single place to audit what the model actually inferred from the source.
-
-**Options considered (and rejected).**
-
-- **Per-mode LLM passes** — Each mode re-runs document understanding. Cheaper upfront, but duplicate cost, inconsistent inventories, and no shared ground truth for the vault.
-- **One mega-prompt at upload** — Single call is simple but brittle (truncation, hard to resume, opaque failures) and fights map-reduce needs on long documents.
-- **Generate everything for RSVP at import** — Block packing, per-block explanations, and assessments stay user-driven inside RSVP; front-loading all of that would burn tokens before the user commits to a block count.
-
-**What we chose.** **Document Preparation Pipeline (DPP)** front-loads reusable analysis into `DocumentSession.shared` after upload: hierarchy, concept inventory, relations, block *recommendation* (not packed blocks), cloze items, recall questions, and slow orientation where applicable. Study modes consume those artifacts; generative DPP contracts stay **scoped** to the document (chat-only dual-context is separate). Tier-3 work (e.g. RSVP block study generation) still runs inside the mode but must not re-inventor the document. One fixed document per session; new content ⇒ new session.
-
-See [specs/20260618-document-preparation-frontload/](specs/20260618-document-preparation-frontload/) for the full contract.
+- Normalizes uploads (PDF/HTML/text) and runs **Document Preparation Pipeline (DPP)** analysis into per-session shared artifacts consumed by all study modes ([spec](specs/20260618-document-preparation-frontload/spec.md)).
+- Runs multi-mode study (RSVP, read, slow, questions, cloze, recall) and **Knowledge Vault** review with embeddings and SM-2 scheduling ([vault spec](specs/20260618-knowledge-vault-a-plus/spec.md), [SM-2 spec](specs/20260620-sm2-priority-queue/spec.md)).
+- Persists sessions and vault data in **Supabase**; LLM and external API calls go through **Edge Function proxies** (no provider keys in the browser).
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  subgraph client["Client PWA"]
-    SW["Service worker + static assets"]
-    UI["ESM app: session, study modes, vault"]
-  end
-
-  subgraph edge["Supabase Edge Functions"]
-    LLM["llm-proxy"]
-    BOOKS["books-proxy"]
-    GEO["geocode-proxy"]
-    GUARD["PITH_CORS_ORIGINS allowlist"]
+flowchart TB
+  subgraph pwa["PWA (client)"]
+    UI["ESM app + service worker"]
+    DPP["Document Preparation Pipeline"]
+    UI --> DPP
   end
 
   subgraph supa["Supabase"]
     AUTH["Auth"]
-    DB["Postgres + RLS"]
+    PG["Postgres + RLS"]
     STOR["Storage"]
   end
 
-  subgraph dpp["DPP pipeline (client-orchestrated)"]
-    PREP["Upload-time prep waves"]
-    SHARED["DocumentSession.shared cache"]
-    MODES["RSVP / Read / Slow / Cloze / Recall / Review"]
+  subgraph edge["Edge Functions"]
+    PROXY["llm-proxy · books-proxy · geocode-proxy"]
+    CACHE["shared-cache-upsert"]
+    GUARD["proxy-guards: CORS + user allowlist"]
+  end
+
+  subgraph llm["Providers"]
+    DS["DeepSeek"]
+    GM["Gemini"]
   end
 
   UI --> AUTH
-  UI --> DB
+  UI --> PG
   UI --> STOR
+  DPP --> GUARD
   UI --> GUARD
-  GUARD --> LLM
-  GUARD --> BOOKS
-  GUARD --> GEO
-  LLM --> PREP
-  PREP --> SHARED
-  SHARED --> MODES
-  MODES --> DB
+  GUARD --> PROXY
+  GUARD --> CACHE
+  PROXY --> DS
+  PROXY --> GM
+  CACHE --> PG
+  DPP --> PG
 ```
 
-The PWA talks to Supabase for auth and data; LLM and external API calls go through Edge Function proxies so secrets and allowlists stay server-side.
+Client-orchestrated DPP writes prepared artifacts to `DocumentSession.shared` and optional shared DB caches ([`src/js/shared-dpp-cache-persist.js`](src/js/shared-dpp-cache-persist.js)). Proxy behavior: [`supabase/functions/_shared/proxy-guards.ts`](supabase/functions/_shared/proxy-guards.ts), [`specs/20260622-platform-key-proxy/spec.md`](specs/20260622-platform-key-proxy/spec.md).
 
-For UI and product constraints, see [DESIGN.md](DESIGN.md). Flagship specs (full index: [specs/README.md](specs/README.md)):
+## Engineering highlights
 
-- [specs/20260618-document-preparation-frontload/](specs/20260618-document-preparation-frontload/)
-- [specs/20260622-platform-key-proxy/](specs/20260622-platform-key-proxy/)
-- [specs/20260618-knowledge-vault-a-plus/](specs/20260618-knowledge-vault-a-plus/)
-- [specs/20260701-pedagogical-principles/](specs/20260701-pedagogical-principles/)
+- **Document normalization** — PDF/HTML ingestion, hierarchy, and markdown emit under [`src/js/normalization/`](src/js/normalization/).
+- **Structured LLM JSON + failure taxonomy** — `TRUNCATED` / `PARSE_ERROR` / `SCHEMA_ERROR` handling in [`src/js/api.js`](src/js/api.js) (see also [`.cursorrules`](.cursorrules)).
+- **Fail-closed platform proxy** — browser origin allowlist and empty `LLM_PROXY_ALLOWED_USER_IDS` → 403 unless `LLM_PROXY_ALLOW_ALL=true` ([`supabase/functions/_shared/proxy-guards.ts`](supabase/functions/_shared/proxy-guards.ts), [`supabase/functions/llm-proxy/`](supabase/functions/llm-proxy/)).
+- **Knowledge vault embeddings + SM-2** — [`specs/20260629-vault-embedding/spec.md`](specs/20260629-vault-embedding/spec.md), [`src/js/sm2.js`](src/js/sm2.js).
+- **RLS + shared cache** — migrations including [`supabase/migrations/20261005140000_cache_key_read_edge_writes.sql`](supabase/migrations/20261005140000_cache_key_read_edge_writes.sql), [`supabase/migrations/20261005_lock_shared_caches_rls.sql`](supabase/migrations/20261005_lock_shared_caches_rls.sql); edge writer [`supabase/functions/shared-cache-upsert/`](supabase/functions/shared-cache-upsert/).
 
-## Loop-engineering orchestrator (`orchestrator/`)
+## How it was built
 
-**Read this before assuming the orchestrator is “the app server.”** It is a **development automation** tool from the July 2026 hardening push (~589 commits that month on this repo) to work through a large process inventory without hand-merging every fix.
+**Spec-driven:** 97 spec directories under [`specs/`](specs/) (plus flagship index in [`specs/README.md`](specs/README.md)). Representative contracts: [document preparation frontload](specs/20260618-document-preparation-frontload/spec.md), [loop engineering orchestrator](specs/20260718-loop-engineering/spec.md).
 
-**What it does.**
+**Loop-engineering orchestrator** ([`orchestrator/`](orchestrator/)) automates a large audit inventory: `build-manifest` groups processes with hub-file locks so concurrent agents do not edit the same files (`study.js`, `api.js`, `session-store.js`); each process runs **test-agent** (writes `cursor-tests/loop-engineering/<id>.mjs`) then **fix-agent** (product code only), with verification before merge. Entry point: [`orchestrator/main.py`](orchestrator/main.py). Tests: [`tests/orchestrator/`](tests/orchestrator/). Details: [`orchestrator/README.md`](orchestrator/README.md).
 
-- Parses the audit process inventory into flow groups (`build-manifest` → `orchestrator/generated/flow_groups.json`).
-- For each process: a **test-agent** writes `cursor-tests/loop-engineering/<process_id>.mjs`, a **fix-agent** may change product source (not the test), then **verification** runs before any merge.
-- Schedules concurrent flow-groups with **hub-file locks** (`study.js`, `api.js`, `session-store.js`) so agents do not stomp the same files.
-- Persists progress in `progress/state.json`, notifies via ntfy, and can resume after crashes or rate limits.
+## Known limitations
 
-**How agent work is verified.**
-
-1. **Tier 1** — Run the process Node test (`node cursor-tests/loop-engineering/<id>.mjs`).
-2. **Tier 2** — Grounding checks (embedding cosine vs source) for fragile/LLM-heavy processes when Tier 1 is insufficient.
-3. **Tier 3** — LLM judge escalation when configured.
-
-Before merging to `main`, the orchestrator runs the **full accumulated** `cursor-tests/loop-engineering/*.mjs` suite on a throwaway merge; a passing single-process test is not enough if it regresses earlier work. Normalization/DPP T0–T1 processes can attach fixture **rubrics** as ground truth in prompts.
-
-Entry point: `orchestrator/main.py` (`setup`, `build-manifest`, `run`). Spec: [specs/20260718-loop-engineering/](specs/20260718-loop-engineering/).
-
-## Stack
-
-- **Client:** Vanilla ESM PWA (service worker, offline-friendly static assets)
-- **Hosting:** Vercel (static)
-- **Backend:** Supabase Auth, Postgres, Storage, Edge Functions (`llm-proxy`, `books-proxy`, `geocode-proxy`, `shared-cache-upsert`)
-- **Models:** DeepSeek and Gemini via server-side proxy — no provider API keys in the browser
+- **`study.js` (~10k lines)** — mode orchestration, RSVP, and DPP UI hooks share one module; split into mode-specific modules behind a thin router.
+- **Client state** — session and prefs split between `localStorage` and Supabase rows; consolidate behind a single sync layer with explicit migration.
+- **No end-to-end browser tests** — CI runs Node tests (`npm test`) and orchestrator pytest, not Playwright/Cypress against a real browser stack.
 
 ## Local run
 
@@ -113,42 +84,21 @@ Entry point: `orchestrator/main.py` (`setup`, `build-manifest`, `run`). Spec: [s
 git clone <your-fork-url>
 cd pith
 npm ci
-npm test          # CI smoke JS + orchestrator pytest
-# npm run test:js:full   # full cursor-tests (many fixtures are stale)
-npx serve .   # or any static server from the repo root
+npm test          # JS smoke (package.json) + tests/orchestrator pytest
+npx serve .       # static PWA from repo root
 ```
 
-You need your own Supabase project with Edge Functions deployed and secrets set (names only):
+Supabase project with Edge Functions deployed; secret **names** (values in dashboard / [`.env.example`](.env.example)):
 
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `DEEPSEEK_API_KEY`
-- `GEMINI_API_KEY`
-- `GOOGLE_BOOKS_API_KEY`
-- `PITH_CORS_ORIGINS` — e.g. `http://localhost:3000,https://pith.pedrojon.com`
-- `LLM_PROXY_ALLOWED_USER_IDS` — comma-separated auth user ids (**empty env = 403**, fail closed)
+- `SUPABASE_SERVICE_ROLE_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_BOOKS_API_KEY`
+- `PITH_CORS_ORIGINS` — comma-separated browser origins (unset / not listed → **403** on proxies)
+- `LLM_PROXY_ALLOWED_USER_IDS` — comma-separated auth user UUIDs (**empty → 403**, fail closed)
+- Optional dev escape: `LLM_PROXY_ALLOW_ALL=true` (do not use in production)
 - Optional: `LLM_PROXY_MAX_PER_HOUR`, `LLM_PROXY_ALLOWED_MODELS`
 
-**Demo without login:** open the app with `?demo=1` (prepared Gettysburg sample, AI disabled).
+**Demo without login:** `?demo=1` (prepared sample, AI disabled).
 
-Repo layout notes: [docs/repo-artifacts.md](docs/repo-artifacts.md).
-
-Production deploy checklist: [DEPLOY.md](DEPLOY.md). Copy [`.env.example`](.env.example) for Edge Function secret names.
-
-Google sign-in setup: [GOOGLE_OAUTH_SETUP.md](GOOGLE_OAUTH_SETUP.md).
-
-## Status and scope
-
-This is a **personal, single-tenant** research tool: one primary user, allowlisted LLM proxy access, and RLS patterns aimed at that use case — not a multi-tenant SaaS.
-
-A real multi-user deployment would need, at minimum: per-tenant isolation and quotas on storage and LLM proxy usage, self-serve API key or billing instead of platform allowlists, hardened auth/session review, operational monitoring, and explicit data retention/export policies.
-
-## Known limitations
-
-- **`study.js` is still a large hub module** — mode orchestration, RSVP flows, and DPP UI hooks live together; ongoing work splits concerns into smaller modules (see loop-engineering inventory and specs that reference `block-answer-signals`, vault curation, etc.).
-- **Long documents** — Map-reduce and truncation fallbacks add complexity; some paths still surface slow prep or degraded modes when limits hit.
-- **LLM variance** — Deterministic tests cover structure; generative quality still depends on model behavior and proxy limits.
-- **Orchestrator inventory** — Paths like `audit/process-inventory-20260717.md` are part of the loop-engineering workflow; they document processes, not runtime dependencies of the PWA.
-- **Embedding-assisted inventory merge** — Optional, flag-gated; default merge paths still lean on LLM dedup when embeddings are off or unavailable.
+Layout notes: [docs/repo-artifacts.md](docs/repo-artifacts.md). Deploy: [DEPLOY.md](DEPLOY.md). Google OAuth: [GOOGLE_OAUTH_SETUP.md](GOOGLE_OAUTH_SETUP.md). UI constraints: [DESIGN.md](DESIGN.md).
 
 ## License
 

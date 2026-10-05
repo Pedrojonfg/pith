@@ -41,8 +41,14 @@ export function corsForbidden(req: Request): Response | null {
   return null;
 }
 
-/** Empty env → deny all (fail closed). Comma-separated auth.users ids. */
+/**
+ * Empty LLM_PROXY_ALLOWED_USER_IDS → deny all (fail closed), unless
+ * LLM_PROXY_ALLOW_ALL=true (explicit escape for local/dev).
+ * Comma-separated auth.users ids when allowlist is set.
+ */
 export function isUserAllowlisted(userId: string): boolean {
+  const allowAll = (Deno.env.get("LLM_PROXY_ALLOW_ALL") ?? "").trim().toLowerCase();
+  if (allowAll === "true" || allowAll === "1") return true;
   const raw = (Deno.env.get("LLM_PROXY_ALLOWED_USER_IDS") ?? "").trim();
   if (!raw) return false;
   const allowed = new Set(

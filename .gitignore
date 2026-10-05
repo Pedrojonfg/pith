@@ -14,9 +14,11 @@ node_modules/
 # Supabase CLI local temp
 supabase/.temp/
 
-# Project docs (not versioned for now). repo-artifacts.md is the tracked layout note.
+# Project docs (not versioned for now). repo-artifacts.md + docs/media/ are tracked.
 docs/*
 !docs/repo-artifacts.md
+!docs/media/
+!docs/media/**
 
 # Manual test fixtures and samples
 fixtures/

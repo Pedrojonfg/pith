@@ -6,14 +6,13 @@ Any commit that changes `src/js/**`, `index.html`, or `src/css/**` MUST bump the
 2. `?v=` on `sw-update.js` and `main.js` imports in `index.html` — both must equal `SW_VERSION`
 3. `CACHE_NAME` in `sw.js` when static assets, CSS, or SW fetch strategy change
 
-Never clear `localStorage` or API keys in update flows. Run `cursor-tests/20260606_validate-sw-update-flow.mjs` after any SW-related change.
+Never clear `localStorage` or API keys in update flows. Enforce with `npm run check:version` (`scripts/check-sw-version.mjs`).
 
 ## PWA install UX (mandatory)
 - Capture `beforeinstallprompt` in an inline `<script>` in `index.html` before module load; stash on `window.__pithDeferredInstallPrompt`.
 - `main.js` must read the stash via `readStashedInstallPrompt` and register a `beforeinstallprompt` listener as backup.
 - Install button clicks must never be silent: if the deferred prompt is unavailable or already used, show visible fallback UI (`showInstallHelpToast`), not `console.info` only.
 - `prompt()` is one-shot per event: clear state after use; on dismiss or error, show manual install instructions.
-- Run `cursor-tests/20260613_pwa-install.mjs` after any PWA install flow change.
 
 ## LLM structured JSON output (mandatory)
 1. Every LLM call that expects a JSON response larger than ~20 fields **must** declare an explicit `max_tokens` constant — named, with a comment stating the sizing rationale (expected item count × tokens-per-item). Omitting `max_tokens` is a bug.

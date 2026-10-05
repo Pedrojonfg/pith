@@ -1,8 +1,8 @@
 {
   "scripts": {
-    "test:js": "PITH_LOOP_ENG_MOCKS=1 node --import ./cursor-tests/register.mjs --experimental-test-module-mocks --test --test-force-exit --test-timeout=20000 cursor-tests/20260628_vault-study-trail.mjs cursor-tests/20260706_t01-with-retry.mjs cursor-tests/20260706_t04-sm2-retry-path.mjs cursor-tests/20260706_t06-keyed-supersession.mjs cursor-tests/loop-engineering/auth-llm-token-fetch.mjs cursor-tests/loop-engineering/boot-storage-migrate.mjs cursor-tests/loop-engineering/dpp-orchestrator.mjs cursor-tests/loop-engineering/persist-shared-dpp-cache-fetch.mjs cursor-tests/loop-engineering/persist-shared-dpp-cache-upsert.mjs",
-    "test:js:full": "node --import ./cursor-tests/register.mjs --test --test-force-exit --test-timeout=20000 cursor-tests/*.mjs cursor-tests/loop-engineering/*.mjs",
+    "test:js": "node --test --test-force-exit --test-timeout=20000 tests/js/*.mjs",
     "test:orchestrator": "python3 -m pytest tests/orchestrator -q",
+    "check:version": "node scripts/check-sw-version.mjs",
     "test": "npm run test:js && npm run test:orchestrator"
   },
   "dependencies": {

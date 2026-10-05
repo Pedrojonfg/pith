@@ -25,22 +25,21 @@ def test_example_config_exists():
 def test_requirements_exists():
     assert (ROOT / "orchestrator" / "requirements.txt").is_file()
 
-def test_progress_gitkeep():
-    assert (ROOT / "progress" / ".gitkeep").is_file()
-
-def test_loop_engineering_testdir():
-    assert (ROOT / "cursor-tests" / "loop-engineering" / ".gitkeep").is_file()
-
 def test_progress_runtime_gitignored():
+    """progress/ is not kept in the tree; runtime files stay gitignored."""
     gi = (ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "progress/state.json" in gi
     assert "progress/run-log-" in gi
+    assert not (ROOT / "progress" / ".gitkeep").exists()
+
+def test_published_js_tests_dir():
+    assert (ROOT / "tests" / "js").is_dir()
+    assert any((ROOT / "tests" / "js").glob("*.mjs"))
 
 if __name__ == "__main__":
     test_package_importable()
     test_example_config_exists()
     test_requirements_exists()
-    test_progress_gitkeep()
-    test_loop_engineering_testdir()
     test_progress_runtime_gitignored()
+    test_published_js_tests_dir()
     print("T01 OK")
