@@ -11,6 +11,9 @@ node_modules/
 .specify
 .specify/
 
+# Supabase CLI local temp
+supabase/.temp/
+
 # Cursor agent integration tests (local QA only)
 cursor-tests/
 
@@ -22,9 +25,17 @@ fixtures/
 fixtures/session-samples/
 test-material.txt
 
-# Environment and OS noise
+# Environment and OS noise / secrets
 .env
 .env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+credentials.json
+**/secrets/**
 *.log
 .DS_Store
 Thumbs.db

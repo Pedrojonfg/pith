@@ -9,6 +9,9 @@ const CORS_HEADERS = {
 
 type LlmService = "deepseek" | "gemini-chat" | "gemini-embed";
 
+/** Default: enough for a heavy DPP run; override via LLM_PROXY_MAX_PER_HOUR. */
+const DEFAULT_MAX_PER_HOUR = 180;
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -16,8 +19,27 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function parseMaxPerHour(): number {
+  const raw = Deno.env.get("LLM_PROXY_MAX_PER_HOUR");
+  const n = raw ? Number(raw) : DEFAULT_MAX_PER_HOUR;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_MAX_PER_HOUR;
+}
+
+/** Optional comma-separated auth.users ids. Empty = all authenticated users. */
+function isUserAllowlisted(userId: string): boolean {
+  const raw = (Deno.env.get("LLM_PROXY_ALLOWED_USER_IDS") ?? "").trim();
+  if (!raw) return true;
+  const allowed = new Set(
+    raw.split(",").map((s) => s.trim()).filter(Boolean),
+  );
+  return allowed.has(userId);
+}
+
 function buildTargetUrl(service: LlmService, endpoint: string, authKey: string): string {
   const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  if (path.includes("://") || path.includes("..")) {
+    throw new Error("invalid endpoint");
+  }
   if (service === "deepseek") {
     return `https://api.deepseek.com${path}`;
   }
@@ -27,6 +49,20 @@ function buildTargetUrl(service: LlmService, endpoint: string, authKey: string):
     return `${base}${sep}key=${encodeURIComponent(authKey)}`;
   }
   return base;
+}
+
+function isAllowedEndpoint(service: LlmService, endpoint: string): boolean {
+  const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  if (service === "deepseek") {
+    return path === "/chat/completions" || path === "/v1/chat/completions";
+  }
+  if (service === "gemini-chat") {
+    return path === "/v1beta/openai/chat/completions";
+  }
+  if (service === "gemini-embed") {
+    return /^\/v1beta\/models\/[a-zA-Z0-9._-]+:embedContent$/.test(path);
+  }
+  return false;
 }
 
 function buildUpstreamHeaders(service: LlmService, authKey: string): HeadersInit {
@@ -69,6 +105,39 @@ serve(async (req) => {
     return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
   }
 
+  if (!isUserAllowlisted(user.id)) {
+    console.warn("[llm-proxy.serve] Forbidden: user not in LLM_PROXY_ALLOWED_USER_IDS");
+    return new Response("Forbidden", { status: 403, headers: CORS_HEADERS });
+  }
+
+  const supabaseAdmin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  const maxPerHour = parseMaxPerHour();
+  const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { count: recentCount, error: rateErr } = await supabaseAdmin
+    .from("llm_usage_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", user.id)
+    .eq("key_ownership", "platform")
+    .gte("created_at", sinceIso);
+
+  if (rateErr) {
+    console.warn("[llm-proxy.serve] Rate-limit check failed:", rateErr.message);
+  } else if ((recentCount ?? 0) >= maxPerHour) {
+    console.warn("[llm-proxy.serve] Rate limited:", {
+      userId: user.id,
+      recentCount,
+      maxPerHour,
+    });
+    return jsonResponse(
+      { error: "rate_limited", maxPerHour, windowSeconds: 3600 },
+      429,
+    );
+  }
+
   let payload: { service?: string; endpoint?: string; body?: unknown };
   try {
     payload = await req.json();
@@ -90,6 +159,17 @@ serve(async (req) => {
       hasBody: llmBody != null,
     });
     return new Response("Bad Request: missing service, endpoint, or body", {
+      status: 400,
+      headers: CORS_HEADERS,
+    });
+  }
+
+  if (!isAllowedEndpoint(service, endpoint)) {
+    console.warn("[llm-proxy.serve] Bad Request: endpoint not allowlisted:", {
+      service,
+      endpoint,
+    });
+    return new Response("Bad Request: endpoint not allowed", {
       status: 400,
       headers: CORS_HEADERS,
     });
@@ -122,7 +202,15 @@ serve(async (req) => {
     endpoint,
   });
 
-  const targetUrl = buildTargetUrl(service, endpoint, authKey);
+  let targetUrl: string;
+  try {
+    targetUrl = buildTargetUrl(service, endpoint, authKey);
+  } catch {
+    return new Response("Bad Request: invalid endpoint", {
+      status: 400,
+      headers: CORS_HEADERS,
+    });
+  }
 
   const upstream = await fetch(targetUrl, {
     method: "POST",
@@ -166,11 +254,6 @@ serve(async (req) => {
     outputTokens,
     hasJsonBody: upstreamBody != null,
   });
-
-  const supabaseAdmin = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
 
   void supabaseAdmin
     .from("llm_usage_logs")
