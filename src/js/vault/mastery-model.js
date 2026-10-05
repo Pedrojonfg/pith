@@ -1,3 +1,4 @@
+import { deLog } from "../debug-enrich.js";
 /** Mastery decay and observation weighting for Global Knowledge Vault. */
 
 export const ALPHA = 0.3;
@@ -252,8 +253,7 @@ export function getMasteryLabel(entry, now = Date.now()) {
   if (m >= 0.8) label = "mastered";
   else if (m >= 0.6) label = "acquired";
   else if (m >= 0.3) label = "partial";
-  // [debug-enrich]
-  console.debug('[vault.mastery-model.getMasteryLabel]', {
+  deLog('[vault.mastery-model.getMasteryLabel]', {
     entryId: entry?.id ?? null,
     mastery: Math.round(m * 1000) / 1000,
     label,

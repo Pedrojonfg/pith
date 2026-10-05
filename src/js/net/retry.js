@@ -1,3 +1,4 @@
+import { deError, deInfo, deLog, deWarn } from "../debug-enrich.js";
 /** Generic retry-with-backoff for transient Supabase/network failures. */
 
 export const RETRY_DELAYS_MS = [500, 1500, 4000];
@@ -58,8 +59,7 @@ export async function withRetry(fn, options = {}) {
     try {
       const result = await fn();
       if (attempt > 0) {
-        // [debug-enrich]
-        console.info('[net.retry.withRetry] Succeeded after retry:', {
+        deInfo('[net.retry.withRetry] Succeeded after retry:', {
           attempt,
           maxRetries,
         });
@@ -68,8 +68,7 @@ export async function withRetry(fn, options = {}) {
     } catch (err) {
       lastErr = err;
       const transient = isTransientError(err);
-      // [debug-enrich]
-      console.debug('[net.retry.withRetry] Attempt failed:', {
+      deLog('[net.retry.withRetry] Attempt failed:', {
         attempt,
         maxRetries,
         transient,
@@ -79,8 +78,7 @@ export async function withRetry(fn, options = {}) {
       if (!transient || attempt >= maxRetries) break;
       const delay = delays[Math.min(attempt, delays.length - 1)] ?? delays[delays.length - 1];
       const waitMs = jitterDelay(delay);
-      // [debug-enrich]
-      console.warn('[net.retry.withRetry] Backing off:', {
+      deWarn('[net.retry.withRetry] Backing off:', {
         attempt,
         waitMs,
       });
@@ -92,8 +90,7 @@ export async function withRetry(fn, options = {}) {
 
   if (options.onExhausted) options.onExhausted(lastErr);
   else console.warn("[withRetry] exhausted", lastErr);
-  // [debug-enrich]
-  console.error('[net.retry.withRetry] Exhausted retries:', {
+  deError('[net.retry.withRetry] Exhausted retries:', {
     maxRetries,
     message: lastErr?.message ?? String(lastErr),
     status: httpStatusFromError(lastErr) ?? null,
@@ -140,13 +137,11 @@ export function withKeyedRetry(key, fn, options = {}) {
   const myGen = nextGen;
   const owner = { gen: myGen };
   writeOwners.set(key, owner);
-  // [debug-enrich]
-  console.debug('[net.retry.withKeyedRetry] Start:', { key, generation: myGen });
+  deLog('[net.retry.withKeyedRetry] Start:', { key, generation: myGen });
 
   return withRetry(async () => {
     if (writeOwners.get(key) !== owner) {
-      // [debug-enrich]
-      console.info('[net.retry.withKeyedRetry] Superseded before write:', {
+      deInfo('[net.retry.withKeyedRetry] Superseded before write:', {
         key,
         myGen,
         currentGen: writeGenerations.get(key),
@@ -155,8 +150,7 @@ export function withKeyedRetry(key, fn, options = {}) {
     }
     const result = await fn();
     if (writeOwners.get(key) !== owner) {
-      // [debug-enrich]
-      console.info('[net.retry.withKeyedRetry] Superseded after write:', {
+      deInfo('[net.retry.withKeyedRetry] Superseded after write:', {
         key,
         myGen,
         currentGen: writeGenerations.get(key),
@@ -166,15 +160,13 @@ export function withKeyedRetry(key, fn, options = {}) {
     return result;
   }, options).catch((err) => {
     if (err instanceof WriteSupersededError) {
-      // [debug-enrich]
-      console.debug('[net.retry.withKeyedRetry] Dropping superseded write (silent):', {
+      deLog('[net.retry.withKeyedRetry] Dropping superseded write (silent):', {
         key,
         myGen,
       });
       return undefined;
     }
-    // [debug-enrich]
-    console.error('[net.retry.withKeyedRetry] Failed:', {
+    deError('[net.retry.withKeyedRetry] Failed:', {
       key,
       myGen,
       message: err?.message ?? String(err),

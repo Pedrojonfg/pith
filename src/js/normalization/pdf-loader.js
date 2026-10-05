@@ -1,3 +1,4 @@
+import { deLog } from "../debug-enrich.js";
 /**
  * Shared pdf.js dynamic loader (CDN in browser, local package in Node tests).
  */
@@ -9,7 +10,7 @@ let pdfjsModulePromise = null;
 
 export async function loadPdfJs() {
   if (!pdfjsModulePromise) {
-    console.debug("[pdf-loader.loadPdfJs] Loading pdf.js:", { version: PDFJS_VERSION }); // [debug-enrich]
+    deLog("[pdf-loader.loadPdfJs] Loading pdf.js:", { version: PDFJS_VERSION });
     pdfjsModulePromise = (async () => {
       let pdfjs;
       let workerSrc;

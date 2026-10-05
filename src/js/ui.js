@@ -1,4 +1,5 @@
 import { isPwaStandalone } from "./pwa-install.js";
+import { deInfo } from "./debug-enrich.js";
 import { LS_STUDY_LANG_KEY, STUDY_LANG_OPTIONS } from "./config.js?v=20260625_02";
 import {
   getSharedAssessmentGatePreference,
@@ -1236,7 +1237,7 @@ export function initSharedAssessmentGateSettingsUi() {
   toggle.checked = getSharedAssessmentGatePreference() === true;
   toggle.addEventListener("change", () => {
     const enabled = toggle.checked === true;
-    console.info("[ui.initSharedAssessmentGateSettingsUi] Preference changed:", { enabled }); // [debug-enrich]
+    deInfo("[ui.initSharedAssessmentGateSettingsUi] Preference changed:", { enabled });
     saveSharedAssessmentGatePreference(enabled);
   });
 }

@@ -4059,3 +4059,17 @@ button[disabled],
 .pack-concept-editor-error {
   margin: 0;
 }
+
+.demo-mode-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  font-size: var(--text-sm);
+  text-align: center;
+  color: var(--text-primary);
+  background: var(--warning-muted);
+  border-bottom: 1px solid var(--border-default);
+}

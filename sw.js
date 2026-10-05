@@ -1,5 +1,5 @@
 // Bump all four version markers together: CACHE_NAME, SW_VERSION, splash.js?v=, and index.html script ?v= neighbors.
-const CACHE_NAME = "pith-v174";
+const CACHE_NAME = "pith-v178";
 
 const STATIC_ASSETS = [
   "/",
@@ -48,6 +48,7 @@ const STATIC_ASSETS = [
   "/src/js/cloze/study.js",
   "/src/js/config.js",
   "/src/js/llm.js",
+  "/src/js/debug-enrich.js",
   "/src/js/sw-update.js",
   "/src/js/splash.js",
   "/src/js/pwa-install.js",

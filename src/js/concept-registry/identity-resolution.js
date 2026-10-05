@@ -1,3 +1,4 @@
+import { deError, deInfo, deLog } from "../debug-enrich.js";
 /**
  * Identity resolution for global concepts — slug/alias fuzzy match, split bias.
  * @see specs/20260626-cross-doc-vault/contracts/identity-resolution.md
@@ -51,13 +52,11 @@ export async function resolveGlobalConcept({
   const name = String(canonicalName || "").trim();
   const slug = normalizeSlug(name);
   if (!name || !slug) {
-    // [debug-enrich]
-    console.error('[identity-resolution.resolveGlobalConcept] Empty canonicalName');
+    deError('[identity-resolution.resolveGlobalConcept] Empty canonicalName');
     throw new Error("resolveGlobalConcept requires canonicalName");
   }
 
-  // [debug-enrich]
-  console.debug('[identity-resolution.resolveGlobalConcept] Resolving:', {
+  deLog('[identity-resolution.resolveGlobalConcept] Resolving:', {
     name: name.slice(0, 80),
     slug,
     sourceDocId: sourceDocId ?? null,
@@ -67,8 +66,7 @@ export async function resolveGlobalConcept({
   const exact = getConceptBySlug(slug);
   if (exact) {
     addSourceDocId(exact.id, sourceDocId);
-    // [debug-enrich]
-    console.info('[identity-resolution.resolveGlobalConcept] Exact slug match:', {
+    deInfo('[identity-resolution.resolveGlobalConcept] Exact slug match:', {
       conceptId: exact.id,
       slug,
       created: false,
@@ -96,8 +94,7 @@ export async function resolveGlobalConcept({
     const aliases = best.aliases.includes(name) ? best.aliases : [...best.aliases, name];
     upsertConcept({ ...best, aliases });
     addSourceDocId(best.id, sourceDocId);
-    // [debug-enrich]
-    console.info('[identity-resolution.resolveGlobalConcept] High-confidence fuzzy match:', {
+    deInfo('[identity-resolution.resolveGlobalConcept] High-confidence fuzzy match:', {
       conceptId: best.id,
       bestScore,
       candidateCount: candidates.length,
@@ -123,8 +120,7 @@ export async function resolveGlobalConcept({
     updatedAt: new Date().toISOString(),
   });
 
-  // [debug-enrich]
-  console.info('[identity-resolution.resolveGlobalConcept] Created new concept:', {
+  deInfo('[identity-resolution.resolveGlobalConcept] Created new concept:', {
     conceptId: concept.id,
     slug,
     bestScore,

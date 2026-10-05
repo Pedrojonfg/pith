@@ -4,12 +4,7 @@
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { corsForbidden, corsHeaders, isUserAllowlisted } from "../_shared/proxy-guards.ts";
 
 const NOMINATIM_UA = "Pith/1.0 (vault-geocode; https://github.com/Pedrojonfg/pith)";
 const MIN_INTERVAL_MS = 1100;
@@ -17,21 +12,11 @@ const MIN_INTERVAL_MS = 1100;
 let lastNominatimAt = 0;
 let chain: Promise<unknown> = Promise.resolve();
 
-function jsonResponse(body: unknown, status = 200) {
+function jsonResponse(body: unknown, status: number, req: Request) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    headers: { ...corsHeaders(req), "Content-Type": "application/json" },
   });
-}
-
-/** Optional comma-separated auth.users ids. Empty = all authenticated users. */
-function isUserAllowlisted(userId: string): boolean {
-  const raw = (Deno.env.get("LLM_PROXY_ALLOWED_USER_IDS") ?? "").trim();
-  if (!raw) return true;
-  const allowed = new Set(
-    raw.split(",").map((s) => s.trim()).filter(Boolean),
-  );
-  return allowed.has(userId);
 }
 
 function normalizePlaceName(raw: string): string {
@@ -53,16 +38,20 @@ async function throttleNominatim<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 serve(async (req) => {
+  const corsBlock = corsForbidden(req);
+  if (corsBlock) return corsBlock;
+
+  const headers = corsHeaders(req);
   if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: CORS_HEADERS });
+    return new Response("ok", { headers });
   }
   if (req.method !== "POST") {
-    return new Response("Method Not Allowed", { status: 405, headers: CORS_HEADERS });
+    return new Response("Method Not Allowed", { status: 405, headers });
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
+    return new Response("Unauthorized", { status: 401, headers });
   }
   const token = authHeader.replace("Bearer ", "");
 
@@ -73,24 +62,24 @@ serve(async (req) => {
   );
   const { data: { user }, error: authError } = await supabaseUser.auth.getUser();
   if (authError || !user) {
-    return new Response("Unauthorized", { status: 401, headers: CORS_HEADERS });
+    return new Response("Unauthorized", { status: 401, headers });
   }
 
   if (!isUserAllowlisted(user.id)) {
-    return new Response("Forbidden", { status: 403, headers: CORS_HEADERS });
+    return new Response("Forbidden", { status: 403, headers });
   }
 
   let payload: { placeName?: string };
   try {
     payload = await req.json();
   } catch {
-    return jsonResponse({ error: "invalid JSON" }, 400);
+    return jsonResponse({ error: "invalid JSON" }, 400, req);
   }
 
   const placeName = String(payload?.placeName || "").trim();
   const placeNameNormalized = normalizePlaceName(placeName);
   if (!placeNameNormalized) {
-    return jsonResponse({ error: "placeName required" }, 400);
+    return jsonResponse({ error: "placeName required" }, 400, req);
   }
 
   const service = createClient(
@@ -116,7 +105,7 @@ serve(async (req) => {
       lat: cached.lat,
       lng: cached.lng,
       cached: true,
-    });
+    }, 200, req);
   }
 
   try {
@@ -144,7 +133,7 @@ serve(async (req) => {
     const lat = first ? Number(first.lat) : NaN;
     const lng = first ? Number(first.lon ?? first.lng) : NaN;
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return jsonResponse({ error: "no results" }, 404);
+      return jsonResponse({ error: "no results" }, 404, req);
     }
 
     await service.from("geocode_cache").upsert({
@@ -160,9 +149,9 @@ serve(async (req) => {
       lat,
       lng,
       cached: false,
-    });
+    }, 200, req);
   } catch (err) {
     console.error("[geocode-proxy]", err);
-    return jsonResponse({ error: "geocode failed" }, 502);
+    return jsonResponse({ error: "geocode failed" }, 502, req);
   }
 });

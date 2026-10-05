@@ -4,6 +4,7 @@ import {
   normalizeLlmModel,
 } from "./llm.js?v=20260625_02";
 import { resolveSourceFileIdForExcerpt } from "./source-provenance.js";
+import { deError, deInfo } from "./debug-enrich.js";
 import { RECALL_QUESTION_GENERATIVE_RULES, RECALL_TUTOR_GENERATIVE_RULES } from "./pedagogy/generative-pedagogy.js";
 import { buildStudentIntentAppendix } from "./recommendation/student-intent.js";
 
@@ -388,22 +389,19 @@ export async function generateRecallQuestions({
   studentIntent = null,
 }) {
   const inventory = Array.isArray(conceptInventory) ? conceptInventory : [];
-  // [debug-enrich]
-  console.info("[recall-api.generateRecallQuestions] Start:", {
+  deInfo("[recall-api.generateRecallQuestions] Start:", {
     inventorySize: inventory.length,
     materialLen: String(rawMarkdown ?? "").length,
     llmModel: llmModel ?? null,
   });
   if (!inventory.length) {
-    // [debug-enrich]
-    console.error("[recall-api.generateRecallQuestions] Missing inventory");
+    deError("[recall-api.generateRecallQuestions] Missing inventory");
     throw new Error("Missing concept inventory for Recall question generation.");
   }
 
   const material = String(rawMarkdown ?? "").trim();
   if (!material) {
-    // [debug-enrich]
-    console.error("[recall-api.generateRecallQuestions] Missing material");
+    deError("[recall-api.generateRecallQuestions] Missing material");
     throw new Error("Missing source material for Recall question generation.");
   }
 
@@ -453,8 +451,7 @@ export async function generateRecallQuestions({
 
   const parsed = parseModelJsonValue(content);
   if (parsed == null) {
-    // [debug-enrich]
-    console.error("[recall-api.generateRecallQuestions] Invalid JSON from model");
+    deError("[recall-api.generateRecallQuestions] Invalid JSON from model");
     throw new Error("Recall question generation returned invalid JSON.");
   }
 
@@ -462,8 +459,7 @@ export async function generateRecallQuestions({
     inventory,
     config: { ...resolvedConfig, questionCount, types: safeTypes, materialText: material },
   });
-  // [debug-enrich]
-  console.info("[recall-api.generateRecallQuestions] Done:", {
+  deInfo("[recall-api.generateRecallQuestions] Done:", {
     questionCount: Array.isArray(out) ? out.length : 0,
     questionCountRequested: questionCount,
   });
@@ -485,16 +481,14 @@ export async function deepSeekRecallTutor({
   llmModel,
 }) {
   const answer = String(student_answer || "").trim();
-  // [debug-enrich]
-  console.info("[recall-api.deepSeekRecallTutor] Start:", {
+  deInfo("[recall-api.deepSeekRecallTutor] Start:", {
     recall_type: recall_type ?? null,
     answerLen: answer.length,
     conceptIdCount: Array.isArray(concept_ids) ? concept_ids.length : 0,
     sourceChunkLen: String(source_chunk || "").length,
   });
   if (!answer) {
-    // [debug-enrich]
-    console.error("[recall-api.deepSeekRecallTutor] Empty student answer");
+    deError("[recall-api.deepSeekRecallTutor] Empty student answer");
     throw new Error("Student answer is required before tutor evaluation.");
   }
 
@@ -547,8 +541,7 @@ ${answer}`;
   });
 
   const feedback = normalizeRecallTutorFeedback(content);
-  // [debug-enrich]
-  console.info("[recall-api.deepSeekRecallTutor] Done:", {
+  deInfo("[recall-api.deepSeekRecallTutor] Done:", {
     quality: feedback?.quality ?? null,
     critiqueLen: String(feedback?.critique || "").length,
   });

@@ -14,6 +14,7 @@ import {
   ensureSessionResponseState,
 } from "./session.js?v=20260625_02";
 import { getActiveSession as getActiveDocumentSession, getSession } from "./session-store.js";
+import { deInfo } from "./debug-enrich.js";
 import { rehydrateBlocks } from "./block-store.js";
 import { isOfflineMode } from "./offline.js?v=20260625_02";
 import { buildPenaltyFeedback, computeDepthScore } from "./slow/gamification.js?v=20260625_02";
@@ -775,8 +776,7 @@ export async function buildMarkdown(session) {
 
 export function buildOfflinePack(activeSession, blockIndex) {
   const safe = activeSession && typeof activeSession === "object" ? activeSession : {};
-  // [debug-enrich]
-  console.info("[export.buildOfflinePack] Start:", {
+  deInfo("[export.buildOfflinePack] Start:", {
     docId: safe?.docId || null,
     blockCount: Array.isArray(safe.blocks) ? safe.blocks.length : 0,
     n_blocks: safe.n_blocks ?? null,
@@ -852,8 +852,7 @@ export function buildOfflinePack(activeSession, blockIndex) {
   lines.push(JSON.stringify(payload, null, 2));
   lines.push("-->");
   const out = lines.join("\n").trim() + "\n";
-  // [debug-enrich]
-  console.info("[export.buildOfflinePack] Done:", {
+  deInfo("[export.buildOfflinePack] Done:", {
     blockCount: results.length,
     failedBlocks,
     payloadLen: out.length,

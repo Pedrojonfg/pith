@@ -5,6 +5,7 @@ import {
   LS_RSVP_DEFAULT_WPM_KEY,
 } from "./config.js?v=20260625_02";
 import { clampInt } from "./session.js?v=20260625_02";
+import { deInfo, deLog, deWarn } from "./debug-enrich.js";
 import { stripMarkdownForPlainText } from "./markdown.js?v=20260625_02";
 import { els, hideSidebar, showSidebar, typesetMath } from "./ui.js?v=20260625_02";
 import { readWpmBase } from "./rsvp/wpm-calibration.js?v=20260625_02";
@@ -1344,8 +1345,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   rsvpState.countdownActive = true;
   rsvpState.wordsSinceComprehensionPause = 0;
 
-  // [debug-enrich]
-  console.info('[rsvp.startRsvpForText] Starting playback:', {
+  deInfo('[rsvp.startRsvpForText] Starting playback:', {
     explanationLen: rsvpState.sourceExplanation.length,
     chunkCount: rsvpState.chunks.length,
     wpm: rsvpState.wpm,
@@ -1362,8 +1362,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   syncRsvpBlockTitleUi();
 
   if (!rsvpState.chunks.length) {
-    // [debug-enrich]
-    console.warn('[rsvp.startRsvpForText] No chunks — empty reading text');
+    deWarn('[rsvp.startRsvpForText] No chunks — empty reading text');
     els.rsvpChunk.textContent = "No reading text for this block.";
     rsvpState.playing = false;
     rsvpState.countdownActive = false;
@@ -1378,8 +1377,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
     rsvpContainerEl ||
     els.rsvpOverlay.querySelector(".rsvp-container");
   if (container && (container.offsetWidth < 300 || container.offsetHeight < 80)) {
-    // [debug-enrich]
-    console.debug('[rsvp.startRsvpForText] Resizing undersized RSVP container', {
+    deLog('[rsvp.startRsvpForText] Resizing undersized RSVP container', {
       offsetWidth: container.offsetWidth,
       offsetHeight: container.offsetHeight,
     });
@@ -1404,8 +1402,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
     rsvpState.countdownActive = false;
     els.rsvpPlayPauseBtn.textContent = "Pause";
     syncRsvpFocusMode();
-    // [debug-enrich]
-    console.debug('[rsvp.startRsvpForText] Skipping countdown — beginPlaybackLoop');
+    deLog('[rsvp.startRsvpForText] Skipping countdown — beginPlaybackLoop');
     beginPlaybackLoop();
     return;
   }
@@ -1417,8 +1414,7 @@ export function startRsvpForText(explanationText, onDone, { skipCountdown = fals
   const countdownGen = rsvpState.playbackGen;
   const tick = () => {
     if (countdownGen !== rsvpState.playbackGen) {
-      // [debug-enrich]
-      console.debug('[rsvp.startRsvpForText] Countdown aborted — playbackGen changed');
+      deLog('[rsvp.startRsvpForText] Countdown aborted — playbackGen changed');
       return;
     }
     if (i >= steps.length) {

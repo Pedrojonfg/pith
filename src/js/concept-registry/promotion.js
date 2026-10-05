@@ -4,6 +4,7 @@
  */
 
 import { updateSmItem, SM2_DEFAULTS } from "../sm2.js";
+import { deError, deInfo, deLog } from "../debug-enrich.js";
 import { getSession, saveActiveSession } from "../session-store.js";
 import { REGISTRY_CONCEPT_FACETS } from "../session-types.js";
 import { resolveGlobalConcept } from "./identity-resolution.js";
@@ -125,13 +126,11 @@ export async function onConceptEngagement({
   const docId = String(session?.docId || "").trim();
   const invId = String(conceptId || "").trim();
   if (!docId || !invId) {
-    // [debug-enrich]
-    console.error('[concept-registry.promotion.onConceptEngagement] Missing session/conceptId');
+    deError('[concept-registry.promotion.onConceptEngagement] Missing session/conceptId');
     throw new Error("onConceptEngagement requires session and conceptId");
   }
 
-  // [debug-enrich]
-  console.debug('[concept-registry.promotion.onConceptEngagement] Engagement:', {
+  deLog('[concept-registry.promotion.onConceptEngagement] Engagement:', {
     docId,
     conceptId: invId,
     facet: facet ?? null,
@@ -157,8 +156,7 @@ export async function onConceptEngagement({
     globalConceptId = resolved.conceptId;
     if (entry) entry.globalConceptId = globalConceptId;
     backfillGlobalConceptIds(session, globalConceptId, invId);
-    // [debug-enrich]
-    console.info('[concept-registry.promotion.onConceptEngagement] Resolved global id:', {
+    deInfo('[concept-registry.promotion.onConceptEngagement] Resolved global id:', {
       invId,
       globalConceptId,
       created: resolved.created ?? null,
@@ -206,8 +204,7 @@ export async function onConceptEngagement({
   } catch (err) {
     console.warn("[concept-registry] connection promotion failed", err?.message || err);
   }
-  // [debug-enrich]
-  console.info('[concept-registry.promotion.onConceptEngagement] Done:', {
+  deInfo('[concept-registry.promotion.onConceptEngagement] Done:', {
     globalConceptId,
     maturity: updated?.maturity || "yellow",
     facet: resolvedFacet,

@@ -4,6 +4,7 @@
  */
 
 import { embedBatch, isVaultEmbeddingsEnabled } from "./embeddings.js";
+import { deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { classifyConceptRelation } from "./contradiction-check.js";
 import { getMaxContradictionChecksPerDppRun } from "../config/flags.js";
 import {
@@ -51,8 +52,7 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
     shadowDecisions: [],
   };
 
-  // [debug-enrich]
-  console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Start:", {
+  deInfo("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Start:", {
     mode,
     partialCount: payload.length,
     embeddingsEnabled: isVaultEmbeddingsEnabled(),
@@ -61,8 +61,7 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
 
   if (payload.length < 2 || (!options.testBypassGate && !isVaultEmbeddingsEnabled())) {
     const reason = payload.length < 2 ? "single_partial" : "embeddings_disabled";
-    // [debug-enrich]
-    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped:", { reason });
+    deInfo("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped:", { reason });
     return {
       status: "skipped",
       reason,
@@ -72,8 +71,7 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
 
   const rows = flattenPartialsForEmbed(payload);
   if (rows.length < 2) {
-    // [debug-enrich]
-    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped — too_few_concepts:", {
+    deInfo("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Skipped — too_few_concepts:", {
       rowCount: rows.length,
     });
     return { status: "skipped", reason: "too_few_concepts", telemetry: emptyTelemetry };
@@ -83,14 +81,12 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
   const embedFn = options.embedFn || ((list) => embedBatch(list));
   let vectorsList;
   try {
-    // [debug-enrich]
-    console.debug("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embedding batch:", {
+    deLog("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embedding batch:", {
       textCount: texts.length,
     });
     vectorsList = await embedFn(texts);
   } catch (err) {
-    // [debug-enrich]
-    console.warn("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embed failed — fallback:", {
+    deWarn("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Embed failed — fallback:", {
       message: err?.message || err,
     });
     return { status: "skipped", reason: "embed_failed", telemetry: emptyTelemetry };
@@ -106,8 +102,7 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
   });
 
   const pairs = findCandidatePairs(rows, vectors);
-  // [debug-enrich]
-  console.debug("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Candidate pairs:", {
+  deLog("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Candidate pairs:", {
     pairCount: pairs.length,
     vectorCount: vectors.size,
   });
@@ -172,15 +167,13 @@ export async function runEmbeddingAssistedInventoryMerge(partials, options = {})
 
   if (mode === "shadow") {
     telemetry.finalConceptCount = rows.length;
-    // [debug-enrich]
-    console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Shadow done:", telemetry);
+    deInfo("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Shadow done:", telemetry);
     return { status: "skipped", reason: "shadow_mode", telemetry, inventoryMode: "embed_shadow" };
   }
 
   const concepts = materializeMergedConcepts(rows, uf, vectors);
   telemetry.finalConceptCount = concepts.length;
-  // [debug-enrich]
-  console.info("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Merge done:", telemetry);
+  deInfo("[vault.inventory-merge-embed.runEmbeddingAssistedInventoryMerge] Merge done:", telemetry);
 
   const inventoryMode = mode === "full" ? "embed_full" : "embed_auto";
   return { status: "success", concepts, telemetry, inventoryMode };

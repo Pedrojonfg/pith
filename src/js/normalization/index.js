@@ -4,6 +4,7 @@
  */
 
 import { createStructureReport, aggregateConfidence } from "./types.js";
+import { deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { stripArtifacts } from "./strip-artifacts.js";
 import { inferHeadings, OUTLINE_HIGH_CONFIDENCE_COVERAGE } from "./infer-headings.js";
 import { extractPdfBlocks } from "./extract-pdf-blocks.js";
@@ -68,7 +69,7 @@ async function extractBlocks(rawContent, format) {
           bag.tablesEmittedOk = 0;
         }
       }
-      console.debug("[normalization.extractBlocks] HTML with images path:", {
+      deLog("[normalization.extractBlocks] HTML with images path:", {
         extractionPath: "extractHtmlBlocksWithImages",
         blockCount: withImages.blocks.length,
         pendingImages: withImages.pendingImages?.length ?? 0,
@@ -82,7 +83,7 @@ async function extractBlocks(rawContent, format) {
       };
     }
     const fallbackBlocks = extractHtmlBlocks(html);
-    console.debug("[normalization.extractBlocks] HTML plain path (images path empty):", {
+    deLog("[normalization.extractBlocks] HTML plain path (images path empty):", {
       extractionPath: "extractHtmlBlocks",
       blockCount: fallbackBlocks.length,
       blockSamples: sampleBlockTexts(fallbackBlocks),
@@ -139,9 +140,9 @@ async function extractBlocks(rawContent, format) {
  */
 export async function normalizeDocumentStructure({ rawContent, format }) {
   const fmt = String(format || "").toLowerCase();
-  console.debug("[normalization.normalizeDocumentStructure] Start:", { format: fmt }); // [debug-enrich]
+  deLog("[normalization.normalizeDocumentStructure] Start:", { format: fmt });
   const { blocks: rawBlocks, pageHeights, doc, pendingImages = [] } = await extractBlocks(rawContent, fmt);
-  console.debug("[normalization.normalizeDocumentStructure] Blocks extracted:", {
+  deLog("[normalization.normalizeDocumentStructure] Blocks extracted:", {
     format: fmt,
     rawBlockCount: rawBlocks.length,
     pageCount: pageHeights.length,
@@ -171,7 +172,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
   });
   const blocksAfterStrip = stripResult.blocks.length;
   const nonArtifactAfterStrip = countNonArtifactBlocks(stripResult.blocks);
-  console.debug("[normalization.normalizeDocumentStructure] After stripArtifacts:", {
+  deLog("[normalization.normalizeDocumentStructure] After stripArtifacts:", {
     step: "stripArtifacts",
     blocksIn: rawBlocks.length,
     blocksOut: blocksAfterStrip,
@@ -183,7 +184,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
 
   const contentBlocks = stripResult.blocks.filter((b) => b.pageIndex > frontMatterEnd);
   if (frontMatterEnd >= 0) {
-    console.debug("[normalization.normalizeDocumentStructure] After front-matter filter:", {
+    deLog("[normalization.normalizeDocumentStructure] After front-matter filter:", {
       step: "frontMatterFilter",
       blocksIn: blocksAfterStrip,
       blocksOut: contentBlocks.length,
@@ -193,7 +194,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
   }
 
   const blocksForInference = stripResult.blocks;
-  console.debug("[normalization.normalizeDocumentStructure] Blocks for inferHeadings:", {
+  deLog("[normalization.normalizeDocumentStructure] Blocks for inferHeadings:", {
     step: "inferHeadings_input",
     blockCount: blocksForInference.length,
     nonArtifactBlocks: countNonArtifactBlocks(blocksForInference),
@@ -279,7 +280,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
       targetChunkSize: 5000,
       labelPrefix: "Sección",
     });
-    console.warn("[normalization.normalizeDocumentStructure] Equal-length section fallback:", {
+    deWarn("[normalization.normalizeDocumentStructure] Equal-length section fallback:", {
       charCount: totalChars,
       headingCount: 0,
     }); // [debug-enrich]
@@ -289,7 +290,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
 
   if (fmt === "pdf" && totalChars < 50) {
     warnings.push("scanned_pdf_no_text");
-    console.warn("[normalization.normalizeDocumentStructure] Possible scanned PDF (very low char count):", {
+    deWarn("[normalization.normalizeDocumentStructure] Possible scanned PDF (very low char count):", {
       charCount: totalChars,
     }); // [debug-enrich]
   }
@@ -302,7 +303,7 @@ export async function normalizeDocumentStructure({ rawContent, format }) {
     warnings,
   });
 
-  console.info("[normalization.normalizeDocumentStructure] Done:", {
+  deInfo("[normalization.normalizeDocumentStructure] Done:", {
     format: fmt,
     charCount: totalChars,
     headingCount: headingsWithOffsets.length,

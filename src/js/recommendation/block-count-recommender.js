@@ -1,3 +1,4 @@
+import { deLog } from "../debug-enrich.js";
 /**
  * RSVP block count recommender (pure, deterministic).
  * @see specs/20260611-rsvp-block-recommend/contracts/block-count-recommender-api.md
@@ -177,8 +178,7 @@ export function applyBlockCountMultiplier(nBlocks, blockCountMultiplier) {
  */
 export function computeBlockCountRecommendation(signals, options = {}) {
   const normalized = normalizeSignals(signals);
-  // [debug-enrich]
-  console.debug('[block-count-recommender.computeBlockCountRecommendation] Normalized signals:', {
+  deLog('[block-count-recommender.computeBlockCountRecommendation] Normalized signals:', {
     conceptCount: normalized.conceptCount,
     wordCount: normalized.wordCount,
     sectionCount: normalized.sectionCount,
@@ -236,8 +236,7 @@ export function computeBlockCountRecommendation(signals, options = {}) {
 
   const reasoning = buildReasoning(normalized, { nBlocks, multiplier });
 
-  // [debug-enrich]
-  console.debug('[block-count-recommender.computeBlockCountRecommendation] Result:', {
+  deLog('[block-count-recommender.computeBlockCountRecommendation] Result:', {
     nBlocks,
     tinyCapApplied,
     multiplier,

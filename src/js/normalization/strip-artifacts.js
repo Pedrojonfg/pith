@@ -3,6 +3,7 @@
  */
 
 import { isPdfHeadingNoise } from "./heading-text.js";
+import { deLog } from "../debug-enrich.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 
@@ -258,8 +259,7 @@ export function stripArtifacts(blocks, opts = {}) {
   let artifactsRemoved = 0;
   let bodyZoneRejections = 0;
 
-  const charsBeforeStrip = blockCharCount(blocks); // [debug-enrich]
-  console.debug("[strip-artifacts.stripArtifacts] Start:", {
+  deLog("[strip-artifacts.stripArtifacts] Start:", {
     blockCount: blocks.length,
     charsBeforeStrip,
     format: opts.format || "unknown",

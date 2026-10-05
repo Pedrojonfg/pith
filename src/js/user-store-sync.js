@@ -5,6 +5,7 @@ import {
   LS_PROJECTS_KEY,
 } from "./config.js";
 import { getAuthUserId } from "./session-persist-supabase.js";
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 import {
   fetchUserConceptRegistry,
   fetchUserPrefs,
@@ -50,57 +51,47 @@ async function tryGetUserId() {
 export async function hydrateUserStoresFromSupabase(userId) {
   const uid = userId || (await tryGetUserId());
   if (!uid) {
-    // [debug-enrich]
-    console.warn('[user-store-sync.hydrateUserStoresFromSupabase] No userId — skip');
+    deWarn('[user-store-sync.hydrateUserStoresFromSupabase] No userId — skip');
     return;
   }
-  // [debug-enrich]
-  console.info('[user-store-sync.hydrateUserStoresFromSupabase] Hydrating stores:', {
+  deInfo('[user-store-sync.hydrateUserStoresFromSupabase] Hydrating stores:', {
     userId: uid,
   });
 
   const projects = await fetchUserProjects(uid);
   if (projects?.data) {
     localStorage.setItem(LS_PROJECTS_KEY, JSON.stringify(projects.data));
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Projects hydrated');
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] Projects hydrated');
   } else {
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No projects payload');
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] No projects payload');
   }
 
   const vault = await fetchUserVault(uid);
   if (vault?.data) {
     hydrateVaultLocal(vault.data);
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Vault hydrated', {
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] Vault hydrated', {
       entryCount: Array.isArray(vault.data.entries) ? vault.data.entries.length : null,
     });
   } else {
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No vault payload');
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] No vault payload');
   }
 
   const registry = await fetchUserConceptRegistry(uid);
   if (registry?.data) {
     localStorage.setItem(REGISTRY_STORAGE_KEY, JSON.stringify(registry.data));
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Registry hydrated');
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] Registry hydrated');
   } else {
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] No registry payload');
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] No registry payload');
   }
 
   const prefs = await fetchUserPrefs(uid);
   if (prefs?.active_doc_id) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, prefs.active_doc_id);
-    // [debug-enrich]
-    console.debug('[user-store-sync.hydrateUserStoresFromSupabase] Active doc restored:', {
+    deLog('[user-store-sync.hydrateUserStoresFromSupabase] Active doc restored:', {
       activeDocId: prefs.active_doc_id,
     });
   }
-  // [debug-enrich]
-  console.info('[user-store-sync.hydrateUserStoresFromSupabase] Hydrate complete:', {
+  deInfo('[user-store-sync.hydrateUserStoresFromSupabase] Hydrate complete:', {
     userId: uid,
     hadProjects: Boolean(projects?.data),
     hadVault: Boolean(vault?.data),
@@ -153,12 +144,10 @@ export function scheduleProjectsSync(store) {
 
 export function scheduleVaultSync(vaultData) {
   if (isOfflineMode()) {
-    // [debug-enrich]
-    console.debug("[user-store-sync.scheduleVaultSync] Skip — offline");
+    deLog("[user-store-sync.scheduleVaultSync] Skip — offline");
     return;
   }
-  // [debug-enrich]
-  console.info("[user-store-sync.scheduleVaultSync] Scheduled:", {
+  deInfo("[user-store-sync.scheduleVaultSync] Scheduled:", {
     entryCount: Array.isArray(vaultData?.entries) ? vaultData.entries.length : null,
     schemaVersion: vaultData?.schemaVersion ?? null,
     hasData: Boolean(vaultData),
@@ -166,8 +155,7 @@ export function scheduleVaultSync(vaultData) {
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !vaultData) {
-      // [debug-enrich]
-      console.warn("[user-store-sync.scheduleVaultSync] Abort — missing userId or data:", {
+      deWarn("[user-store-sync.scheduleVaultSync] Abort — missing userId or data:", {
         hasUserId: Boolean(userId),
         hasData: Boolean(vaultData),
       });
@@ -177,11 +165,9 @@ export function scheduleVaultSync(vaultData) {
       await withKeyedRetry(`vault:${userId}`, () =>
         upsertUserVault(userId, vaultData, vaultData.schemaVersion || 3),
       );
-      // [debug-enrich]
-      console.info("[user-store-sync.scheduleVaultSync] Upsert ok:", { userId });
+      deInfo("[user-store-sync.scheduleVaultSync] Upsert ok:", { userId });
     } catch (err) {
-      // [debug-enrich]
-      console.error("[user-store-sync.scheduleVaultSync] Upsert failed:", err?.message || err);
+      deError("[user-store-sync.scheduleVaultSync] Upsert failed:", err?.message || err);
       throw err;
     }
   });
@@ -189,12 +175,10 @@ export function scheduleVaultSync(vaultData) {
 
 export function scheduleRegistrySync(registryData) {
   if (isOfflineMode()) {
-    // [debug-enrich]
-    console.debug("[user-store-sync.scheduleRegistrySync] Skip — offline");
+    deLog("[user-store-sync.scheduleRegistrySync] Skip — offline");
     return;
   }
-  // [debug-enrich]
-  console.info("[user-store-sync.scheduleRegistrySync] Scheduled:", {
+  deInfo("[user-store-sync.scheduleRegistrySync] Scheduled:", {
     conceptCount: Array.isArray(registryData?.concepts)
       ? registryData.concepts.length
       : registryData?.concepts && typeof registryData.concepts === "object"
@@ -206,8 +190,7 @@ export function scheduleRegistrySync(registryData) {
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !registryData) {
-      // [debug-enrich]
-      console.warn("[user-store-sync.scheduleRegistrySync] Abort — missing userId or data:", {
+      deWarn("[user-store-sync.scheduleRegistrySync] Abort — missing userId or data:", {
         hasUserId: Boolean(userId),
         hasData: Boolean(registryData),
       });
@@ -217,11 +200,9 @@ export function scheduleRegistrySync(registryData) {
       await withKeyedRetry(`registry:${userId}`, () =>
         upsertUserConceptRegistry(userId, registryData, registryData.schemaVersion || 2),
       );
-      // [debug-enrich]
-      console.info("[user-store-sync.scheduleRegistrySync] Upsert ok:", { userId });
+      deInfo("[user-store-sync.scheduleRegistrySync] Upsert ok:", { userId });
     } catch (err) {
-      // [debug-enrich]
-      console.error("[user-store-sync.scheduleRegistrySync] Upsert failed:", err?.message || err);
+      deError("[user-store-sync.scheduleRegistrySync] Upsert failed:", err?.message || err);
       throw err;
     }
   });
@@ -238,20 +219,17 @@ export function scheduleActiveDocSync(docId) {
 
 export function scheduleBlocksUpload(docId, blocksJson) {
   if (isOfflineMode()) {
-    // [debug-enrich]
-    console.debug('[user-store-sync.scheduleBlocksUpload] Offline — skip', { docId });
+    deLog('[user-store-sync.scheduleBlocksUpload] Offline — skip', { docId });
     return;
   }
-  // [debug-enrich]
-  console.info('[user-store-sync.scheduleBlocksUpload] Scheduling:', {
+  deInfo('[user-store-sync.scheduleBlocksUpload] Scheduling:', {
     docId,
     jsonLen: typeof blocksJson === "string" ? blocksJson.length : null,
   });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !docId || !blocksJson) {
-      // [debug-enrich]
-      console.warn('[user-store-sync.scheduleBlocksUpload] Skipped upload — missing args', {
+      deWarn('[user-store-sync.scheduleBlocksUpload] Skipped upload — missing args', {
         hasUserId: Boolean(userId),
         docId: docId || null,
         hasJson: Boolean(blocksJson),
@@ -260,11 +238,9 @@ export function scheduleBlocksUpload(docId, blocksJson) {
     }
     try {
       await uploadBlocksJson(userId, docId, blocksJson);
-      // [debug-enrich]
-      console.info('[user-store-sync.scheduleBlocksUpload] Upload ok:', { docId });
+      deInfo('[user-store-sync.scheduleBlocksUpload] Upload ok:', { docId });
     } catch (err) {
-      // [debug-enrich]
-      console.error('[user-store-sync.scheduleBlocksUpload] Upload failed:', {
+      deError('[user-store-sync.scheduleBlocksUpload] Upload failed:', {
         docId,
         message: err?.message ?? String(err),
       });
@@ -275,20 +251,17 @@ export function scheduleBlocksUpload(docId, blocksJson) {
 
 export function scheduleResponsesUpload(docId, respJson) {
   if (isOfflineMode()) {
-    // [debug-enrich]
-    console.debug('[user-store-sync.scheduleResponsesUpload] Offline — skip', { docId });
+    deLog('[user-store-sync.scheduleResponsesUpload] Offline — skip', { docId });
     return;
   }
-  // [debug-enrich]
-  console.info('[user-store-sync.scheduleResponsesUpload] Scheduling:', {
+  deInfo('[user-store-sync.scheduleResponsesUpload] Scheduling:', {
     docId,
     jsonLen: typeof respJson === "string" ? respJson.length : null,
   });
   scheduleUserDataSync(async () => {
     const userId = await tryGetUserId();
     if (!userId || !docId || !respJson) {
-      // [debug-enrich]
-      console.warn('[user-store-sync.scheduleResponsesUpload] Skipped upload — missing args', {
+      deWarn('[user-store-sync.scheduleResponsesUpload] Skipped upload — missing args', {
         hasUserId: Boolean(userId),
         docId: docId || null,
         hasJson: Boolean(respJson),
@@ -297,11 +270,9 @@ export function scheduleResponsesUpload(docId, respJson) {
     }
     try {
       await uploadResponsesJson(userId, docId, respJson);
-      // [debug-enrich]
-      console.info('[user-store-sync.scheduleResponsesUpload] Upload ok:', { docId });
+      deInfo('[user-store-sync.scheduleResponsesUpload] Upload ok:', { docId });
     } catch (err) {
-      // [debug-enrich]
-      console.error('[user-store-sync.scheduleResponsesUpload] Upload failed:', {
+      deError('[user-store-sync.scheduleResponsesUpload] Upload failed:', {
         docId,
         message: err?.message ?? String(err),
       });

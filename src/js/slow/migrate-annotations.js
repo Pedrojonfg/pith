@@ -2,6 +2,7 @@
  * One-shot Slow annotation migration to schema v2 (D-MIG option a).
  */
 import { resolveBlockOffset, splitTextIntoBlocks } from "./block-ids.js";
+import { deInfo, deLog } from "../debug-enrich.js";
 
 export const ANNOTATION_SCHEMA_VERSION = 2;
 
@@ -119,11 +120,11 @@ export function consumePdfLegacyDropNotice(slow) {
   if (!slow || typeof slow !== "object") return false;
   if (!slow.pdfLegacyAnnotationsDroppedNotice) return false;
   if (slow.pdfLegacyAnnotationsDroppedNoticeShown) {
-    console.debug("[migrate-annotations.consumePdfLegacyDropNotice] Already shown"); // [debug-enrich]
+    deLog("[migrate-annotations.consumePdfLegacyDropNotice] Already shown");
     return false;
   }
   slow.pdfLegacyAnnotationsDroppedNoticeShown = true;
-  console.info("[migrate-annotations.consumePdfLegacyDropNotice] Will show notice"); // [debug-enrich]
+  deInfo("[migrate-annotations.consumePdfLegacyDropNotice] Will show notice");
   return true;
 }
 

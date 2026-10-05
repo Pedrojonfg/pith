@@ -1,4 +1,5 @@
 import { storeActiveSession } from "../session.js?v=20260625_02";
+import { deInfo } from "../debug-enrich.js";
 import { markdownToHtml } from "../markdown.js?v=20260625_02";
 import {
   buildConceptSpanIndex,
@@ -1839,7 +1840,7 @@ export async function initSlowReader(session) {
       { id: "pdf-legacy-drop-notice" },
     );
     await storeActiveSession(session);
-    console.info("[reader.initSlowReader] PDF drop notice shown + persisted"); // [debug-enrich]
+    deInfo("[reader.initSlowReader] PDF drop notice shown + persisted");
   }
 
   document.getElementById("slowReaderLayout")?.classList.remove("focus-mode");

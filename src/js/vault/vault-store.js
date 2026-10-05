@@ -1,6 +1,7 @@
 /** Global Knowledge Vault — localStorage persistence. */
 
 import { hydrateMastery } from "./mastery-model.js";
+import { deError, deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { addPrerequisiteSafe, recomputeImportanceScores } from "./prerequisite-graph.js";
 import { scheduleVaultSync } from "../user-store-sync.js";
 
@@ -234,14 +235,12 @@ export function loadVault() {
   try {
     const raw = localStorage.getItem(VAULT_STORAGE_KEY);
     if (!raw) {
-      // [debug-enrich]
-      console.debug('[vault-store.loadVault] Empty — returning empty vault');
+      deLog('[vault-store.loadVault] Empty — returning empty vault');
       return emptyVault();
     }
     const meta = JSON.parse(raw);
     if (!meta || typeof meta !== "object") {
-      // [debug-enrich]
-      console.warn('[vault-store.loadVault] Invalid meta — empty vault');
+      deWarn('[vault-store.loadVault] Invalid meta — empty vault');
       return emptyVault();
     }
     let entries = readEntriesFromStorage(meta).map((e) => migrateEntryCuration(e));
@@ -266,8 +265,7 @@ export function loadVault() {
         ? [...meta.pendingInferredEdges]
         : [],
     };
-    // [debug-enrich]
-    console.info('[vault-store.loadVault] Loaded:', {
+    deInfo('[vault-store.loadVault] Loaded:', {
       entryCount: vault.entries.length,
       reviewItemCount: vault.reviewItems.length,
       schemaVersion: vault.schemaVersion,
@@ -276,8 +274,7 @@ export function loadVault() {
     return vault;
   } catch (err) {
     console.warn("[vault-store] loadVault: corrupt data", err);
-    // [debug-enrich]
-    console.error('[vault-store.loadVault] Corrupt data — empty vault:', {
+    deError('[vault-store.loadVault] Corrupt data — empty vault:', {
       message: err?.message ?? String(err),
     });
     return emptyVault();
@@ -324,8 +321,7 @@ export function saveVault(vault) {
         },
       }),
     );
-    // [debug-enrich]
-    console.info('[vault-store.saveVault] Saved (externalized entries):', {
+    deInfo('[vault-store.saveVault] Saved (externalized entries):', {
       entryCount: stripped.length,
       reviewItemCount: reviewItems.length,
       inlineLen: inline.length,
@@ -340,8 +336,7 @@ export function saveVault(vault) {
       VAULT_STORAGE_KEY,
       JSON.stringify({ ...metaPayload, entries: stripped }),
     );
-    // [debug-enrich]
-    console.info('[vault-store.saveVault] Saved (inline):', {
+    deInfo('[vault-store.saveVault] Saved (inline):', {
       entryCount: stripped.length,
       reviewItemCount: reviewItems.length,
       inlineLen: inline.length,

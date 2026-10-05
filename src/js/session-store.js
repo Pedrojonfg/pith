@@ -24,6 +24,7 @@ import {
   buildRecallAssessmentSignals,
 } from "./assessment-signals.js";
 import { normalizeSmItem } from "./sm2.js";
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 import { loadVault } from "./vault/vault-store.js";
 import { getGlobalReviewDueCount } from "./concept-registry/global-review.js";
 import { normalizeRecallSlice } from "./recall-slice.js";
@@ -56,29 +57,25 @@ function docTextKey(docId) {
 let rowCache = null;
 
 async function readSessionRows() {
-  // [debug-enrich]
-  console.debug('[session-store.readSessionRows] Fetching session rows from Supabase');
+  deLog('[session-store.readSessionRows] Fetching session rows from Supabase');
   let userId;
   try {
     userId = await getAuthUserId();
   } catch {
     // Pre-auth boot (e.g. detectAndMigrateV1) must no-op — do not warm rowCache.
-    // [debug-enrich]
-    console.debug('[session-store.readSessionRows] Not authenticated — empty rows');
+    deLog('[session-store.readSessionRows] Not authenticated — empty rows');
     return [];
   }
   try {
     const rows = await fetchSessionRows(userId);
     rowCache = new Map(rows.map((r) => [r.id, r]));
-    // [debug-enrich]
-    console.info('[session-store.readSessionRows] Row cache populated:', {
+    deInfo('[session-store.readSessionRows] Row cache populated:', {
       rowCount: rows.length,
       hasUserId: Boolean(userId),
     });
     return rows;
   } catch (err) {
-    // [debug-enrich]
-    console.error('[session-store.readSessionRows] Fetch failed:', {
+    deError('[session-store.readSessionRows] Fetch failed:', {
       hasUserId: Boolean(userId),
       message: err?.message ?? String(err),
     });
@@ -88,12 +85,10 @@ async function readSessionRows() {
 
 async function ensureRowCache() {
   if (!rowCache) {
-    // [debug-enrich]
-    console.debug('[session-store.ensureRowCache] Cache miss — loading rows');
+    deLog('[session-store.ensureRowCache] Cache miss — loading rows');
     await readSessionRows();
   } else {
-    // [debug-enrich]
-    console.debug('[session-store.ensureRowCache] Cache hit:', {
+    deLog('[session-store.ensureRowCache] Cache hit:', {
       size: rowCache.size,
     });
   }
@@ -115,14 +110,12 @@ function rowToSession(row, includeMarkdown) {
 
 async function rehydrateMarkdown(session, markdownRef) {
   if (!session?.shared) {
-    // [debug-enrich]
-    console.debug('[session-store.rehydrateMarkdown] No shared — skip');
+    deLog('[session-store.rehydrateMarkdown] No shared — skip');
     return rehydrateSessionModes(session);
   }
   const sh = session.shared;
   if (typeof sh.rawMarkdown === "string") {
-    // [debug-enrich]
-    console.debug('[session-store.rehydrateMarkdown] Inline markdown present:', {
+    deLog('[session-store.rehydrateMarkdown] Inline markdown present:', {
       docId: session.docId ?? null,
       len: sh.rawMarkdown.length,
     });
@@ -136,8 +129,7 @@ async function rehydrateMarkdown(session, markdownRef) {
       try {
         const text = localStorage.getItem(legacyKey);
         if (text != null) {
-          // [debug-enrich]
-          console.info('[session-store.rehydrateMarkdown] Legacy localStorage hit:', {
+          deInfo('[session-store.rehydrateMarkdown] Legacy localStorage hit:', {
             docId: session.docId ?? null,
             legacyKey,
             len: text.length,
@@ -148,15 +140,13 @@ async function rehydrateMarkdown(session, markdownRef) {
           });
         }
       } catch (err) {
-        // [debug-enrich]
-        console.warn('[session-store.rehydrateMarkdown] Legacy localStorage read failed:', {
+        deWarn('[session-store.rehydrateMarkdown] Legacy localStorage read failed:', {
           docId: session.docId ?? null,
           message: err?.message ?? String(err),
         });
       }
     }
-    // [debug-enrich]
-    console.warn('[session-store.rehydrateMarkdown] No storage path — empty markdown', {
+    deWarn('[session-store.rehydrateMarkdown] No storage path — empty markdown', {
       docId: session.docId ?? null,
       markdownRef: markdownRef ?? null,
     });
@@ -164,14 +154,12 @@ async function rehydrateMarkdown(session, markdownRef) {
   }
 
   try {
-    // [debug-enrich]
-    console.debug('[session-store.rehydrateMarkdown] Downloading:', {
+    deLog('[session-store.rehydrateMarkdown] Downloading:', {
       docId: session.docId ?? null,
       storagePath,
     });
     const text = await downloadMarkdown(storagePath);
-    // [debug-enrich]
-    console.info('[session-store.rehydrateMarkdown] Download ok:', {
+    deInfo('[session-store.rehydrateMarkdown] Download ok:', {
       docId: session.docId ?? null,
       storagePath,
       len: text?.length ?? 0,
@@ -182,8 +170,7 @@ async function rehydrateMarkdown(session, markdownRef) {
     });
   } catch (err) {
     console.warn("[session-store] storage rehydrate failed", err);
-    // [debug-enrich]
-    console.error('[session-store.rehydrateMarkdown] Download failed — empty markdown fallback:', {
+    deError('[session-store.rehydrateMarkdown] Download failed — empty markdown fallback:', {
       docId: session.docId ?? null,
       storagePath,
       message: err?.message ?? String(err),
@@ -372,8 +359,7 @@ function migrateSessionV4(session) {
 async function stripMarkdownForPersist(session, userId) {
   const clone = JSON.parse(JSON.stringify(session));
   const docId = clone.docId;
-  // [debug-enrich]
-  console.debug('[session-store.stripMarkdownForPersist] Stripping for persist:', {
+  deLog('[session-store.stripMarkdownForPersist] Stripping for persist:', {
     docId,
     hasUserId: Boolean(userId),
     hasRawMarkdown: typeof clone.shared?.rawMarkdown === "string",
@@ -402,23 +388,20 @@ async function stripMarkdownForPersist(session, userId) {
       const charCount = sh.rawMarkdown.length;
       delete sh.rawMarkdown;
       sh.rawMarkdownRef = { storageKey: markdownRef, charCount };
-      // [debug-enrich]
-      console.info('[session-store.stripMarkdownForPersist] Markdown uploaded:', {
+      deInfo('[session-store.stripMarkdownForPersist] Markdown uploaded:', {
         docId,
         charCount,
         storageKey: markdownRef,
       });
     } catch (err) {
-      // [debug-enrich]
-      console.error('[session-store.stripMarkdownForPersist] Markdown upload failed:', {
+      deError('[session-store.stripMarkdownForPersist] Markdown upload failed:', {
         docId,
         message: err?.message ?? String(err),
       });
       throw err;
     }
   } else {
-    // [debug-enrich]
-    console.debug('[session-store.stripMarkdownForPersist] No inline markdown to upload', {
+    deLog('[session-store.stripMarkdownForPersist] No inline markdown to upload', {
       docId,
       existingRef: sh?.rawMarkdownRef?.storageKey ?? null,
     });
@@ -571,8 +554,7 @@ export async function createSession(rawMarkdown, options = {}) {
   const markdown = String(rawMarkdown || "");
   const docId = options.docId || (await computeDocId(markdown));
   const now = Date.now();
-  // [debug-enrich]
-  console.info('[session-store.createSession] Creating session:', {
+  deInfo('[session-store.createSession] Creating session:', {
     docId,
     markdownLen: markdown.length,
     projectId: options.projectId ? String(options.projectId) : null,
@@ -584,15 +566,13 @@ export async function createSession(rawMarkdown, options = {}) {
   if (Array.isArray(options.pendingImages) && options.pendingImages.length) {
     try {
       images = await persistPendingImages(docId, options.pendingImages);
-      // [debug-enrich]
-      console.info('[session-store.createSession] Images persisted:', {
+      deInfo('[session-store.createSession] Images persisted:', {
         docId,
         imageCount: images.length,
       });
     } catch (err) {
       console.warn("[session-store] image persist failed", err?.message || err);
-      // [debug-enrich]
-      console.warn('[session-store.createSession] Image persist failed (continuing):', {
+      deWarn('[session-store.createSession] Image persist failed (continuing):', {
         docId,
         message: err?.message ?? String(err),
       });
@@ -642,8 +622,7 @@ export async function createSession(rawMarkdown, options = {}) {
   };
   const v = validateDocumentSession(session);
   if (!v.ok) {
-    // [debug-enrich]
-    console.error('[session-store.createSession] Validation failed:', {
+    deError('[session-store.createSession] Validation failed:', {
       docId,
       errors: v.errors,
     });
@@ -652,15 +631,13 @@ export async function createSession(rawMarkdown, options = {}) {
   try {
     await upsertSessionInStore(session);
   } catch (err) {
-    // [debug-enrich]
-    console.error('[session-store.createSession] Upsert failed:', {
+    deError('[session-store.createSession] Upsert failed:', {
       docId,
       message: err?.message ?? String(err),
     });
     throw err;
   }
-  // [debug-enrich]
-  console.info('[session-store.createSession] Session created:', {
+  deInfo('[session-store.createSession] Session created:', {
     docId,
     imageCount: images.length,
     charCount: session.shared?.docMeta?.charCount ?? markdown.length,
@@ -674,17 +651,14 @@ export async function createSession(rawMarkdown, options = {}) {
 export async function getSession(docId) {
   const id = String(docId || "").trim();
   if (!id) {
-    // [debug-enrich]
-    console.debug('[session-store.getSession] Empty docId — return null');
+    deLog('[session-store.getSession] Empty docId — return null');
     return null;
   }
-  // [debug-enrich]
-  console.debug('[session-store.getSession] Loading:', { docId: id });
+  deLog('[session-store.getSession] Loading:', { docId: id });
   const cache = await ensureRowCache();
   const row = cache.get(id);
   if (!row) {
-    // [debug-enrich]
-    console.info('[session-store.getSession] Not found in row cache:', { docId: id });
+    deInfo('[session-store.getSession] Not found in row cache:', { docId: id });
     return null;
   }
   const base = rowToSession(row, true);
@@ -693,23 +667,22 @@ export async function getSession(docId) {
   if (session?.__slowAnnotationMigrationDirty) {
     delete session.__slowAnnotationMigrationDirty;
     try {
-      console.info("[session-store.getSession] Persisting Slow annotation migration:", {
+      deInfo("[session-store.getSession] Persisting Slow annotation migration:", {
         docId: id,
         schemaVersion: session?.modes?.slow?.slow?.annotationSchemaVersion ?? null,
         annotationCount: Array.isArray(session?.modes?.slow?.slow?.annotations)
           ? session.modes.slow.slow.annotations.length
           : null,
-      }); // [debug-enrich]
+      });
       await saveActiveSession(session);
     } catch (err) {
-      console.error("[session-store.getSession] Failed to persist Slow annotation migration:", {
+      deError("[session-store.getSession] Failed to persist Slow annotation migration:", {
         docId: id,
         message: err?.message || String(err),
-      }); // [debug-enrich]
+      });
     }
   }
-  // [debug-enrich]
-  console.info('[session-store.getSession] Loaded:', {
+  deInfo('[session-store.getSession] Loaded:', {
     docId: id,
     hasInlineMarkdown: typeof base?.shared?.rawMarkdown === "string",
     rehydratedMarkdownLen:
@@ -745,28 +718,24 @@ export function clearActiveDocumentPointer() {
  */
 export async function setActiveSession(docId) {
   const id = String(docId || "").trim();
-  // [debug-enrich]
-  console.info('[session-store.setActiveSession] Setting active doc pointer:', {
+  deInfo('[session-store.setActiveSession] Setting active doc pointer:', {
     docId: id,
     previousActive: localStorage.getItem(LS_ACTIVE_DOC_ID_KEY),
   });
   if (!(await getSession(id))) {
-    // [debug-enrich]
-    console.error('[session-store.setActiveSession] Session not found:', { docId: id });
+    deError('[session-store.setActiveSession] Session not found:', { docId: id });
     throw new Error("session not found");
   }
   localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, id);
   scheduleActiveDocSync(id);
-  // [debug-enrich]
-  console.debug('[session-store.setActiveSession] Active pointer updated + sync scheduled');
+  deLog('[session-store.setActiveSession] Active pointer updated + sync scheduled');
 }
 
 /**
  * @param {object} session
  */
 export async function saveActiveSession(session) {
-  // [debug-enrich]
-  console.debug('[session-store.saveActiveSession] Saving:', {
+  deLog('[session-store.saveActiveSession] Saving:', {
     docId: session?.docId ?? null,
     studyMode: session?.studyMode ?? null,
     hasRawMarkdown: typeof session?.shared?.rawMarkdown === "string",
@@ -777,8 +746,7 @@ export async function saveActiveSession(session) {
   });
   const v = validateDocumentSession(session);
   if (!v.ok) {
-    // [debug-enrich]
-    console.error('[session-store.saveActiveSession] Validation failed:', {
+    deError('[session-store.saveActiveSession] Validation failed:', {
       docId: session?.docId ?? null,
       errors: v.errors,
     });
@@ -788,8 +756,7 @@ export async function saveActiveSession(session) {
   try {
     await upsertSessionInStore(updated);
   } catch (err) {
-    // [debug-enrich]
-    console.error('[session-store.saveActiveSession] Upsert failed:', {
+    deError('[session-store.saveActiveSession] Upsert failed:', {
       docId: updated.docId,
       message: err?.message ?? String(err),
     });
@@ -800,8 +767,7 @@ export async function saveActiveSession(session) {
     localStorage.setItem(LS_ACTIVE_DOC_ID_KEY, updated.docId);
     scheduleActiveDocSync(updated.docId);
   }
-  // [debug-enrich]
-  console.info('[session-store.saveActiveSession] Saved:', {
+  deInfo('[session-store.saveActiveSession] Saved:', {
     docId: updated.docId,
     updatedAt: updated.updatedAt,
     wasActive: activeId === updated.docId,

@@ -1,4 +1,5 @@
 import { scopeTextForPhase0IA } from "../input-normalization.js?v=20260625_02";
+import { deError, deInfo } from "../debug-enrich.js";
 import {
   flattenHierarchy,
   getChunksFromHierarchy,
@@ -601,8 +602,7 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
   } = opts;
   const model = normalizeLlmModel(llmModel);
   const text = String(scopeText || "");
-  // [debug-enrich]
-  console.info("[slow.phase0.mapReducePhase0] Start:", {
+  deInfo("[slow.phase0.mapReducePhase0] Start:", {
     textLen: text.length,
     criticalMode,
     llmModel: model,
@@ -685,12 +685,10 @@ export async function mapReducePhase0(scopeText, sectionBoundaries, opts = {}) {
 
   const orientation = parsePhase0Orientation(rawFinal, { criticalMode });
   if (!orientation) {
-    // [debug-enrich]
-    console.error("[slow.phase0.mapReducePhase0] Invalid synthesized Phase 0 JSON");
+    deError("[slow.phase0.mapReducePhase0] Invalid synthesized Phase 0 JSON");
     throw new Error("Model did not return valid synthesized Phase 0 JSON.");
   }
-  // [debug-enrich]
-  console.info("[slow.phase0.mapReducePhase0] Done:", {
+  deInfo("[slow.phase0.mapReducePhase0] Done:", {
     chunkCount: chunks.length,
     conceptCount: Array.isArray(orientation?.conceptsToFind) ? orientation.conceptsToFind.length : 0,
     criticalMode,

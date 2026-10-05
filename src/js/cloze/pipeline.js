@@ -1,4 +1,5 @@
 import { llmChatCompletions } from "../llm.js?v=20260625_02";
+import { deError, deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { getActiveSession, upsertSmItem } from "../session-store.js?v=20260625_02";
 import { createSmItem } from "../sm2.js";
 import {
@@ -121,8 +122,7 @@ export function getPhaseLabel(phaseIndex) {
 }
 
 async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 8192, signal }) {
-  // [debug-enrich]
-  console.debug("[cloze.pipeline.callClozeJson] LLM call:", {
+  deLog("[cloze.pipeline.callClozeJson] LLM call:", {
     llmModel: llmModel || null,
     max_tokens,
     systemLen: String(systemPrompt || "").length,
@@ -143,8 +143,7 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
     });
   } catch (err) {
     if (err?.status === 400 || /response_format/i.test(String(err?.message))) {
-      // [debug-enrich]
-      console.warn("[cloze.pipeline.callClozeJson] JSON mode failed — retry without:", err?.message || err);
+      deWarn("[cloze.pipeline.callClozeJson] JSON mode failed — retry without:", err?.message || err);
       content = await llmChatCompletions({
         llmModel,
         max_tokens,
@@ -156,13 +155,11 @@ async function callClozeJson({ llmModel, systemPrompt, userPrompt, max_tokens = 
         signal,
       });
     } else {
-      // [debug-enrich]
-      console.error("[cloze.pipeline.callClozeJson] LLM failed:", err?.message || err);
+      deError("[cloze.pipeline.callClozeJson] LLM failed:", err?.message || err);
       throw err;
     }
   }
-  // [debug-enrich]
-  console.debug("[cloze.pipeline.callClozeJson] Response:", {
+  deLog("[cloze.pipeline.callClozeJson] Response:", {
     contentLen: String(content || "").length,
   });
   return content;
@@ -175,8 +172,7 @@ function truncateForPrompt(text, max = 15000) {
 }
 
 export async function generateEpistemicGraph(text, { llmModel, signal } = {}) {
-  // [debug-enrich]
-  console.info("[cloze.pipeline.generateEpistemicGraph] Start:", {
+  deInfo("[cloze.pipeline.generateEpistemicGraph] Start:", {
     textLen: String(text || "").length,
     llmModel: llmModel || null,
   });
@@ -213,12 +209,10 @@ Rules:
   const parsed = parseModelJsonObject(raw);
   const graph = normalizeEpistemicGraph(parsed);
   if (!graph) {
-    // [debug-enrich]
-    console.error("[cloze.pipeline.generateEpistemicGraph] Invalid graph JSON");
+    deError("[cloze.pipeline.generateEpistemicGraph] Invalid graph JSON");
     throw new Error("Phase 0: invalid epistemic graph JSON.");
   }
-  // [debug-enrich]
-  console.info("[cloze.pipeline.generateEpistemicGraph] Done:", {
+  deInfo("[cloze.pipeline.generateEpistemicGraph] Done:", {
     nodeCount: Array.isArray(graph.nodes) ? graph.nodes.length : 0,
     edgeCount: Array.isArray(graph.edges) ? graph.edges.length : 0,
   });
@@ -229,8 +223,7 @@ Rules:
 const SEMANTIC_ANALYSIS_MAX_TOKENS = 8192;
 
 export async function analyzeSemanticCandidates(text, epistemicGraph, { llmModel, signal } = {}) {
-  // [debug-enrich]
-  console.info("[cloze.pipeline.analyzeSemanticCandidates] Start:", {
+  deInfo("[cloze.pipeline.analyzeSemanticCandidates] Start:", {
     textLen: String(text || "").length,
     nodeCount: Array.isArray(epistemicGraph?.nodes) ? epistemicGraph.nodes.length : 0,
     edgeCount: Array.isArray(epistemicGraph?.edges) ? epistemicGraph.edges.length : 0,
@@ -271,8 +264,7 @@ Only include nodes with importance >= 3. Edge aptitude_score >= 3 for viable edg
   });
   const parsed = parseModelJsonObject(raw);
   const analysis = normalizeSemanticAnalysis(parsed);
-  // [debug-enrich]
-  console.info("[cloze.pipeline.analyzeSemanticCandidates] Done:", {
+  deInfo("[cloze.pipeline.analyzeSemanticCandidates] Done:", {
     nodeCandidates: analysis.node_candidates.length,
     edgeCandidates: analysis.edge_candidates.length,
   });
@@ -283,8 +275,7 @@ Only include nodes with importance >= 3. Edge aptitude_score >= 3 for viable edg
 const BASE_ITEMS_MAX_TOKENS = 12000;
 
 export async function generateBaseItems(text, analysis, { llmModel, signal } = {}) {
-  // [debug-enrich]
-  console.info("[cloze.pipeline.generateBaseItems] Start:", {
+  deInfo("[cloze.pipeline.generateBaseItems] Start:", {
     textLen: String(text || "").length,
     nodeCandidateCount: Array.isArray(analysis?.node_candidates) ? analysis.node_candidates.length : 0,
     edgeCandidateCount: Array.isArray(analysis?.edge_candidates) ? analysis.edge_candidates.length : 0,
@@ -348,8 +339,7 @@ Use _____ as blank placeholder. Reject trivial blanks (articles, prepositions).`
     return fileId ? { ...item, sourceFileId: fileId } : item;
   };
   const out = [...nodeItems, ...edgeItems].map(annotate);
-  // [debug-enrich]
-  console.info("[cloze.pipeline.generateBaseItems] Done:", {
+  deInfo("[cloze.pipeline.generateBaseItems] Done:", {
     nodeItemCount: nodeItems.length,
     edgeItemCount: edgeItems.length,
     total: out.length,
@@ -420,8 +410,7 @@ export async function qaAndCalibrate(items, { llmModel, signal } = {}) {
   const withOptions = (Array.isArray(items) ? items : []).map(normalizeClozeItem).filter((i) => i?.options?.length === 4);
   if (!withOptions.length) return [];
 
-  // [debug-enrich]
-  console.info("[cloze.pipeline.qaAndCalibrate] Start:", {
+  deInfo("[cloze.pipeline.qaAndCalibrate] Start:", {
     itemCount: withOptions.length,
     llmModel: llmModel || null,
   });

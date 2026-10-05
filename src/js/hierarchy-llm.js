@@ -4,6 +4,7 @@
  */
 
 import { buildDocumentHierarchy, hasMarkdownHeadings } from "./normalization/hierarchy.js";
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 import {
   getApiKeyForLlmModel,
   llmChatCompletions,
@@ -17,16 +18,13 @@ import {
 export function makeHierarchyLlmFn(options = {}) {
   const model = normalizeLlmModel(options.llmModel);
   if (!getApiKeyForLlmModel(model)) {
-    // [debug-enrich]
-    console.warn('[hierarchy-llm.makeHierarchyLlmFn] No API key for model:', model);
+    deWarn('[hierarchy-llm.makeHierarchyLlmFn] No API key for model:', model);
     return null;
   }
   const signal = options.signal;
-  // [debug-enrich]
-  console.debug('[hierarchy-llm.makeHierarchyLlmFn] LLM fn ready:', { model });
+  deLog('[hierarchy-llm.makeHierarchyLlmFn] LLM fn ready:', { model });
   return async ({ systemPrompt, userPrompt, temperature, maxTokens }) => {
-    // [debug-enrich]
-    console.info('[hierarchy-llm.makeHierarchyLlmFn] LLM call:', {
+    deInfo('[hierarchy-llm.makeHierarchyLlmFn] LLM call:', {
       model,
       temperature,
       maxTokens,
@@ -57,8 +55,7 @@ export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) 
   const hasHeadings = hasMarkdownHeadings(text);
   const needsLlm = text.length >= minLlmChars && !hasHeadings;
   const llmFn = needsLlm ? makeHierarchyLlmFn(options) : null;
-  // [debug-enrich]
-  console.info('[hierarchy-llm.buildDocumentHierarchyWithLlm] Start:', {
+  deInfo('[hierarchy-llm.buildDocumentHierarchyWithLlm] Start:', {
     charCount: text.length,
     minLlmChars,
     hasMarkdownHeadings: hasHeadings,
@@ -79,16 +76,14 @@ export async function buildDocumentHierarchyWithLlm(markdownText, options = {}) 
       signal: options.signal,
       headings: options.headings,
     });
-    // [debug-enrich]
-    console.info('[hierarchy-llm.buildDocumentHierarchyWithLlm] Done:', {
+    deInfo('[hierarchy-llm.buildDocumentHierarchyWithLlm] Done:', {
       method: result?.method || null,
       rootCount: Array.isArray(result?.tree) ? result.tree.length : null,
       topicCount: Array.isArray(result?.topics) ? result.topics.length : null,
     });
     return result;
   } catch (err) {
-    // [debug-enrich]
-    console.error('[hierarchy-llm.buildDocumentHierarchyWithLlm] Failed:', err?.message || err);
+    deError('[hierarchy-llm.buildDocumentHierarchyWithLlm] Failed:', err?.message || err);
     throw err;
   }
 }

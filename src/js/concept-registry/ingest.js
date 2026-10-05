@@ -3,6 +3,7 @@
  */
 
 import { mapMcqOutcomeToQuality, RECALL_QUALITY_TO_SM2 } from "../sm2-ingest.js";
+import { deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { getSession } from "../session-store.js";
 import { onConceptEngagement } from "./promotion.js";
 import { reinforceConnectionsFireAndForget } from "./connection-store.js";
@@ -45,8 +46,7 @@ export async function promoteFromMcqBlock({
   skipped,
   source = "rsvp",
 }) {
-  // [debug-enrich]
-  console.info('[concept-registry.ingest.promoteFromMcqBlock] Promoting:', {
+  deInfo('[concept-registry.ingest.promoteFromMcqBlock] Promoting:', {
     docId,
     conceptIdCount: Array.isArray(conceptIds) ? conceptIds.length : 0,
     correct,
@@ -57,8 +57,7 @@ export async function promoteFromMcqBlock({
   });
   const session = await getSession(docId);
   if (!session) {
-    // [debug-enrich]
-    console.warn('[concept-registry.ingest.promoteFromMcqBlock] Session missing — skip', {
+    deWarn('[concept-registry.ingest.promoteFromMcqBlock] Session missing — skip', {
       docId,
     });
     return;
@@ -81,9 +80,8 @@ export async function promoteFromMcqBlock({
       okCount += 1;
     } catch (err) {
       failCount += 1;
-      console.warn("[concept-registry] MCQ promotion failed", id, err); // [debug-enrich] enriched below
-      // [debug-enrich]
-      console.warn('[concept-registry.ingest.promoteFromMcqBlock] Engagement failed:', {
+      deWarn("[concept-registry] MCQ promotion failed", id, err); enriched below
+      deWarn('[concept-registry.ingest.promoteFromMcqBlock] Engagement failed:', {
         docId,
         conceptId: id,
         quality,
@@ -92,8 +90,7 @@ export async function promoteFromMcqBlock({
     }
   }
   maybeReinforceOnCorrect(session, ids, correct);
-  // [debug-enrich]
-  console.debug('[concept-registry.ingest.promoteFromMcqBlock] Done:', {
+  deLog('[concept-registry.ingest.promoteFromMcqBlock] Done:', {
     docId,
     quality,
     okCount,

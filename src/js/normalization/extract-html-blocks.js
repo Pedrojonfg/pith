@@ -3,6 +3,7 @@
  */
 
 import { createTextBlock } from "./types.js";
+import { deInfo, deLog } from "../debug-enrich.js";
 import { htmlTableToMarkdown } from "./table-markdown.js";
 import { extractHeadingTextFromElement, normalizeHeadingLabel, resolveHtmlContentRoot, isHtmlBoilerplateElement, elementTextPreservingSubSup } from "./heading-text.js";
 
@@ -215,8 +216,7 @@ export function extractHtmlBlocks(html) {
   const doc = parser.parseFromString(raw, "text/html");
   const body = doc.body || doc.documentElement;
   const contentRoot = resolveHtmlContentRoot(body);
-  const domDiag = domStructureDiagnostics(contentRoot); // [debug-enrich]
-  console.debug("[extract-html-blocks.extractHtmlBlocks] DOM parsed (pre-traversal):", {
+  deLog("[extract-html-blocks.extractHtmlBlocks] DOM parsed (pre-traversal):", {
     htmlCharLen: raw.length,
     ...domDiag,
   }); // [debug-enrich]
@@ -424,8 +424,7 @@ export function extractHtmlBlocks(html) {
 
   const tableCount = (raw.match(/<table\b/gi) || []).length;
   const preFallbackBlockCount = blocks.length; // [debug-enrich]
-  const preFallbackHeadingCount = blocks.filter((b) => b.kind === "heading").length; // [debug-enrich]
-  console.info("[extract-html-blocks.extractHtmlBlocks] Post-traversal (pre-fallback):", {
+  deInfo("[extract-html-blocks.extractHtmlBlocks] Post-traversal (pre-fallback):", {
     blockCount: preFallbackBlockCount,
     headingBlocks: preFallbackHeadingCount,
     htmlTablesInSource: tableCount,

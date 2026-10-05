@@ -14,11 +14,9 @@ node_modules/
 # Supabase CLI local temp
 supabase/.temp/
 
-# Cursor agent integration tests (local QA only)
-cursor-tests/
-
-# Project docs (not versioned for now)
-docs/
+# Project docs (not versioned for now). repo-artifacts.md is the tracked layout note.
+docs/*
+!docs/repo-artifacts.md
 
 # Manual test fixtures and samples
 fixtures/

@@ -14,6 +14,25 @@ function getMarked() {
   return m;
 }
 
+/** Plain text only — prefer for user/LLM strings when markup is not needed. */
+export function setTextContent(el, text) {
+  if (!el) return;
+  el.textContent = String(text ?? "");
+}
+
+/** Markdown → sanitized HTML in a container (central DOM helper). */
+export function setMarkdownHtml(el, markdown) {
+  if (!el) return;
+  const html = markdownToHtml(String(markdown ?? ""));
+  if (!html) {
+    el.textContent = "";
+    el.classList.remove("md-content");
+    return;
+  }
+  el.innerHTML = html;
+  el.classList.add("md-content");
+}
+
 /** @param {string} text */
 export function markdownToHtml(text) {
   const raw = String(text ?? "");
@@ -53,14 +72,8 @@ export function stripMarkdownForPlainText(text) {
  */
 export function renderMarkdown(containerEl, text) {
   if (!containerEl) return Promise.resolve();
-  const html = markdownToHtml(text);
-  if (!html) {
-    containerEl.textContent = "";
-    containerEl.classList.remove("md-content");
-    return Promise.resolve();
-  }
-  containerEl.innerHTML = html;
-  containerEl.classList.add("md-content");
+  setMarkdownHtml(containerEl, text);
+  if (!containerEl.classList.contains("md-content")) return Promise.resolve();
   return typesetMath(containerEl);
 }
 

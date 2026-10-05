@@ -1,3 +1,4 @@
+import { deLog } from "../debug-enrich.js";
 /** Pure interview transcript helpers (20260620-nodoc-interview-capture). */
 
 /**
@@ -22,8 +23,7 @@ export function createTurn({ turn, question, questionSource, answer, answeredAt 
  */
 export function appendTurn(transcript, turn) {
   const list = Array.isArray(transcript) ? transcript : [];
-  // [debug-enrich]
-  console.debug("[interview.transcript.appendTurn] Turn appended:", {
+  deLog("[interview.transcript.appendTurn] Turn appended:", {
     turn: turn?.turn ?? null,
     questionSource: turn?.questionSource ?? null,
     answerLen: String(turn?.answer || "").length,

@@ -4,6 +4,7 @@
  */
 
 import { getSession, saveActiveSession } from "./session-store.js";
+import { deError, deInfo, deWarn } from "./debug-enrich.js";
 import { hasTier1Artifacts, isScopeGateResolved } from "./session-types.js";
 
 /** @type {Map<string, string>} docId → active runId on this device */
@@ -267,12 +268,10 @@ export const healScopeResolutionAfterStoreReload = healFreshSharedFieldsAfterSto
  */
 export async function persistCheckpoint(doc) {
   if (!doc?.docId) {
-    // [debug-enrich]
-    console.error('[dpp-persistence.persistCheckpoint] Missing docId — cannot persist');
+    deError('[dpp-persistence.persistCheckpoint] Missing docId — cannot persist');
     throw new Error("persistCheckpoint requires docId");
   }
-  // [debug-enrich]
-  console.info('[dpp-persistence.persistCheckpoint] Writing checkpoint:', {
+  deInfo('[dpp-persistence.persistCheckpoint] Writing checkpoint:', {
     docId: doc.docId,
     prepStatus: doc?.shared?.preparation?.status ?? null,
     runId: doc?.shared?.preparation?.runId ?? null,
@@ -288,11 +287,9 @@ export async function persistCheckpoint(doc) {
   });
   try {
     await saveActiveSession(doc);
-    // [debug-enrich]
-    console.info('[dpp-persistence.persistCheckpoint] Checkpoint saved:', { docId: doc.docId });
+    deInfo('[dpp-persistence.persistCheckpoint] Checkpoint saved:', { docId: doc.docId });
   } catch (err) {
-    // [debug-enrich]
-    console.error('[dpp-persistence.persistCheckpoint] Checkpoint save failed:', {
+    deError('[dpp-persistence.persistCheckpoint] Checkpoint save failed:', {
       docId: doc.docId,
       message: err?.message ?? String(err),
       name: err?.name ?? null,
@@ -307,16 +304,14 @@ export async function persistCheckpoint(doc) {
  */
 export async function persistFinal(doc) {
   if (!doc?.docId) {
-    // [debug-enrich]
-    console.error('[dpp-persistence.persistFinal] Missing docId');
+    deError('[dpp-persistence.persistFinal] Missing docId');
     throw new Error("persistFinal requires docId");
   }
   const runId = doc?.shared?.preparation?.runId;
   const docId = doc.docId;
   const activeOnDevice = getActiveDppRunId(docId);
 
-  // [debug-enrich]
-  console.info('[dpp-persistence.persistFinal] Final persist attempt:', {
+  deInfo('[dpp-persistence.persistFinal] Final persist attempt:', {
     docId,
     runId: runId ?? null,
     activeOnDevice: activeOnDevice ?? null,
@@ -325,8 +320,7 @@ export async function persistFinal(doc) {
 
   if (activeOnDevice && runId && activeOnDevice !== runId) {
     console.warn("[DPP] stale run, skipping final write", runId);
-    // [debug-enrich]
-    console.warn('[dpp-persistence.persistFinal] Stale vs activeOnDevice — skip write', {
+    deWarn('[dpp-persistence.persistFinal] Stale vs activeOnDevice — skip write', {
       docId,
       runId,
       activeOnDevice,
@@ -350,8 +344,7 @@ export async function persistFinal(doc) {
       runId,
       storeRunId,
     });
-    // [debug-enrich]
-    console.warn('[dpp-persistence.persistFinal] Store runId mismatch — skip', {
+    deWarn('[dpp-persistence.persistFinal] Store runId mismatch — skip', {
       docId,
       runId,
       storeRunId,
@@ -375,8 +368,7 @@ export async function persistFinal(doc) {
   } catch (err) {
     console.warn("[DPP] shared cache upsert skipped:", err?.message || err);
   }
-  // [debug-enrich]
-  console.info('[dpp-persistence.persistFinal] Final write applied:', {
+  deInfo('[dpp-persistence.persistFinal] Final write applied:', {
     docId,
     runId: runId ?? null,
     prepStatus,

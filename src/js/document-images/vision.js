@@ -4,6 +4,7 @@
  */
 
 import { geminiChatCompletions, hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
+import { deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { logLlmUsage } from "../llm-usage-log.js";
 import { getDocumentImageSignedUrl } from "./storage.js";
 import { EDGE_TYPES } from "../graph/build.js";
@@ -108,21 +109,18 @@ function bytesToDataUrl(bytes, mimeType = "image/png") {
  * @returns {Promise<string|null>}
  */
 export async function extractPageTextWithVision(imageBytes, mimeType = "image/png", ctx = {}) {
-  // [debug-enrich]
-  console.info("[vision.extractPageTextWithVision] Start:", {
+  deInfo("[vision.extractPageTextWithVision] Start:", {
     byteLength: imageBytes?.byteLength ?? 0,
     mimeType,
     docId: ctx.docId || null,
     pageNum: ctx.pageNum ?? null,
   });
   if (!imageBytes?.byteLength) {
-    // [debug-enrich]
-    console.debug("[vision.extractPageTextWithVision] Skip — empty image");
+    deLog("[vision.extractPageTextWithVision] Skip — empty image");
     return null;
   }
   if (!hasPlatformLlmAccess()) {
-    // [debug-enrich]
-    console.warn("[vision.extractPageTextWithVision] Skip — no platform LLM access");
+    deWarn("[vision.extractPageTextWithVision] Skip — no platform LLM access");
     return null;
   }
 
@@ -166,8 +164,7 @@ export async function extractPageTextWithVision(imageBytes, mimeType = "image/pn
     meta: { pageNum: ctx.pageNum ?? null },
   });
 
-  // [debug-enrich]
-  console.info("[vision.extractPageTextWithVision] Done:", {
+  deInfo("[vision.extractPageTextWithVision] Done:", {
     docId: ctx.docId || null,
     pageNum: ctx.pageNum ?? null,
     textLen: text.length,

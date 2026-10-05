@@ -1,4 +1,5 @@
 import { SUPABASE_URL } from "./config/supabase.js";
+import { deError, deInfo, deLog, deWarn, isDebugEnrich } from "./debug-enrich.js";
 import { supabase } from "./supabase-client.js";
 
 export const LLM_MODEL_DEEPSEEK = "deepseek";
@@ -18,8 +19,7 @@ export function syncPlatformLlmAccessFromSession(session) {
   const nextToken = session?.access_token ?? null;
   const hasToken = Boolean(nextToken);
   cachedAccessToken = nextToken;
-  // [debug-enrich]
-  console.info('[llm.syncPlatformLlmAccessFromSession] Token cache synced:', {
+  deInfo('[llm.syncPlatformLlmAccessFromSession] Token cache synced:', {
     hadToken,
     hasToken,
     tokenChanged: prevToken !== nextToken,
@@ -27,8 +27,7 @@ export function syncPlatformLlmAccessFromSession(session) {
     expiresAt: session?.expires_at ?? null,
   });
   if (!hasToken) {
-    // [debug-enrich]
-    console.warn('[llm.syncPlatformLlmAccessFromSession] Cleared LLM access token — proxy calls will fail until re-auth');
+    deWarn('[llm.syncPlatformLlmAccessFromSession] Cleared LLM access token — proxy calls will fail until re-auth');
   }
 }
 
@@ -37,30 +36,25 @@ export function syncPlatformLlmAccessFromSession(session) {
  */
 export async function getSupabaseAuthToken() {
   if (cachedAccessToken) {
-    // [debug-enrich]
-    console.debug('[llm.getSupabaseAuthToken] Cache hit');
+    deLog('[llm.getSupabaseAuthToken] Cache hit');
     return cachedAccessToken;
   }
-  // [debug-enrich]
-  console.debug('[llm.getSupabaseAuthToken] Cache miss — fetching session');
+  deLog('[llm.getSupabaseAuthToken] Cache miss — fetching session');
   const { data: { session }, error } = await supabase.auth.getSession();
   if (error) {
-    // [debug-enrich]
-    console.error('[llm.getSupabaseAuthToken] getSession failed:', {
+    deError('[llm.getSupabaseAuthToken] getSession failed:', {
       message: error.message,
       status: error.status ?? null,
     });
   }
   cachedAccessToken = session?.access_token ?? null;
   if (!cachedAccessToken) {
-    // [debug-enrich]
-    console.warn('[llm.getSupabaseAuthToken] No access token available', {
+    deWarn('[llm.getSupabaseAuthToken] No access token available', {
       hasSession: Boolean(session),
       userId: session?.user?.id ?? null,
     });
   } else {
-    // [debug-enrich]
-    console.info('[llm.getSupabaseAuthToken] Token resolved from session', {
+    deInfo('[llm.getSupabaseAuthToken] Token resolved from session', {
       userId: session?.user?.id ?? null,
       expiresAt: session?.expires_at ?? null,
     });
@@ -79,8 +73,7 @@ export async function callViaProxy(
   { service, endpoint, body, signal } = {},
   retryAttempt = 0,
 ) {
-  // [debug-enrich]
-  console.debug('[llm.callViaProxy] Request:', {
+  deLog('[llm.callViaProxy] Request:', {
     service,
     endpoint,
     retryAttempt,
@@ -89,8 +82,7 @@ export async function callViaProxy(
   });
   const token = await getSupabaseAuthToken();
   if (!token) {
-    // [debug-enrich]
-    console.error('[llm.callViaProxy] Not authenticated — aborting proxy call', {
+    deError('[llm.callViaProxy] Not authenticated — aborting proxy call', {
       service,
       endpoint,
     });
@@ -109,8 +101,7 @@ export async function callViaProxy(
       signal,
     });
   } catch (err) {
-    // [debug-enrich]
-    console.error('[llm.callViaProxy] Network/fetch error:', {
+    deError('[llm.callViaProxy] Network/fetch error:', {
       service,
       endpoint,
       retryAttempt,
@@ -128,8 +119,7 @@ export async function callViaProxy(
       !signal?.aborted
     ) {
       const delay = PROXY_RETRY_BASE_MS * 2 ** retryAttempt;
-      // [debug-enrich]
-      console.warn('[llm.callViaProxy] Retryable status — backing off:', {
+      deWarn('[llm.callViaProxy] Retryable status — backing off:', {
         service,
         endpoint,
         status: res.status,
@@ -140,8 +130,7 @@ export async function callViaProxy(
       return callViaProxy({ service, endpoint, body, signal }, retryAttempt + 1);
     }
     const err = await res.text().catch(() => "");
-    // [debug-enrich]
-    console.error('[llm.callViaProxy] Proxy error response:', {
+    deError('[llm.callViaProxy] Proxy error response:', {
       service,
       endpoint,
       status: res.status,
@@ -153,8 +142,7 @@ export async function callViaProxy(
     throw apiErr;
   }
 
-  // [debug-enrich]
-  console.info('[llm.callViaProxy] Success:', {
+  deInfo('[llm.callViaProxy] Success:', {
     service,
     endpoint,
     status: res.status,
@@ -186,6 +174,9 @@ export function getApiKeyForLlmModel(_llmModel) {
 }
 
 export function assertLlmKeyPresent(_llmModel) {
+  if (globalThis.__PITH_DEMO === true) {
+    throw new Error("Demo mode: AI is disabled. Sign in to use your own documents.");
+  }
   if (!cachedAccessToken) {
     throw new Error("Sign in to use AI features.");
   }
@@ -210,6 +201,9 @@ export function getSessionLlmModel(_session) {
 }
 
 export async function resolveLlmContext({ llmModel } = {}) {
+  if (globalThis.__PITH_DEMO === true) {
+    throw new Error("Demo mode: AI is disabled. Sign in to use your own documents.");
+  }
   const token = await getSupabaseAuthToken();
   if (!token) {
     throw new Error("Sign in to use AI features.");
@@ -233,8 +227,7 @@ export async function llmChatCompletions({
   response_format,
   signal,
 } = {}) {
-  // [debug-enrich]
-  console.debug('[llm.llmChatCompletions] Starting:', {
+  deLog('[llm.llmChatCompletions] Starting:', {
     llmModel: llmModel ?? null,
     messageCount: Array.isArray(messages) ? messages.length : 0,
     temperature,
@@ -259,8 +252,7 @@ export async function llmChatCompletions({
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
-    // [debug-enrich]
-    console.error('[llm.llmChatCompletions] Missing message content:', {
+    deError('[llm.llmChatCompletions] Missing message content:', {
       hasChoices: Array.isArray(data?.choices),
       choiceCount: Array.isArray(data?.choices) ? data.choices.length : 0,
       finishReason: data?.choices?.[0]?.finish_reason ?? null,
@@ -268,8 +260,7 @@ export async function llmChatCompletions({
     });
     throw new Error("Unexpected API response (missing message content).");
   }
-  // [debug-enrich]
-  console.info('[llm.llmChatCompletions] Content received:', {
+  deInfo('[llm.llmChatCompletions] Content received:', {
     contentLen: content.length,
     finishReason: data?.choices?.[0]?.finish_reason ?? null,
     usage: data?.usage ?? null,
@@ -323,8 +314,7 @@ export async function geminiChatCompletions({
   max_tokens,
   signal,
 } = {}) {
-  // [debug-enrich]
-  console.debug("[llm.geminiChatCompletions] Start:", {
+  deLog("[llm.geminiChatCompletions] Start:", {
     model: model || null,
     messageCount: Array.isArray(messages) ? messages.length : 0,
     temperature,
@@ -332,8 +322,7 @@ export async function geminiChatCompletions({
   });
   const token = await getSupabaseAuthToken();
   if (!token) {
-    // [debug-enrich]
-    console.warn("[llm.geminiChatCompletions] No auth token — returning null");
+    deWarn("[llm.geminiChatCompletions] No auth token — returning null");
     return null;
   }
 
@@ -349,15 +338,13 @@ export async function geminiChatCompletions({
 
   const content = data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== "string") {
-    // [debug-enrich]
-    console.warn("[llm.geminiChatCompletions] Missing content:", {
+    deWarn("[llm.geminiChatCompletions] Missing content:", {
       hasChoices: Array.isArray(data?.choices),
       finishReason: data?.choices?.[0]?.finish_reason ?? null,
     });
     return { status: 200, content: null };
   }
-  // [debug-enrich]
-  console.info("[llm.geminiChatCompletions] Done:", {
+  deInfo("[llm.geminiChatCompletions] Done:", {
     contentLen: content.length,
     usage: data?.usage ?? null,
   });
@@ -369,8 +356,7 @@ export async function geminiChatCompletions({
  * @param {object} body
  */
 export async function geminiEmbedContent(body, { signal } = {}) {
-  // [debug-enrich]
-  console.debug("[llm.geminiEmbedContent] Proxy call:", {
+  deLog("[llm.geminiEmbedContent] Proxy call:", {
     model: body?.model || null,
     taskType: body?.taskType || null,
     textLen: body?.content?.parts?.[0]?.text?.length ?? null,
@@ -383,14 +369,12 @@ export async function geminiEmbedContent(body, { signal } = {}) {
       body,
       signal,
     });
-    // [debug-enrich]
-    console.info("[llm.geminiEmbedContent] Done:", {
+    deInfo("[llm.geminiEmbedContent] Done:", {
       dims: Array.isArray(result?.embedding?.values) ? result.embedding.values.length : null,
     });
     return result;
   } catch (err) {
-    // [debug-enrich]
-    console.error("[llm.geminiEmbedContent] Failed:", err?.message || err);
+    deError("[llm.geminiEmbedContent] Failed:", err?.message || err);
     throw err;
   }
 }

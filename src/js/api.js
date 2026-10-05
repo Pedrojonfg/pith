@@ -34,7 +34,34 @@ import {
   shuffleTestQuestionsInList,
 } from "./shuffle-options.js";
 import { renderCoverageManifestForPrompt } from "./coverage-manifest.js";
-import { snapInteriorCharOffsets } from "./text-boundaries.js";
+import {
+  CHAR_BOUNDARY_REFINE_MAX_TOKENS,
+  CHAR_BOUNDARY_REFINE_WINDOW,
+  INVENTORY_CHAR_FALLBACK_MIN_CHARS,
+  INVENTORY_CHAR_FALLBACK_SLICE_CHARS,
+  INVENTORY_MAX_PARALLEL_CALLS,
+  buildCharFallbackInventoryChunksFromOffsets,
+  mechanicalCharFallbackOffsets,
+  snapOffsetToParagraph,
+  validateCharFallbackOffsets,
+} from "./api/inventory-chunking.js";
+export {
+  CHAR_BOUNDARY_REFINE_MAX_TOKENS,
+  CHAR_BOUNDARY_REFINE_WINDOW,
+  INVENTORY_CHAR_FALLBACK_MIN_CHARS,
+  INVENTORY_CHAR_FALLBACK_SLICE_CHARS,
+  INVENTORY_CHUNK_BISECT_MAX_DEPTH,
+  INVENTORY_MAP_REDUCE_WORD_THRESHOLD,
+  INVENTORY_MAX_PARALLEL_CALLS,
+  INVENTORY_TARGET_CHUNK_WORDS,
+  buildCharFallbackInventoryChunks,
+  buildCharFallbackInventoryChunksFromOffsets,
+  buildInventoryChunks,
+  countInventoryWords,
+  mechanicalCharFallbackOffsets,
+  snapOffsetToParagraph,
+  validateCharFallbackOffsets,
+} from "./api/inventory-chunking.js";
 import {
   ASSESSMENT_BATCH_SIZE,
   accumulateConceptCoverage,
@@ -48,6 +75,14 @@ import {
   validateConceptCoverageQuestions,
 } from "./assessment-coverage.js?v=20260629_02";
 import { buildStudentIntentAppendix } from "./recommendation/student-intent.js";
+import {
+  parseBlockIndexFromModelResponse,
+  parseModelJsonObject,
+  parseModelJsonValue,
+  stripJsonFence,
+} from "./api/model-json.js";
+
+export { parseBlockIndexFromModelResponse } from "./api/model-json.js";
 
 function resolveLlmModelArg(llmModel) {
   return normalizeLlmModel(llmModel ?? getActiveSessionLlmModel());
@@ -57,142 +92,6 @@ function resolveLlmModelArg(llmModel) {
 function resolveStudentIntentAppendix(studentIntent, sessionLike) {
   const fromOpt = studentIntent != null ? studentIntent : sessionLike?.shared?.studentIntent;
   return buildStudentIntentAppendix(/** @type {string | null | undefined} */ (fromOpt));
-}
-
-function stripJsonFence(text) {
-  return String(text || "")
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```\s*$/i, "")
-    .trim();
-}
-
-function extractBalancedJsonText(text, openChar, closeChar) {
-  const raw = String(text || "").trim();
-  const start = raw.indexOf(openChar);
-  if (start < 0) return raw;
-
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = start; i < raw.length; i += 1) {
-    const ch = raw[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === "\\") {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-    } else if (ch === openChar) {
-      depth += 1;
-    } else if (ch === closeChar) {
-      depth -= 1;
-      if (depth === 0) return raw.slice(start, i + 1);
-    }
-  }
-
-  return raw.slice(start);
-}
-
-function extractJsonObjectText(text) {
-  return extractBalancedJsonText(text, "{", "}");
-}
-
-function extractJsonArrayText(text) {
-  return extractBalancedJsonText(text, "[", "]");
-}
-
-function escapeLatexMathBackslashes(text) {
-  return String(text || "")
-    .replace(/\\\(([\s\S]*?)\\\)/g, (match) => match.replace(/\\/g, "\\\\"))
-    .replace(/\\\[([\s\S]*?)\\\]/g, (match) => match.replace(/\\/g, "\\\\"));
-}
-
-function escapeInvalidJsonBackslashes(text) {
-  return String(text || "").replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
-}
-
-function repairJsonLight(text) {
-  return String(text || "")
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/,\s*([\]}])/g, "$1");
-}
-
-function tryParseJsonCandidate(candidate) {
-  if (!candidate) return null;
-  const attempts = [
-    candidate,
-    repairJsonLight(candidate),
-    escapeLatexMathBackslashes(candidate),
-    escapeInvalidJsonBackslashes(candidate),
-    escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate)),
-    repairJsonLight(escapeInvalidJsonBackslashes(escapeLatexMathBackslashes(candidate))),
-  ];
-  for (const text of attempts) {
-    try {
-      return JSON.parse(text);
-    } catch {
-      // next repair
-    }
-  }
-  return null;
-}
-
-function parseModelJsonObject(text) {
-  const raw = String(text || "").trim();
-  const withoutFence = stripJsonFence(raw);
-  const extracted = extractJsonObjectText(withoutFence);
-  const candidates = [extracted, withoutFence, raw].filter(Boolean);
-  const uniqueCandidates = Array.from(new Set(candidates));
-
-  for (const candidate of uniqueCandidates) {
-    const parsed = tryParseJsonCandidate(candidate);
-    if (parsed != null) return parsed;
-  }
-
-  return null;
-}
-
-function parseModelJsonValue(text) {
-  const raw = String(text || "").trim();
-  const withoutFence = stripJsonFence(raw);
-  const extractedArr = extractJsonArrayText(withoutFence);
-  const extractedObj = extractJsonObjectText(withoutFence);
-
-  const candidates = [withoutFence, extractedArr, extractedObj, raw].filter(Boolean);
-  const uniqueCandidates = Array.from(new Set(candidates));
-
-  for (const candidate of uniqueCandidates) {
-    const parsed = tryParseJsonCandidate(candidate);
-    if (parsed != null) return parsed;
-  }
-
-  return null;
-}
-
-function unwrapBlockIndexArray(value) {
-  if (Array.isArray(value)) return value;
-  if (!value || typeof value !== "object") return null;
-  for (const key of ["blocks", "block_index", "blockIndex", "items", "data"]) {
-    if (Array.isArray(value[key])) return value[key];
-  }
-  return null;
-}
-
-/** Parse DeepSeek block-split response into a JSON array (or null). */
-export function parseBlockIndexFromModelResponse(text) {
-  const parsed = parseModelJsonValue(text);
-  return unwrapBlockIndexArray(parsed);
 }
 
 function normalizePageRange(rawStart, rawEnd, totalPages) {
@@ -919,189 +818,6 @@ export const SEMANTIC_DEDUP_PASS_MAX_TOKENS = 24576;
 export function mergeMaxTokensForConceptCount(conceptCount) {
   const n = Math.max(0, Math.floor(Number(conceptCount) || 0));
   return Math.min(32768, Math.max(CONCEPT_INVENTORY_MERGE_MAX_TOKENS, Math.ceil(n * 140)));
-}
-
-export const INVENTORY_MAP_REDUCE_WORD_THRESHOLD = 8000;
-export const INVENTORY_TARGET_CHUNK_WORDS = 2500;
-export const INVENTORY_MAX_PARALLEL_CALLS = 8;
-
-/** Char-window fallback slice when hierarchy cannot split (20260705-dpp-inventory-llm-optimization). */
-export const INVENTORY_CHAR_FALLBACK_SLICE_CHARS = 24000;
-
-/** Max bisect depth per chunk on truncation (each level halves slice size). */
-export const INVENTORY_CHUNK_BISECT_MAX_DEPTH = 2;
-
-export function countInventoryWords(text) {
-  return String(text || "").split(/\s+/).filter(Boolean).length;
-}
-
-/**
- * Chunk inventory material by hierarchy section offsets.
- * Callers must pass hierarchy whose offsets match `rawMarkdown`
- * (mini-tree × scopedMarkdown when scope is a section subset).
- * @param {{ tree?: { title?: string, startOffset?: number, endOffset?: number, children?: object[] }[] }} docHierarchy
- * @param {string} rawMarkdown
- * @returns {{ label: string, text: string, wordCount: number }[] | null}
- */
-export function buildInventoryChunks(docHierarchy, rawMarkdown) {
-  const tree = docHierarchy?.tree;
-  if (!Array.isArray(tree) || !tree.length) return null;
-  const material = String(rawMarkdown || "");
-  const TARGET = INVENTORY_TARGET_CHUNK_WORDS;
-
-  /** @type {{ label: string, text: string, wordCount: number }[]} */
-  const chunks = [];
-  /** @type {{ sections: object[], wordCount: number }} */
-  let pending = { sections: [], wordCount: 0 };
-
-  function extractSectionText(node) {
-    const start = Number(node?.startOffset) || 0;
-    const end = Number(node?.endOffset) || material.length;
-    return material.slice(start, end).trim();
-  }
-
-  function flushPending() {
-    if (!pending.sections.length) return;
-    const first = pending.sections[0];
-    const label =
-      pending.sections.length > 1
-        ? `${String(first?.title || "Section")} + ${pending.sections.length - 1} more`
-        : String(first?.title || "Section");
-    const text = pending.sections.map(extractSectionText).join("\n\n");
-    chunks.push({ label, text, wordCount: countInventoryWords(text) });
-    pending = { sections: [], wordCount: 0 };
-  }
-
-  for (const section of tree) {
-    const sectionText = extractSectionText(section);
-    const sectionWords = countInventoryWords(sectionText);
-
-    if (sectionWords > TARGET * 2) {
-      flushPending();
-      const children = Array.isArray(section.children) ? section.children : [];
-      if (children.length) {
-        for (const child of children) {
-          const childText = extractSectionText(child);
-          chunks.push({
-            label: `${String(section.title || "Section")} / ${String(child.title || "Part")}`,
-            text: childText,
-            wordCount: countInventoryWords(childText),
-          });
-        }
-      } else {
-        chunks.push({
-          label: String(section.title || "Section"),
-          text: sectionText,
-          wordCount: sectionWords,
-        });
-      }
-    } else if (pending.wordCount + sectionWords > TARGET && pending.sections.length > 0) {
-      flushPending();
-      pending = { sections: [section], wordCount: sectionWords };
-    } else {
-      pending.sections.push(section);
-      pending.wordCount += sectionWords;
-    }
-  }
-  flushPending();
-
-  if (chunks.length < 2) return null;
-  return chunks;
-}
-
-/** Char-window chunks when hierarchy cannot split (large docs, flat structure). */
-export function buildCharFallbackInventoryChunks(rawMarkdown, charCount = 0) {
-  const material = String(rawMarkdown || "");
-  const chars = Math.max(0, Number(charCount) || material.length);
-  if (chars < 50000) return null;
-  const offsets = snapInteriorCharOffsets(material, mechanicalCharFallbackOffsets(material.length));
-  return buildCharFallbackInventoryChunksFromOffsets(material, offsets);
-}
-
-/** Minimum chars per char-fallback slice after boundary refinement. */
-export const INVENTORY_CHAR_FALLBACK_MIN_CHARS = 4000;
-
-/** One LLM call to nudge mechanical slice boundaries (~8 cuts × context). */
-export const CHAR_BOUNDARY_REFINE_MAX_TOKENS = 2048;
-
-/** Max interior boundary shift when refining char slices. */
-export const CHAR_BOUNDARY_REFINE_WINDOW = 2000;
-
-/**
- * @param {number} materialLength
- * @param {number} [sliceChars]
- * @returns {number[]}
- */
-export function mechanicalCharFallbackOffsets(
-  materialLength,
-  sliceChars = INVENTORY_CHAR_FALLBACK_SLICE_CHARS,
-) {
-  const total = Math.max(0, Number(materialLength) || 0);
-  if (total <= 0) return [0, 0];
-  const slice = Math.max(1000, Number(sliceChars) || INVENTORY_CHAR_FALLBACK_SLICE_CHARS);
-  /** @type {number[]} */
-  const offsets = [0];
-  for (let start = slice; start < total; start += slice) {
-    offsets.push(start);
-  }
-  offsets.push(total);
-  return offsets;
-}
-
-/**
- * @param {string} rawMarkdown
- * @param {number[]} offsets — sorted, includes 0 and material.length
- * @returns {{ label: string, text: string, wordCount: number }[] | null}
- */
-export function buildCharFallbackInventoryChunksFromOffsets(rawMarkdown, offsets) {
-  const material = String(rawMarkdown || "");
-  const sorted = (Array.isArray(offsets) ? offsets : [])
-    .map((n) => Math.floor(Number(n) || 0))
-    .filter((n, i, arr) => i === 0 || n > arr[i - 1]);
-  if (sorted.length < 2 || sorted[0] !== 0 || sorted[sorted.length - 1] > material.length) {
-    return null;
-  }
-  /** @type {{ label: string, text: string, wordCount: number }[]} */
-  const chunks = [];
-  for (let i = 0; i < sorted.length - 1; i += 1) {
-    const text = material.slice(sorted[i], sorted[i + 1]).trim();
-    if (!text) continue;
-    chunks.push({
-      label: `Part ${chunks.length + 1}`,
-      text,
-      wordCount: countInventoryWords(text),
-    });
-  }
-  return chunks.length >= 2 ? chunks : null;
-}
-
-/**
- * @param {number[]} offsets
- * @param {number} totalLen
- * @param {number} maxSlice
- * @param {number} minSlice
- */
-export function validateCharFallbackOffsets(offsets, totalLen, maxSlice, minSlice) {
-  if (!Array.isArray(offsets) || offsets.length < 2) return false;
-  if (offsets[0] !== 0 || offsets[offsets.length - 1] !== totalLen) return false;
-  for (let i = 0; i < offsets.length - 1; i += 1) {
-    const len = offsets[i + 1] - offsets[i];
-    if (len > maxSlice + 500) return false;
-    const isTail = i === offsets.length - 2;
-    if (!isTail && len < minSlice) return false;
-  }
-  return true;
-}
-
-function snapOffsetToParagraph(material, offset, window = CHAR_BOUNDARY_REFINE_WINDOW) {
-  const total = material.length;
-  const o = Math.max(0, Math.min(total, Math.floor(Number(offset) || 0)));
-  const lo = Math.max(0, o - window);
-  const hi = Math.min(total, o + window);
-  let splitAt = material.lastIndexOf("\n\n", o);
-  if (splitAt < lo) splitAt = material.indexOf("\n\n", o);
-  if (splitAt < lo || splitAt > hi) return o;
-  return splitAt;
 }
 
 function buildCharBoundaryRefinePrompt(boundaryContextsJson) {

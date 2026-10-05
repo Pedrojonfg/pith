@@ -3,6 +3,7 @@
  */
 
 import { reorderBlocksForHeadingSequence } from "./heading-text.js";
+import { deInfo, deLog } from "../debug-enrich.js";
 
 /** @typedef {import("./types.js").TextBlock} TextBlock */
 /** @typedef {import("./types.js").HeadingCandidate} HeadingCandidate */
@@ -173,8 +174,7 @@ export function emitMarkdown(blocks, headings, opts = {}) {
       ? reorderBlocksForHeadingSequence(filtered, headings)
       : filtered;
 
-  // [debug-enrich] open question: no dedicated table-to-markdown-table path exists in this emitter
-  console.debug("[emit-markdown.emitMarkdown] Start:", {
+  deLog("[emit-markdown.emitMarkdown] Start:", {
     activeBlockCount: activeBlocks.length,
     headingCount: headings.length,
     tableNote: "no table detection/emission step — cells pass through as plain paragraphs",
@@ -246,8 +246,7 @@ export function emitMarkdown(blocks, headings, opts = {}) {
   // [debug-enrich] final-output math integrity scan (counts + short snippets only)
   const mathIndicatorsFound = countMathIndicators(markdown); // [debug-enrich]
   const replacementCharsFound = countReplacementChars(markdown); // [debug-enrich]
-  const sampleSnippets = pickMathDenseSnippets(markdown, { snippets: 3, snippetChars: 100 }); // [debug-enrich]
-  console.info("[emit-markdown.emitMarkdown] Math diagnostics:", {
+  deInfo("[emit-markdown.emitMarkdown] Math diagnostics:", {
     mathIndicatorsFound,
     replacementCharsFound,
     sampleSnippets,

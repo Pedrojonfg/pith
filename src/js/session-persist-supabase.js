@@ -1,4 +1,5 @@
 import { supabase } from "./supabase-client.js";
+import { deError, deInfo, deLog } from "./debug-enrich.js";
 
 /**
  * @returns {Promise<string>}
@@ -29,8 +30,7 @@ export function markdownStoragePath(userId, docId) {
 export async function uploadMarkdown(userId, docId, markdown) {
   const path = markdownStoragePath(userId, docId);
   const blob = new Blob([markdown], { type: "text/markdown" });
-  // [debug-enrich]
-  console.debug('[session-persist-supabase.uploadMarkdown] Uploading:', {
+  deLog('[session-persist-supabase.uploadMarkdown] Uploading:', {
     docId,
     path,
     byteLength: typeof markdown === "string" ? markdown.length : null,
@@ -40,8 +40,7 @@ export async function uploadMarkdown(userId, docId, markdown) {
     contentType: "text/markdown",
   });
   if (error) {
-    // [debug-enrich]
-    console.error('[session-persist-supabase.uploadMarkdown] Upload failed:', {
+    deError('[session-persist-supabase.uploadMarkdown] Upload failed:', {
       docId,
       path,
       message: error.message ?? String(error),
@@ -49,8 +48,7 @@ export async function uploadMarkdown(userId, docId, markdown) {
     });
     throw error;
   }
-  // [debug-enrich]
-  console.info('[session-persist-supabase.uploadMarkdown] Upload ok:', { docId, path });
+  deInfo('[session-persist-supabase.uploadMarkdown] Upload ok:', { docId, path });
   return path;
 }
 
@@ -84,8 +82,7 @@ export async function fetchSessionRows(userId) {
  * @param {string|null} markdownRef
  */
 export async function upsertSessionRow(userId, docId, sessionData, markdownRef) {
-  // [debug-enrich]
-  console.debug('[session-persist-supabase.upsertSessionRow] Upserting:', {
+  deLog('[session-persist-supabase.upsertSessionRow] Upserting:', {
     docId,
     hasUserId: Boolean(userId),
     markdownRef: markdownRef ?? null,
@@ -103,8 +100,7 @@ export async function upsertSessionRow(userId, docId, sessionData, markdownRef) 
     { onConflict: "id,user_id" },
   );
   if (error) {
-    // [debug-enrich]
-    console.error('[session-persist-supabase.upsertSessionRow] Upsert failed:', {
+    deError('[session-persist-supabase.upsertSessionRow] Upsert failed:', {
       docId,
       message: error.message ?? String(error),
       code: error.code ?? null,
@@ -113,8 +109,7 @@ export async function upsertSessionRow(userId, docId, sessionData, markdownRef) 
     });
     throw error;
   }
-  // [debug-enrich]
-  console.info('[session-persist-supabase.upsertSessionRow] Upsert ok:', { docId });
+  deInfo('[session-persist-supabase.upsertSessionRow] Upsert ok:', { docId });
 }
 
 /**

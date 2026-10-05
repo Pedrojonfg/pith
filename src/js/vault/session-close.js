@@ -1,6 +1,7 @@
 /** Session-close vault update pipeline. */
 
 import { rehydrateBlocks } from "../block-store.js";
+import { deInfo, deWarn } from "../debug-enrich.js";
 import { loadSessionForMode } from "../session.js";
 import { resolveTaskKind, updateMastery } from "./mastery-model.js";
 import { buildAllNewMappings, mergeNormalizationResult } from "./normalization.js";
@@ -77,8 +78,7 @@ function isAnswerCorrect(response) {
 export async function collectObservations(session, mode, docId) {
   const observations = [];
   const now = Date.now();
-  // [debug-enrich]
-  console.info('[vault.session-close.collectObservations] Collecting:', {
+  deInfo('[vault.session-close.collectObservations] Collecting:', {
     docId,
     mode: mode ?? null,
     signalCount: Array.isArray(session?.shared?.assessmentSignals)
@@ -193,8 +193,7 @@ export async function collectObservations(session, mode, docId) {
     }
   }
 
-  // [debug-enrich]
-  console.info('[vault.session-close.collectObservations] Collected:', {
+  deInfo('[vault.session-close.collectObservations] Collected:', {
     docId,
     observationCount: observations.length,
     byType: observations.reduce((acc, o) => {
@@ -243,29 +242,25 @@ export function applyObservations(vault, observations, normalizationMap) {
  */
 export async function updateVaultFromSession(session, mode) {
   if (!session?.docId) {
-    // [debug-enrich]
-    console.warn('[vault.session-close.updateVaultFromSession] Missing docId — skip');
+    deWarn('[vault.session-close.updateVaultFromSession] Missing docId — skip');
     return;
   }
   const docId = String(session.docId);
   const inventory = collectInventoryConcepts(session);
-  // [debug-enrich]
-  console.info('[vault.session-close.updateVaultFromSession] Start:', {
+  deInfo('[vault.session-close.updateVaultFromSession] Start:', {
     docId,
     mode: mode ?? null,
     inventoryCount: inventory.length,
   });
   if (!inventory.length) {
-    // [debug-enrich]
-    console.info('[vault.session-close.updateVaultFromSession] Empty inventory — skip');
+    deInfo('[vault.session-close.updateVaultFromSession] Empty inventory — skip');
     return;
   }
 
   let vault = loadVault();
   const docTopics = getDocTopics(session);
   const newConcepts = filterNewConcepts(inventory, vault, docId);
-  // [debug-enrich]
-  console.info('[vault.session-close.updateVaultFromSession] Diff:', {
+  deInfo('[vault.session-close.updateVaultFromSession] Diff:', {
     docId,
     vaultEntryCount: vault.entries?.length ?? 0,
     newConceptCount: newConcepts.length,
@@ -294,8 +289,7 @@ export async function updateVaultFromSession(session, mode) {
 
     let mappings;
     if (!existingEntries.length) {
-      // [debug-enrich]
-      console.info('[vault.session-close.updateVaultFromSession] No existing topic entries — all-new mappings');
+      deInfo('[vault.session-close.updateVaultFromSession] No existing topic entries — all-new mappings');
       mappings = buildAllNewMappings(newConcepts);
     } else {
       try {
@@ -312,8 +306,7 @@ export async function updateVaultFromSession(session, mode) {
         });
       } catch (err) {
         console.warn("[session-close] normalization failed, fallback all-new", err);
-        // [debug-enrich]
-        console.warn('[vault.session-close.updateVaultFromSession] LLM normalize failed — all-new fallback:', {
+        deWarn('[vault.session-close.updateVaultFromSession] LLM normalize failed — all-new fallback:', {
           docId,
           message: err?.message ?? String(err),
         });
@@ -342,8 +335,7 @@ export async function updateVaultFromSession(session, mode) {
 
   const observations = await collectObservations(session, mode, docId);
   const touchedEntryIds = applyObservations(vault, observations, normalizationMap);
-  // [debug-enrich]
-  console.info('[vault.session-close.updateVaultFromSession] Observations applied:', {
+  deInfo('[vault.session-close.updateVaultFromSession] Observations applied:', {
     docId,
     observationCount: observations.length,
     touchedCount: touchedEntryIds?.size ?? touchedEntryIds?.length ?? null,
@@ -361,8 +353,7 @@ export async function updateVaultFromSession(session, mode) {
         await saveActiveSession(fresh);
       }
     } catch (err) {
-      // [debug-enrich]
-      console.warn('[vault.session-close.updateVaultFromSession] Pending-obs cleanup failed:', {
+      deWarn('[vault.session-close.updateVaultFromSession] Pending-obs cleanup failed:', {
         docId,
         message: err?.message ?? String(err),
       });
@@ -371,8 +362,7 @@ export async function updateVaultFromSession(session, mode) {
 
   vault.lastUpdated = Date.now();
   saveVault(vault);
-  // [debug-enrich]
-  console.info('[vault.session-close.updateVaultFromSession] Vault saved:', {
+  deInfo('[vault.session-close.updateVaultFromSession] Vault saved:', {
     docId,
     entryCount: vault.entries?.length ?? 0,
   });

@@ -148,10 +148,10 @@ class AgentRunner:
         mode: str,
         forbidden_test_path: str | None = None,
     ) -> AgentResult:
-        self.ensure_binary()
         if self.dry_run or self.run_fn:
             fn = self.run_fn or self._stub
             return fn(models=models, prompt=prompt, cwd=cwd, mode=mode)
+        self.ensure_binary()
 
         last = AgentResult(ok=False, model_used=None, exhausted_models=False)
         for model in models:

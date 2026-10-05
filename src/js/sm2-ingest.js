@@ -1,4 +1,5 @@
 import { createSmItem, normalizeSmItem, updateSmItem } from "./sm2.js";
+import { deError, deInfo, deLog } from "./debug-enrich.js";
 import { getSession, upsertSmItem, saveActiveSession } from "./session-store.js";
 import { isComprehensionGateEnabled } from "./config/flags.js";
 import {
@@ -46,8 +47,7 @@ export const RECALL_QUALITY_TO_SM2 = {
  */
 export async function registerOrUpdateSmItem(docId, params) {
   const originDocId = String(docId || params?.docId || params?.originDocId || "").trim();
-  // [debug-enrich]
-  console.debug('[sm2-ingest.registerOrUpdateSmItem] Call:', {
+  deLog('[sm2-ingest.registerOrUpdateSmItem] Call:', {
     docId: originDocId,
     sourceType: params?.sourceType ?? null,
     sourceId: params?.sourceId ?? null,
@@ -60,16 +60,14 @@ export async function registerOrUpdateSmItem(docId, params) {
   }
   const session = await getSession(originDocId);
   if (!session) {
-    // [debug-enrich]
-    console.error('[sm2-ingest.registerOrUpdateSmItem] Session not found:', { docId: originDocId });
+    deError('[sm2-ingest.registerOrUpdateSmItem] Session not found:', { docId: originDocId });
     throw new Error("session not found");
   }
 
   const sourceType = params.sourceType;
   const sourceId = String(params.sourceId || "").trim();
   if (!sourceType || !sourceId) {
-    // [debug-enrich]
-    console.error('[sm2-ingest.registerOrUpdateSmItem] Missing sourceType/sourceId:', {
+    deError('[sm2-ingest.registerOrUpdateSmItem] Missing sourceType/sourceId:', {
       docId: originDocId,
       sourceType: sourceType ?? null,
       hasSourceId: Boolean(sourceId),
@@ -83,8 +81,7 @@ export async function registerOrUpdateSmItem(docId, params) {
 
   if (isComprehensionGateEnabled() && conceptIds.length) {
     if (!mayScheduleSm2ForConcepts(session, conceptIds)) {
-      // [debug-enrich]
-      console.info('[sm2-ingest.registerOrUpdateSmItem] Comprehension gate blocked scheduling:', {
+      deInfo('[sm2-ingest.registerOrUpdateSmItem] Comprehension gate blocked scheduling:', {
         docId: originDocId,
         sourceType,
         sourceId,
@@ -127,8 +124,7 @@ export async function registerOrUpdateSmItem(docId, params) {
   }
 
   await upsertSmItem(originDocId, item);
-  // [debug-enrich]
-  console.info('[sm2-ingest.registerOrUpdateSmItem] Upserted:', {
+  deInfo('[sm2-ingest.registerOrUpdateSmItem] Upserted:', {
     docId: originDocId,
     itemId: item.id,
     sourceType: item.sourceType,
@@ -174,8 +170,7 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
   const q = question && typeof question === "object" ? question : null;
   const qualityKey = String(q?.tutor_feedback?.quality || "").trim();
   const quality = RECALL_QUALITY_TO_SM2[qualityKey];
-  // [debug-enrich]
-  console.debug("[sm2-ingest.ingestSm2FromRecallAnswer] Entry:", {
+  deLog("[sm2-ingest.ingestSm2FromRecallAnswer] Entry:", {
     docId: docId || null,
     questionId: q?.id || null,
     qualityKey: qualityKey || null,
@@ -183,8 +178,7 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
     conceptIdCount: Array.isArray(q?.concept_ids) ? q.concept_ids.length : 0,
   });
   if (quality == null) {
-    // [debug-enrich]
-    console.debug("[sm2-ingest.ingestSm2FromRecallAnswer] Skip — unmapped quality");
+    deLog("[sm2-ingest.ingestSm2FromRecallAnswer] Skip — unmapped quality");
     return;
   }
 
@@ -208,8 +202,7 @@ export async function ingestSm2FromRecallAnswer({ docId, question }) {
     });
     upserted += 1;
   }
-  // [debug-enrich]
-  console.info("[sm2-ingest.ingestSm2FromRecallAnswer] Done:", {
+  deInfo("[sm2-ingest.ingestSm2FromRecallAnswer] Done:", {
     docId: docId || null,
     quality,
     upserted,

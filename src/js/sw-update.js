@@ -1,6 +1,7 @@
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 /** PWA service worker update UX — detect new versions and let users refresh safely. */
 
-export const SW_VERSION = "20261005_01";
+export const SW_VERSION = "20261005_05";
 
 export function getServiceWorkerUrl() {
   return `/sw.js?v=${SW_VERSION}`;
@@ -64,28 +65,24 @@ export async function initServiceWorkerUpdate({
   pollIntervalMs = UPDATE_POLL_MS,
 } = {}) {
   if (!nav?.serviceWorker) {
-    // [debug-enrich]
-    console.warn('[sw-update.initServiceWorkerUpdate] Unsupported — no serviceWorker API');
+    deWarn('[sw-update.initServiceWorkerUpdate] Unsupported — no serviceWorker API');
     return { registered: false, reason: "unsupported" };
   }
 
-  // [debug-enrich]
-  console.info('[sw-update.initServiceWorkerUpdate] Registering:', {
+  deInfo('[sw-update.initServiceWorkerUpdate] Registering:', {
     url: getServiceWorkerUrl(),
     swVersion: SW_VERSION,
     pollIntervalMs,
   });
 
   const reloadFromUpdate = () => {
-    // [debug-enrich]
-    console.info('[sw-update.initServiceWorkerUpdate] Reloading after controllerchange');
+    deInfo('[sw-update.initServiceWorkerUpdate] Reloading after controllerchange');
     win.location.reload();
   };
 
   const notifyIfWaiting = (registration) => {
     if (registration.waiting) {
-      // [debug-enrich]
-      console.info('[sw-update.initServiceWorkerUpdate] Waiting worker present — showing toast');
+      deInfo('[sw-update.initServiceWorkerUpdate] Waiting worker present — showing toast');
       showUpdateToast(doc, win, registration);
     }
   };
@@ -96,8 +93,7 @@ export async function initServiceWorkerUpdate({
       updateViaCache: "none",
     });
 
-    // [debug-enrich]
-    console.info('[sw-update.initServiceWorkerUpdate] Registered:', {
+    deInfo('[sw-update.initServiceWorkerUpdate] Registered:', {
       scope: registration.scope,
       active: Boolean(registration.active),
       waiting: Boolean(registration.waiting),
@@ -109,18 +105,15 @@ export async function initServiceWorkerUpdate({
     registration.addEventListener("updatefound", () => {
       const installingWorker = registration.installing;
       if (!installingWorker) return;
-      // [debug-enrich]
-      console.info('[sw-update.initServiceWorkerUpdate] updatefound — installing worker');
+      deInfo('[sw-update.initServiceWorkerUpdate] updatefound — installing worker');
 
       installingWorker.addEventListener("statechange", () => {
-        // [debug-enrich]
-        console.debug('[sw-update.initServiceWorkerUpdate] installing statechange:', {
+        deLog('[sw-update.initServiceWorkerUpdate] installing statechange:', {
           state: installingWorker.state,
           hasController: Boolean(nav.serviceWorker.controller),
         });
         if (shouldNotifyUpdate(installingWorker.state, Boolean(nav.serviceWorker.controller))) {
-          // [debug-enrich]
-          console.info('[sw-update.initServiceWorkerUpdate] Update ready — showing toast');
+          deInfo('[sw-update.initServiceWorkerUpdate] Update ready — showing toast');
           showUpdateToast(doc, win, registration);
         }
       });
@@ -135,8 +128,7 @@ export async function initServiceWorkerUpdate({
 
     const checkForUpdate = () =>
       registration.update().catch((err) => {
-        // [debug-enrich]
-        console.debug('[sw-update.initServiceWorkerUpdate] update() failed:', err?.message || err);
+        deLog('[sw-update.initServiceWorkerUpdate] update() failed:', err?.message || err);
         return undefined;
       });
     win.setTimeout(checkForUpdate, 1500);
@@ -158,8 +150,7 @@ export async function initServiceWorkerUpdate({
       },
     };
   } catch (error) {
-    // [debug-enrich]
-    console.error('[sw-update.initServiceWorkerUpdate] Register failed:', error?.message || error);
+    deError('[sw-update.initServiceWorkerUpdate] Register failed:', error?.message || error);
     return { registered: false, reason: "register-failed", error };
   }
 }

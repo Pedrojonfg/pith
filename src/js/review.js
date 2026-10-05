@@ -1,4 +1,5 @@
 import { deepSeekGenerateReviewBatch, deepSeekReviewSocraticTutor } from "./api.js?v=20260625_02";
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 import {
   assertLlmKeyPresent,
   getLlmCallingLabel,
@@ -117,8 +118,7 @@ function showSm2ReviewEmptyState(message) {
 async function renderSm2ReviewItem() {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) {
-    // [debug-enrich]
-    console.info('[review.renderSm2ReviewItem] Queue exhausted — showing summary', {
+    deInfo('[review.renderSm2ReviewItem] Queue exhausted — showing summary', {
       queueLength: sm2ReviewQueue.length,
       index: sm2ReviewIndex,
     });
@@ -126,8 +126,7 @@ async function renderSm2ReviewItem() {
     return;
   }
 
-  // [debug-enrich]
-  console.debug('[review.renderSm2ReviewItem] Rendering item:', {
+  deLog('[review.renderSm2ReviewItem] Rendering item:', {
     index: sm2ReviewIndex,
     queueLength: sm2ReviewQueue.length,
     itemId: item.id ?? null,
@@ -145,8 +144,7 @@ async function renderSm2ReviewItem() {
   const originDocId = String(sm2ReviewDocId || item.docId || "").trim();
   const originSession = originDocId ? await getSession(originDocId) : null;
   if (originDocId && !originSession) {
-    // [debug-enrich]
-    console.warn('[review.renderSm2ReviewItem] Origin session missing:', { originDocId });
+    deWarn('[review.renderSm2ReviewItem] Origin session missing:', { originDocId });
   }
 
   if (els.reviewSm2Meta) {
@@ -219,16 +217,14 @@ function showSm2ReviewSummary() {
 async function handleSm2QualityClick(quality) {
   const item = sm2ReviewQueue[sm2ReviewIndex];
   if (!item) {
-    // [debug-enrich]
-    console.warn('[review.handleSm2QualityClick] No item at index', {
+    deWarn('[review.handleSm2QualityClick] No item at index', {
       index: sm2ReviewIndex,
       quality,
     });
     return;
   }
 
-  // [debug-enrich]
-  console.info('[review.handleSm2QualityClick] Grade submitted:', {
+  deInfo('[review.handleSm2QualityClick] Grade submitted:', {
     quality,
     index: sm2ReviewIndex,
     itemId: item.id ?? null,
@@ -291,8 +287,7 @@ async function handleSm2QualityClick(quality) {
         correct: quality >= 3,
       });
     } else {
-      // [debug-enrich]
-      console.warn('[review.handleSm2QualityClick] Vault observe skipped — session missing', {
+      deWarn('[review.handleSm2QualityClick] Vault observe skipped — session missing', {
         originDocId,
         sourceId: updated.sourceId ?? null,
       });
@@ -337,8 +332,7 @@ export async function runSm2ReviewSession(docId, options = {}) {
 
 /** Cross-document vault review from aggregated due items. */
 export async function runVaultSm2ReviewSession(scope, options = {}) {
-  // [debug-enrich]
-  console.info('[review.runVaultSm2ReviewSession] Starting vault SM-2 review:', {
+  deInfo('[review.runVaultSm2ReviewSession] Starting vault SM-2 review:', {
     scopeProjectId: scope?.projectId ?? reviewScope?.projectId ?? null,
     includeDescendants: scope?.includeDescendants ?? reviewScope?.includeDescendants ?? null,
     mnemonicsOnly: Boolean(options.mnemonicsOnly),
@@ -374,24 +368,21 @@ export async function runVaultSm2ReviewSession(scope, options = {}) {
   if (options.mnemonicsOnly) {
     const before = sm2ReviewQueue.length;
     sm2ReviewQueue = await filterSmItemsByMnemonics(sm2ReviewQueue, getSession);
-    // [debug-enrich]
-    console.info('[review.runVaultSm2ReviewSession] Mnemonics filter applied:', {
+    deInfo('[review.runVaultSm2ReviewSession] Mnemonics filter applied:', {
       before,
       after: sm2ReviewQueue.length,
     });
   }
   sm2ReviewIndex = 0;
 
-  // [debug-enrich]
-  console.info('[review.runVaultSm2ReviewSession] Queue ready:', {
+  deInfo('[review.runVaultSm2ReviewSession] Queue ready:', {
     projectId: reviewScope.projectId,
     poolSource,
     queueLength: sm2ReviewQueue.length,
   });
 
   if (!sm2ReviewQueue.length) {
-    // [debug-enrich]
-    console.warn('[review.runVaultSm2ReviewSession] Empty queue — showing empty state', {
+    deWarn('[review.runVaultSm2ReviewSession] Empty queue — showing empty state', {
       projectId: reviewScope.projectId,
       poolSource,
       mnemonicsOnly: Boolean(options.mnemonicsOnly),
@@ -936,20 +927,17 @@ export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = 
   const indices = Array.isArray(blockIndices)
     ? blockIndices.map((i) => Math.max(0, Math.floor(Number(i) || 0)))
     : [];
-  // [debug-enrich]
-  console.info("[review.startReviewFromSessionBlocks] Start:", {
+  deInfo("[review.startReviewFromSessionBlocks] Start:", {
     indexCount: indices.length,
     reviewType: rt,
   });
   if (!indices.length) {
-    // [debug-enrich]
-    console.error("[review.startReviewFromSessionBlocks] No blocks selected");
+    deError("[review.startReviewFromSessionBlocks] No blocks selected");
     throw new Error("Select at least one block to review.");
   }
   const collected = collectQuestionsFromSessionBlocks(indices, rt);
   if (!collected.length) {
-    // [debug-enrich]
-    console.error("[review.startReviewFromSessionBlocks] No questions in selected blocks:", {
+    deError("[review.startReviewFromSessionBlocks] No questions in selected blocks:", {
       indices,
       reviewType: rt,
     });
@@ -963,8 +951,7 @@ export function startReviewFromSessionBlocks({ blockIndices, reviewType: type = 
   reviewCorrect = 0;
   reviewTestTotal = reviewQuestions.filter((q) => q && q.type === "test").length;
   reviewAnswers = new Array(reviewQuestions.length).fill(null);
-  // [debug-enrich]
-  console.info("[review.startReviewFromSessionBlocks] Loaded:", {
+  deInfo("[review.startReviewFromSessionBlocks] Loaded:", {
     questionCount: reviewQuestions.length,
     testTotal: reviewTestTotal,
   });
@@ -1010,16 +997,14 @@ function renderReviewQuestion() {
   clearReviewError();
   const total = reviewQuestions.length;
   const q = reviewQuestions[reviewIndex];
-  // [debug-enrich]
-  console.debug("[review.renderReviewQuestion] Render:", {
+  deLog("[review.renderReviewQuestion] Render:", {
     reviewIndex,
     total,
     type: q?.type || null,
     hasQuestion: Boolean(q),
   });
   if (!q) {
-    // [debug-enrich]
-    console.error("[review.renderReviewQuestion] No question at index:", { reviewIndex, total });
+    deError("[review.renderReviewQuestion] No question at index:", { reviewIndex, total });
     setReviewError("No questions loaded.");
     return;
   }

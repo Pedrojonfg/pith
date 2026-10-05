@@ -414,7 +414,6 @@ import {
 } from "./vault/vault-graph.js";
 import { mountConceptRegistryGraph } from "./concept-registry/graph-mount.js";
 import { getConceptById } from "./concept-registry/registry-store.js";
-import { renderDetail } from "./vault/debug-ui.js";
 import { getEntryById, loadVault } from "./vault/vault-store.js";
 import {
   buildBatchContext,
@@ -435,6 +434,9 @@ import { FACET_LABELS } from "./session-types.js";
 import { renderReadBlockContent } from "./read-mode.js";
 import { setOnReadVisualResolved, triggerReadVisualPrefetch } from "./read-visuals.js";
 import { findPithImageTokenIds } from "./document-images/tokens.js";
+import { createClozeSession, createSlowSession } from "./study/session-mode-factories.js";
+
+export { createClozeSession, createSlowSession } from "./study/session-mode-factories.js";
 
 let blocksListJsonCache = "";
 
@@ -2028,120 +2030,6 @@ export async function persistClozeModeSlice(session) {
     doc.modes.cloze = session;
     await saveDocumentSession(doc);
   }
-}
-
-export function createClozeSession({
-  normalizedText,
-  normalizedFormat,
-  fileName,
-  originalFormat,
-  llmModel,
-  language,
-}) {
-  const lang = String(language || getStudyLanguage()).trim() || "English";
-  return {
-    studyMode: "cloze",
-    rev: 0,
-    language: lang,
-    llmModel: normalizeLlmModel(llmModel),
-    materialMeta: {
-      fileName: String(fileName || "").trim(),
-      originalFormat: String(originalFormat || "").trim(),
-      uploadedAt: new Date().toISOString(),
-    },
-    cloze: {
-      normalizedText: String(normalizedText || ""),
-      normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
-      pipelineStatus: "normalized",
-      pipelinePhase: null,
-      pipelineError: null,
-      epistemicGraph: null,
-      analysis: null,
-      items: [],
-      studyIndex: 0,
-      studyStats: { correct: 0, shown: 0 },
-      studyOrder: null,
-      generationMeta: null,
-    },
-  };
-}
-
-export function createSlowSession({
-  normalizedText,
-  normalizedFormat,
-  fileName,
-  originalFormat,
-  llmModel,
-  language,
-  textMetrics = null,
-  pedagogicalMeta = null,
-  pdfSource = null,
-} = {}) {
-  const lang = String(language || getStudyLanguage()).trim() || "English";
-  const text = String(normalizedText || "");
-  const metrics =
-    textMetrics && typeof textMetrics === "object"
-      ? textMetrics
-      : analyzeText(text);
-  const pedagogy =
-    pedagogicalMeta && typeof pedagogicalMeta === "object"
-      ? pedagogicalMeta
-      : buildDeterministicPedagogicalMeta(metrics);
-  const modifiers = decideSlowReadingModifiers(metrics, pedagogy);
-  return {
-    studyMode: "slow",
-    rev: 0,
-    language: lang,
-    llmModel: normalizeLlmModel(llmModel),
-    docHierarchy: null,
-    materialMeta: {
-      fileName: String(fileName || "").trim(),
-      originalFormat: String(originalFormat || "").trim(),
-      uploadedAt: new Date().toISOString(),
-    },
-    slow: (() => {
-      // ponytail: one-shot viewerMode from upload format (immutable for session life)
-      const viewerMode = String(originalFormat || "").trim().toLowerCase() === "pdf" ? "pdf" : "scroll";
-      const base = {
-        normalizedTextFull: text,
-        normalizedFormat: normalizedFormat === "html_min" ? "html_min" : "markdown",
-        phase: "phase0",
-        viewerMode,
-        annotationSchemaVersion: 2,
-        criticalMode: Boolean(modifiers.criticalMode),
-        fillableMapMode: Boolean(modifiers.fillableMap),
-        checkpointsEnabled: Boolean(modifiers.checkpoints),
-        phase0SeenKey: null,
-        phase0SeenReread: false,
-        phase0Collapsed: false,
-        phase0: null,
-        phase0Status: "idle",
-        typography: { fontSizePx: 15, lineHeight: 1.4, fontFamily: '"DM Sans", sans-serif' },
-        annotations: [],
-        findings: [],
-        checkpointsDismissed: [],
-        depthScore: null,
-        graphEnrichedUnlocked: false,
-        graphNodes: [],
-        sidebarOpen: true,
-      };
-      if (viewerMode === "pdf") {
-        return {
-          ...base,
-          currentPdfPage: 1,
-          pdfPageCount: 0,
-          maxReadPdfPage: 1,
-          pdfSource: pdfSource && typeof pdfSource === "object" ? pdfSource : null,
-        };
-      }
-      return {
-        ...base,
-        scrollAnchorBlockId: null,
-        scrollAnchorOffset: 0,
-        maxReadCharEnd: 0,
-      };
-    })(),
-  };
 }
 
 function getSelectedStudyModeRadio() {
@@ -8166,7 +8054,10 @@ async function refreshVaultGraphView() {
     onSelectEntry: (id) => {
       if (!detailHost) return;
       const entry = getEntryById(id);
-      if (entry) renderDetail(detailHost, entry);
+      if (!entry) return;
+      void import("./vault/debug-ui.js").then(({ renderDetail }) => {
+        renderDetail(detailHost, entry);
+      });
     },
   });
 }

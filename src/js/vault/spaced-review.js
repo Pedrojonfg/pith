@@ -1,6 +1,7 @@
 /** Vault decay → shared.smItems bridge for spaced review scheduling. */
 
 import { getSession, saveActiveSession } from "../session-store.js";
+import { deInfo, deWarn } from "../debug-enrich.js";
 import { getCurrentMastery } from "./mastery-model.js";
 import { getActiveMisconceptions } from "./misconceptions.js";
 import { computeImportanceScore } from "./prerequisite-graph.js";
@@ -93,20 +94,17 @@ function isVaultDecaySmItem(item) {
 export async function syncVaultToReviewPool(session) {
   const docId = String(session?.docId || "").trim();
   if (!docId) {
-    // [debug-enrich]
-    console.warn('[vault.spaced-review.syncVaultToReviewPool] Missing docId — skip');
+    deWarn('[vault.spaced-review.syncVaultToReviewPool] Missing docId — skip');
     return;
   }
 
-  // [debug-enrich]
-  console.info('[vault.spaced-review.syncVaultToReviewPool] Syncing vault → review pool:', {
+  deInfo('[vault.spaced-review.syncVaultToReviewPool] Syncing vault → review pool:', {
     docId,
   });
 
   const current = await getSession(docId) || session;
   if (!current?.shared) {
-    // [debug-enrich]
-    console.warn('[vault.spaced-review.syncVaultToReviewPool] No shared slice — skip', {
+    deWarn('[vault.spaced-review.syncVaultToReviewPool] No shared slice — skip', {
       docId,
     });
     return;
@@ -131,8 +129,7 @@ export async function syncVaultToReviewPool(session) {
     (a, b) => (Number(a.scheduledDue) || 0) - (Number(b.scheduledDue) || 0),
   );
 
-  // [debug-enrich]
-  console.info('[vault.spaced-review.syncVaultToReviewPool] Pool rebuilt:', {
+  deInfo('[vault.spaced-review.syncVaultToReviewPool] Pool rebuilt:', {
     docId,
     topicCount: docTopics.length,
     eligibleVaultItems: vaultItems.length,

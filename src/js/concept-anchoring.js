@@ -4,6 +4,7 @@
  */
 
 import { snapToSentenceBoundary } from "./text-boundaries.js";
+import { deInfo, deLog, deWarn } from "./debug-enrich.js";
 import {
   findDeterministicAnchorForConcept,
   proportionalAnchorForConcept,
@@ -75,8 +76,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
   // ponytail: scoped text only (FR-004); mini-tree when offsets matter
   const materialText = String(resolveScopedMarkdown(doc) || "").trim();
   const semanticEnabled = isSemanticAnchoringEnabled();
-  // [debug-enrich]
-  console.info("[concept-anchoring.computeConceptAnchorsForDocument] Start:", {
+  deInfo("[concept-anchoring.computeConceptAnchorsForDocument] Start:", {
     docId: doc?.docId || null,
     inventorySize: inventory.length,
     materialLen: materialText.length,
@@ -84,8 +84,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
     hasHierarchy: Boolean(doc?.shared?.docHierarchy?.tree),
   });
   if (!inventory.length || !materialText) {
-    // [debug-enrich]
-    console.warn("[concept-anchoring.computeConceptAnchorsForDocument] Skip — empty inventory or text");
+    deWarn("[concept-anchoring.computeConceptAnchorsForDocument] Skip — empty inventory or text");
     return { anchored: 0, failed: false };
   }
 
@@ -104,8 +103,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
   const qualityCounts = { strong: 0, weak: 0, semantic: 0, proportional_fallback: 0 };
 
   const sections = getChunksFromHierarchy(docHierarchy?.tree, materialText);
-  // [debug-enrich]
-  console.debug("[concept-anchoring.computeConceptAnchorsForDocument] Sections:", {
+  deLog("[concept-anchoring.computeConceptAnchorsForDocument] Sections:", {
     sectionCount: Array.isArray(sections) ? sections.length : 0,
   });
   const embedOpts = { docId: doc.docId, signal: ctx.signal };
@@ -201,8 +199,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
       }
     } catch (err) {
       failedConcepts += 1;
-      // [debug-enrich]
-      console.warn("[concept-anchoring.computeConceptAnchorsForDocument] Concept failed:", {
+      deWarn("[concept-anchoring.computeConceptAnchorsForDocument] Concept failed:", {
         conceptId: concept?.id || null,
         message: err?.message || err,
       });
@@ -212,8 +209,7 @@ export async function computeConceptAnchorsForDocument(doc, ctx = {}) {
     }
   }
 
-  // [debug-enrich]
-  console.info("[concept-anchoring.computeConceptAnchorsForDocument] Done:", {
+  deInfo("[concept-anchoring.computeConceptAnchorsForDocument] Done:", {
     docId: doc?.docId || null,
     anchored,
     failedConcepts,

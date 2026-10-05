@@ -1,4 +1,5 @@
 import { LS_ACTIVE_DOC_ID_KEY, LS_DOC_SESSIONS_KEY, LS_DOC_TEXT_PREFIX } from "./config.js";
+import { deError, deInfo, deLog } from "./debug-enrich.js";
 import { getOAuthRedirectUrl } from "./config/supabase.js";
 import { supabase } from "./supabase-client.js";
 import { upsertSessionRow, uploadMarkdown, getAuthUserId } from "./session-persist-supabase.js";
@@ -24,8 +25,7 @@ export async function getSupabaseAuthSession() {
 
 export async function signInWithGoogle() {
   const redirectTo = getOAuthRedirectUrl();
-  // [debug-enrich]
-  console.info('[auth.signInWithGoogle] Starting OAuth:', {
+  deInfo('[auth.signInWithGoogle] Starting OAuth:', {
     hasRedirectTo: Boolean(redirectTo),
     redirectHost: redirectTo
       ? (() => {
@@ -42,16 +42,14 @@ export async function signInWithGoogle() {
     options: redirectTo ? { redirectTo } : {},
   });
   if (error) {
-    // [debug-enrich]
-    console.error('[auth.signInWithGoogle] OAuth start failed:', {
+    deError('[auth.signInWithGoogle] OAuth start failed:', {
       message: error.message ?? String(error),
       status: error.status ?? null,
       name: error.name ?? null,
     });
     throw error;
   }
-  // [debug-enrich]
-  console.debug('[auth.signInWithGoogle] OAuth redirect initiated (no error)');
+  deLog('[auth.signInWithGoogle] OAuth redirect initiated (no error)');
 }
 
 export async function signOut() {

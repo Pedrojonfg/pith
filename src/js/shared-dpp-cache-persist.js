@@ -5,11 +5,15 @@
 
 import { supabase } from "./supabase-client.js";
 import { isOfflineMode } from "./offline.js";
+import { getSupabaseAuthToken } from "./llm.js";
+import { SUPABASE_URL } from "./config/supabase.js";
 import {
   DPP_PIPELINE_VERSION,
   buildSharedDppCacheKey,
   extractShareableTier1Artifacts,
 } from "./shared-dpp-cache.js";
+
+const SHARED_CACHE_UPSERT_URL = `${SUPABASE_URL}/functions/v1/shared-cache-upsert`;
 
 /**
  * @param {string} docId
@@ -20,16 +24,14 @@ export async function fetchSharedDppCache(docId) {
   if (!id || isOfflineMode()) return null;
   const cacheKey = buildSharedDppCacheKey(id, DPP_PIPELINE_VERSION);
   try {
-    const { data, error } = await supabase
-      .from("document_preparation_cache")
-      .select("artifacts")
-      .eq("cache_key", cacheKey)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("get_document_preparation_cache", {
+      p_cache_key: cacheKey,
+    });
     if (error) {
       console.warn("[shared-dpp-cache] fetch failed:", error.message);
       return null;
     }
-    const artifacts = data?.artifacts;
+    const artifacts = data;
     return artifacts && typeof artifacts === "object" ? artifacts : null;
   } catch (err) {
     console.warn("[shared-dpp-cache] fetch error:", err?.message || err);
@@ -49,18 +51,30 @@ export async function upsertSharedDppCache(docId, session) {
   if (!artifacts) return;
   const cacheKey = buildSharedDppCacheKey(id, DPP_PIPELINE_VERSION);
   try {
-    const { error } = await supabase.from("document_preparation_cache").upsert(
-      {
-        cache_key: cacheKey,
-        doc_id: id,
-        pipeline_version: DPP_PIPELINE_VERSION,
-        artifacts,
-        updated_at: new Date().toISOString(),
+    const token = await getSupabaseAuthToken();
+    if (!token) return;
+    const res = await fetch(SHARED_CACHE_UPSERT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
       },
-      { onConflict: "cache_key" },
-    );
-    if (error) console.warn("[shared-dpp-cache] upsert failed:", error.message);
-    else console.info("[shared-dpp-cache] upsert ok:", { docId: id, cacheKey });
+      body: JSON.stringify({
+        table: "document_preparation_cache",
+        row: {
+          cache_key: cacheKey,
+          doc_id: id,
+          pipeline_version: DPP_PIPELINE_VERSION,
+          artifacts,
+          updated_at: new Date().toISOString(),
+        },
+      }),
+    });
+    if (!res.ok) {
+      console.warn("[shared-dpp-cache] upsert failed:", res.status, await res.text().catch(() => ""));
+    } else {
+      console.info("[shared-dpp-cache] upsert ok:", { docId: id, cacheKey });
+    }
   } catch (err) {
     console.warn("[shared-dpp-cache] upsert error:", err?.message || err);
   }

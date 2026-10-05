@@ -1,4 +1,12 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "mylearning-zeta.vercel.app" }],
+      "destination": "https://pith.pedrojon.com/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/manifest.json",

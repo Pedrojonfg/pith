@@ -4,6 +4,7 @@
  */
 
 import { mergeAssessmentSignals, computeAssessmentWeight } from "../assessment-signals.js";
+import { deError, deInfo } from "../debug-enrich.js";
 import { inferDocMeta } from "../session-types.js";
 import { synthesizeInterviewToMarkdown } from "./interview-api.js";
 
@@ -44,12 +45,10 @@ export function buildUnpromptedArticulationSignals(articulatedConceptIds, concep
  */
 export async function applyInterviewSynthesis(doc, params) {
   if (!doc?.shared) {
-    // [debug-enrich]
-    console.error("[interview.synthesis.applyInterviewSynthesis] Invalid session");
+    deError("[interview.synthesis.applyInterviewSynthesis] Invalid session");
     throw new Error("Invalid session for synthesis.");
   }
-  // [debug-enrich]
-  console.info("[interview.synthesis.applyInterviewSynthesis] Start:", {
+  deInfo("[interview.synthesis.applyInterviewSynthesis] Start:", {
     docId: doc?.docId || null,
     sessionTitle: params?.sessionTitle ?? null,
     transcriptTurns: Array.isArray(params?.transcript) ? params.transcript.length : 0,
@@ -74,8 +73,7 @@ export async function applyInterviewSynthesis(doc, params) {
     doc.shared.assessmentSignals = mergeAssessmentSignals(existing, incoming);
   }
 
-  // [debug-enrich]
-  console.info("[interview.synthesis.applyInterviewSynthesis] Done:", {
+  deInfo("[interview.synthesis.applyInterviewSynthesis] Done:", {
     docId: doc?.docId || null,
     conceptCount: result.concepts?.length ?? 0,
     articulatedCount: incoming.length,

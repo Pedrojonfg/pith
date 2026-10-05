@@ -3,6 +3,7 @@
  */
 
 import { getProjectStore } from "../session-store.js";
+import { deInfo, deLog, deWarn } from "../debug-enrich.js";
 import { getAncestorChain } from "../project-store.js";
 import { loadRegistry } from "../concept-registry/registry-store.js";
 import { isVaultNoveltyScoringEnabled } from "../config/flags.js";
@@ -43,23 +44,20 @@ export function countScopedRegistryConcepts(projectIds) {
  * @param {object} doc
  */
 export async function scoreConceptNovelty(doc) {
-  // [debug-enrich]
-  console.info("[vault.novelty-scoring.scoreConceptNovelty] Start:", {
+  deInfo("[vault.novelty-scoring.scoreConceptNovelty] Start:", {
     docId: doc?.docId || null,
     projectId: doc?.projectId || null,
     noveltyEnabled: isVaultNoveltyScoringEnabled(),
     embeddingsEnabled: isVaultEmbeddingsEnabled(),
   });
   if (!isVaultNoveltyScoringEnabled() || !isVaultEmbeddingsEnabled()) {
-    // [debug-enrich]
-    console.info("[vault.novelty-scoring.scoreConceptNovelty] Skipped — flags off");
+    deInfo("[vault.novelty-scoring.scoreConceptNovelty] Skipped — flags off");
     return { status: "skipped", reason: "embeddings_disabled" };
   }
 
   const inventory = doc?.shared?.conceptInventory;
   if (!Array.isArray(inventory) || !inventory.length) {
-    // [debug-enrich]
-    console.debug("[vault.novelty-scoring.scoreConceptNovelty] Empty inventory");
+    deLog("[vault.novelty-scoring.scoreConceptNovelty] Empty inventory");
     return { status: "success", scored: 0 };
   }
 
@@ -72,8 +70,7 @@ export async function scoreConceptNovelty(doc) {
   });
 
   if (!unresolved.length) {
-    // [debug-enrich]
-    console.info("[vault.novelty-scoring.scoreConceptNovelty] All entries have globalConceptId");
+    deInfo("[vault.novelty-scoring.scoreConceptNovelty] All entries have globalConceptId");
     return { status: "success", scored: 0 };
   }
 
@@ -83,8 +80,7 @@ export async function scoreConceptNovelty(doc) {
     for (const entry of unresolved) {
       entry.noveltyScore = 1.0;
     }
-    // [debug-enrich]
-    console.info("[vault.novelty-scoring.scoreConceptNovelty] Short-circuit empty vault:", {
+    deInfo("[vault.novelty-scoring.scoreConceptNovelty] Short-circuit empty vault:", {
       unresolvedCount: unresolved.length,
       projectIds: projectIds.length,
     });
@@ -119,8 +115,7 @@ export async function scoreConceptNovelty(doc) {
       scored += 1;
     } catch (err) {
       failed += 1;
-      // [debug-enrich]
-      console.warn("[vault.novelty-scoring.scoreConceptNovelty] Score failed:", {
+      deWarn("[vault.novelty-scoring.scoreConceptNovelty] Score failed:", {
         conceptId,
         message: err?.message || err,
       });
@@ -128,8 +123,7 @@ export async function scoreConceptNovelty(doc) {
     }
   }
 
-  // [debug-enrich]
-  console.info("[vault.novelty-scoring.scoreConceptNovelty] Done:", {
+  deInfo("[vault.novelty-scoring.scoreConceptNovelty] Done:", {
     docId: doc?.docId || null,
     unresolvedCount: unresolved.length,
     scored,

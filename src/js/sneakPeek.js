@@ -1,3 +1,4 @@
+import { deLog } from "./debug-enrich.js";
 // Portable helper to derive a compact sneak peek from an explanation.
 
 /**
@@ -12,8 +13,7 @@
  */
 export function extractSneakPeek(explanation, maxSentences = 4) {
   if (typeof explanation !== "string") {
-    // [debug-enrich]
-    console.debug('[sneakPeek.extractSneakPeek] Non-string explanation:', {
+    deLog('[sneakPeek.extractSneakPeek] Non-string explanation:', {
       type: typeof explanation,
     });
     return "";
@@ -28,8 +28,7 @@ export function extractSneakPeek(explanation, maxSentences = 4) {
 
   let text = explanation.trim();
   if (!text) {
-    // [debug-enrich]
-    console.debug('[sneakPeek.extractSneakPeek] Empty explanation');
+    deLog('[sneakPeek.extractSneakPeek] Empty explanation');
     return "";
   }
 
@@ -52,16 +51,14 @@ export function extractSneakPeek(explanation, maxSentences = 4) {
   }
 
   if (sentences.length === 0) {
-    // [debug-enrich]
-    console.debug('[sneakPeek.extractSneakPeek] No sentences parsed', {
+    deLog('[sneakPeek.extractSneakPeek] No sentences parsed', {
       inputLen: explanation.length,
     });
     return "";
   }
 
   const result = sentences.join(" ");
-  // [debug-enrich]
-  console.debug('[sneakPeek.extractSneakPeek] Extracted:', {
+  deLog('[sneakPeek.extractSneakPeek] Extracted:', {
     inputLen: explanation.length,
     sentenceCount: sentences.length,
     peekLen: result.length,

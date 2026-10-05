@@ -4,6 +4,7 @@
  */
 
 import { getSession } from "./session-store.js";
+import { deError, deInfo } from "./debug-enrich.js";
 import { supabase } from "./supabase-client.js";
 import { llmChatCompletions as defaultLlmChatCompletions } from "./llm.js";
 import { jaccardOverlap } from "./fidelity-validation.js";
@@ -69,8 +70,7 @@ function deepCloneJson(value) {
 export function buildPackSnapshot(session) {
   const sh = session?.shared || {};
   const modes = session?.modes || {};
-  // [debug-enrich]
-  console.info("[pack-export.buildPackSnapshot] Building snapshot:", {
+  deInfo("[pack-export.buildPackSnapshot] Building snapshot:", {
     docId: session?.docId || null,
     inventorySize: Array.isArray(sh.conceptInventory) ? sh.conceptInventory.length : 0,
     markdownLen: typeof sh.rawMarkdown === "string" ? sh.rawMarkdown.length : 0,
@@ -162,15 +162,13 @@ function buildRewritePrompt(text, context = {}) {
  */
 export async function rewritePackExcerpt(text, context, deps = {}) {
   const input = String(text || "").trim();
-  // [debug-enrich]
-  console.info("[pack-export.rewritePackExcerpt] Start:", {
+  deInfo("[pack-export.rewritePackExcerpt] Start:", {
     inputLen: input.length,
     kind: context?.kind ?? null,
     conceptLabel: context?.conceptLabel ?? null,
   });
   if (!input) {
-    // [debug-enrich]
-    console.error("[pack-export.rewritePackExcerpt] Empty input");
+    deError("[pack-export.rewritePackExcerpt] Empty input");
     throw new Error("rewritePackExcerpt: empty input");
   }
   const llm = deps.llmChatCompletions || defaultLlmChatCompletions;
@@ -188,12 +186,10 @@ export async function rewritePackExcerpt(text, context, deps = {}) {
   });
   const out = String(content || "").trim();
   if (!out) {
-    // [debug-enrich]
-    console.error("[pack-export.rewritePackExcerpt] Empty model output");
+    deError("[pack-export.rewritePackExcerpt] Empty model output");
     throw new Error("rewritePackExcerpt: empty model output");
   }
-  // [debug-enrich]
-  console.info("[pack-export.rewritePackExcerpt] Done:", {
+  deInfo("[pack-export.rewritePackExcerpt] Done:", {
     outputLen: out.length,
     kind: context?.kind ?? null,
   });

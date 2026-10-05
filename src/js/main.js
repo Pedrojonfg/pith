@@ -26,7 +26,7 @@ import {
 import { syncPlatformLlmAccessFromSession } from "./llm.js?v=20260625_02";
 import { wireReviewHandlers } from "./review.js?v=20260625_02";
 import { enterAppHome, openVaultGraphScreen, wireStudyHandlers, syncVaultUploadResumeBanner } from "./study.js?v=20260625_02";
-import { wireVaultDebugUi } from "./vault/debug-ui.js";
+import { bootDemoSession, ensureDemoBanner, isDemoMode } from "./demo-mode.js?v=20261005_05";
 import {
   readStashedInstallPrompt,
   isPwaStandalone,
@@ -40,6 +40,7 @@ import {
   signOut,
 } from "./auth.js";
 import { supabase } from "./supabase-client.js";
+import { deError, deInfo, deLog, isDebugEnrich } from "./debug-enrich.js";
 
 let appBooted = false;
 
@@ -56,32 +57,27 @@ async function openInitialScreen() {
 
 async function continueAppBoot() {
   if (appBooted) {
-    // [debug-enrich]
-    console.debug('[main.continueAppBoot] Already booted — skip');
+    deLog('[main.continueAppBoot] Already booted — skip');
     return;
   }
-  // [debug-enrich]
-  console.info('[main.continueAppBoot] Continuing app boot after auth');
+  deInfo('[main.continueAppBoot] Continuing app boot after auth');
   try {
     await migrateLocalStorageToSupabase();
 
     const hasStoredSession = !!localStorage.getItem(LS_SESSIONS_BY_MODE_KEY)?.trim() ||
       !!localStorage.getItem(LS_ACTIVE_SESSION_KEY)?.trim();
     if (hasStoredSession) {
-      // [debug-enrich]
-      console.info('[main.continueAppBoot] Migrating legacy active session');
+      deInfo('[main.continueAppBoot] Migrating legacy active session');
       await migrateLegacyActiveSession();
     }
 
     await openInitialScreen();
     dismissSplash(false);
     appBooted = true;
-    // [debug-enrich]
-    console.info('[main.continueAppBoot] Boot complete');
+    deInfo('[main.continueAppBoot] Boot complete');
   } catch (err) {
     appBooted = false;
-    // [debug-enrich]
-    console.error('[main.continueAppBoot] Boot failed:', {
+    deError('[main.continueAppBoot] Boot failed:', {
       message: err?.message ?? String(err),
       stack: err?.stack ?? null,
     });
@@ -100,8 +96,7 @@ function wireAuthUi() {
       await signInWithGoogle();
     } catch (err) {
       console.error("[auth] sign-in failed", err); // legacy
-      // [debug-enrich]
-      console.error('[main.wireAuthUi] Sign-in click failed:', {
+      deError('[main.wireAuthUi] Sign-in click failed:', {
         message: err?.message ?? String(err),
         status: err?.status ?? null,
       });
@@ -122,8 +117,7 @@ function wireAuthUi() {
   });
 
   supabase.auth.onAuthStateChange(async (event, session) => {
-    // [debug-enrich]
-    console.info('[main.onAuthStateChange] Auth event:', {
+    deInfo('[main.onAuthStateChange] Auth event:', {
       event,
       hasSession: Boolean(session),
       userId: session?.user?.id ?? null,
@@ -134,8 +128,7 @@ function wireAuthUi() {
       await continueAppBoot();
     }
     if (event === "SIGNED_OUT") {
-      // [debug-enrich]
-      console.info('[main.onAuthStateChange] Signed out — showing auth screen');
+      deInfo('[main.onAuthStateChange] Signed out — showing auth screen');
       syncPlatformLlmAccessFromSession(null);
       appBooted = false;
       showScreen("auth");
@@ -156,13 +149,16 @@ async function bootstrap() {
   wireStudyHandlers();
   wireReviewHandlers();
   wireAuthUi();
-  wireVaultDebugUi(
-    els.knowledgeVaultPanel,
-    els.knowledgeVaultLink,
-    els.knowledgeVaultOverlay,
-    els.knowledgeVaultCloseBtn,
-    () => openVaultGraphScreen(),
-  );
+  if (new URLSearchParams(location.search).get("vaultDebug") === "1") {
+    const { wireVaultDebugUi } = await import("./vault/debug-ui.js");
+    wireVaultDebugUi(
+      els.knowledgeVaultPanel,
+      els.knowledgeVaultLink,
+      els.knowledgeVaultOverlay,
+      els.knowledgeVaultCloseBtn,
+      () => openVaultGraphScreen(),
+    );
+  }
   initGuideChat();
 
   const sidebarToggleBtn = document.getElementById("sidebar-toggle-btn");
@@ -278,6 +274,13 @@ async function bootstrap() {
   els.settingsBackBtn?.addEventListener("click", () => {
     closeSettingsScreen();
   });
+
+  if (isDemoMode()) {
+    await bootDemoSession();
+    ensureDemoBanner();
+    await continueAppBoot();
+    return;
+  }
 
   const authSession = await getSupabaseAuthSession();
   syncPlatformLlmAccessFromSession(authSession);

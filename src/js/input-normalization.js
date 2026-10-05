@@ -4,6 +4,7 @@
  */
 
 import { normalizeDocumentStructure } from "./normalization/index.js";
+import { deLog } from "./debug-enrich.js";
 import { protectMarkdownTransform } from "./document-images/tokens.js";
 import {
   MAX_SOURCE_FILES,
@@ -273,7 +274,7 @@ export async function normalizeStudyMaterial(rawContent, detectedFormat) {
     rawContent instanceof ArrayBuffer
       ? rawContent.byteLength
       : String(rawContent || "").length;
-  console.debug("[input-normalization.normalizeStudyMaterial] Start:", { format, inputBytes }); // [debug-enrich]
+  deLog("[input-normalization.normalizeStudyMaterial] Start:", { format, inputBytes });
   if (!SUPPORTED_INPUT_FORMATS.includes(format)) {
     throw new UnsupportedFormatError(
       `Unsupported file format. Use one of: ${SUPPORTED_INPUT_FORMATS.join(", ")}.`,

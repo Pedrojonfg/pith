@@ -4,6 +4,7 @@
  */
 
 import { normalizeVaultReviewItemForQueue } from "./vault/vault-curation.js";
+import { deInfo } from "./debug-enrich.js";
 import { loadVault } from "./vault/vault-store.js";
 import { getDescendantIds } from "./project-store.js";
 import { getAllSessions, getProjectStore, getSession } from "./session-store.js";
@@ -16,8 +17,7 @@ import { normalizeSmItem } from "./sm2.js";
  */
 export async function getReviewableItemsForProject(projectId, opts = {}) {
   const includeDescendants = opts.includeDescendants !== false;
-  // [debug-enrich]
-  console.info('[review-project-scope.getReviewableItemsForProject] Filtering:', {
+  deInfo('[review-project-scope.getReviewableItemsForProject] Filtering:', {
     projectId,
     includeDescendants,
   });
@@ -35,8 +35,7 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
       .map((item) => normalizeVaultReviewItemForQueue(item))
       .filter(Boolean);
     const result = [...smPool.filter((i) => i?.id), ...vaultPool];
-    // [debug-enrich]
-    console.info('[review-project-scope.getReviewableItemsForProject] All-projects pool:', {
+    deInfo('[review-project-scope.getReviewableItemsForProject] All-projects pool:', {
       sessionCount: sessions.length,
       smCount: smPool.filter((i) => i?.id).length,
       vaultCount: vaultPool.length,
@@ -80,8 +79,7 @@ export async function getReviewableItemsForProject(projectId, opts = {}) {
   }
 
   const result = [...smPoolItems.filter((i) => i?.id), ...vaultPoolItems];
-  // [debug-enrich]
-  console.info('[review-project-scope.getReviewableItemsForProject] Scoped pool:', {
+  deInfo('[review-project-scope.getReviewableItemsForProject] Scoped pool:', {
     projectId,
     scopeIdCount: scopeIds.size,
     scopedSessionCount: scopedSessions.length,

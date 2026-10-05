@@ -4,6 +4,7 @@
  */
 
 import { geminiEmbedContent, getSupabaseAuthToken, hasPlatformLlmAccess } from "../llm.js?v=20260625_02";
+import { deError, deInfo, deLog } from "../debug-enrich.js";
 import {
   getEmbeddingOutputDimensionality,
   isVaultEmbeddingsFlagEnabled,
@@ -71,22 +72,19 @@ async function writeCache(row) {
 export async function embedText(text, options = {}) {
   const sourceText = String(text || "").trim();
   if (!sourceText) {
-    // [debug-enrich]
-    console.error("[vault.embeddings.embedText] Empty text");
+    deError("[vault.embeddings.embedText] Empty text");
     throw new Error("embedText requires non-empty text");
   }
   const token = await getSupabaseAuthToken();
   if (!token) {
-    // [debug-enrich]
-    console.error("[vault.embeddings.embedText] No auth token");
+    deError("[vault.embeddings.embedText] No auth token");
     throw new Error("Sign in to use embeddings");
   }
 
   const sourceTextHash = await hashSourceText(sourceText);
   const cached = await readCache(sourceTextHash);
   if (cached) {
-    // [debug-enrich]
-    console.debug("[vault.embeddings.embedText] Cache hit:", {
+    deLog("[vault.embeddings.embedText] Cache hit:", {
       textLen: sourceText.length,
       dims: Array.isArray(cached) ? cached.length : null,
       conceptId: options.conceptId || null,
@@ -94,8 +92,7 @@ export async function embedText(text, options = {}) {
     return cached;
   }
 
-  // [debug-enrich]
-  console.info("[vault.embeddings.embedText] API call:", {
+  deInfo("[vault.embeddings.embedText] API call:", {
     textLen: sourceText.length,
     conceptId: options.conceptId || null,
     scopeType: options.scopeType || "concept",
@@ -110,8 +107,7 @@ export async function embedText(text, options = {}) {
   });
   const values = json?.embedding?.values;
   if (!Array.isArray(values) || !values.length) {
-    // [debug-enrich]
-    console.error("[vault.embeddings.embedText] Empty vector from Gemini");
+    deError("[vault.embeddings.embedText] Empty vector from Gemini");
     throw new Error("Gemini embed returned empty vector");
   }
 
@@ -125,8 +121,7 @@ export async function embedText(text, options = {}) {
     model_version: EMBEDDING_MODEL_VERSION,
   });
 
-  // [debug-enrich]
-  console.info("[vault.embeddings.embedText] Done:", {
+  deInfo("[vault.embeddings.embedText] Done:", {
     dims: values.length,
     conceptId: options.conceptId || null,
   });
@@ -139,14 +134,12 @@ export async function embedText(text, options = {}) {
  */
 export async function embedBatch(texts, options = {}) {
   const list = (Array.isArray(texts) ? texts : []).map((t) => String(t || "").trim()).filter(Boolean);
-  // [debug-enrich]
-  console.info("[vault.embeddings.embedBatch] Start:", { count: list.length });
+  deInfo("[vault.embeddings.embedBatch] Start:", { count: list.length });
   const out = [];
   for (const text of list) {
     out.push(await embedText(text, options));
   }
-  // [debug-enrich]
-  console.info("[vault.embeddings.embedBatch] Done:", { count: out.length });
+  deInfo("[vault.embeddings.embedBatch] Done:", { count: out.length });
   return out;
 }
 

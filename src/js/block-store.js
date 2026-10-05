@@ -6,6 +6,7 @@ import {
   LS_V1_BACKUP_KEY,
 } from "./config.js";
 import { saveActiveSession } from "./session-store.js";
+import { deError, deInfo, deLog, deWarn } from "./debug-enrich.js";
 import { downloadBlocksJson, downloadResponsesJson } from "./user-data-persist-supabase.js";
 import { getAuthUserId } from "./session-persist-supabase.js";
 import { scheduleBlocksUpload, scheduleResponsesUpload } from "./user-store-sync.js";
@@ -39,8 +40,7 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
   const blocks = Array.isArray(clone.blocks) ? clone.blocks : [];
   const blocksJson = JSON.stringify(blocks);
 
-  // [debug-enrich]
-  console.debug('[block-store.stripBlocksForPersist] Evaluating externalize:', {
+  deLog('[block-store.stripBlocksForPersist] Evaluating externalize:', {
     docId: id,
     blockCount: blocks.length,
     blocksJsonLen: blocksJson.length,
@@ -61,16 +61,14 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
         charCount: blocksJson.length,
         schemaVersion: 1,
       };
-      // [debug-enrich]
-      console.info('[block-store.stripBlocksForPersist] Blocks externalized:', {
+      deInfo('[block-store.stripBlocksForPersist] Blocks externalized:', {
         docId: id,
         blockCount: blocks.length,
         charCount: blocksJson.length,
         storageKey,
       });
     } catch (err) {
-      // [debug-enrich]
-      console.error('[block-store.stripBlocksForPersist] localStorage write failed:', {
+      deError('[block-store.stripBlocksForPersist] localStorage write failed:', {
         docId: id,
         message: err?.message ?? String(err),
         name: err?.name ?? null,
@@ -88,15 +86,13 @@ export function stripBlocksForPersist(rsvpSlice, docId) {
         scheduleResponsesUpload(id, respJson);
         delete clone._responses;
         clone.responsesRef = { storageKey };
-        // [debug-enrich]
-        console.info('[block-store.stripBlocksForPersist] Responses externalized:', {
+        deInfo('[block-store.stripBlocksForPersist] Responses externalized:', {
           docId: id,
           charCount: respJson.length,
           storageKey,
         });
       } catch (err) {
-        // [debug-enrich]
-        console.error('[block-store.stripBlocksForPersist] Responses localStorage write failed:', {
+        deError('[block-store.stripBlocksForPersist] Responses localStorage write failed:', {
           docId: id,
           message: err?.message ?? String(err),
           name: err?.name ?? null,
@@ -136,8 +132,7 @@ export async function rehydrateBlocks(rsvpSlice, docId) {
 
   const blocksRef = slice.blocksRef;
   const hasInlineBlocks = Array.isArray(slice.blocks) && slice.blocks.length > 0;
-  // [debug-enrich]
-  console.debug('[block-store.rehydrateBlocks] Start:', {
+  deLog('[block-store.rehydrateBlocks] Start:', {
     docId: id,
     hasInlineBlocks,
     inlineCount: hasInlineBlocks ? slice.blocks.length : 0,
@@ -152,24 +147,21 @@ export async function rehydrateBlocks(rsvpSlice, docId) {
         const blocks = JSON.parse(raw);
         if (Array.isArray(blocks)) {
           slice = { ...slice, blocks };
-          // [debug-enrich]
-          console.info('[block-store.rehydrateBlocks] Blocks rehydrated:', {
+          deInfo('[block-store.rehydrateBlocks] Blocks rehydrated:', {
             docId: id,
             blockCount: blocks.length,
             storageKey: blocksRef.storageKey,
           });
         }
       } else {
-        // [debug-enrich]
-        console.warn('[block-store.rehydrateBlocks] Blocks ref present but no data:', {
+        deWarn('[block-store.rehydrateBlocks] Blocks ref present but no data:', {
           docId: id,
           storageKey: blocksRef.storageKey,
         });
       }
     } catch (err) {
       console.warn("[block-store] rehydrate blocks failed", err);
-      // [debug-enrich]
-      console.error('[block-store.rehydrateBlocks] Blocks rehydrate failed:', {
+      deError('[block-store.rehydrateBlocks] Blocks rehydrate failed:', {
         docId: id,
         message: err?.message ?? String(err),
       });
@@ -181,22 +173,19 @@ export async function rehydrateBlocks(rsvpSlice, docId) {
       const raw = await readExternalJson(slice.responsesRef.storageKey, id, downloadResponsesJson);
       if (raw != null) {
         slice = { ...slice, _responses: JSON.parse(raw) };
-        // [debug-enrich]
-        console.info('[block-store.rehydrateBlocks] Responses rehydrated:', {
+        deInfo('[block-store.rehydrateBlocks] Responses rehydrated:', {
           docId: id,
           storageKey: slice.responsesRef.storageKey,
         });
       } else {
-        // [debug-enrich]
-        console.warn('[block-store.rehydrateBlocks] Responses ref present but no data:', {
+        deWarn('[block-store.rehydrateBlocks] Responses ref present but no data:', {
           docId: id,
           storageKey: slice.responsesRef.storageKey,
         });
       }
     } catch (err) {
       console.warn("[block-store] rehydrate responses failed", err);
-      // [debug-enrich]
-      console.error('[block-store.rehydrateBlocks] Responses rehydrate failed:', {
+      deError('[block-store.rehydrateBlocks] Responses rehydrate failed:', {
         docId: id,
         message: err?.message ?? String(err),
       });
@@ -220,16 +209,14 @@ export async function writeThroughRsvpBlocks(doc, rsvpSlice) {
 export async function writeThroughModeSlice(doc, modeSlot, slice) {
   const id = String(doc?.docId || "").trim();
   if (!id || !slice || typeof slice !== "object") {
-    // [debug-enrich]
-    console.warn('[block-store.writeThroughModeSlice] Invalid args:', {
+    deWarn('[block-store.writeThroughModeSlice] Invalid args:', {
       docId: id || null,
       modeSlot,
       hasSlice: Boolean(slice),
     });
     return { ok: false, error: "invalid" };
   }
-  // [debug-enrich]
-  console.debug('[block-store.writeThroughModeSlice] Writing through:', {
+  deLog('[block-store.writeThroughModeSlice] Writing through:', {
     docId: id,
     modeSlot,
     blockCount: Array.isArray(slice.blocks) ? slice.blocks.length : null,
@@ -240,8 +227,7 @@ export async function writeThroughModeSlice(doc, modeSlot, slice) {
     doc.modes[modeSlot] = slice;
     await saveActiveSession(doc);
     lastWriteErrorByDocId[id] = null;
-    // [debug-enrich]
-    console.info('[block-store.writeThroughModeSlice] Write-through ok:', {
+    deInfo('[block-store.writeThroughModeSlice] Write-through ok:', {
       docId: id,
       modeSlot,
     });
@@ -249,8 +235,7 @@ export async function writeThroughModeSlice(doc, modeSlot, slice) {
   } catch (err) {
     const error = isQuotaError(err) ? "quota" : "persist_failed";
     lastWriteErrorByDocId[id] = error;
-    // [debug-enrich]
-    console.error('[block-store.writeThroughModeSlice] Write-through failed:', {
+    deError('[block-store.writeThroughModeSlice] Write-through failed:', {
       docId: id,
       modeSlot,
       error,

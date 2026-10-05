@@ -13,6 +13,7 @@ import {
 export const COVERAGE_LEVELS = Object.freeze({ A: "A", B: "B", C: "C" });
 
 const BOOKS_PROXY_URL = `${SUPABASE_URL}/functions/v1/books-proxy`;
+const SHARED_CACHE_UPSERT_URL = `${SUPABASE_URL}/functions/v1/shared-cache-upsert`;
 
 const SUPPORTED_IMAGE_TYPES = new Set([
   "image/jpeg",
@@ -136,11 +137,9 @@ function rowToBookMeta(row, userTitle, userAuthor) {
  */
 async function readCache(cacheKey) {
   try {
-    const { data, error } = await supabase
-      .from("pith_book_cache")
-      .select("*")
-      .eq("cache_key", cacheKey)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("get_pith_book_cache", {
+      p_cache_key: cacheKey,
+    });
     if (error || !data) return null;
     return data;
   } catch {
@@ -153,7 +152,16 @@ async function readCache(cacheKey) {
  */
 async function writeCache(payload) {
   try {
-    await supabase.from("pith_book_cache").upsert(payload, { onConflict: "cache_key" });
+    const token = await getSupabaseAuthToken();
+    if (!token) return;
+    await fetch(SHARED_CACHE_UPSERT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ table: "pith_book_cache", row: payload }),
+    });
   } catch {
     // non-blocking per spec
   }

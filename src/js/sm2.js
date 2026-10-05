@@ -1,3 +1,4 @@
+import { deError, deLog } from "./debug-enrich.js";
 /**
  * Pure SM-2 spaced repetition + priority queue helpers.
  * No side effects — no localStorage, DOM, or session-store imports.
@@ -82,8 +83,7 @@ export function createSmItem(params = {}) {
   const now = Date.now();
   const sourceType = resolveSourceType(params) || params.sourceType;
   if (!sourceType || !SOURCE_TYPES.has(sourceType)) {
-    // [debug-enrich]
-    console.error('[sm2.createSmItem] Invalid sourceType:', {
+    deError('[sm2.createSmItem] Invalid sourceType:', {
       sourceType: params.sourceType ?? null,
       resolved: sourceType ?? null,
     });
@@ -92,8 +92,7 @@ export function createSmItem(params = {}) {
   const sourceId = String(params.sourceId || "").trim();
   const docId = String(params.docId || params.originDocId || "").trim();
   if (!sourceId || !docId) {
-    // [debug-enrich]
-    console.error('[sm2.createSmItem] Missing sourceId or docId:', {
+    deError('[sm2.createSmItem] Missing sourceId or docId:', {
       hasSourceId: Boolean(sourceId),
       hasDocId: Boolean(docId),
       sourceType,
@@ -117,8 +116,7 @@ export function createSmItem(params = {}) {
     createdAt: Number.isFinite(params.createdAt) ? params.createdAt : now,
     reviewProvenance: resolveReviewProvenance(params),
   };
-  // [debug-enrich]
-  console.debug('[sm2.createSmItem] Created:', {
+  deLog('[sm2.createSmItem] Created:', {
     id: item.id,
     sourceType: item.sourceType,
     sourceId: item.sourceId,
@@ -222,8 +220,7 @@ export function updateSmItem(item, quality, now = Date.now()) {
   const daysEarly =
     early && scheduledDue > now ? (scheduledDue - now) / MS_PER_DAY : 0;
 
-  // [debug-enrich]
-  console.debug('[sm2.updateSmItem] Updating:', {
+  deLog('[sm2.updateSmItem] Updating:', {
     itemId: item?.id ?? null,
     qualityRaw: quality,
     qualityClamped: q,
@@ -249,8 +246,7 @@ export function updateSmItem(item, quality, now = Date.now()) {
   };
 
   if (early) {
-    // [debug-enrich]
-    console.debug('[sm2.updateSmItem] Early review — schedule unchanged', {
+    deLog('[sm2.updateSmItem] Early review — schedule unchanged', {
       itemId: item?.id ?? null,
     });
     return updated;
@@ -280,8 +276,7 @@ export function updateSmItem(item, quality, now = Date.now()) {
   updated.interval = interval;
   updated.repetitions = repetitions;
   updated.scheduledDue = now + interval * MS_PER_DAY;
-  // [debug-enrich]
-  console.debug('[sm2.updateSmItem] Schedule updated:', {
+  deLog('[sm2.updateSmItem] Schedule updated:', {
     itemId: item?.id ?? null,
     interval,
     easeFactor,
@@ -329,8 +324,7 @@ export function buildReviewQueue(items, now = Date.now(), options = {}) {
     .map(({ item }) => ({ ...item }));
 
   if (!applyCap) {
-    // [debug-enrich]
-    console.debug('[sm2.buildReviewQueue] Built (no cap):', {
+    deLog('[sm2.buildReviewQueue] Built (no cap):', {
       inputCount: Array.isArray(items) ? items.length : 0,
       normalizedCount: normalized.length,
       queueLength: sorted.length,
@@ -347,8 +341,7 @@ export function buildReviewQueue(items, now = Date.now(), options = {}) {
     }
     capped.push(item);
   }
-  // [debug-enrich]
-  console.debug('[sm2.buildReviewQueue] Built:', {
+  deLog('[sm2.buildReviewQueue] Built:', {
     inputCount: Array.isArray(items) ? items.length : 0,
     normalizedCount: normalized.length,
     queueLength: capped.length,
